@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::payload_name::FeaturePayloadName;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -21,8 +22,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "EXTRUDE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         },
@@ -31,41 +31,40 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             section_link: "history#0".to_string(),
             ordinal: 1,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1,
         },
     ];
     let references = [FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".to_string(),
         operation_label: "operation#0".to_string(),
-        body_object_index: 10,
-        raw_body_object_index: vec![10],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
         id: "boolean#0".to_string(),
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 10,
-        raw_target_object_index: vec![10],
-        target_source_offset: 1,
-        tool_object_indices: vec![21],
-        raw_tool_object_indices: vec![vec![21]],
-        tool_source_offsets: vec![1],
+        target: crate::test_support::native_references::boolean_reference(10, 1),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            21, 1,
+        )],
         source_offset: 1,
     }];
     let binding =
-        |id: &str, stream_ordinal: u32, stream_kind: &str, body, alias| SegmentBodyBinding {
-            id: id.to_string(),
-            stream_link: format!("stream#{stream_ordinal}"),
-            stream_ordinal,
-            stream_kind: stream_kind.to_string(),
-            body_object_index: body,
-            body_alias_object_index: alias,
-            stream_role: 19,
-            source_offset: u64::from(stream_ordinal),
+        |id: &str, stream_ordinal: u32, stream_kind: crate::parasolid::StreamKind, body, alias| {
+            SegmentBodyBinding {
+                id: id.to_string(),
+                stream_link: format!("stream#{stream_ordinal}"),
+                stream_ordinal,
+                stream_kind,
+                body_object_index: body,
+                body_alias_object_index: alias,
+                stream_role: 19,
+                source_offset: u64::from(stream_ordinal),
+            }
         };
     let statuses = segment_body_lineage_statuses(
         &labels,
@@ -75,8 +74,14 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         &booleans,
         &[],
         &[
-            binding("binding#0", 0, "partition", 10, 11),
-            binding("binding#1", 1, "plain", 20, 21),
+            binding(
+                "binding#0",
+                0,
+                crate::parasolid::StreamKind::Partition,
+                10,
+                11,
+            ),
+            binding("binding#1", 1, crate::parasolid::StreamKind::Plain, 20, 21),
         ],
         &[],
     )
@@ -90,10 +95,14 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
 fn unique_feature_body_references_require_one_field_per_operation() {
     let reference =
         |id: &str, operation_label: &str, body_object_index| super::FeatureBodyReference {
+            ordinal: None,
             id: id.to_string(),
             operation_label: operation_label.to_string(),
-            body_object_index,
-            raw_body_object_index: vec![body_object_index as u8],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                body_object_index,
+                &[body_object_index as u8],
+            )
+            .unwrap(),
             source_offset: 0,
         };
     let references = [
@@ -111,17 +120,17 @@ fn feature_body_segment_uses_require_one_alias_pair() {
     use super::{feature_body_segment_uses, FeatureBodyReference};
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let binding = SegmentBodyBinding {
         id: "binding#0".into(),
         stream_link: "stream#3".into(),
         stream_ordinal: 3,
-        stream_kind: "plain".into(),
+        stream_kind: crate::parasolid::StreamKind::Plain,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 19,
@@ -148,10 +157,10 @@ fn feature_body_segment_uses_require_one_alias_pair() {
     )
     .is_empty());
     let duplicate_reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: reference.operation_label.clone(),
-        body_object_index: 12,
-        raw_body_object_index: vec![12],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(12, &[12]).unwrap(),
         source_offset: 91,
     };
     assert!(feature_body_segment_uses(
@@ -167,18 +176,16 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
-    use super::{
-        feature_body_segment_uses, DataBlockObjectFrame, FeatureBodyDataBlockUse,
-        FeatureBodyReference,
-    };
+    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+    use crate::native::features::object_frame::DataBlockObjectFrame;
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -189,9 +196,8 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
     };
@@ -225,7 +231,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "binding#0".into(),
         stream_link: "stream#0".into(),
         stream_ordinal: 0,
-        stream_kind: "partition".into(),
+        stream_kind: crate::parasolid::StreamKind::Partition,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 19,
@@ -237,7 +243,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     ];
     let mut block_bytes = Vec::new();
     let object_id_offset = block_bytes.len();
-    block_bytes.push(reference.body_object_index as u8);
+    block_bytes.push(reference.body.value() as u8);
     block_bytes.extend_from_slice(&discriminator);
     let parsed_frames = crate::om::data_block_object_frames(&block_bytes);
     assert_eq!(parsed_frames.len(), 1);
@@ -246,9 +252,10 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "frame#0".into(),
         data_block: "block#11".into(),
         ordinal: 0,
-        object_id: parsed_frames[0].object_id,
-        raw_object_id: parsed_frames[0].raw_object_id.clone(),
-        source_offset: 100,
+        object: crate::om::compact::LocatedCompactIndex {
+            atom: parsed_frames[0].atom,
+            offset: 100,
+        },
     };
     let uses = feature_body_segment_uses(
         std::slice::from_ref(&reference),
@@ -272,7 +279,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     .is_empty());
 
     let mut mismatched_frame = object_frame.clone();
-    mismatched_frame.object_id = 12;
+    mismatched_frame.object.atom = crate::om::compact::CompactIndexAtom::read(&[12]).unwrap();
     assert!(feature_body_segment_uses(
         std::slice::from_ref(&reference),
         std::slice::from_ref(&data_block_use),
@@ -318,9 +325,8 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let second_input = FeatureInputBlock {
         id: "input#1".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 1,
-        object_index: 4,
-        raw_object_index: vec![4],
+        input_slot: crate::om::header_references::HeaderSlot::One,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
         data_block: "block#4".into(),
         source_offset: 81,
     };
@@ -380,10 +386,10 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 11,
-        raw_body_object_index: vec![11],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -395,7 +401,7 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         id: "binding#0".into(),
         stream_link: "stream#0".into(),
         stream_ordinal: 0,
-        stream_kind: "partition".into(),
+        stream_kind: crate::parasolid::StreamKind::Partition,
         body_object_index: 11,
         body_alias_object_index: 12,
         stream_role: 19,
@@ -414,18 +420,17 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 99,
-        raw_body_object_index: vec![99],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(99, &[99]).unwrap(),
         source_offset: 90,
     };
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: reference.operation_label.clone(),
-        input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "block#3".into(),
         source_offset: 80,
     };
@@ -445,7 +450,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
         id: "binding#0".into(),
         stream_link: "stream#0".into(),
         stream_ordinal: 0,
-        stream_kind: "plain".into(),
+        stream_kind: crate::parasolid::StreamKind::Plain,
         body_object_index: 99,
         body_alias_object_index: 100,
         stream_role: 19,
@@ -465,18 +470,21 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 99,
-        raw_body_object_index: vec![99],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(99, &[99]).unwrap(),
         source_offset: 90,
     };
     let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
         id: format!("input#{slot}"),
         operation_label: reference.operation_label.clone(),
-        input_slot: slot,
-        object_index,
-        raw_object_index: vec![object_index as u8],
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            object_index,
+            &[object_index as u8],
+        )
+        .unwrap(),
         data_block: data_block.into(),
         source_offset: 80 + u64::from(slot),
     };
@@ -496,7 +504,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         id: "binding#0".into(),
         stream_link: "stream#0".into(),
         stream_ordinal: 0,
-        stream_kind: "plain".into(),
+        stream_kind: crate::parasolid::StreamKind::Plain,
         body_object_index: 99,
         body_alias_object_index: 100,
         stream_role: 19,
@@ -520,18 +528,17 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 72,
-        raw_body_object_index: vec![72],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(72, &[72]).unwrap(),
         source_offset: 90,
     };
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: "operation#0".into(),
-        input_slot: 0,
-        object_index: 3,
-        raw_object_index: vec![3],
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
         data_block: "nx:om-data-blocks-2:block#3".into(),
         source_offset: 80,
     };
@@ -560,10 +567,10 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].data_block, blocks[2].id);
     let duplicate_reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: "operation#0".into(),
-        body_object_index: 73,
-        raw_body_object_index: vec![73],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(73, &[73]).unwrap(),
         source_offset: 91,
     };
     assert!(
@@ -584,36 +591,33 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         section_link: "history#0".to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 1 - u64::from(ordinal),
     };
     let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
     let references = [FeatureBodyReference {
+        ordinal: None,
         id: "reference#30".to_string(),
         operation_label: "operation#0".to_string(),
-        body_object_index: 30,
-        raw_body_object_index: vec![30],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(30, &[30]).unwrap(),
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
         id: "boolean#0".to_string(),
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 99,
-        raw_target_object_index: vec![99],
-        target_source_offset: 1,
-        tool_object_indices: vec![10],
-        raw_tool_object_indices: vec![vec![10]],
-        tool_source_offsets: vec![1],
+        target: crate::test_support::native_references::boolean_reference(99, 1),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            10, 1,
+        )],
         source_offset: 1,
     }];
     let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {
         id: id.to_string(),
         stream_link: format!("stream#{stream_ordinal}"),
         stream_ordinal,
-        stream_kind: "partition".to_string(),
+        stream_kind: crate::parasolid::StreamKind::Partition,
         body_object_index: body,
         body_alias_object_index: alias,
         stream_role: 19,
@@ -641,195 +645,42 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 }
 
 #[test]
-fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
-    use super::{
-        feature_simple_hole_construction_groups, FeatureOperationLabel,
-        FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-    };
-    let label = |id: &str, ordinal: u32| FeatureOperationLabel {
-        id: id.into(),
-        section_link: "section#1".into(),
-        ordinal,
-        value: "SIMPLE HOLE".into(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-        stable_identity: None,
-        source_offset: u64::from(ordinal),
-    };
-    let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
-        id: format!("lane-{operation}"),
-        operation_label: operation.into(),
-        values: vec![25.4],
-        raw_values: vec![[0x30; 8]],
-        first_witness_offsets: vec![1],
-        second_witness_offsets: vec![2],
-    };
-    let reference =
-        |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
-            id: format!("reference-{operation}"),
-            operation_label: operation.into(),
-            first_data_blocks: ["block-1".into(), "block-2".into()],
-            second_data_blocks: ["block-3".into(), last.into()],
-            first_reference_prefix: None,
-            second_reference_prefix: None,
-            first_reference_offsets: [3, 4],
-            second_reference_offsets: [5, 6],
-        };
-    let lanes = [
-        lane("operation#1-2"),
-        lane("operation#1-3"),
-        lane("operation#1-4"),
-    ];
-    let references = [
-        reference("operation#1-4", "block-5"),
-        reference("operation#1-3", "block-4"),
-        reference("operation#1-2", "block-4"),
-    ];
-    // The native label arena is newest-first. The group must reverse that
-    // source order, rather than infer history from operation-label text.
-    let labels = [
-        label("operation#1-2", 0),
-        label("operation#1-3", 1),
-        label("operation#1-4", 2),
-    ];
-    let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(
-        groups[0].operation_labels,
-        ["operation#1-3", "operation#1-2"]
-    );
-    assert_eq!(
-        groups[0].scalar_lanes,
-        ["lane-operation#1-3", "lane-operation#1-2"]
-    );
-    assert_eq!(
-        groups[0].block_references,
-        ["reference-operation#1-3", "reference-operation#1-2"]
-    );
-
-    let duplicate_references = [
-        reference("operation#1-2", "block-4"),
-        reference("operation#1-2", "block-4"),
-    ];
-    assert!(
-        feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty()
-    );
-
-    let duplicate_lanes = [
-        lane("operation#1-2"),
-        lane("operation#1-2"),
-        lane("operation#1-3"),
-        lane("operation#1-4"),
-    ];
-    let shared_references = [
-        reference("operation#1-2", "block-4"),
-        reference("operation#1-3", "block-4"),
-        reference("operation#1-4", "block-4"),
-    ];
-    assert!(
-        feature_simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references)
-            .is_empty()
-    );
-
-    let unknown_lanes = [lane("operation#1-8"), lane("operation#1-9")];
-    let unknown_references = [
-        reference("operation#1-8", "block-4"),
-        reference("operation#1-9", "block-4"),
-    ];
-    assert!(
-        feature_simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references)
-            .is_empty()
-    );
-}
-
-#[test]
-fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
-    use super::{
-        feature_hole_package_construction_group_uses, FeatureHolePackageConstructionGroupLane,
-        FeatureSimpleHoleConstructionGroup,
-    };
-    let blocks = [
-        "block-1".to_string(),
-        "block-2".to_string(),
-        "block-3".to_string(),
-        "block-4".to_string(),
-    ];
-    let lane = FeatureHolePackageConstructionGroupLane {
-        id: "package-lane".into(),
-        operation_label: "package-operation".into(),
-        selector: 0x46,
-        branch: 0x11,
-        object_indices: [1, 2, 3, 4],
-        raw_object_indices: std::array::from_fn(|index| vec![0xf0, index as u8 + 1]),
-        data_blocks: blocks.clone(),
-        payload_offset: 20,
-        source_offset: 120,
-        reference_source_offsets: [132, 134, 141, 143],
-    };
-    let group = FeatureSimpleHoleConstructionGroup {
-        id: "simple-hole-group".into(),
-        first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
-        second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        operation_labels: vec!["simple-hole-1".into(), "simple-hole-2".into()],
-        scalar_lanes: vec!["scalar-1".into(), "scalar-2".into()],
-        block_references: vec!["references-1".into(), "references-2".into()],
-    };
-
-    let uses = feature_hole_package_construction_group_uses(
-        std::slice::from_ref(&lane),
-        std::slice::from_ref(&group),
-    );
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].operation_label, lane.operation_label);
-    assert_eq!(uses[0].construction_group_lane, lane.id);
-    assert_eq!(uses[0].simple_hole_construction_group, group.id);
-
-    assert!(feature_hole_package_construction_group_uses(
-        &[lane.clone(), lane.clone()],
-        std::slice::from_ref(&group),
-    )
-    .is_empty());
-    assert!(feature_hole_package_construction_group_uses(
-        std::slice::from_ref(&lane),
-        &[group.clone(), group],
-    )
-    .is_empty());
-}
-
-#[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
-        feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
-        FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
+        feature_block_payload_point_groups, feature_block_payload_points,
+        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
     };
 
     let operation_label = "operation".to_string();
     let construction_payload = "payload".to_string();
-    let name = FeatureBlockPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: operation_label.clone(),
         construction_payload: construction_payload.clone(),
         ordinal: 0,
-        type_code: Some(131),
-        raw_type_code: Some(vec![0x80, 0x83]),
-        type_code_payload_offset: Some(11),
-        type_code_source_offset: Some(101),
-        payload_leading: false,
-        value: "Point7".to_string(),
-        payload_offset: 10,
+        frame: crate::om::name_field::NameField::new(
+            "Point7".to_string(),
+            10,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
+                target: Some(101),
+            }),
+        )
+        .unwrap(),
         source_offset: 100,
     };
     let scalar = |id: &str, ordinal: u32, value: f64| {
         let mut raw_value = value.to_be_bytes();
         raw_value[0] -= 0x10;
-        FeatureBlockPayloadScalar {
+        FeaturePayloadScalar {
             id: id.to_string(),
             operation_label: operation_label.clone(),
-            construction_payload: construction_payload.clone(),
+            payload: crate::native::features::FeatureScalarPayload::Construction {
+                construction_payload: construction_payload.clone(),
+            },
             ordinal,
             field_code: 100,
-            value,
-            raw_value,
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(raw_value).unwrap(),
             payload_offset: 20 + u64::from(ordinal) * 13,
             source_offset: 110 + u64::from(ordinal) * 13,
         }
@@ -873,26 +724,16 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
             .is_empty()
     );
     let mut malformed = name;
-    malformed.value = "Point0".to_string();
+    malformed.frame = crate::om::name_field::NameField::new(
+        "Point0".to_string(),
+        10,
+        Some(crate::om::compact::CompactIndexTarget {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
+            target: Some(101),
+        }),
+    )
+    .unwrap();
     assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
-}
-
-#[test]
-fn operation_common_frame_types_the_parasolid_modification_field() {
-    let mut state = [0; 8];
-    assert_eq!(operation_modifies_parasolid_data(state), Some(false));
-    state[4] = 1;
-    assert_eq!(operation_modifies_parasolid_data(state), Some(true));
-    state[4] = 2;
-    assert_eq!(operation_modifies_parasolid_data(state), None);
-}
-
-#[test]
-fn operation_common_frame_retains_the_split_tracking_data_field() {
-    assert_eq!(
-        operation_split_tracking_data([1, 2, 3, 0, 1, 0x56, 0xa9, 7]),
-        [0x56, 0xa9]
-    );
 }
 
 #[test]
@@ -902,8 +743,7 @@ fn operation_history_reverses_source_order_within_each_section() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     };
@@ -937,8 +777,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     };
@@ -972,8 +811,7 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         section_link: section.to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset,
     };
@@ -1001,16 +839,6 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
 }
 
 #[test]
-fn operation_common_frame_types_the_legacy_inactive_modules_field() {
-    let mut state = [0; 8];
-    assert_eq!(operation_legacy_inactive_modules(state), Some(false));
-    state[3] = 1;
-    assert_eq!(operation_legacy_inactive_modules(state), Some(true));
-    state[3] = 2;
-    assert_eq!(operation_legacy_inactive_modules(state), None);
-}
-
-#[test]
 fn decoded_operation_frames_resolve_unique_offset_store_targets() {
     let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
     let common_and_terminal = vec![
@@ -1035,18 +863,26 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
         .arena_as::<super::FeatureOperationCommonFrame>("feature_operation_common_frames")
         .expect("required invariant");
     assert_eq!(common_frames.len(), 1);
-    assert_eq!(common_frames[0].object_index, Some(65));
+    assert_eq!(common_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        common_frames[0].data_block.as_deref(),
+        common_frames[0]
+            .frame
+            .suffix()
+            .target()
+            .and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
     let terminal_frames = namespace
         .arena_as::<super::FeatureOperationTerminalFrame>("feature_operation_terminal_frames")
         .expect("required invariant");
     assert_eq!(terminal_frames.len(), 1);
-    assert_eq!(terminal_frames[0].object_index, Some(65));
+    assert_eq!(terminal_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        terminal_frames[0].data_block.as_deref(),
+        terminal_frames[0]
+            .frame
+            .suffix()
+            .target()
+            .and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
 }

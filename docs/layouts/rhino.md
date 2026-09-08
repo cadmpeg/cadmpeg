@@ -68,11 +68,13 @@ Parsed by:
 | 6 | 2 | `data3` | `u16` | little | spec | Data3: u16 little-endian |
 | 8 | 8 | `data4` | `bytes[8]` | unstated | spec | Not a number: the eight bytes are copied verbatim, so no byte order applies. |
 
-## `long_chunk_header_v2`
+## `long_chunk_header_narrow`
 
 Spec §4 · layout: byte offsets · size: 8 B
 
-Archive versions below 50. The length word is `i32` below archive version 50 and `i64` from 50; the 8-byte total here is the below-50 form. `declared_length` bytes of body follow and include the trailing checksum when present.
+Dialects: `rhino:archive-1`, `rhino:archive-2`, `rhino:archive-3`, `rhino:archive-4`, `rhino:archive-5`, `rhino:unknown`
+
+The narrow form: a 4-byte `i32` length word, selected when the archive-version word is below 50 (`ArchiveVersion::uses_eight_byte_values`). `declared_length` bytes of body follow and include the trailing checksum when present. `rhino:unknown` is keyed on both this record and its wide sibling: the residual row is any version word outside the enumerated ten, and the width follows the word, not the row.
 
 Parsed by:
 - `crates/cadmpeg-codec-rhino/src/chunks.rs`
@@ -82,11 +84,13 @@ Parsed by:
 | 0 | 4 | `typecode` | `u32` | little | spec | Every chunk begins with a little-endian `u32 typecode`. |
 | 4 | 4 | `declared_length` | `i32` | little | spec | archive version < 50 i32 |
 
-## `long_chunk_header_v50`
+## `long_chunk_header_wide`
 
 Spec §4 · layout: byte offsets · size: 12 B
 
-Archive versions 50 and above widen the length word to `i64`.
+Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`
+
+The wide form: the length word widens to an 8-byte `i64` when the archive-version word is 50 or above. `rhino:unknown` is keyed here for the reason stated on the narrow form.
 
 Parsed by:
 - `crates/cadmpeg-codec-rhino/src/chunks.rs`
@@ -96,11 +100,13 @@ Parsed by:
 | 0 | 4 | `typecode` | `u32` | little | spec | Every chunk begins with a little-endian `u32 typecode`. |
 | 4 | 8 | `declared_length` | `i64` | little | spec | archive version >= 50 i64 |
 
-## `endoffile_record_v50`
+## `endoffile_record_wide`
 
 Spec §5 · layout: byte offsets · size: 20 B
 
-`TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes. The 20-byte total is derived from the three stated widths; the spec states no total.
+Dialects: `rhino:archive-50`, `rhino:archive-60`, `rhino:archive-70`, `rhino:archive-80`, `rhino:archive-90`, `rhino:unknown`
+
+`TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes; that narrow form has no record of its own here. `rhino:unknown` is keyed because an unenumerated version word at or above 50 reads this layout. The 20-byte total is derived from the three stated widths; the spec states no total.
 
 Parsed by:
 - `crates/cadmpeg-codec-rhino/src/chunks.rs`

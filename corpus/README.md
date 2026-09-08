@@ -51,3 +51,15 @@ vertices = 8
 ```
 
 `expected_topology` is optional. Include only counts reported by the authoring application.
+
+## The derived `dialect` field
+
+One manifest field is not donor-supplied. `dialect` holds the `docs/dialects.toml` id that the codec's own `inspect()` reads out of the file's bytes, pinned like a golden. Do not write it by hand and do not copy it from the registry: run
+
+```sh
+UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
+```
+
+and review the diff. `cargo test -p cadmpeg --test corpus_manifest` then compares the pins against a fresh classification, so a codec change that reclassifies a corpus file is a test failure. The test verifies each `sha256` first: a pin describes the exact bytes it was derived from.
+
+`dialect` and `authoring_app_version` are different axes. The first is what the bytes are, the second is what wrote them. Neither is derivable from the other, so the manifest carries both.

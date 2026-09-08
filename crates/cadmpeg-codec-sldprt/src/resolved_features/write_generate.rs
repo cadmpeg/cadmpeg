@@ -13,7 +13,8 @@ use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    Sketch, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -50,16 +51,16 @@ pub(super) fn generated_marker_relations(
                 .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
                 .unwrap_or_default()
         }
-        SketchConstraintDefinition::HorizontalPoints { first, second } => {
+        SketchConstraintDefinition::SameCoordinate {
+            first,
+            second,
+            axis,
+        } => {
             vec![GeneratedMarkerRelation::Loci(
-                SketchRelationKind::HorizontalPoints,
-                first,
-                second,
-            )]
-        }
-        SketchConstraintDefinition::VerticalPoints { first, second } => {
-            vec![GeneratedMarkerRelation::Loci(
-                SketchRelationKind::VerticalPoints,
+                match axis {
+                    SketchCoordinateAxis::U => SketchRelationKind::VerticalPoints,
+                    SketchCoordinateAxis::V => SketchRelationKind::HorizontalPoints,
+                },
                 first,
                 second,
             )]
@@ -175,7 +176,7 @@ pub(super) fn append_generated_sketch_markers(
             let local_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
-                    sketch.id.0
+                    sketch.id.as_str()
                 ))
             })?;
             append_coordinate_marker(
@@ -185,7 +186,7 @@ pub(super) fn append_generated_sketch_markers(
                 next_id,
             );
             marker_ids
-                .entry(entity.id.clone())
+                .entry(entity.id().clone())
                 .or_default()
                 .push(local_id);
             marker_loci.push((
@@ -266,7 +267,7 @@ pub(super) fn append_generated_sketch_markers(
             let relation_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
-                    sketch.id.0
+                    sketch.id.as_str()
                 ))
             })?;
             append_coordinate_marker_link(payload, owner, relation_id)?;
@@ -459,14 +460,14 @@ pub(super) fn append_generated_sketch_markers(
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension references missing parameter {}",
-                    parameter.0
+                    parameter.as_str()
                 ))
             })?;
         let value = match (&parameter.value, class) {
             (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT angular dimension {} has a length value",
-                    parameter.id.0
+                    parameter.id.as_str()
                 )));
             }
             (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
@@ -474,7 +475,7 @@ pub(super) fn append_generated_sketch_markers(
             _ => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
-                    parameter.id.0
+                    parameter.id.as_str()
                 )));
             }
         };
@@ -511,7 +512,7 @@ fn generated_dimension<'a>(
     {
         return Some(Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT display-only relation parameter {} has no native scalar encoding",
-            parameter.id.0
+            parameter.id.as_str()
         ))));
     }
     let unsupported = || {
@@ -574,7 +575,7 @@ pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEn
     ir.model
         .sketch_entities
         .iter()
-        .find(|candidate| candidate.id == *entity)
+        .find(|candidate| candidate.id() == entity)
         .is_some_and(|candidate| matches!(candidate.geometry, SketchGeometry::Point { .. }))
 }
 
@@ -646,7 +647,7 @@ fn unique_generated_entity_marker(
                     .iter()
                     .any(|(candidate, _)| same_point2(*point, *candidate))
             })
-            .map(|candidate| &candidate.id);
+            .map(cadmpeg_ir::SketchEntity::id);
         if candidates.next() == Some(entity) && candidates.next().is_none() {
             return Ok(*local_id);
         }
@@ -700,7 +701,7 @@ fn generated_operand_address(
     u16::try_from(ordinal).map_err(|_| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
-            sketch.id.0
+            sketch.id.as_str()
         ))
     })
 }

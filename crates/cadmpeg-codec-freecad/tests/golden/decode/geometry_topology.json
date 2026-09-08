@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -14088,7 +14088,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "20d729f10d6e116e1ae2befda3482ff80d1d52460f6fb15a51c61e60a786a5dc"
+      "__shape_sha256": "2bc60e37486a9a026eae4c5d83ed724e6c79ebbc9ebe4614fa99d80158debed8"
     },
     "source": {
       "attributes": {
@@ -14096,12 +14096,23 @@
         "archive_entry_count": "16",
         "document_kind": "part",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "13",
         "physical_archive_bytes": "12122",
         "physical_ledger_spans": "113",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4",
+          "format": "fcstd"
+        }
       },
       "format": "fcstd"
     },
@@ -14115,6 +14126,19 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    },
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],
@@ -14129,7 +14153,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

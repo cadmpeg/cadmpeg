@@ -1173,13 +1173,14 @@ mod nx {
 // ============================================================================
 
 fn generate_ir_seeds() {
-    let minimal = cadmpeg_ir::CadIr::empty(Default::default())
+    let minimal = cadmpeg_ir::CadIr::empty()
         .to_canonical_json()
         .unwrap();
     let cube = cadmpeg_ir::examples::unit_cube()
         .to_canonical_json()
         .unwrap();
     let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()
+        .unwrap()
         .to_canonical_json()
         .unwrap();
     let canonical = [

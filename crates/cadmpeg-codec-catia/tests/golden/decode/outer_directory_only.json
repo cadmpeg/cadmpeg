@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,53 +42,50 @@
     },
     "native": {
       "catia": {
-        "arenas": {
-          "alias_rows": [],
-          "catalog_entries": [],
-          "catalogs": [],
-          "consolidated_circles": [],
-          "consolidated_class5b5c_records": [],
-          "consolidated_class61_records": [],
-          "consolidated_cone_faces": [],
-          "consolidated_cones": [],
-          "consolidated_cylinders": [],
-          "consolidated_edge_nodes": [],
-          "consolidated_edge_runs": [],
-          "consolidated_embedded_cylinders": [],
-          "consolidated_groups": [],
-          "consolidated_line_profiles": [],
-          "consolidated_owner_packets": [],
-          "consolidated_parameter_points": [],
-          "consolidated_pcurves": [],
-          "consolidated_plane_carriers": [],
-          "consolidated_reference_lists": [],
-          "consolidated_revolutions": [],
-          "consolidated_spheres": [],
-          "consolidated_tori": [],
-          "consolidated_vertex_identities": [],
-          "design_objects": [],
-          "entity_records": [],
-          "external_references": [],
-          "finjpl_segments": [],
-          "legacy_entity_runs": [],
-          "object_graph_records": [],
-          "object_graphs": [],
-          "preview_images": [],
-          "reference_signature_cohorts": [],
-          "schema_configuration_row_chains": [],
-          "unknowns": [],
-          "value_blocks": [],
-          "value_schema_selections": [],
-          "zero_entity_edge_strides": [],
-          "zero_entity_endpoint_locus_candidates": [],
-          "zero_entity_endpoint_pair_candidates": [],
-          "zero_entity_oriented_use_pairs": [],
-          "zero_entity_ownership_roots": [],
-          "zero_entity_records": [],
-          "zero_entity_support_runs": [],
-          "zero_entity_vertex_incidences": []
-        },
-        "version": 288
+        "alias_rows": [],
+        "catalog_entries": [],
+        "catalogs": [],
+        "consolidated_circles": [],
+        "consolidated_class5b5c_records": [],
+        "consolidated_class61_records": [],
+        "consolidated_cone_faces": [],
+        "consolidated_cones": [],
+        "consolidated_cylinders": [],
+        "consolidated_edge_nodes": [],
+        "consolidated_edge_runs": [],
+        "consolidated_embedded_cylinders": [],
+        "consolidated_groups": [],
+        "consolidated_line_profiles": [],
+        "consolidated_owner_packets": [],
+        "consolidated_parameter_points": [],
+        "consolidated_pcurves": [],
+        "consolidated_plane_carriers": [],
+        "consolidated_reference_lists": [],
+        "consolidated_revolutions": [],
+        "consolidated_spheres": [],
+        "consolidated_tori": [],
+        "consolidated_vertex_identities": [],
+        "design_objects": [],
+        "entity_records": [],
+        "external_references": [],
+        "finjpl_segments": [],
+        "legacy_entity_runs": [],
+        "object_graph_records": [],
+        "object_graphs": [],
+        "preview_images": [],
+        "reference_signature_cohorts": [],
+        "schema_configuration_row_chains": [],
+        "unknowns": [],
+        "value_blocks": [],
+        "value_schema_selections": [],
+        "zero_entity_edge_strides": [],
+        "zero_entity_endpoint_locus_candidates": [],
+        "zero_entity_endpoint_pair_candidates": [],
+        "zero_entity_oriented_use_pairs": [],
+        "zero_entity_ownership_roots": [],
+        "zero_entity_records": [],
+        "zero_entity_support_runs": [],
+        "zero_entity_vertex_incidences": []
       }
     },
     "source": {
@@ -97,8 +94,15 @@
         "file_size": "163",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "36",
-        "preview_count": "0",
-        "variant": "unknown"
+        "preview_count": "0"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "dialect": "catia:unknown",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },
@@ -446,6 +450,14 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "dialect": "catia:unknown",
+        "format": "catia"
+      }
+    },
     "format": "catia",
     "geometry_transferred": false,
     "losses": [
@@ -455,7 +467,7 @@
           "kind": "geometry_not_transferred",
           "namespace": "catia"
         },
-        "message": "No B-rep geometry was transferred. This file's storage variant is `unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec.",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `catia:unknown` (unrecognized storage layout); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {
@@ -466,17 +478,25 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "catia"
+        },
+        "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
+        "severity": "warning"
       }
     ],
     "notes": [
       "outer V5_CFV2 container: directory offset 36 + length 127 = 163 (file size 163); variant: unrecognized storage layout",
       "outer CATIA_V5 CB0001 directory with 1 stream(s)",
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
-      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+      "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

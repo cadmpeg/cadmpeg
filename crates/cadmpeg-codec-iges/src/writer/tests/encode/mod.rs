@@ -4,9 +4,10 @@
 use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -18,13 +19,12 @@ use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::writer::same_float;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::{IgesCodec, IgesVersion};
 
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
@@ -35,10 +35,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let plan = IgesEncoder::new(IgesWriteOptions { version }).plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        });
+        let plan = plan_at(version, decoded.ir(), None);
         let plan = plan
             .unwrap_or_else(|error| panic!("{version:?} Type 102 semantic plan refused: {error}"));
         let mut written = Vec::new();
@@ -54,7 +51,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 .ir()
                 .native
                 .namespace("iges")
-                .and_then(|namespace| namespace.arenas.get("entities"))
+                .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|record| {
                         record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
@@ -81,12 +78,13 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
 
 #[test]
 fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let second_start = decoded
         .ir()
         .model
@@ -123,14 +121,8 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             .expect("Type 102 composite edge")
             .end = second_start;
     }
-    let plan = IgesEncoder::new(IgesWriteOptions {
-        version: IgesVersion::V5_0,
-    })
-    .plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    })
-    .expect("reversed Type 102 child is writable");
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None)
+        .expect("reversed Type 102 child is writable");
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -138,7 +130,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         .unwrap();
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
         matches!(
-            curve.geometry,
+            *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
             CurveGeometry::Line { origin, direction }
                 if same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
         )
@@ -156,12 +148,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
@@ -191,13 +178,13 @@ fn encode_replays_an_unchanged_iges_source_image() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
-        .unwrap();
-    assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
+    let plan = plan_at(
+        IgesVersion::V5_3,
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    )
+    .unwrap();
+    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     assert_eq!(written, bytes);
@@ -206,19 +193,13 @@ fn encode_replays_an_unchanged_iges_source_image() {
 #[test]
 fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
     for (version, name) in [(IgesVersion::V5_1, "5.1"), (IgesVersion::V5_2, "5.2")] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(Point {
-            id: PointId(format!("point#{name}")),
+            id: PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
-        let encoder = IgesEncoder::new(IgesWriteOptions { version });
-        let plan = encoder
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap();
+        let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
@@ -230,7 +211,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
             )
             .unwrap();
         assert_eq!(
-            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            decoded.report().dialects().unwrap().primary().declared()["effective_version"],
             name
         );
         assert_eq!(decoded.ir().model.points.len(), 1);
@@ -245,18 +226,13 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
 #[test]
 fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
     for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(Point {
-            id: PointId(format!("point#{name}")),
+            id: PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
-        let plan = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap();
+        let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
         assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
@@ -268,7 +244,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
             )
             .unwrap();
         assert_eq!(
-            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            decoded.report().dialects().unwrap().primary().declared()["effective_version"],
             name
         );
         assert_eq!(decoded.ir().model.points.len(), 1);
@@ -283,9 +259,10 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
 #[test]
 fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("surface#{version:?}")),
+            id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(4.0, 5.0, 6.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
@@ -293,12 +270,8 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             },
             source_object: None,
         });
-        let plan = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        let plan =
+            plan_at(version, &ir, None).unwrap_or_else(|error| panic!("{version:?}: {error}"));
         let mut written = Vec::new();
         let report = plan
             .write_to(&mut written)
@@ -317,7 +290,10 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             origin,
             normal,
             u_axis,
-        } = &decoded.ir().model.surfaces[0].geometry
+        } = decoded.ir().model.surfaces[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&decoded.ir().model.surfaces[0].geometry)
         else {
             panic!("{version:?}: expected a decoded plane");
         };
@@ -336,7 +312,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             "{version:?}"
         );
 
-        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
         assert!(entities.iter().any(|record| {
             record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
         }));
@@ -355,13 +331,8 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = IgesEncoder::new(IgesWriteOptions { version })
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
-            .err()
-            .expect("legacy target must reject an open shell");
+        let error = plan_at(version, decoded.ir(), None)
+            .expect_err("legacy target must reject an open shell");
         assert!(
             error
                 .to_string()
@@ -376,16 +347,13 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
-    let encoder = IgesEncoder::new(IgesWriteOptions {
-        version: IgesVersion::V5_2,
-    });
-    let plan = encoder
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
-        .unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    let plan = plan_at(
+        IgesVersion::V5_2,
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    )
+    .unwrap();
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
 
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -393,7 +361,7 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().source.as_ref().unwrap().attributes["iges_version"],
+        round_trip.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.2"
     );
     assert_eq!(round_trip.ir().model.points.len(), 1);
@@ -401,25 +369,29 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
 
 #[test]
 fn encode_regenerates_an_edited_point_from_neutral_ir() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point#1".into()),
+        id: PointId::mint("test:model:point#1").expect("identity grammar"),
         source_object: None,
         position: Point3::new(4.0, 5.0, 6.0),
     });
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
-    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert!(global.maximum_coordinate_mm().unwrap() >= 6.0);
-    assert_ne!(global.maximum_coordinate_mm().unwrap(), 1000.0);
+    let scan = crate::card::scan(&written).unwrap();
+    crate::global::parse(&scan).unwrap();
+    let global_text = scan
+        .section(crate::card::Section::Global)
+        .map(|(_, line)| line)
+        .flat_map(|line| line.payload.iter().take(72).copied())
+        .collect::<Vec<_>>();
+    let global_text = String::from_utf8(global_text)
+        .expect("generated Global record is ASCII")
+        .replace(' ', "");
+    assert!(global_text.contains(",6.0000000000000000D0,"));
+    assert!(!global_text.contains(",1.0000000000000000D+03,"));
 
     let decoded = IgesCodec
         .decode(
@@ -440,13 +412,8 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .unwrap();
     let (mut ir, _, fidelity) = decoded.into_parts();
     ir.model.points[0].position.x += 1.0;
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: Some(&fidelity),
-        })
-        .unwrap();
-    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    let plan = plan_at(IgesVersion::V5_3, &ir, Some(&fidelity)).unwrap();
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report
@@ -462,7 +429,10 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     assert_eq!(round_trip.ir().model.curves.len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 1);
     assert!(matches!(
-        round_trip.ir().model.curves[0].geometry,
+        *round_trip.ir().model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&round_trip.ir().model.curves[0].geometry),
         CurveGeometry::Line { .. }
     ));
     assert!(round_trip.report().losses.is_empty());
@@ -475,10 +445,7 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.curves[0].geometry = CurveGeometry::Unknown { record: None };
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("unsupported curve geometry was accepted")
     };
     assert!(
@@ -491,11 +458,8 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 
 #[test]
 fn encode_refuses_an_empty_source_less_model() {
-    let ir = CadIr::empty(Units::default());
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let ir = CadIr::empty();
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("empty semantic output was accepted")
     };
     assert!(
@@ -518,10 +482,7 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native curve was silently omitted from semantic output")
     };
     assert!(
@@ -544,10 +505,7 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native point was silently omitted from semantic output")
     };
     assert!(
@@ -566,10 +524,7 @@ fn encode_refuses_a_native_surface_without_neutral_geometry() {
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.surfaces.clear();
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("native surface was silently omitted from semantic output")
     };
     assert!(
@@ -609,11 +564,7 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut written = Vec::new();
         plan.write_to(&mut written)
@@ -636,10 +587,10 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
 
 #[test]
 fn encode_regenerates_planar_and_nurbs_surfaces() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("surface#plane".into()),
+            id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(4.0, 5.0, 6.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -648,35 +599,33 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#nurbs".into()),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid test NURBS surface"),
+            ),
             source_object: None,
         },
     ]);
 
-    let plan = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -690,13 +639,15 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == SurfaceId("iges:model:surface#D9".into()))
+        .find(|surface| {
+            surface.id == SurfaceId::mint("iges:model:surface#D9").expect("identity grammar")
+        })
         .unwrap();
     let SurfaceGeometry::Plane {
         origin,
         normal,
         u_axis,
-    } = &plane.geometry
+    } = plane.geometry.solved_cache().unwrap_or(&plane.geometry)
     else {
         panic!("expected a decoded plane");
     };
@@ -712,7 +663,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
         record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
     }));
@@ -732,12 +683,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(decoded.ir().model.procedural_curves.len(), 2);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
@@ -762,12 +708,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.surfaces.len(), 1);
-    assert!(round_trip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
+    assert!(round_trip.ir().model.curves.iter().any(|curve| matches!(
+        *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        CurveGeometry::Nurbs(_)
+    )));
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",
@@ -779,10 +723,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 
 #[test]
 fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("surface#cylinder".into()),
+            id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -792,7 +736,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#cone".into()),
+            id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
             geometry: SurfaceGeometry::Cone {
                 origin: Point3::new(-1.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -804,7 +748,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#sphere".into()),
+            id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
             geometry: SurfaceGeometry::Sphere {
                 center: Point3::new(0.0, 4.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -814,7 +758,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#torus".into()),
+            id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
             geometry: SurfaceGeometry::Torus {
                 center: Point3::new(0.0, 0.0, 5.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -826,13 +770,8 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         },
     ]);
 
-    let error = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .err()
-        .expect("standalone pointer-defined analytic surface must be refused");
+    let error = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect_err("standalone pointer-defined analytic surface must be refused");
     assert!(
         error.to_string().contains(
             "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
@@ -843,14 +782,15 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
 
 #[test]
 fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
-        id: SurfaceId("surface#free-sphere".into()),
+        id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Sphere {
             center: Point3::new(10.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -860,17 +800,12 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         source_object: None,
     });
 
-    let error = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .err()
-        .expect("free analytic surface must not inherit B-rep eligibility");
+    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
+        .expect_err("free analytic surface must not inherit B-rep eligibility");
     assert!(
         error
             .to_string()
-            .contains("analytic surface surface#free-sphere requires B-rep topology"),
+            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
         "{error}"
     );
 }
@@ -884,13 +819,8 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .err()
-        .expect("a cylindrical face without axial bounds must be refused");
+    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
+        .expect_err("a cylindrical face without axial bounds must be refused");
     assert!(
         error
             .to_string()
@@ -901,12 +831,12 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
 
 #[test]
 fn encode_regenerates_a_single_face_trimmed_sheet() {
-    let surface_id = SurfaceId("surface#sheet".into());
-    let body_id = BodyId("body#sheet".into());
-    let region_id = RegionId("region#sheet".into());
-    let shell_id = ShellId("shell#sheet".into());
-    let face_id = FaceId("face#sheet".into());
-    let loop_id = LoopId("loop#sheet".into());
+    let surface_id = SurfaceId::mint("test:model:surface#sheet").expect("identity grammar");
+    let body_id = BodyId::mint("test:model:body#sheet").expect("identity grammar");
+    let region_id = RegionId::mint("test:model:region#sheet").expect("identity grammar");
+    let shell_id = ShellId::mint("test:model:shell#sheet").expect("identity grammar");
+    let face_id = FaceId::mint("test:model:face#sheet").expect("identity grammar");
+    let loop_id = LoopId::mint("test:model:loop#sheet").expect("identity grammar");
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -914,24 +844,36 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         Point3::new(0.0, 1.0, 0.0),
     ];
     let point_ids = (0..4)
-        .map(|index| PointId(format!("point#sheet:{index}")))
+        .map(|index| {
+            PointId::mint(format!("test:model:point#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..4)
-        .map(|index| VertexId(format!("vertex#sheet:{index}")))
+        .map(|index| {
+            VertexId::mint(format!("test:model:vertex#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..4)
-        .map(|index| EdgeId(format!("edge#sheet:{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("test:model:edge#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..4)
-        .map(|index| CurveId(format!("curve#sheet:{index}")))
+        .map(|index| {
+            CurveId::mint(format!("test:model:curve#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge#sheet:{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("test:model:coedge#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let pcurve_ids = (0..4)
-        .map(|index| PcurveId(format!("pcurve#sheet:{index}")))
+        .map(|index| {
+            PcurveId::mint(format!("test:model:pcurve#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -984,16 +926,16 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ir.model.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(start.x, start.y), pcurve_end],
-                weights: None,
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(start.x, start.y), pcurve_end],
+                    None,
+                    false,
+                )
+                .expect("valid sheet pcurve"),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, 1.0]),
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
         });
         let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_ids[index].clone(),
@@ -1002,20 +944,25 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         }];
         if index == 0 {
             let midpoint = pcurve_end;
-            let split_pcurve_id = PcurveId("pcurve#sheet:split".into());
+            let split_pcurve_id =
+                PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
             ir.model.pcurves.push(Pcurve {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
-                    degree: 1,
-                    knots: vec![0.0, 0.0, 1.0, 1.0],
-                    control_points: vec![midpoint, Point2::new(end_position.x, end_position.y)],
-                    weights: None,
-                    periodic: false,
+                    nurbs: PcurveNurbs::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![midpoint, Point2::new(end_position.x, end_position.y)],
+                        None,
+                        false,
+                    )
+                    .expect("valid split sheet pcurve"),
                 },
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some([0.0, 1.0]),
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some([0.0, 1.0]),
+                    None,
+                ),
             });
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: split_pcurve_id,
@@ -1027,28 +974,26 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[end].clone(),
-            previous: coedge_ids[(index + 3) % 4].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: pcurve_uses,
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids.clone(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: cadmpeg_ir::topology::FaceLoops::classified(Some(loop_id), Vec::new()),
         name: None,
         color: None,
         tolerance: None,
@@ -1068,7 +1013,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![RegionId("region#sheet".into())],
+        regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -1081,8 +1026,11 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         coedge_ids[1].clone(),
         coedge_ids[0].clone(),
     ];
-    ir.model.loops[0].coedges = reversed_order.to_vec();
-    for (index, coedge_id) in reversed_order.iter().enumerate() {
+    let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
+    ir.model.loops[0]
+        .replace_ring(reversed_order.to_vec(), vertex_uses)
+        .expect("reversed loop ring remains valid");
+    for coedge_id in &reversed_order {
         let coedge = ir
             .model
             .coedges
@@ -1090,17 +1038,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             .find(|coedge| coedge.id == *coedge_id)
             .unwrap();
         coedge.sense = Sense::Reversed;
-        coedge.next = reversed_order[(index + 1) % reversed_order.len()].clone();
-        coedge.previous =
-            reversed_order[(index + reversed_order.len() - 1) % reversed_order.len()].clone();
     }
 
-    let plan = IgesEncoder::new(IgesWriteOptions::default())
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -1142,12 +1082,7 @@ fn encode_regenerates_a_decoded_trimmed_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -1172,12 +1107,7 @@ fn encode_regenerates_decoded_trimmed_sheet_inner_loop_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let round_trip = IgesCodec
@@ -1202,12 +1132,7 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
@@ -1233,12 +1158,7 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
@@ -1263,11 +1183,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("source fixture decodes");
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
             .expect("fixture is semantically writable");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("write succeeds");
@@ -1276,7 +1192,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
             .expect("generated IGES decodes")
     };
     let parameter = |ir: &CadIr, entity_type: i64, index: usize| {
-        ir.native.namespace("iges").unwrap().arenas["entities"]
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
             .and_then(|entity| entity.field("parameters"))
@@ -1294,7 +1210,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
     assert_eq!(parameter(trimmed.ir(), 142, 5), 2);
 
     let brep = regenerate(explicit_tetrahedron_solid_file());
-    let edge_list = brep.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let edge_list = brep.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|entity| entity.field("entity_type") == Some(504.into()))
         .expect("generated B-rep has an edge list");
@@ -1304,25 +1220,25 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 
 #[test]
 fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametrically_bounded_plane_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let pcurve = ir.model.pcurves.first_mut().unwrap();
-        let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+        let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
-        control_points[0].u += 0.25;
+        nurbs
+            .edit_control_points(|points| points[0].u += 0.25)
+            .unwrap();
     }
 
-    let Err(error) = IgesEncoder::default().plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    }) else {
+    let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
         panic!("disagreeing pcurve endpoints were accepted")
     };
     assert!(
@@ -1346,16 +1262,11 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
         .unwrap_or_else(|| panic!("losses={:#?}", decoded.report().losses));
     assert_eq!(coedge.pcurves.len(), 2);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
@@ -1380,12 +1291,13 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
 
 #[test]
 fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(multi_pcurve_boundary_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let coedge = ir.model.coedges.first_mut().unwrap();
@@ -1403,19 +1315,14 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
                 .iter_mut()
                 .find(|pcurve| pcurve.id == pcurve_id)
                 .unwrap();
-            let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+            let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
                 panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
             };
-            control_points.reverse();
+            nurbs.edit_control_points(<[_]>::reverse).unwrap();
         }
     }
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
@@ -1444,12 +1351,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report
@@ -1501,12 +1403,13 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
 
 #[test]
 fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let coedge_index = decoded
         .ir()
         .model
@@ -1568,7 +1471,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
                     .loops
                     .iter()
                     .find(|loop_| loop_.id == *loop_id)
-                    .is_some_and(|loop_| loop_.coedges.contains(&coedge_id))
+                    .is_some_and(|loop_| loop_.coedges().contains(&coedge_id))
             })
         })
         .unwrap();
@@ -1579,22 +1482,30 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .iter()
         .find(|surface| surface.id == face.surface)
         .unwrap();
-    let start_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, start).unwrap();
-    let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
-    let pcurve_id = PcurveId("pcurve#brep:source-less".into());
+    let start_uv = cadmpeg_ir::eval::analytic_surface_parameters(
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+        start,
+    )
+    .unwrap();
+    let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+        end,
+    )
+    .unwrap();
+    let pcurve_id = PcurveId::mint("test:model:pcurve#brep:source-less").expect("identity grammar");
     decoded.ir_mut().model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![start_uv, end_uv],
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![start_uv, end_uv],
+                None,
+                false,
+            )
+            .expect("valid source-less pcurve"),
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some([0.0, 1.0]),
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
     });
     decoded.ir_mut().model.coedges[coedge_index]
         .pcurves
@@ -1604,12 +1515,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             parameter_range: None,
         });
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(report.census.counts.get("508_loop"), Some(&4));
@@ -1641,12 +1547,7 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
@@ -1656,8 +1557,8 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
     assert_eq!(round_trip.ir().model.faces.len(), 1);
     assert_eq!(round_trip.ir().model.loops.len(), 1);
     let loop_ = &round_trip.ir().model.loops[0];
-    assert!(loop_.coedges.is_empty());
-    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert!(loop_.coedges().is_empty());
+    assert!(loop_.singular_vertex().is_some());
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",
@@ -1669,20 +1570,20 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
 
 #[test]
 fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir_mut().model.loops[0].boundary_role = LoopBoundaryRole::Unspecified;
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir = decoded.ir_mut();
+        let ids = ir.model.faces[0].loops.to_vec();
+        ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
+    }
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
@@ -1690,7 +1591,7 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.loops[0].boundary_role,
+        round_trip.ir().model.loops[0].boundary_role_in(&round_trip.ir().model.faces),
         LoopBoundaryRole::Unspecified
     );
     assert!(
@@ -1702,20 +1603,16 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
 
 #[test]
 fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.vertices[0].tolerance = Some(0.25);
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
@@ -1740,12 +1637,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
@@ -1835,12 +1727,13 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
 
 #[test]
 fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let body = decoded
         .ir()
         .model
@@ -1892,7 +1785,10 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter_mut()
         .find(|face| face.id == target_face_id)
         .unwrap()
-        .loops = vec![moved_loop_id.clone(), outer_loop_id.clone()];
+        .loops = cadmpeg_ir::topology::FaceLoops::classified(
+        Some(outer_loop_id.clone()),
+        vec![moved_loop_id.clone()],
+    );
     decoded
         .ir_mut()
         .model
@@ -1916,7 +1812,6 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
             .find(|loop_| loop_.id == moved_loop_id)
             .unwrap();
         moved_loop.face = target_face_id;
-        moved_loop.boundary_role = LoopBoundaryRole::Inner;
     }
 
     let emitted_loop_ids = decoded
@@ -1935,19 +1830,14 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .position(|loop_id| *loop_id == moved_loop_id)
         .unwrap();
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    let entities = &round_trip.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &round_trip.ir().native.namespace("iges").unwrap().arenas()["entities"];
     let loop_sequences = entities
         .iter()
         .filter(|entity| entity.field("entity_type") == Some(510.into()))
@@ -1990,3 +1880,5 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
 
 mod curves;
 mod region_and_surface;
+mod replay;
+mod targets;

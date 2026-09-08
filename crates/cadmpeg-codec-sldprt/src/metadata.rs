@@ -146,7 +146,7 @@ fn scan_units_xml(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
-    let Some(text) = xml_text(section.payload()) else {
+    let Some(text) = crate::container::xml_text(section.payload()) else {
         return;
     };
     let Ok(document) = roxmltree::Document::parse(&text) else {
@@ -171,20 +171,6 @@ fn scan_units_xml(
             vec![AttributeValue::Integer(code)],
             annotations,
         ));
-    }
-}
-
-fn xml_text(bytes: &[u8]) -> Option<String> {
-    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
-    if bytes.starts_with(&[0xff, 0xfe]) {
-        let mut view = View::over_retained(&bytes[2..]);
-        let mut units = Vec::new();
-        while let Some(unit) = view.u16_le() {
-            units.push(unit);
-        }
-        Some(String::from_utf16_lossy(&units))
-    } else {
-        std::str::from_utf8(bytes).ok().map(str::to_string)
     }
 }
 
@@ -304,13 +290,14 @@ fn attribute(
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
 ) -> SourceAttribute {
-    let id = AttributeId(format!(
+    let id = AttributeId::mint(format!(
         "sldprt:metadata:{name}#{}:{offset}",
         section.ordinal()
-    ));
+    ))
+    .expect("identity grammar");
     crate::annotations::note(
         annotations,
-        id.0.clone(),
+        id.as_str().to_owned(),
         section.display_name(),
         offset as u64,
         std::str::from_utf8(token).unwrap_or(name),

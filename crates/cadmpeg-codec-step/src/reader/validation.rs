@@ -114,13 +114,8 @@ pub(super) fn decode(
             let Some(item) = exchange.records.get(&item_id) else {
                 continue;
             };
-            let scale = geometry
-                .length_scales
-                .get(&item_id)
-                .copied()
-                .or_else(|| geometry.length_scales.get(&representation_id).copied())
-                .unwrap_or(geometry.length_scale);
-            let expected = expected_value(item, exchange, scale, &mut losses);
+            let scale = geometry.units.length([item_id, representation_id]);
+            let expected = expected_value(item_id, item, exchange, scale, &mut losses);
             let Some(expected) = expected else {
                 warnings.push(format!(
                     "geometric validation property #{property_id} has unsupported item #{item_id}"
@@ -182,7 +177,7 @@ pub(super) fn decode(
         }
     }
     ir.model.points.retain(|point| {
-        let id = step_id(&point.id.0);
+        let id = step_id(point.id.as_str());
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
     StageOutcome {
@@ -195,6 +190,7 @@ pub(super) fn decode(
 }
 
 fn expected_value(
+    id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     scale: f64,
@@ -217,7 +213,7 @@ fn expected_value(
         .iter()
         .flat_map(|partial| partial.parameters.iter())
         .find_map(area_or_volume_measure)?;
-    let scale = measure_scale(record, exchange, scale, kind, losses);
+    let scale = measure_scale(id, record, exchange, scale, kind, losses);
     Some(match kind {
         "AREA_MEASURE" => Expected::Area(value * scale),
         "VOLUME_MEASURE" => Expected::Volume(value * scale),
@@ -226,6 +222,7 @@ fn expected_value(
 }
 
 fn measure_scale(
+    id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     fallback: f64,
@@ -249,8 +246,7 @@ fn measure_scale(
         })
         .unwrap_or_else(|| {
             losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
-                    "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",
-                    record.id,
+                    "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
                 )));
             fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
         })
@@ -346,8 +342,8 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     let mut coordinate_scale = 0.0_f64;
     for mesh in meshes {
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
-        for triangle in &mesh.triangles {
-            let [a, b, c] = triangle.map(|index| mesh.vertices.get(index as usize).copied());
+        for triangle in mesh.triangles() {
+            let [a, b, c] = triangle.map(|index| mesh.vertices().get(index as usize).copied());
             let (Some(a), Some(b), Some(c)) = (a, b, c) else {
                 return None;
             };

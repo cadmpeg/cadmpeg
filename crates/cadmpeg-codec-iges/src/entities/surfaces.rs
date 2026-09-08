@@ -7,15 +7,15 @@ use super::geometry::{
     ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
+use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
-    SurfaceGeometry, SurfaceParameterAxis,
+    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -69,8 +69,12 @@ pub(super) fn type128_parameter_bound_intervals(
         .ok()
 }
 
-fn tabulated_directrix_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
-    if matches!(dialect, Dialect::V4_0) {
+fn tabulated_directrix_type_allowed(
+    entity_type: i64,
+    form: i64,
+    global_table: GlobalTable,
+) -> bool {
+    if matches!(global_table, GlobalTable::V4_0) {
         return matches!(
             (entity_type, form),
             (100 | 102 | 110 | 112, 0) | (104, 0..=3) | (126, 0..=5)
@@ -141,23 +145,22 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
                 && major_radius == minor_radius
         }
         CurveGeometry::Nurbs(curve) => {
-            curve.degree == 1
-                && curve.weights.is_none()
-                && curve.control_points.len() == 2
+            curve.degree() == 1
+                && curve.weights().is_none()
+                && curve.control_points().len() == 2
                 && curve
-                    .control_points
+                    .control_points()
                     .iter()
                     .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
-                && curve.control_points[0]
-                    .distance(curve.control_points[1])
+                && curve.control_points()[0]
+                    .distance(curve.control_points()[1])
                     .is_finite()
-                && curve.control_points[0].distance(curve.control_points[1]) > 0.0
-                && curve.knots.len() == 4
-                && curve.knots[0] == curve.knots[1]
-                && curve.knots[2] == curve.knots[3]
-                && curve.knots[1].is_finite()
-                && curve.knots[1] < curve.knots[2]
-                && curve.knots[2].is_finite()
+                && curve.control_points()[0].distance(curve.control_points()[1]) > 0.0
+                && curve.knots()[0] == curve.knots()[1]
+                && curve.knots()[2] == curve.knots()[3]
+                && curve.knots()[1].is_finite()
+                && curve.knots()[1] < curve.knots()[2]
+                && curve.knots()[2].is_finite()
         }
         _ => false,
     }
@@ -171,44 +174,43 @@ fn interval_certified_linear_bezier(
     if record.integer(0) != Some(126) {
         return false;
     }
-    let Ok(degree) = usize::try_from(geometry.degree) else {
+    let Ok(degree) = usize::try_from(geometry.degree()) else {
         return false;
     };
     let Some(control_count) = degree.checked_add(1) else {
         return false;
     };
     if degree < 2
-        || geometry.weights.is_some()
-        || geometry.periodic
-        || geometry.control_points.len() != control_count
-        || geometry.knots.len() != control_count * 2
+        || geometry.weights().is_some()
+        || geometry.periodic()
+        || geometry.control_points().len() != control_count
     {
         return false;
     }
-    let Some(lower) = geometry.knots.first().copied() else {
+    let Some(lower) = geometry.knots().first().copied() else {
         return false;
     };
-    let Some(upper) = geometry.knots.last().copied() else {
+    let Some(upper) = geometry.knots().last().copied() else {
         return false;
     };
     if !lower.is_finite()
         || !upper.is_finite()
         || lower >= upper
-        || geometry.knots[..control_count]
+        || geometry.knots()[..control_count]
             .iter()
             .any(|knot| *knot != lower)
-        || geometry.knots[control_count..]
+        || geometry.knots()[control_count..]
             .iter()
             .any(|knot| *knot != upper)
-        || geometry.control_points.iter().any(|point| {
+        || geometry.control_points().iter().any(|point| {
             [point.x, point.y, point.z]
                 .into_iter()
                 .any(|value| !value.is_finite())
         })
         || geometry
-            .control_points
+            .control_points()
             .first()
-            .zip(geometry.control_points.last())
+            .zip(geometry.control_points().last())
             .is_none_or(|(first, last)| {
                 let distance = first.distance(*last);
                 !distance.is_finite() || distance <= 0.0
@@ -292,8 +294,12 @@ fn equal_arc_length_parameterization(
         ir.model
             .curves
             .iter()
-            .find(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
-            .map(|curve| &curve.geometry)
+            .find(|curve| {
+                curve.id
+                    == CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar")
+            })
+            .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
     };
     let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
     else {
@@ -326,8 +332,9 @@ fn bounded_evaluable_curve(
     index: &CompositeIndex,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let curve = index.curve_by_id(ir, curve_id)?;
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
     if matches!(
-        &curve.geometry,
+        geometry,
         CurveGeometry::Composite { .. }
             | CurveGeometry::Procedural { .. }
             | CurveGeometry::Unknown { .. }
@@ -342,7 +349,7 @@ fn bounded_evaluable_curve(
     {
         return None;
     }
-    let geometry = curve.geometry.clone();
+    let geometry = geometry.clone();
     parameter_interval
         .into_iter()
         .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
@@ -373,7 +380,7 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .map(|curve| &curve.geometry)
+        .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry))
 }
 
 #[derive(Clone)]
@@ -420,32 +427,27 @@ fn insert_homogeneous_curve_knot(
 }
 
 fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if count <= degree
-        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
-        || !knots_nondecreasing(&curve.knots)
-    {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
+    if !knots_nondecreasing(curve.knots()) {
         return None;
     }
-    let weights = curve.weights.as_deref().map_or_else(
+    let weights = curve.weights().map_or_else(
         || cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok(),
         |weights| Some(weights.to_owned()),
     )?;
-    if weights.len() != count
-        || curve.control_points.iter().any(|point| {
-            [point.x, point.y, point.z]
-                .into_iter()
-                .any(|value| !value.is_finite())
-        })
-        || weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    if curve.control_points().iter().any(|point| {
+        [point.x, point.y, point.z]
+            .into_iter()
+            .any(|value| !value.is_finite())
+    }) || weights
+        .iter()
+        .any(|weight| !weight.is_finite() || *weight <= 0.0)
     {
         return None;
     }
     let mut controls = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| [weight * point.x, weight * point.y, weight * point.z, weight])
@@ -456,7 +458,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
 
     if degree == 0 {
         let mut spans = Vec::new();
-        for (index, window) in curve.knots.windows(2).enumerate() {
+        for (index, window) in curve.knots().windows(2).enumerate() {
             if window[0] < window[1] {
                 spans.push(HomogeneousBezierSpan {
                     domain: [window[0], window[1]],
@@ -467,7 +469,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
         return (!spans.is_empty()).then_some(spans);
     }
 
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let domain = [*knots.get(degree)?, *knots.get(count)?];
     let mut internal = knots[degree + 1..count]
         .iter()
@@ -677,8 +679,8 @@ fn aligned_homogeneous_spans(
 }
 
 fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
-    let count = curve.control_points.len();
-    let weights = curve.weights.as_deref().map_or_else(
+    let count = curve.control_points().len();
+    let weights = curve.weights().map_or_else(
         || std::iter::repeat_n(1.0, count).collect(),
         <[f64]>::to_vec,
     );
@@ -713,7 +715,7 @@ fn same_basis_ruled_surface(
     second: &NurbsCurve,
     weights: &[f64],
 ) -> Option<NurbsSurface> {
-    let u_count = u32::try_from(first.control_points.len()).ok()?;
+    let u_count = u32::try_from(first.control_points().len()).ok()?;
     let surface_weights = weights
         .iter()
         .copied()
@@ -724,25 +726,26 @@ fn same_basis_ruled_surface(
     } else {
         Some(surface_weights)
     };
-    Some(NurbsSurface {
-        u_degree: first.degree,
-        v_degree: 1,
-        u_knots: first.knots.clone(),
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+    NurbsSurface::new(
+        first.degree(),
+        1,
+        first.knots().to_vec(),
+        vec![0.0, 0.0, 1.0, 1.0],
         u_count,
-        v_count: 2,
-        control_points: first
-            .control_points
+        2,
+        first
+            .control_points()
             .iter()
             .copied()
-            .zip(second.control_points.iter().copied())
+            .zip(second.control_points().iter().copied())
             .flat_map(|(first, second)| [first, second])
             .collect(),
         weights,
-        normal_reversed: false,
-        u_periodic: first.periodic && second.periodic,
-        v_periodic: false,
-    })
+        false,
+        first.periodic() && second.periodic(),
+        false,
+    )
+    .ok()
 }
 
 fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) -> Option<()> {
@@ -765,19 +768,19 @@ fn ruled_surface_carrier(
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Option<NurbsSurface> {
-    if first.degree == second.degree
-        && first.knots == second.knots
-        && first.control_points.len() == second.control_points.len()
+    if first.degree() == second.degree()
+        && first.knots() == second.knots()
+        && first.control_points().len() == second.control_points().len()
     {
         if let Some(weights) = projectively_shared_weights(first, second) {
-            admit_surface_pole_count(ctx, first.control_points.len().checked_mul(2)?)?;
+            admit_surface_pole_count(ctx, first.control_points().len().checked_mul(2)?)?;
             return same_basis_ruled_surface(first, second, &weights);
         }
     }
 
-    let degree = usize::try_from(first.degree)
+    let degree = usize::try_from(first.degree())
         .ok()?
-        .checked_add(usize::try_from(second.degree).ok()?)?;
+        .checked_add(usize::try_from(second.degree()).ok()?)?;
     if degree == 0 {
         return None;
     }
@@ -788,8 +791,9 @@ fn ruled_surface_carrier(
     let mut homogeneous = Vec::with_capacity(pole_count);
     let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
-        if first_span.controls.len() != usize::try_from(first.degree).ok()?.checked_add(1)?
-            || second_span.controls.len() != usize::try_from(second.degree).ok()?.checked_add(1)?
+        if first_span.controls.len() != usize::try_from(first.degree()).ok()?.checked_add(1)?
+            || second_span.controls.len()
+                != usize::try_from(second.degree()).ok()?.checked_add(1)?
         {
             return None;
         }
@@ -842,19 +846,20 @@ fn ruled_surface_carrier(
     } else {
         Some(weights)
     };
-    Some(NurbsSurface {
-        u_degree: u32::try_from(degree).ok()?,
-        v_degree: 1,
+    NurbsSurface::new(
+        u32::try_from(degree).ok()?,
+        1,
         u_knots,
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: u32::try_from(u_count).ok()?,
-        v_count: 2,
+        vec![0.0, 0.0, 1.0, 1.0],
+        u32::try_from(u_count).ok()?,
+        2,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: first.periodic && second.periodic,
-        v_periodic: false,
-    })
+        false,
+        first.periodic() && second.periodic(),
+        false,
+    )
+    .ok()
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -873,13 +878,13 @@ fn homogeneous_curve_boundary_matches(
     }
     let first_spans = homogeneous_bezier_spans(first)?;
     let second_spans = homogeneous_bezier_spans(second)?;
-    if first.degree != second.degree
-        || first.knots != second.knots
+    if first.degree() != second.degree()
+        || first.knots() != second.knots()
         || first_spans.len() != second_spans.len()
     {
         return None;
     }
-    let degree = usize::try_from(first.degree).ok()?;
+    let degree = usize::try_from(first.degree()).ok()?;
     let product_degree = degree.checked_mul(2)?;
     let binomial = |n: usize, k: usize| {
         let k = k.min(n - k);
@@ -945,12 +950,6 @@ fn surface_boundary_is_closed(
     let first = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?;
     let second = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?;
     homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
-}
-
-fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
-    let first = *knots.first()?;
-    let last = *knots.last()?;
-    Some(knots.iter().rev().map(|knot| first + last - knot).collect())
 }
 
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -1060,7 +1059,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -1080,7 +1079,7 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *surface);
+        .find(|procedural| ir.model.procedural_surface_owner(&procedural.id) == Some(surface));
     let parameters =
         procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds));
     let parameters = parameters.unwrap_or([0.0, 0.0]);
@@ -1259,7 +1258,8 @@ pub(super) fn project(
             continue;
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: transform.point(local_origin),
                 normal,
@@ -1308,8 +1308,10 @@ pub(super) fn project(
             ));
             continue;
         }
-        let first_id = CurveId(format!("iges:model:curve#D{first_sequence}"));
-        let second_id = CurveId(format!("iges:model:curve#D{second_sequence}"));
+        let first_id =
+            CurveId::mint(format!("iges:model:curve#D{first_sequence}")).expect("identity grammar");
+        let second_id = CurveId::mint(format!("iges:model:curve#D{second_sequence}"))
+            .expect("identity grammar");
         let (Some((first, first_interval)), Some((mut second, second_interval))) = (
             bounded_nurbs(ir, &first_id, ctx, &composite_index),
             bounded_nurbs(ir, &second_id, ctx, &composite_index),
@@ -1338,14 +1340,22 @@ pub(super) fn project(
             continue;
         }
         if direction_flag == 1 {
-            second.control_points.reverse();
-            let Some(knots) = reverse_knots(&second.knots) else {
-                losses.push(entity_loss(entry, "second rail knot vector is empty"));
+            let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
+            second.reverse_parameterization();
+            if second
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot += knot_sum;
+                    }
+                })
+                .is_err()
+            {
+                losses.push(
+                    IgesLossCode::NurbsTransformNonFinite
+                        .note("IGES reversed second rail knots are non-finite")
+                        .with_provenance(entry.loss_provenance()),
+                );
                 continue;
-            };
-            second.knots = knots;
-            if let Some(weights) = &mut second.weights {
-                weights.reverse();
             }
         }
         let Some(surface) = ruled_surface_carrier(&first, &second, ctx) else {
@@ -1355,27 +1365,35 @@ pub(super) fn project(
             ));
             continue;
         };
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Ruled {
-                first: CurveId(format!("iges:model:curve#D{first_sequence}")),
-                second: CurveId(format!("iges:model:curve#D{second_sequence}")),
-            },
-            cache_fit_tolerance: None,
-            record_bounds: Some([
-                Some(first_interval[0]),
-                Some(first_interval[1]),
-                Some(second_interval[0]),
-                Some(second_interval[1]),
-            ]),
-        });
+        let _attached = ir.model.add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Ruled {
+                    first: CurveId::mint(format!("iges:model:curve#D{first_sequence}"))
+                        .expect("identity grammar"),
+                    second: CurveId::mint(format!("iges:model:curve#D{second_sequence}"))
+                        .expect("identity grammar"),
+                },
+                Some([
+                    Some(first_interval[0]),
+                    Some(first_interval[1]),
+                    Some(second_interval[0]),
+                    Some(second_interval[1]),
+                ]),
+            ),
+        );
         losses.push(
             IgesLossCode::RuledDevelopabilityNotTransferred
                 .note("Type 118 developability is retained only in the native entity record")
@@ -1407,11 +1425,11 @@ pub(super) fn project(
         if !tabulated_directrix_type_allowed(
             directrix_entry.entity_type,
             directrix_entry.form,
-            global.dialect(),
+            global.global_table(),
         ) {
             losses.push(entity_loss(
                 entry,
-                "directrix entity is outside the declared dialect",
+                "directrix entity is outside the effective specification family",
             ));
             continue;
         }
@@ -1477,10 +1495,11 @@ pub(super) fn project(
             let procedural_directrix = if entry.transform == 0 {
                 directrix_id
             } else {
-                let placed_id = CurveId(format!(
+                let placed_id = CurveId::mint(format!(
                     "iges:model:curve#D{}-placed-directrix",
                     entry.sequence
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Transformed {
@@ -1491,34 +1510,40 @@ pub(super) fn project(
                 });
                 placed_id
             };
-            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
-            let procedural_id =
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
+                "iges:model:procedural-surface#D{}",
+                entry.sequence
+            ))
+            .expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(source_object(entry)),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Extrusion {
-                    directrix: procedural_directrix,
-                    parameter_interval: Some(source_interval),
-                    direction,
-                    native_position: Some(target),
-                    revision_form: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            });
+            let _attached = ir.model.add_procedural_surface(
+                surface_id,
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: procedural_directrix,
+                        parameter_interval: Some(source_interval),
+                        direction,
+                        native_position: Some(target),
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
             decoded.insert(entry.sequence);
             continue;
         };
@@ -1534,16 +1559,27 @@ pub(super) fn project(
                 source_parameter_interval(geometry, cached_interval)
             });
         let mut placed_directrix = directrix;
-        if entry.transform != 0 {
-            for point in &mut placed_directrix.control_points {
-                *point = transform.point(*point);
-            }
+        if entry.transform != 0
+            && placed_directrix
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = transform.point(*point);
+                    }
+                })
+                .is_err()
+        {
+            losses.push(
+                IgesLossCode::NurbsTransformNonFinite
+                    .note("IGES placement produces non-finite directrix poles")
+                    .with_provenance(entry.loss_provenance()),
+            );
+            continue;
         }
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            placed_directrix.degree,
-            &placed_directrix.knots,
-            &placed_directrix.control_points,
-            placed_directrix.weights.as_deref(),
+            placed_directrix.degree(),
+            placed_directrix.knots(),
+            placed_directrix.control_points(),
+            placed_directrix.weights(),
             cached_interval[0],
         ) else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
@@ -1559,15 +1595,15 @@ pub(super) fn project(
             continue;
         }
         let control_points = placed_directrix
-            .control_points
+            .control_points()
             .iter()
             .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
-        let Ok(u_count) = u32::try_from(placed_directrix.control_points.len()) else {
+        let Ok(u_count) = u32::try_from(placed_directrix.control_points().len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights = placed_directrix.weights.as_ref().map(|weights| {
+        let weights = placed_directrix.weights().map(|weights| {
             weights
                 .iter()
                 .flat_map(|weight| [*weight, *weight])
@@ -1576,10 +1612,11 @@ pub(super) fn project(
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
-            let placed_id = CurveId(format!(
+            let placed_id = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-directrix",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
                 geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
@@ -1587,42 +1624,55 @@ pub(super) fn project(
             });
             placed_id
         };
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
+        let Ok(surface) = NurbsSurface::new(
+            placed_directrix.degree(),
+            1,
+            placed_directrix.knots().to_vec(),
+            vec![0.0, 0.0, 1.0, 1.0],
+            u_count,
+            2,
+            control_points,
+            weights,
+            false,
+            placed_directrix.periodic(),
+            false,
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "tabulated-cylinder carrier cardinalities are inconsistent",
+            ));
+            continue;
+        };
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: placed_directrix.degree,
-                v_degree: 1,
-                u_knots: placed_directrix.knots,
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count,
-                v_count: 2,
-                control_points,
-                weights,
-                normal_reversed: false,
-                u_periodic: placed_directrix.periodic,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Extrusion {
-                directrix: procedural_directrix,
-                parameter_interval: Some(source_interval),
-                direction,
-                native_position: Some(target),
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: Some([
-                Some(carrier_interval[0]),
-                Some(carrier_interval[1]),
-                None,
-                None,
-            ]),
-        });
+        let _attached = ir.model.add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: procedural_directrix,
+                    parameter_interval: Some(source_interval),
+                    direction,
+                    native_position: Some(target),
+                    revision_form: None,
+                },
+                Some([
+                    Some(carrier_interval[0]),
+                    Some(carrier_interval[1]),
+                    None,
+                    None,
+                ]),
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 
@@ -1682,7 +1732,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        let axis_id = CurveId(format!("iges:model:curve#D{axis_sequence}"));
+        let axis_id =
+            CurveId::mint(format!("iges:model:curve#D{axis_sequence}")).expect("identity grammar");
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
             losses.push(entity_loss(entry, "revolution axis carrier is missing"));
             continue;
@@ -1732,10 +1783,11 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                procedural_directrix = CurveId(format!(
+                procedural_directrix = CurveId::mint(format!(
                     "iges:model:curve#D{}-placed-generatrix",
                     entry.sequence
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Transformed {
@@ -1754,37 +1806,43 @@ pub(super) fn project(
                 };
                 procedural_axis_direction = direction.scale(orientation);
             }
-            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
-            let procedural_id =
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
+                "iges:model:procedural-surface#D{}",
+                entry.sequence
+            ))
+            .expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(source_object(entry)),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: procedural_directrix,
-                    axis_origin: procedural_axis_origin,
-                    axis_direction: procedural_axis_direction,
-                    angular_interval: [start_angle, end_angle],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(source_interval),
-                    transposed: false,
-                    revision_form: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            });
+            let _attached = ir.model.add_procedural_surface(
+                surface_id,
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: procedural_directrix,
+                        axis_origin: procedural_axis_origin,
+                        axis_direction: procedural_axis_direction,
+                        angular_interval: [start_angle, end_angle],
+                        angular_parameter_interval: None,
+                        parameter_interval: Some(source_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
             decoded.insert(entry.sequence);
             continue;
         };
@@ -1799,7 +1857,7 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
-        let Ok(u_count) = u32::try_from(generatrix.control_points.len()) else {
+        let Ok(u_count) = u32::try_from(generatrix.control_points().len()) else {
             losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
             continue;
         };
@@ -1808,7 +1866,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface_pole_count) = generatrix
-            .control_points
+            .control_points()
             .len()
             .checked_mul(angular_controls.len())
         else {
@@ -1829,13 +1887,12 @@ pub(super) fn project(
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
-        for (u_index, point) in generatrix.control_points.iter().enumerate() {
+        for (u_index, point) in generatrix.control_points().iter().enumerate() {
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
             let u_weight = generatrix
-                .weights
-                .as_ref()
+                .weights()
                 .and_then(|values| values.get(u_index))
                 .copied()
                 .unwrap_or(1.0);
@@ -1847,28 +1904,38 @@ pub(super) fn project(
             }
         }
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
+        let Ok(surface) = NurbsSurface::new(
+            generatrix.degree(),
+            2,
+            generatrix.knots().to_vec(),
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            Some(weights),
+            false,
+            generatrix.periodic(),
+            super::curve_conversion::angularly_equal(
+                end_angle - start_angle,
+                std::f64::consts::TAU,
+            ),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "surface-of-revolution carrier cardinalities are inconsistent",
+            ));
+            continue;
+        };
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: generatrix.degree,
-                v_degree: 2,
-                u_knots: generatrix.knots,
-                v_knots,
-                u_count,
-                v_count,
-                control_points,
-                weights: Some(weights),
-                normal_reversed: false,
-                u_periodic: generatrix.periodic,
-                v_periodic: super::curve_conversion::angularly_equal(
-                    end_angle - start_angle,
-                    std::f64::consts::TAU,
-                ),
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        let mut procedural_directrix = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+        let mut procedural_directrix =
+            CurveId::mint(format!("iges:model:curve#D{generatrix_sequence}"))
+                .expect("identity grammar");
         let mut procedural_axis_origin = axis_origin;
         let mut procedural_axis_direction = axis_direction;
         let procedural_is_exact = if entry.transform == 0 {
@@ -1876,13 +1943,26 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             let mut placed_generatrix = placed_generatrix
                 .expect("a transformed revolution retains its generatrix until placement");
-            for point in &mut placed_generatrix.control_points {
-                *point = transform.point(*point);
+            if placed_generatrix
+                .edit_control_points(|points| {
+                    for point in points {
+                        *point = transform.point(*point);
+                    }
+                })
+                .is_err()
+            {
+                losses.push(
+                    IgesLossCode::NurbsTransformNonFinite
+                        .note("IGES placement produces non-finite generatrix poles")
+                        .with_provenance(entry.loss_provenance()),
+                );
+                continue;
             }
-            procedural_directrix = CurveId(format!(
+            procedural_directrix = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-generatrix",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Nurbs(placed_generatrix),
@@ -1902,30 +1982,32 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!(
-                    "iges:model:procedural-surface#D{}",
-                    entry.sequence
-                )),
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: procedural_directrix,
-                    axis_origin: procedural_axis_origin,
-                    axis_direction: procedural_axis_direction,
-                    angular_interval: [start_angle, end_angle],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(source_interval),
-                    transposed: false,
-                    revision_form: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            });
+            let _attached = ir.model.add_procedural_surface(
+                surface_id,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: procedural_directrix,
+                        axis_origin: procedural_axis_origin,
+                        axis_direction: procedural_axis_direction,
+                        angular_interval: [start_angle, end_angle],
+                        angular_parameter_interval: None,
+                        parameter_interval: Some(source_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
         }
         decoded.insert(entry.sequence);
     }
@@ -2212,18 +2294,24 @@ pub(super) fn project(
                 }
             }
         }
-        let surface = NurbsSurface {
+        let Ok(surface) = NurbsSurface::new(
             u_degree,
             v_degree,
             u_knots,
             v_knots,
-            u_count: u_count_u32,
-            v_count: v_count_u32,
+            u_count_u32,
+            v_count_u32,
             control_points,
             weights,
-            normal_reversed: false,
-            u_periodic: flags[3] == Some(1),
-            v_periodic: flags[4] == Some(1),
+            false,
+            flags[3] == Some(1),
+            flags[4] == Some(1),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "spline surface cardinalities are inconsistent",
+            ));
+            continue;
         };
         for (declared, fixed_axis, fixed_range, varying_range, direction) in [
             (
@@ -2262,30 +2350,35 @@ pub(super) fn project(
                 continue 'surface;
             }
         }
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
-                    ranges: [u_range, v_range],
+        let _attached = ir.model.add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Exact {
+                    spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [u_range, v_range],
+                        extension: 0,
+                    },
                 },
-                extension: 0,
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: Some([
-                Some(u_range[0]),
-                Some(u_range[1]),
-                Some(v_range[0]),
-                Some(v_range[1]),
-            ]),
-        });
+                Some([
+                    Some(u_range[0]),
+                    Some(u_range[1]),
+                    Some(v_range[0]),
+                    Some(v_range[1]),
+                ]),
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 
@@ -2334,7 +2427,8 @@ pub(super) fn project(
             ));
             continue;
         }
-        let support_id = SurfaceId(format!("iges:model:surface#D{support_sequence}"));
+        let support_id = SurfaceId::mint(format!("iges:model:surface#D{support_sequence}"))
+            .expect("identity grammar");
         let Some(support) = ir
             .model
             .surfaces
@@ -2380,7 +2474,7 @@ pub(super) fn project(
             SurfaceGeometry::Plane { .. } => true,
             SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => false,
         };
@@ -2391,27 +2485,34 @@ pub(super) fn project(
             ));
             continue;
         }
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: support_id,
-                distance: signed_distance,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+        let _attached = ir.model.add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Offset {
+                    support: support_id,
+                    distance: signed_distance,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                None,
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 

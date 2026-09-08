@@ -18,7 +18,7 @@ fn row(id: u32, next: u32) -> CurveTopologyRow {
         type_byte: 0,
         feature_id: 0,
         directions: [1, 1],
-        faces: [10, 20],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(20)],
         next_edges: [next, next],
         offset: 0,
     }
@@ -28,21 +28,21 @@ fn builds_closed_face_side_rings_without_guessing() {
     let (half_edges, loops) = build(&[row(1, 2), row(2, 3), row(3, 1)]);
     assert_eq!(half_edges.len(), 6);
     assert_eq!(loops.len(), 2);
-    assert_eq!(loops[0].face_id, 10);
+    assert_eq!(loops[0].face_id, std::num::NonZeroU32::new(10));
     assert_eq!(
         loops[0].half_edges,
         vec![
             HalfEdgeId {
                 curve_id: 1,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             HalfEdgeId {
                 curve_id: 2,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             HalfEdgeId {
                 curve_id: 3,
-                side: 0
+                side: crate::topology::Side::Zero
             }
         ]
     );
@@ -68,14 +68,14 @@ fn withholds_ambiguous_successors() {
     let (half_edges, loops) = build(&[
         row(1, 2),
         CurveTopologyRow {
-            faces: [10, 10],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(10)],
             ..row(2, 1)
         },
     ]);
     assert!(half_edges.iter().any(|edge| edge.id
         == HalfEdgeId {
             curve_id: 1,
-            side: 0
+            side: crate::topology::Side::Zero
         }
         && edge.next.is_none()));
     assert!(loops.is_empty());
@@ -87,36 +87,36 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 1,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 1,
-                side: 1,
+                side: crate::topology::Side::One,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: Some(HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             }),
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: None,
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 2,
-                side: 1,
+                side: crate::topology::Side::One,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
     ];
@@ -126,11 +126,11 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         == vec![
             HalfEdgeId {
                 curve_id: 1,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             HalfEdgeId {
                 curve_id: 2,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
         ]));
 }
@@ -141,33 +141,33 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: None,
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 8,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
             id: HalfEdgeId {
                 curve_id: 8,
-                side: 1,
+                side: crate::topology::Side::One,
             },
-            face_id: 30,
+            face_id: std::num::NonZeroU32::new(30),
             next: None,
         },
     ];
@@ -176,11 +176,11 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         half_edges: vec![
             HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             HalfEdgeId {
                 curve_id: 8,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
         ],
     };
@@ -198,7 +198,7 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 start_vertex_id: 10,
                 end_vertex_id: Some(20),
@@ -206,7 +206,7 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 7,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 start_vertex_id: 20,
                 end_vertex_id: reverse_end,
@@ -228,7 +228,7 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: 10,
             end_vertex_id: None,
@@ -236,7 +236,7 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             start_vertex_id: 20,
             end_vertex_id: None,
@@ -286,11 +286,11 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         vec![
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0
+                side: crate::topology::Side::Zero
             },
             crate::topology::HalfEdgeId {
                 curve_id: 8,
-                side: 1
+                side: crate::topology::Side::One
             },
         ]
     );
@@ -302,7 +302,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
             incidence.half_edge
                 == crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 }
         })
         .expect("half-edge incidence");
@@ -393,13 +393,13 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .expect("decode");
     let model = &result.ir().model;
     let namespace = result.ir().native.namespace("creo").unwrap();
-    assert_eq!(namespace.arenas["half_edges"].len(), 12);
-    assert_eq!(namespace.arenas["loops"].len(), 4);
-    assert_eq!(namespace.arenas["topological_vertices"].len(), 4);
-    assert_eq!(namespace.arenas["half_edge_vertex_incidence"].len(), 12);
-    assert_eq!(namespace.arenas["face_components"].len(), 1);
-    assert_eq!(namespace.arenas["half_edges"][0].fields()["curve_id"], 10);
-    assert_eq!(namespace.arenas["half_edges"][0].fields()["side"], 0);
+    assert_eq!(namespace.arenas()["half_edges"].len(), 12);
+    assert_eq!(namespace.arenas()["loops"].len(), 4);
+    assert_eq!(namespace.arenas()["topological_vertices"].len(), 4);
+    assert_eq!(namespace.arenas()["half_edge_vertex_incidence"].len(), 12);
+    assert_eq!(namespace.arenas()["face_components"].len(), 1);
+    assert_eq!(namespace.arenas()["half_edges"][0].fields()["curve_id"], 10);
+    assert_eq!(namespace.arenas()["half_edges"][0].fields()["side"], 0);
 
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);
@@ -464,10 +464,9 @@ fn decode_transfers_closed_plane_intersection_brep() {
         cadmpeg_ir::topology::Sense::Forward
     );
     assert_eq!(model.loops.len(), 4);
-    assert!(model
-        .loops
-        .iter()
-        .all(|lp| lp.boundary_role == cadmpeg_ir::topology::LoopBoundaryRole::Outer));
+    assert!(model.loops.iter().all(|lp| {
+        lp.boundary_role_in(&model.faces) == cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    }));
     assert_eq!(model.coedges.len(), 12);
     assert_eq!(model.pcurves.len(), 12);
     assert!(model.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
@@ -486,7 +485,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("pcurve edge");
-        assert_eq!(pcurve.parameter_range, edge.param_range);
+        assert_eq!(pcurve.parameter_range(), edge.param_range);
     }
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.regions.len(), 1);
@@ -510,8 +509,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(
         edges,
         &[
-            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#10".to_string()),
-            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#11".to_string()),
+            cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#10".to_string())
+                .expect("identity grammar"),
+            cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#11".to_string())
+                .expect("identity grammar"),
         ]
     );
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");

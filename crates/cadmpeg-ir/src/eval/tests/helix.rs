@@ -5,8 +5,11 @@ use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefi
 use crate::ids::{CurveId, ProceduralCurveId};
 
 fn helix_fixture() -> (CadIr, CurveId) {
-    let curve_id = CurveId("helix-evaluation-curve".into());
-    let construction_id = ProceduralCurveId("helix-evaluation-construction".into());
+    let curve_id =
+        CurveId::mint("test:model:entity#helix-evaluation-curve").expect("valid identity");
+    let construction_id =
+        ProceduralCurveId::mint("test:model:entity#helix-evaluation-construction")
+            .expect("valid identity");
     let definition = ProceduralCurveDefinition::Helix {
         angle_range: [0.25, 2.0],
         center: Point3::new(1.0, -2.0, 3.0),
@@ -16,18 +19,18 @@ fn helix_fixture() -> (CadIr, CurveId) {
         apex_factor: 0.4,
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
+    ir.model.procedural_curves.push(procedural_curve! {
         id: construction_id,
-        curve: curve_id.clone(),
-        definition,
+        definition: definition,
         cache_fit_tolerance: None,
     });
     (ir, curve_id)

@@ -4,7 +4,7 @@
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_ir::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
@@ -21,11 +21,11 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
     assert!(scan
         .ledger
         .iter()
-        .any(|span| span.role == "local-extra" && span.end > span.start));
+        .any(|span| span.role.as_str() == "local-extra" && span.end > span.start));
     let descriptor = scan
         .ledger
         .iter()
-        .find(|span| span.role == "data-descriptor")
+        .find(|span| span.role.as_str() == "data-descriptor")
         .expect("ZIP64 descriptor");
     assert_eq!(descriptor.end - descriptor.start, 24);
 }
@@ -40,7 +40,7 @@ fn frames_streaming_data_descriptor_separately_from_padding() {
     let descriptors = scan
         .ledger
         .iter()
-        .filter(|span| span.role == "data-descriptor")
+        .filter(|span| span.role.as_str() == "data-descriptor")
         .collect::<Vec<_>>();
     assert_eq!(descriptors.len(), 1);
     assert!(matches!(descriptors[0].end - descriptors[0].start, 16 | 24));
@@ -69,7 +69,7 @@ fn inspects_and_closes_physical_ledger() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
-    assert_eq!(summary.format, "fcstd");
+    assert_eq!(summary.format(), "fcstd");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=4"));
     let result = FcstdCodec
         .decode(
@@ -103,7 +103,7 @@ fn inspects_and_closes_physical_ledger() {
         "end-record",
     ] {
         assert!(
-            ledger.iter().any(|span| span.role == role),
+            ledger.iter().any(|span| span.role.as_str() == role),
             "missing {role}"
         );
     }
@@ -128,7 +128,7 @@ fn decode_refuses_when_max_entities_is_below_object_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"
@@ -157,7 +157,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit FCStd entities"
         ),
@@ -193,7 +193,7 @@ fn thumbnail_bytes_are_retained_with_digest() {
         .retained_records
         .first()
         .expect("retained thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
+    assert_eq!(retained.data(), Some(b"png".as_slice()));
 }
 
 #[test]
@@ -231,8 +231,8 @@ fn retains_every_reference_to_a_shared_side_entry() {
 
     assert_eq!(shared.referenced_by.len(), 2);
     assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
-    assert_eq!(span.classification, "named_opaque");
-    assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(shared.id.as_str()));
     assert!(crate::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();

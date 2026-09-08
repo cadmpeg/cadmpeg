@@ -4,6 +4,10 @@
 
 use super::super::*;
 use super::*;
+use cadmpeg_ir::features::UnresolvedFamily;
+
+const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
+const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
@@ -18,30 +22,31 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             feature("sldprt:history:feature#0:1", None, 1),
         ],
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features = project_features(&[history]);
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+            id: cadmpeg_ir::features::ConfigurationId::mint("configuration")
+                .expect("identity grammar"),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: None,
             name: "configuration".into(),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 consumer.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: vec![predecessor.clone()],
-                    outputs: Vec::new(),
                     definition: ir.model.features[0].definition.clone(),
                 },
             )]),
@@ -75,7 +80,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.1)
                     },
                     ..
@@ -99,7 +104,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.4)
                     },
                     ..
@@ -151,7 +156,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(6.8) },
+                    termination: LinearTermination::Blind { length: Length(6.8) },
                     ..
                 }
             },
@@ -214,7 +219,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(4.2) },
+                    termination: LinearTermination::Blind { length: Length(4.2) },
                     ..
                 }
             },
@@ -237,9 +242,9 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
     assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
         project_feature_content(&feature, &HashMap::new()),
-        vec![FeatureSourceContent::Parameter(ParameterId(
-            "sldprt:model:parameter#1:2:0".into()
-        ))]
+        vec![FeatureSourceContent::Parameter(
+            ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar")
+        )]
     );
 }
 
@@ -308,10 +313,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(construction.depth, Some(Length(12.0)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::CounterboreDrilled {
-            diameter: Length(9.0),
-            depth: Length(5.7),
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind: HoleKind::CounterboreDrilled {
+                diameter: Length(9.0),
+                depth: Length(5.7),
+                ..
+            },
             ..
         }
     ));
@@ -327,8 +335,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(4.2));
     assert_eq!(construction.depth, Some(Length(12.4)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::Threaded {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter: Length(5.0),
             thread_depth: Length(10.0),
             pitch: None,
@@ -348,8 +356,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(8.43));
     assert_eq!(construction.depth, Some(Length(11.62)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::Threaded {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter: Length(10.29),
             thread_depth: Length(6.92),
             pitch: None,
@@ -378,11 +386,11 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(4.5));
     assert_eq!(construction.depth, Some(Length(10.0)));
     assert_eq!(
-        construction.kind,
-        HoleKind::Counterbore {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
             diameter: Length(8.0),
-            depth: Length(4.6),
-        }
+            depth: Length(4.6)
+        })
     );
     assert_eq!(
         construction.exit_kind,
@@ -405,13 +413,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(construction.depth, Some(Length(12.4)));
     assert_eq!(
-        construction.kind,
-        HoleKind::Counterdrill {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterdrill {
             diameter: Length(9.95),
             entry_diameter: Some(Length(10.05)),
             depth: Length(5.4),
             angle: Angle(std::f64::consts::FRAC_PI_2),
-        }
+        })
     );
     assert_eq!(
         construction.bottom,
@@ -462,7 +470,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         projected,
         FeatureDefinition::Hole {
             diameter: Some(Length(6.6)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(9.4)
             }),
             ..
@@ -484,14 +492,14 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         std::slice::from_ref(&canonical),
     );
     let FeatureDefinition::Hole {
-        kind:
-            HoleKind::Threaded {
+        construction:
+            cadmpeg_ir::features::HoleConstruction::NativeThread {
                 major_diameter,
                 thread_depth,
                 ..
             },
         diameter: Some(diameter),
-        extent: Some(Termination::Blind { length }),
+        extent: Some(LinearTermination::Blind { length }),
         ..
     } = projected
     else {
@@ -519,9 +527,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
         configurations: Vec::new(),
         features: vec![first, second, singleton],
     }];
-    let scene = crate::tessellation::SceneFeatureClasses {
-        by_source: HashMap::from([("153".into(), "moDirectionLight_c".into())]),
-    };
+    let scene = HashMap::from([("153".into(), "moDirectionLight_c".into())]);
 
     enrich_scene_classes(&mut histories, &scene);
 
@@ -942,7 +948,9 @@ fn frameless_reference_plane_remains_typed_unresolved() {
             &HashMap::new(),
             std::slice::from_ref(&plane),
         ),
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     );
 }
 
@@ -1046,12 +1054,17 @@ fn custom_properties_are_document_attributes_not_model_features() {
     );
 
     let mut native = Some(crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: vec![history],
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
-    sync_neutral_features(&[], &[], &[], &mut native).expect("required invariant");
+    sync_neutral_features(
+        &cadmpeg_ir::document::Model::default(),
+        &[],
+        &[],
+        &mut native,
+    )
+    .expect("required invariant");
     assert_eq!(
         native.expect("required invariant").feature_histories[0]
             .features
@@ -1183,7 +1196,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     assert_eq!(*diameter, Some(Length(4.5)));
     assert_eq!(
         *extent,
-        Some(Termination::Blind {
+        Some(LinearTermination::Blind {
             length: Length(13.2)
         })
     );
@@ -1241,7 +1254,10 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: None,
             ..
@@ -1287,11 +1303,14 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::SimpleDrilled {
-                drill_point_angle: Angle(drill_point_angle),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
+                ..
             },
             diameter: Some(Length(4.2)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(10.0),
             }),
             ..
@@ -1331,14 +1350,11 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) }
-                }),
-                ..
-            },
+            ref construction,
             op: BooleanOp::Cut,
-        } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) }
+                }) if (value - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
     ));
 }
 
@@ -1388,14 +1404,11 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) }
-                }),
-                ..
-            },
+            ref construction,
             ..
-        } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) }
+                }) if (value - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
     ));
 }
 
@@ -1636,7 +1649,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
             ordinal: 0,
             offset: 0,
             selector: 0,
-            endpoint_selector: None,
+            kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "thread-name".into(),
             feature_ref: thread_id,
             producer_feature_refs: vec![hole_id.clone()],
@@ -1662,13 +1675,11 @@ fn profile_consumers_require_a_regeneration_profile() {
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Unresolved,
+                termination: LinearTermination::Unresolved,
                 draft: None,
-                offset: None,
             },
         },
         op: BooleanOp::Unresolved,
-        direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,
@@ -1680,7 +1691,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(!bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId("sketch-feature".into()),
+        &FeatureId::mint("sketch-feature").expect("identity grammar"),
         &sketch,
         false,
     ));
@@ -1694,7 +1705,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId("sketch-feature".into()),
+        &FeatureId::mint("sketch-feature").expect("identity grammar"),
         &sketch,
         true,
     ));

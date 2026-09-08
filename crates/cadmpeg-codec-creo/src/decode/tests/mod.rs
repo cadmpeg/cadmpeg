@@ -4,9 +4,8 @@
 use crate::decode::sketch::{
     saved_section_missing_line_geometry, section_axis_line_carrier_with_points,
     section_segment_geometry, section_segment_intersection_carrier_with_missing_line,
-    trimmed_section_segment_geometry_with_missing_line, SectionIntersectionCarrier,
 };
-use crate::decode::sketch_transfer::section_skamp_constraints_for_geometry;
+use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -16,6 +15,7 @@ use std::collections::BTreeMap;
 mod admission;
 mod blind_circular;
 mod carrier_solver;
+mod chamfer;
 mod equation_constraints;
 mod equation_scalar_propagation;
 mod generated_nurbs;
@@ -41,24 +41,36 @@ pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T
 
 pub(super) fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
     let relations = definition.relations.as_mut().expect("relations");
+    let count = u32::try_from(relations.skamps().len()).expect("skamp count");
     relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
-        .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+        .declared_count = count;
+}
+
+pub(super) fn declared_solver_rows<T>(
+    table: &mut Option<crate::feature::definitions::SolverSubtable<T>>,
+) -> &mut Vec<T> {
+    match table {
+        Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows,
+        _ => panic!("fixture requires a declared solver table"),
+    }
 }
 
 pub(super) fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {
     let segments = definition.segments.as_mut().expect("segments");
-    segments.declared_count = u32::try_from(segments.rows.len()).expect("segment count");
+    segments.declared_count =
+        u32::try_from(segments.rows.ordinary().count()).expect("segment count");
 }
 
 pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
     crate::surface::SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![],
+        raw: vec![0],
         offset: 0,
-        length: 1,
     }
 }
 
@@ -69,11 +81,10 @@ pub(super) fn class_911_surface_row(
 ) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     }
@@ -81,14 +92,14 @@ pub(super) fn class_911_surface_row(
 
 pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -112,14 +123,12 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(36, 200, Some(4)),
     ];
     crate::feature::FeatureEntityTable {
-        feature_id: Some(feature_id),
+        feature_id,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![11, 12, 13, 14],
-        non_surface_entity_ids: vec![21, 22, 19, 15, 17, 23, 24, 16, 18, 31, 32, 33, 34, 35, 36],
         offset: 0,
     }
+    .with_surface_ids([11, 12, 13, 14])
 }
 
 pub(super) fn simple_drilled_recipe_surface_rows(
@@ -148,7 +157,7 @@ pub(super) fn section_segment_intersection_carrier(
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
-) -> Option<SectionIntersectionCarrier> {
+) -> Option<SketchGeometry> {
     let missing_line = saved_section_missing_line_geometry(definition);
     let variable_points = definition
         .variables
@@ -162,23 +171,6 @@ pub(super) fn section_segment_intersection_carrier(
         segment,
         missing_line.as_ref(),
         &variable_points,
-    )
-}
-
-#[cfg(test)]
-pub(super) fn trimmed_section_segment_geometry(
-    definition: &crate::feature::FeatureDefinition,
-    points: &BTreeMap<u32, [f64; 2]>,
-    trim_vertices: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
-) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
-    trimmed_section_segment_geometry_with_missing_line(
-        definition,
-        points,
-        trim_vertices,
-        segment,
-        missing_line.as_ref(),
     )
 }
 

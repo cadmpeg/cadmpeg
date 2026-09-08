@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
+use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
-use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
+use crate::native::{
+    ContainerNode, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
+};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, Occurrence,
+    CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, LinkState, Occurrence,
     OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::topology::Body;
@@ -43,7 +46,7 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "Group").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object.clone())
+                        .filter_map(|link| link.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
@@ -89,44 +92,64 @@ pub(crate) fn transfer(
                 link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
                     links
                         .iter()
-                        .filter_map(|link| link.object.clone())
+                        .filter_map(|link| link.object().map(str::to_owned))
                         .collect::<Vec<_>>()
                 })
             })
             .transpose()?
             .unwrap_or_default();
+        let placement_property = placement.map(|property| property.id.clone());
+        let node = match kind {
+            ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
+                members,
+                prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
+                external_document: prototype_link.and_then(|link| link.document.clone()),
+                local_transform,
+                placement_property,
+                element_count,
+                link_transform,
+                element_transforms: parse_placement_list(&owned, entries)?,
+                element_scales: parse_vector_list(&owned, entries)?,
+                linked_subelements: prototype_link
+                    .map(|link| {
+                        link.subelements
+                            .iter()
+                            .filter(|subelement| !subelement.is_empty())
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                claim_child,
+                copy_on_change,
+                copy_on_change_source,
+                copy_on_change_group,
+                copy_on_change_touched,
+                scale,
+                element_objects,
+            }),
+            ProductKind::Group => ProductNode::Group(ContainerNode {
+                members,
+                local_transform,
+                placement_property,
+            }),
+            ProductKind::Part => ProductNode::Part(ContainerNode {
+                members,
+                local_transform,
+                placement_property,
+            }),
+            ProductKind::LinkGroup => ProductNode::LinkGroup {
+                container: ContainerNode {
+                    members,
+                    local_transform,
+                    placement_property,
+                },
+                element_objects,
+            },
+        };
         output.push(ProductNodeRecord {
             id: crate::native::native_id("product", &object.name),
             object: object.id.clone(),
-            kind: kind.into(),
-            members,
-            prototype: prototype_link.and_then(|link| link.object.clone()),
-            external_document: prototype_link.and_then(|link| link.document.clone()),
-            external_document_attribute: prototype_link
-                .and_then(|link| link.document_attribute.clone()),
-            local_transform,
-            placement_property: placement.map(|property| property.id.clone()),
-            element_count,
-            link_transform,
-            element_transforms: parse_placement_list(&owned, entries)?,
-            element_scales: parse_vector_list(&owned, entries)?,
-            linked_subelements: prototype_link
-                .map(|link| {
-                    link.subelements
-                        .iter()
-                        .filter(|subelement| !subelement.is_empty())
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default(),
-            claim_child,
-            copy_on_change,
-            copy_on_change_source,
-            copy_on_change_group,
-            copy_on_change_touched,
-            scale,
-            element_visibility: Vec::new(),
-            element_objects,
+            node,
         });
     }
     Ok(output)
@@ -160,35 +183,35 @@ pub(crate) fn transfer_neutral(
     let record_by_object = product_record_index(records)?;
     let mut component_objects = records
         .iter()
-        .filter(|record| record.kind != "occurrence")
+        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
         .map(|record| record.object.clone())
         .collect::<Vec<_>>();
     let occurrence_objects = records
         .iter()
-        .filter(|record| record.kind == "occurrence")
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
         .map(|record| record.object.as_str())
         .collect::<std::collections::HashSet<_>>();
     for record in records {
         component_objects.extend(
             record
-                .members
+                .members()
                 .iter()
                 .filter(|member| !occurrence_objects.contains(member.as_str()))
                 .cloned(),
         );
-        if record.external_document.is_none() {
-            component_objects.extend(record.prototype.iter().cloned());
+        if record.external_document().is_none() {
+            component_objects.extend(record.prototype().map(str::to_owned));
         }
-        component_objects.extend(record.copy_on_change_source.iter().cloned());
-        component_objects.extend(record.copy_on_change_group.iter().cloned());
-        component_objects.extend(record.element_objects.iter().cloned());
+        component_objects.extend(record.copy_on_change_source().map(str::to_owned));
+        component_objects.extend(record.copy_on_change_group().map(str::to_owned));
+        component_objects.extend(record.element_objects().iter().cloned());
     }
     component_objects.extend(
         joints
             .iter()
-            .flat_map(|joint| &joint.references)
+            .flat_map(|joint| joint.references().into_iter().cloned())
             .filter(|reference| reference.document.is_none())
-            .filter_map(|reference| reference.object.clone())
+            .filter_map(|reference| reference.object().map(str::to_owned))
             .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),
     );
     component_objects.sort();
@@ -213,17 +236,23 @@ pub(crate) fn transfer_neutral(
     }
 
     let definition_id = |object: &str| {
-        ProductDefinitionId(crate::native::model_id(
+        ProductDefinitionId::mint(crate::native::model_id(
             "product_definition",
             object,
             "definition",
         ))
+        .expect("identity grammar")
     };
-    let container_occurrence_id =
-        |object: &str| OccurrenceId(crate::native::model_id("occurrence", object, "container"));
+    let container_occurrence_id = |object: &str| {
+        OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
+            .expect("identity grammar")
+    };
     let mut parent_by_object = HashMap::<&str, &str>::new();
-    for record in records.iter().filter(|record| record.kind != "occurrence") {
-        for member in &record.members {
+    for record in records
+        .iter()
+        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
+    {
+        for member in record.members() {
             let member = member.as_str();
             match parent_by_object.entry(member) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
@@ -242,16 +271,19 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut occurrences = Vec::new();
-    for record in records.iter().filter(|record| record.kind == "occurrence") {
+    for record in records
+        .iter()
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
+    {
         let count = occurrence_count(record)?;
         let parent = parent_by_object
             .get(record.object.as_str())
             .map(|object| container_occurrence_id(object));
         for index in 0..count {
             let element = count > 1;
-            let element_transform = record.element_transforms.get(index).copied();
+            let element_transform = record.element_transforms().get(index).copied();
             let local_transform = multiply(
-                record.local_transform.unwrap_or_else(identity),
+                record.local_transform().unwrap_or_else(identity),
                 element_transform.unwrap_or_else(identity),
             );
             let prototype_transform = linked_prototype_transform(
@@ -262,14 +294,34 @@ pub(crate) fn transfer_neutral(
                 &mut Vec::new(),
             )?;
             let element_scale = record
-                .element_scales
+                .element_scales()
                 .get(index)
                 .copied()
                 .unwrap_or([1.0; 3]);
-            let base_scale = record.scale.unwrap_or([1.0; 3]);
+            let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
+            let copy_on_change = match record.copy_on_change() {
+                Some(policy) => Some(CopyOnChange {
+                    policy: copy_on_change_policy(policy),
+                    source: record.copy_on_change_source().map(definition_id),
+                    group: record.copy_on_change_group().map(definition_id),
+                    touched: record.copy_on_change_touched(),
+                }),
+                None if record.copy_on_change_source().is_none()
+                    && record.copy_on_change_group().is_none()
+                    && record.copy_on_change_touched().is_none() =>
+                {
+                    None
+                }
+                None => {
+                    return Err(CodecError::malformed(format_args!(
+                        "App::Link {} has copy-on-change payload without a policy",
+                        record.object
+                    )));
+                }
+            };
             occurrences.push(Occurrence {
-                id: OccurrenceId(crate::native::model_id(
+                id: OccurrenceId::mint(crate::native::model_id(
                     "occurrence",
                     &record.object,
                     if element {
@@ -277,16 +329,23 @@ pub(crate) fn transfer_neutral(
                     } else {
                         "instance".into()
                     },
-                )),
-                prototype: if let Some(document) = &record.external_document {
+                ))
+                .expect("identity grammar"),
+                prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
-                        document: external_document_reference(
-                            document,
-                            record.external_document_attribute.as_deref(),
-                        ),
-                        object: record.prototype.clone(),
+                        document: match document {
+                            crate::native::ExternalDocument::File(path) => {
+                                cadmpeg_ir::products::ExternalDocumentReference::path(path.as_str())
+                            }
+                            crate::native::ExternalDocument::Name(name) => {
+                                cadmpeg_ir::products::ExternalDocumentReference::document_id(
+                                    name.as_str(),
+                                )
+                            }
+                        },
+                        object: record.prototype().map(str::to_owned),
                     }
-                } else if let Some(prototype) = &record.prototype {
+                } else if let Some(prototype) = record.prototype() {
                     PrototypeReference::Local {
                         definition: definition_id(prototype),
                     }
@@ -297,26 +356,22 @@ pub(crate) fn transfer_neutral(
                     OccurrenceParent::Occurrence { occurrence }
                 }),
                 ordinal: u32::try_from(index).unwrap_or(u32::MAX),
-                transform: Transform {
-                    rows: local_transform,
-                },
-                prototype_transform: Transform {
-                    rows: prototype_transform,
-                },
+                transform: Transform::from_rows(local_transform).expect("affine transform"),
+                linked_prototype: (record.link_transform() == Some(true)).then_some(
+                    Transform::from_rows(prototype_transform).expect("affine transform"),
+                ),
                 scale,
                 name: Some(record.object.clone()),
-                linked_subelements: record.linked_subelements.clone(),
                 visible: None,
-                element_component: record
-                    .element_objects
-                    .get(index)
-                    .map(|object| definition_id(object)),
-                claim_child: record.claim_child,
-                copy_on_change: record.copy_on_change.as_deref().map(copy_on_change_policy),
-                copy_on_change_source: record.copy_on_change_source.as_deref().map(&definition_id),
-                copy_on_change_group: record.copy_on_change_group.as_deref().map(&definition_id),
-                copy_on_change_touched: record.copy_on_change_touched,
-                link_transform: record.link_transform,
+                link: Some(LinkState {
+                    linked_subelements: record.linked_subelements().to_vec(),
+                    element_component: record
+                        .element_objects()
+                        .get(index)
+                        .map(|object| definition_id(object)),
+                    claim_child: record.claim_child(),
+                    copy_on_change,
+                }),
                 native_ref: Some(record.object.clone()),
             });
         }
@@ -342,10 +397,10 @@ pub(crate) fn transfer_neutral(
         .iter()
         .map(|object| {
             let record = record_by_object.get(object.as_str()).copied();
-            let kind = match record.map(|record| record.kind.as_str()) {
-                Some("part") => ProductDefinitionKind::Part,
-                Some("group") => ProductDefinitionKind::Group,
-                Some("link_group") => ProductDefinitionKind::LinkGroup,
+            let kind = match record.map(|record| &record.node) {
+                Some(ProductNode::Part(_)) => ProductDefinitionKind::Part,
+                Some(ProductNode::Group(_)) => ProductDefinitionKind::Group,
+                Some(ProductNode::LinkGroup { .. }) => ProductDefinitionKind::LinkGroup,
                 _ => ProductDefinitionKind::Object,
             };
             let source_object = object_by_id.get(object.as_str()).copied();
@@ -380,7 +435,7 @@ pub(crate) fn transfer_neutral(
                     .iter()
                     .filter(|body| {
                         body_owners.iter().any(|(prefix, owner)| {
-                            *owner == object.as_str() && body.id.0.starts_with(prefix)
+                            *owner == object.as_str() && body.id.as_str().starts_with(prefix)
                         })
                     })
                     .map(|body| body.id.clone())
@@ -393,7 +448,7 @@ pub(crate) fn transfer_neutral(
     for object in &component_objects {
         let record = record_by_object.get(object.as_str()).copied();
         let local_transform = record
-            .and_then(|record| record.local_transform)
+            .and_then(ProductNodeRecord::local_transform)
             .or_else(|| placements_by_object.get(object.as_str()).copied())
             .unwrap_or_else(identity);
         let parent = parent_by_object.get(object.as_str()).copied();
@@ -408,21 +463,12 @@ pub(crate) fn transfer_neutral(
                 }
             }),
             ordinal: 0,
-            transform: Transform {
-                rows: local_transform,
-            },
-            prototype_transform: Transform::identity(),
+            transform: Transform::from_rows(local_transform).expect("affine transform"),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some(object.clone()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: Some(false),
+            link: None,
             native_ref: Some(object.clone()),
         });
     }
@@ -430,7 +476,7 @@ pub(crate) fn transfer_neutral(
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
             OccurrenceParent::Root => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.0.clone()),
+            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
         };
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
@@ -447,10 +493,10 @@ fn linked_prototype_transform(
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
     let _depth = ctx.enter_nested("resolve FCStd nested link transform", None)?;
-    if record.link_transform != Some(true) || record.external_document.is_some() {
+    if record.link_transform() != Some(true) || record.external_document().is_some() {
         return Ok(identity());
     }
-    let Some(prototype) = record.prototype.as_deref() else {
+    let Some(prototype) = record.prototype() else {
         return Ok(identity());
     };
     if stack.iter().any(|object| object == &record.object) {
@@ -462,7 +508,7 @@ fn linked_prototype_transform(
     stack.push(record.object.clone());
     let target_record = records.get(prototype).copied();
     let placement = target_record
-        .and_then(|target| target.local_transform)
+        .and_then(ProductNodeRecord::local_transform)
         .or_else(|| placements.get(prototype).copied())
         .unwrap_or_else(identity);
     let nested = target_record.map_or(Ok(identity()), |target| {
@@ -474,7 +520,7 @@ fn linked_prototype_transform(
 
 fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
     let declared_count = record
-        .element_count
+        .element_count()
         .map(usize::try_from)
         .transpose()
         .map_err(|_| {
@@ -482,10 +528,9 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         })?;
     let count = declared_count.unwrap_or_else(|| {
         [
-            record.element_transforms.len(),
-            record.element_scales.len(),
-            record.element_visibility.len(),
-            record.element_objects.len(),
+            record.element_transforms().len(),
+            record.element_scales().len(),
+            record.element_objects().len(),
             1,
         ]
         .into_iter()
@@ -499,10 +544,9 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         )));
     }
     if [
-        record.element_transforms.len(),
-        record.element_scales.len(),
-        record.element_visibility.len(),
-        record.element_objects.len(),
+        record.element_transforms().len(),
+        record.element_scales().len(),
+        record.element_objects().len(),
     ]
     .into_iter()
     .any(|length| length != 0 && length != count)
@@ -530,14 +574,10 @@ pub(crate) fn external_document_reference(
     attribute: Option<&str>,
 ) -> ExternalDocumentReference {
     let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
-    ExternalDocumentReference {
-        path: is_path.then(|| value.to_owned()),
-        document_id: (!is_path).then(|| value.to_owned()),
-        resolution: if value.is_empty() {
-            ExternalResolution::MissingReference
-        } else {
-            ExternalResolution::Unresolved
-        },
+    if is_path {
+        ExternalDocumentReference::path(value)
+    } else {
+        ExternalDocumentReference::document_id(value)
     }
 }
 
@@ -620,13 +660,13 @@ fn side_bytes<'a>(
     entries: &BTreeMap<String, View<'a>>,
 ) -> Result<Option<View<'a>>, CodecError> {
     require_root(property, expected_type, name, name)?;
-    if property.side_entries.len() > 1 {
+    if property.side_entries().len() > 1 {
         return Err(malformed(format!(
             "product property {} has multiple {name} side entries",
             property.id
         )));
     }
-    let Some(entry) = property.side_entries.first() else {
+    let Some(entry) = property.side_entries().first() else {
         return Ok(None);
     };
     entries.get(entry).copied().map(Some).ok_or_else(|| {
@@ -644,14 +684,14 @@ fn single_link<'a>(
     name: &str,
 ) -> Result<&'a crate::native::LinkTarget, CodecError> {
     require_root(property, expected_type, name, root)?;
-    if property.links.len() != 1 {
+    if property.links().len() != 1 {
         return Err(malformed(format!(
             "product property {} requires one {name} target, found {}",
             property.id,
-            property.links.len()
+            property.links().len()
         )));
     }
-    Ok(&property.links[0])
+    Ok(&property.links()[0])
 }
 
 fn link_list<'a>(
@@ -661,7 +701,7 @@ fn link_list<'a>(
 ) -> Result<&'a [crate::native::LinkTarget], CodecError> {
     require_root(property, expected_type, name, "LinkList")?;
     if property
-        .values
+        .values()
         .iter()
         .skip(1)
         .any(|value| value.tag != "Link")
@@ -671,7 +711,7 @@ fn link_list<'a>(
             property.id
         )));
     }
-    Ok(&property.links)
+    Ok(property.links())
 }
 
 fn require_root(
@@ -686,9 +726,9 @@ fn require_root(
             property.id, property.type_name
         )));
     }
-    if property.values.first().map(|value| value.tag.as_str()) != Some(root)
+    if property.values().first().map(|value| value.tag.as_str()) != Some(root)
         || property
-            .values
+            .values()
             .iter()
             .filter(|value| value.tag == root)
             .count()
@@ -709,13 +749,13 @@ fn single_value<'a>(
     root: &str,
 ) -> Result<&'a crate::native::ValueRecord, CodecError> {
     require_root(property, expected_type, name, root)?;
-    if property.values.len() != 1 {
+    if property.values().len() != 1 {
         return Err(malformed(format!(
             "product property {} has multiple values for {name}",
             property.id
         )));
     }
-    Ok(&property.values[0])
+    Ok(&property.values()[0])
 }
 
 fn unique_property<'a>(
@@ -802,12 +842,22 @@ fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
     }
 }
 
-fn product_kind(kind: &str) -> Option<&'static str> {
+#[derive(Debug, PartialEq, Eq)]
+enum ProductKind {
+    Group,
+    Part,
+    LinkGroup,
+    Occurrence,
+}
+
+fn product_kind(kind: &str) -> Option<ProductKind> {
     match kind {
-        "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part" => Some("part"),
-        "App::DocumentObjectGroup" => Some("group"),
-        "App::LinkGroup" => Some("link_group"),
-        "App::Link" | "App::LinkElement" => Some("occurrence"),
+        "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part" => {
+            Some(ProductKind::Part)
+        }
+        "App::DocumentObjectGroup" => Some(ProductKind::Group),
+        "App::LinkGroup" => Some(ProductKind::LinkGroup),
+        "App::Link" | "App::LinkElement" => Some(ProductKind::Occurrence),
         _ => None,
     }
 }
@@ -913,11 +963,7 @@ fn linked_object(
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
-    Ok(link
-        .object
-        .as_ref()
-        .filter(|object| !object.is_empty())
-        .cloned())
+    Ok(link.object().map(str::to_owned))
 }
 
 fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {
@@ -1007,13 +1053,13 @@ pub(crate) fn placement_matrix(
             property.id
         )));
     }
-    if property.values.len() != 1 {
+    if property.values().len() != 1 {
         return Err(malformed(format!(
             "placement property {} requires one placement value",
             property.id
         )));
     }
-    let value = &property.values[0];
+    let value = &property.values()[0];
     if value.tag != "PropertyPlacement" {
         return Err(malformed(format!(
             "placement property {} requires one PropertyPlacement value",
@@ -1135,10 +1181,10 @@ pub(crate) fn product_cycle_nodes<'a>(
 ) -> HashSet<&'a str> {
     let edges = |name: &'a str| {
         nodes.get(name).into_iter().flat_map(|node| {
-            node.members
+            node.members()
                 .iter()
                 .map(String::as_str)
-                .chain(node.prototype.as_deref())
+                .chain(node.prototype())
                 .filter(|target| nodes.contains_key(target))
         })
     };

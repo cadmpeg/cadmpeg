@@ -112,7 +112,7 @@ fn text_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
 }
 
 fn annotation(result: &cadmpeg_ir::codec::DecodeResult) -> &cadmpeg_ir::native::NativeRecord {
-    let arena = &result.ir().native.namespace("rhino").unwrap().arenas["annotations"];
+    let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["annotations"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
@@ -127,9 +127,9 @@ fn assert_text_and_retention<'a>(
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("text object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
     annotation
 }
 

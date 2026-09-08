@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
-use crate::objects::UserdataDescriptor;
+use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::{utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -126,18 +126,18 @@ fn anonymous(
     expected_minor: i32,
 ) -> Result<BoundedReader<'_>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "annotation wrapper is invalid",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < expected_minor {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "annotation wrapper version is unsupported",
         ));
     }
@@ -150,7 +150,7 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 
 fn parse_v5_text_extra(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
 ) -> Result<V5TextExtraRecord, FramingError> {
     let mut reader = anonymous(data, extra.payload_range.clone(), archive, 0)?;
@@ -251,16 +251,16 @@ fn decode_legacy_annotation(
         return Ok(value);
     }
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "legacy annotation wrapper is invalid",
         ));
     }
-    let mut outer = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut outer = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if outer.i32()? != 1 || outer.i32()? < 0 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "legacy annotation wrapper version is unsupported",
         ));
     }
@@ -446,7 +446,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit)
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
     else {
         return Vec::new();
     };
@@ -455,27 +455,27 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        let identity = object.identity.as_ref();
+        let Some(object) = object.framed() else {
+            continue;
+        };
+        let identity = &object.identity;
         let link = format!("rhino:object:record#{source_order:06}");
-        let key = identity.map_or_else(
-            || format!("record-{source_order:06}"),
-            |identity| {
-                if identity.object_id.is_nil() {
-                    format!("record-{source_order:06}")
-                } else {
-                    identity.object_id.to_string()
-                }
-            },
-        );
-        let source_uuid = identity.map_or_else(
-            || Uuid::nil().to_string(),
-            |identity| identity.object_id.to_string(),
-        );
+        let key = if identity.object_id.is_nil() {
+            format!("record-{source_order:06}")
+        } else {
+            identity.object_id.to_string()
+        };
+        let source_uuid = identity.object_id.to_string();
         let mut v5_text_extra = None;
         if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
-            if let Some(extra) = object.userdata.iter().find(|userdata| {
-                userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
-            }) {
+            if let Some(extra) = object
+                .userdata
+                .iter()
+                .filter_map(UserdataDescriptor::known)
+                .find(|userdata| {
+                    userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
+                })
+            {
                 match parse_v5_text_extra(scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(error) => {
@@ -672,7 +672,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
     namespace
         .set_arena("annotations", &annotations)
         .expect("Rhino annotations serialize");
@@ -695,11 +694,10 @@ mod tests {
         V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
-    use crate::objects::UserdataDescriptor;
+    use crate::objects::ClassUserdata;
     use crate::test_support::test_dump::{object_record_with_payload, scan_with_objects};
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::units::Units;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -858,12 +856,12 @@ mod tests {
                 &unknown_base,
             ),
         ]);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
-        assert_eq!(namespace.arenas["annotations"].len(), 4);
-        let text = serde_json::to_value(&namespace.arenas["annotations"][0]).expect("text JSON");
+        assert_eq!(namespace.arenas()["annotations"].len(), 4);
+        let text = serde_json::to_value(&namespace.arenas()["annotations"][0]).expect("text JSON");
         assert_eq!(text["kind"], "text");
         assert_eq!(text["rich_text"], "text");
         assert_eq!(text["v2_default_text"], "default");
@@ -871,15 +869,15 @@ mod tests {
         assert_eq!(text["v2_font_weight"], 700);
         assert_eq!(text["v2_text_height"], 12.5);
         let leader =
-            serde_json::to_value(&namespace.arenas["annotations"][1]).expect("leader JSON");
+            serde_json::to_value(&namespace.arenas()["annotations"][1]).expect("leader JSON");
         assert_eq!(leader["kind"], "leader");
         assert_eq!(leader["rich_text"], "leader");
         assert_eq!(leader["leader_points"][1][1], 4.0);
-        let base = serde_json::to_value(&namespace.arenas["annotations"][2]).expect("base JSON");
+        let base = serde_json::to_value(&namespace.arenas()["annotations"][2]).expect("base JSON");
         assert_eq!(base["kind"], "text");
         assert_eq!(base["rich_text"], "base");
         let unknown =
-            serde_json::to_value(&namespace.arenas["annotations"][3]).expect("unknown JSON");
+            serde_json::to_value(&namespace.arenas()["annotations"][3]).expect("unknown JSON");
         assert_eq!(unknown["kind"], "annotation");
         assert_eq!(unknown["annotation_type"], 123);
     }
@@ -979,17 +977,17 @@ mod tests {
                 &arrow,
             ),
         ]);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
-        assert_eq!(namespace.arenas["text_dots"].len(), 1);
-        assert_eq!(namespace.arenas["annotation_arrows"].len(), 1);
-        let dot = serde_json::to_value(&namespace.arenas["text_dots"][0]).expect("dot JSON");
+        assert_eq!(namespace.arenas()["text_dots"].len(), 1);
+        assert_eq!(namespace.arenas()["annotation_arrows"].len(), 1);
+        let dot = serde_json::to_value(&namespace.arenas()["text_dots"][0]).expect("dot JSON");
         assert_eq!(dot["primary_text"], "V2 dot");
         assert_eq!(dot["center"][0], 1.25);
         let arrow =
-            serde_json::to_value(&namespace.arenas["annotation_arrows"][0]).expect("arrow JSON");
+            serde_json::to_value(&namespace.arenas()["annotation_arrows"][0]).expect("arrow JSON");
         assert_eq!(arrow["tail"][2], 3.0);
         assert_eq!(arrow["head"][0], -4.0);
     }
@@ -1081,7 +1079,7 @@ mod tests {
         payload.extend(0.375_f64.to_le_bytes());
         payload.extend([0xaa, 0xbb]);
         let bytes = anonymous(0, &payload);
-        let descriptor = UserdataDescriptor {
+        let descriptor = ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: V5_TEXT_EXTRA,
@@ -1089,11 +1087,8 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..bytes.len(),
-            unknown_version: false,
         };
         let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
             .expect("valid V5 text extra");

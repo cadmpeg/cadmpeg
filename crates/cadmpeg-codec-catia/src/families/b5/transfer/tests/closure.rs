@@ -1,36 +1,27 @@
-#![allow(unused_imports)]
-
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_parameter_domain,
-    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata,
-    B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization,
-    B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters,
-    B5Surface,
+    bounded_occurrence_range, edge_pcurve_parameters, pcurve_parameter_domain,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex,
+    B5Loop, B5LoopMember, B5OffsetSurface, B5ParameterIncidence, B5Pcurve,
+    B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
+    b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
+    orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::pcurves::{
-    cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
-    neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-    sphere_great_circle_geometry, sphere_great_circle_pcurve,
-};
-use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
+use super::super::surfaces::{rational_arc, revolve_nurbs};
 use super::super::unit;
 use super::super::vertices::transfer_vertex_tolerances;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
+    CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -42,13 +33,14 @@ fn unit_preserves_tiny_finite_direction() {
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
-    let nurbs = NurbsCurve {
-        degree: 1,
-        knots: vec![10.0, 10.0, 20.0, 20.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
+    let nurbs = NurbsCurve::new(
+        1,
+        vec![10.0, 10.0, 20.0, 20.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .expect("valid affine curve");
     let CurveGeometry::Nurbs(translated) = curve_on_parameter_range(
         CurveGeometry::Nurbs(nurbs.clone()),
         [10.0, 20.0],
@@ -57,8 +49,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     .expect("equal-span NURBS translation") else {
         unreachable!();
     };
-    assert_eq!(translated.knots, [0.0, 0.0, 10.0, 10.0]);
-    assert_eq!(translated.control_points, nurbs.control_points);
+    assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(translated.control_points(), nurbs.control_points());
 
     let line = CurveGeometry::Line {
         origin: Point3::new(10.0, 0.0, 0.0),
@@ -85,7 +77,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     else {
         unreachable!();
     };
-    assert_eq!(scaled.knots, [0.0, 0.0, 2.0, 2.0]);
+    assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
             CurveGeometry::Line {
@@ -133,7 +125,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             carrier_surface: 31,
             source_surface: 50,
             distance: 1.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
             parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
         },
     )]);
@@ -180,7 +172,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
             carrier_surface: 30,
             source_surface: 40,
             distance: 2.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
             parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
         },
     )]);
@@ -236,26 +228,32 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![0.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.0,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![1.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 1.0,
+                        control: 0,
+                    }],
                 },
             ),
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50],
+        logical_vertices: vec![B5LogicalVertex {
+            object_id: 50,
+            point: [0.0, 0.0, 0.0],
+        }],
         edge_vertices: BTreeMap::from([(30, [0, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -295,9 +293,11 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
     };
     let incidence = |object_id: u32, curve: u32, parameter: f64| B5ParameterIncidence {
         object_id,
-        curves: vec![curve],
-        parameters: vec![parameter],
-        controls: vec![0],
+        lanes: vec![B5IncidenceLane {
+            curve,
+            parameter,
+            control: 0,
+        }],
     };
     let graph = B5Graph {
         complete: false,
@@ -321,9 +321,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
                 2,
                 B5Loop {
                     object_id: 2,
-                    pcurves: vec![20, 20, 20],
-                    edges: vec![30, 31, 32],
-                    metadata: test_loop_metadata(3),
+                    members: test_loop_members(&[20, 20, 20], &[30, 31, 32]),
+                    metadata: test_loop_metadata(),
                     surface: 10,
                 },
             ),
@@ -331,9 +330,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
                 4,
                 B5Loop {
                     object_id: 4,
-                    pcurves: vec![21, 21, 21],
-                    edges: vec![33, 34, 35],
-                    metadata: test_loop_metadata(3),
+                    members: test_loop_members(&[21, 21, 21], &[33, 34, 35]),
+                    metadata: test_loop_metadata(),
                     surface: 11,
                 },
             ),
@@ -354,8 +352,20 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50, 51, 52],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 50,
+                point: [0.0, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 51,
+                point: [0.5, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 52,
+                point: [1.0, 0.0, 0.0],
+            },
+        ],
         // Edges 33, 34, and 35 have no entry: their carrier resolves no
         // endpoint locus, which is what excludes face 3.
         edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
@@ -363,19 +373,20 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:test-payload".to_string()),
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+            .expect("identity grammar"),
     ));
     assert_eq!(
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#1"]
     );
@@ -383,7 +394,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         ir.model
             .loops
             .iter()
-            .map(|loop_| loop_.id.0.as_str())
+            .map(|loop_| loop_.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:loop#2"]
     );
@@ -392,7 +403,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         .model
         .surfaces
         .iter()
-        .any(|surface| surface.id.0.contains("#11")));
+        .any(|surface| surface.id.as_str().contains("#11")));
 }
 
 #[test]
@@ -410,9 +421,8 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![20, 20, 20],
-                edges: vec![30, 31, 32],
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[20, 20, 20], &[30, 31, 32]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -453,53 +463,67 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![0.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.0,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![0.5],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.5,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 42,
                 B5ParameterIncidence {
                     object_id: 42,
-                    curves: vec![20],
-                    parameters: vec![1.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 1.0,
+                        control: 0,
+                    }],
                 },
             ),
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50, 51, 52],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 50,
+                point: [0.0, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 51,
+                point: [0.5, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 52,
+                point: [1.0, 0.0, 0.0],
+            },
+        ],
         edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    graph
-        .loops
-        .get_mut(&2)
-        .expect("required loop")
-        .metadata
-        .edge_controls[1][2] = -1;
-    let mut ir = CadIr::empty(Units::default());
+    graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
+    let mut ir = CadIr::empty();
 
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:test-payload".to_string()),
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+            .expect("identity grammar"),
     ));
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
@@ -522,7 +546,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .pcurves
             .iter()
-            .map(|pcurve| pcurve.parameter_range)
+            .map(cadmpeg_ir::geometry::Pcurve::parameter_range)
             .collect::<Vec<_>>(),
         [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
     );
@@ -530,7 +554,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .coedges
             .iter()
-            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
+            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
             .collect::<Vec<_>>(),
         [
             "catia:b5:pcurve#20@0",
@@ -549,9 +573,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
     assert_eq!(ir.model.loops.len(), 1);
     assert_eq!(
         ir.model.loops[0]
-            .vertex_uses
+            .anchored_vertex_uses()
             .iter()
-            .map(|use_| use_.vertex.0.as_str())
+            .map(|use_| use_.vertex.as_str())
             .collect::<Vec<_>>(),
         [
             "catia:b5:vertex#1",
@@ -561,9 +585,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
     );
     assert_eq!(
         ir.model.loops[0]
-            .vertex_uses
+            .anchored_vertex_uses()
             .iter()
-            .map(|use_| use_.after.as_ref().map(|coedge| coedge.0.as_str()))
+            .map(|use_| Some(use_.after.as_str()))
             .collect::<Vec<_>>(),
         [
             Some("catia:b5:coedge#2-0"),
@@ -576,8 +600,14 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
 #[test]
 fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     let surfaces = HashMap::from([
-        (10, SurfaceId("surface-10".to_string())),
-        (11, SurfaceId("surface-11".to_string())),
+        (
+            10,
+            SurfaceId::mint("catia:test:surface#surface-10".to_string()).expect("identity grammar"),
+        ),
+        (
+            11,
+            SurfaceId::mint("catia:test:surface#surface-11".to_string()).expect("identity grammar"),
+        ),
     ]);
     let pcurve_20 = PcurveGeometry::Line {
         origin: Point2::new(0.0, 0.0),
@@ -596,11 +626,15 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
             .expect("one-sided surface curve");
     assert!(matches!(
         one_sided,
-        ProceduralCurveDefinition::SurfaceCurve { context, .. }
-            if context.parameter_range == [2.0, 4.0]
-                && context.sides[0].surface == Some(surfaces[&10].clone())
-                && context.sides[0].pcurve == Some(pcurve_20)
-                && context.sides[1].surface.is_none()
+        ProceduralCurveDefinition::SurfaceCurve { family }
+            if family.context().parameter_range == [2.0, 4.0]
+                && family.context().sides[0].surface == Some(surfaces[&10].clone())
+                && family.context().sides[0]
+                    .pcurve
+                    .as_ref()
+                    .map(|pcurve| &pcurve.geometry)
+                    == Some(&pcurve_20)
+                && family.context().sides[1].surface.is_none()
     ));
 
     let (_, _, intersection) = b5_edge_support_definition(
@@ -615,8 +649,15 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range == [2.0, 4.0]
                 && context.sides[1].surface == Some(surfaces[&11].clone())
-                && context.sides[1].pcurve == Some(pcurve_21)
-                && context.sides.iter().all(|side| side.pcurve_parameter_range.is_none())
+                && context.sides[1]
+                    .pcurve
+                    .as_ref()
+                    .map(|pcurve| &pcurve.geometry)
+                    == Some(&pcurve_21)
+            && context
+                .sides
+                .iter()
+                .all(|side| side.pcurve_parameter_range().is_none())
     ));
     let (_, _, independently_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0]), (11, 21, [5.0, 2.0])],
@@ -629,8 +670,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range == [0.0, 1.0]
-                && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
-                && context.sides[1].pcurve_parameter_range == Some([5.0, 2.0])
+            && context.sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            && context.sides[1].pcurve_parameter_range() == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0])],
@@ -641,9 +682,9 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     .expect("distance-parameterized surface curve");
     assert!(matches!(
         distance_parameterized,
-        ProceduralCurveDefinition::SurfaceCurve { context, .. }
-            if context.parameter_range == [0.0, 8.0]
-                && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
+        ProceduralCurveDefinition::SurfaceCurve { family }
+            if family.context().parameter_range == [0.0, 8.0]
+            && family.context().sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
     ));
 }
 
@@ -753,18 +794,6 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
 }
 
 #[test]
-fn descending_nurbs_knots_are_not_promoted_as_curve_caches() {
-    let geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![1.0, 1.0, 0.0, 0.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    });
-    assert!(!curve_cache_has_ordered_knots(&geometry));
-}
-
-#[test]
 fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     assert!(rational_arc(
         [0.0; 3],
@@ -774,13 +803,14 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0],
     )
     .is_none());
-    let profile = cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-        weights: None,
-        periodic: false,
-    };
+    let profile = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid revolution profile");
     assert!(revolve_nurbs(
         &profile,
         [0.0; 3],
@@ -789,8 +819,16 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0],
     )
     .is_none());
-    let mut wide_profile = profile;
-    wide_profile.control_points = vec![Point3::new(1.0, 0.0, 0.0); 123];
+    let mut wide_knots = vec![0.0; 123];
+    wide_knots.extend([1.0, 1.0]);
+    let wide_profile = NurbsCurve::new(
+        1,
+        wide_knots,
+        vec![Point3::new(1.0, 0.0, 0.0); 123],
+        None,
+        false,
+    )
+    .expect("valid wide revolution profile");
     assert!(revolve_nurbs(
         &wide_profile,
         [0.0; 3],
@@ -816,9 +854,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![4],
-                edges: vec![3],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[4], &[3]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -834,8 +871,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::from([(3, [0, 1])]),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -870,16 +906,15 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         6,
         B5Loop {
             object_id: 6,
-            pcurves: vec![8],
-            edges: vec![7],
-            metadata: test_loop_metadata(1),
+            members: test_loop_members(&[8], &[7]),
+            metadata: test_loop_metadata(),
             surface: 10,
         },
     );
     graph.edge_vertices.insert(7, [0, 1]);
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    assert_eq!(ownership.components.len(), 2);
+    assert_eq!(ownership.components().len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -888,8 +923,12 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .loops
         .get_mut(&2)
         .expect("required invariant")
-        .edges
-        .push(3);
+        .members
+        .push(B5LoopMember {
+            pcurve: 0,
+            edge: 3,
+            controls: [1, 1, 1],
+        });
     assert_eq!(
         ownership_plan(&graph)
             .expect("required invariant")
@@ -900,13 +939,13 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .loops
         .get_mut(&2)
         .expect("required invariant")
-        .edges
+        .members
         .pop();
 
-    graph.loops.get_mut(&6).expect("required invariant").edges[0] = 3;
+    graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(ownership.components.len(), 1);
+    assert_eq!(ownership.components().len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
@@ -920,9 +959,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
         object_id,
-        pcurves: vec![0; edges.len()],
-        metadata: test_loop_metadata(edges.len()),
-        edges,
+        members: test_loop_members(&vec![0; edges.len()], &edges),
+        metadata: test_loop_metadata(),
         surface: 10,
     };
     let mut graph = B5Graph {
@@ -942,30 +980,55 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::new(),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    graph
-        .loops
-        .get_mut(&2)
-        .expect("required loop")
-        .metadata
-        .edge_controls[1][2] = -1;
+    graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
     let orientation = orient_loop_members(
         &graph,
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
     .expect("required invariant");
-    assert_eq!(orientation[&1].member_order, vec![0]);
-    assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
-    assert_eq!(orientation[&1].reversed, vec![false]);
-    assert_eq!(orientation[&2].reversed, vec![true; 3]);
-    assert_eq!(orientation[&1].pcurve_reversed, vec![false]);
-    assert_eq!(orientation[&2].pcurve_reversed, vec![true, false, true]);
+    assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
+    assert_eq!(
+        orientation[&2].member_order().collect::<Vec<_>>(),
+        vec![2, 1, 0]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![true; 3]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![true, false, true]
+    );
 
     graph.loops = BTreeMap::from([
         (1, loop_(1, vec![1, 3])),
@@ -993,9 +1056,8 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
             1,
             B5Loop {
                 object_id: 1,
-                pcurves: vec![2],
-                edges: vec![3],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[2], &[3]),
+                metadata: test_loop_metadata(),
                 surface: 4,
             },
         )]),
@@ -1012,26 +1074,38 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                 20,
                 B5ParameterIncidence {
                     object_id: 20,
-                    curves: vec![2],
-                    parameters: vec![0.25],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 2,
+                        parameter: 0.25,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 21,
                 B5ParameterIncidence {
                     object_id: 21,
-                    curves: vec![2],
-                    parameters: vec![0.75],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 2,
+                        parameter: 0.75,
+                        control: 0,
+                    }],
                 },
             ),
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.25, 0.0, 1e-4], [0.75, 0.0, 0.0]],
-        logical_vertex_refs: vec![10, 11],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: [0.25, 0.0, 1e-4],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: [0.75, 0.0, 0.0],
+            },
+        ],
         edge_vertices: BTreeMap::from([(3, [0, 1])]),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
         vertex_tolerances: BTreeMap::new(),
@@ -1041,11 +1115,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         2,
         (
             PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                weights: None,
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test pcurve"),
             },
             false,
             [0.0, 1.0],

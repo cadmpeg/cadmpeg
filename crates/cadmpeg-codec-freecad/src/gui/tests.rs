@@ -32,7 +32,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
         .expect("GUI documents");
     assert_eq!(documents.len(), 1);
-    assert_eq!(documents[0].schema_version, Some(1));
+    assert_eq!(documents[0].schema_version.as_deref(), Some("1"));
     assert_eq!(documents[0].attributes["active"], "UnrecognizedRootState");
     assert_eq!(
         documents[0]
@@ -59,7 +59,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
-    let camera = presentation.camera.as_ref().expect("camera state");
+    let camera = presentation.camera().expect("camera state");
     assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
     assert_eq!(camera.orientation, Some([0.0, 0.0, 1.0, 0.25]));
     assert_eq!(
@@ -74,8 +74,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
 
     let mut corrupted = result.ir().clone();
     corrupted.model.presentation_documents[0]
-        .camera
-        .as_mut()
+        .camera_mut()
         .expect("camera state")
         .orientation = Some([0.0; 4]);
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
@@ -107,19 +106,142 @@ fn requires_one_camera_in_schema_one_gui_document() {
 
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("schema 1 requires one Camera record")
         ));
     }
 }
 
 #[test]
-fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
+fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0 }"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("foreign GUI schema with schema-1 vocabulary");
+
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    assert_eq!(
+        result.ir().model.presentation_documents[0].schema_version,
+        None
+    );
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss.message.contains("declares schema 2"));
+    assert!(loss.message.contains("schema-1 vocabulary"));
+}
+
+#[test]
+fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="01"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0 }"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical GUI schema with schema-1 vocabulary");
+
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
+    let documents = namespace
+        .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
+        .expect("GUI documents");
+    assert_eq!(documents[0].schema_version.as_deref(), Some("01"));
+    assert_eq!(
+        result.ir().model.presentation_documents[0].schema_version,
+        None
+    );
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert!(loss.message.contains("declares schema 01"));
+}
+
+#[test]
+fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("broken foreign GUI schema degrades");
+
+    assert!(result.ir().model.presentation_documents.is_empty());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
+        .expect("GUI schema warning");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss
+        .message
+        .contains("declared schema 2 is the probable cause"));
+}
+
+#[test]
+fn a_failed_foreign_gui_parse_does_not_apply_staged_appearances() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3424269311"/></Property>
+<Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="-1"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("broken foreign GUI schema degrades");
+
+    assert!(result.ir().model.appearances.is_empty());
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    assert!(result.ir().model.presentation_documents.is_empty());
+    assert!(result.ir().model.view_presentations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "source.gui-schema-unverified"));
+}
+
+#[test]
+fn rejects_invalid_schema_one_camera_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui_documents = [
         r#"<Document schemaVersion="1"><ViewProviderData Count="0"/></Document>"#,
-        r#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position NaN 1 2 orientation 0 0 1 0 }"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation NaN 0 0 1 }"/></Document>"#,
@@ -135,8 +257,11 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid GUI schema or camera value");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+            .expect_err("invalid schema-one camera value");
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -156,8 +281,7 @@ fn ignores_non_authoritative_camera_descendant_values() {
         )
         .expect("non-authoritative camera descendants");
     let camera = result.ir().model.presentation_documents[0]
-        .camera
-        .as_ref()
+        .camera()
         .expect("camera state");
     assert_eq!(camera.position, None);
     assert_eq!(camera.orientation, None);
@@ -186,7 +310,7 @@ fn rejects_duplicate_camera_settings_fields() {
             .expect_err("duplicate camera settings field");
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("multiple")
         ));
     }
@@ -408,13 +532,15 @@ Co 1001000 +2 0 *
             .expect("producer-accepted topology color mismatch");
         assert_eq!(result.report().losses.len(), 1);
         let loss = &result.report().losses[0];
-        assert_eq!(loss.code.code, "appearance.topology-color-count-mismatch");
+        assert_eq!(
+            loss.code.local_code(),
+            "appearance.topology-color-count-mismatch"
+        );
         assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
         assert!(loss.message.contains(kind));
-        assert!(loss
-            .provenance
-            .as_ref()
-            .is_some_and(|source| source.stream == "GuiDocument.xml" && source.offset > 0));
+        assert!(loss.provenance.as_ref().is_some_and(|source| {
+            source.stream() == Some("GuiDocument.xml") && source.offset > 0
+        }));
         assert_eq!(
             result
                 .ir()
@@ -460,7 +586,7 @@ fn rejects_ambiguous_gui_containers_and_names() {
                 &DecodeOptions::default(),
             )
             .expect_err("ambiguous GUI graph");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
     }
 }
 
@@ -512,7 +638,10 @@ fn rejects_malformed_registered_gui_property_values() {
             &DecodeOptions::default(),
         )
         .expect_err("mismatched GUI value tag");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -557,7 +686,10 @@ fn validates_gui_link_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI link grammar");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -597,7 +729,10 @@ fn validates_gui_constraint_attribute_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI constraint attribute");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -641,7 +776,10 @@ fn validates_gui_in_memory_list_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("nested GUI list value");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -743,9 +881,9 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
         .expect("logical ledger");
     let span = logical
         .iter()
-        .find(|span| span.owner.as_deref() == Some(property.id.as_str()))
+        .find(|span| span.classification.owner() == Some(property.id.as_str()))
         .expect("visual layer span");
-    assert_eq!(span.classification, "typed");
+    assert_eq!(span.classification.as_str(), "typed");
     assert!(crate::validate_native(result.ir()).is_empty());
 
     for value in [
@@ -768,7 +906,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid visual layer list");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
     }
 }
 
@@ -842,7 +980,10 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
             &DecodeOptions::default(),
         )
         .expect_err("trailing dynamic float-list bytes");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -901,7 +1042,10 @@ fn rejects_gui_side_entries_owned_by_nested_values() {
                 &DecodeOptions::default(),
             )
             .expect_err("nested GUI side-entry reference");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -946,7 +1090,10 @@ fn validates_gui_mesh_and_points_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid GUI mesh or points root");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -986,7 +1133,10 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw GeomFormatList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1049,7 +1199,10 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CosmeticVertexList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1124,7 +1277,10 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CosmeticEdgeList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1187,7 +1343,10 @@ fn validates_gui_techdraw_center_line_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect_err("invalid TechDraw CenterLineList");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -1242,7 +1401,8 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
         .expect("logical ledger");
     assert!(properties.iter().all(|property| {
         logical.iter().any(|span| {
-            span.owner.as_deref() == Some(property.id.as_str()) && span.classification == "typed"
+            span.classification.owner() == Some(property.id.as_str())
+                && span.classification.as_str() == "typed"
         })
     }));
 }
@@ -1263,7 +1423,10 @@ fn rejects_truncated_gui_material_list_payload() {
             &DecodeOptions::default(),
         )
         .expect_err("truncated GUI material list");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -1345,8 +1508,8 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .iter()
         .find(|span| span.entry == entry.name)
         .expect("state span");
-    assert_eq!(span.classification, "named_opaque");
-    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert!(crate::validate_native(result.ir()).is_empty());
 }
 

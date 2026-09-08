@@ -129,7 +129,7 @@ fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
 fn object_presentation(
     result: &cadmpeg_ir::codec::DecodeResult,
 ) -> &cadmpeg_ir::native::NativeRecord {
-    let arena = &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+    let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
@@ -146,9 +146,9 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
 }
 
 #[test]

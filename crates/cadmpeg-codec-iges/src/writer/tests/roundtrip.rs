@@ -4,10 +4,14 @@
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
 
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::ProceduralSurface;
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
@@ -18,7 +22,7 @@ use crate::test_support::{
     placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
     trimmed_surface_of_revolution_file,
 };
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::{IgesCodec, IgesVersion};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";
@@ -30,13 +34,32 @@ fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
 }
 
+fn construction_owns_surface(
+    ir: &CadIr,
+    construction: &ProceduralSurface,
+    surface: &SurfaceId,
+) -> bool {
+    ir.model.procedural_surface_owner(&construction.id) == Some(surface)
+}
+
+fn surface_construction<'a>(ir: &'a CadIr, surface: &SurfaceId) -> Option<&'a ProceduralSurface> {
+    ir.model
+        .procedural_surfaces
+        .iter()
+        .find(|construction| construction_owns_surface(ir, construction, surface))
+}
+
 fn try_lossless_round_trip(
     stem: &str,
     original: &CadIr,
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
 ) -> bool {
-    let Ok(plan) = Encoder::plan(&IgesEncoder::default(), EncodeInput { ir, fidelity }) else {
+    let Ok(plan) = Encoder::plan(
+        &IgesCodec,
+        EncodeInput { ir, fidelity },
+        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+    ) else {
         return false;
     };
     let mut produced = Vec::new();
@@ -102,11 +125,9 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             )
             .expect("line revolution fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("normalized line revolution has a semantic writer path");
         let mut produced = Vec::new();
@@ -130,7 +151,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|procedural| {
                 matches!(
-                    &procedural.definition,
+                    procedural.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                 )
             })
@@ -138,7 +159,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             parameter_interval: Some(parameter_interval),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected a revolution definition");
         };
@@ -155,20 +176,15 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                             )
                     })
             })
             .expect("source line revolution surface");
-        let source_carrier_end = original
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|candidate| candidate.surface == source_surface.id)
+        let source_carrier_end = surface_construction(original.ir(), &source_surface.id)
             .and_then(|candidate| candidate.record_bounds)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
@@ -182,7 +198,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == procedural.surface)
+            .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
             .expect("round-trip revolution surface");
         let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
         let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
@@ -232,31 +248,24 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
             })
             .expect("source line extrusion surface");
-        let source_procedural = original
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == source_surface.id)
+        let source_procedural = surface_construction(original.ir(), &source_surface.id)
             .expect("source line extrusion construction");
         let source_carrier_end = source_procedural
             .record_bounds
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("normalized line extrusion has a semantic writer path");
         let mut produced = Vec::new();
@@ -278,7 +287,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .iter()
             .find(|procedural| {
                 matches!(
-                    &procedural.definition,
+                    procedural.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                 )
             })
@@ -291,7 +300,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
             parameter_interval: Some(parameter_interval),
             ..
-        } = &round_procedural.definition
+        } = round_procedural.definition()
         else {
             panic!("expected an extrusion definition");
         };
@@ -301,7 +310,9 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == round_procedural.surface)
+            .find(|surface| {
+                construction_owns_surface(round_trip.ir(), round_procedural, &surface.id)
+            })
             .expect("round-trip extrusion surface");
         let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
         let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
@@ -350,12 +361,11 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve");
     let source = super::super::source_pcurve(original.ir(), pcurve)
         .expect("procedural pcurve source-domain mapping");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &source.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
-    assert!((control_points[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
-    assert!((control_points[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
 
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
@@ -368,12 +378,11 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve without record bounds");
     let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
         .expect("derive the line carrier interval from its edge");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &source.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
-    assert!((control_points[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
-    assert!((control_points[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
 }
 
 #[test]
@@ -389,11 +398,9 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
 
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("degree-zero B-spline is writable");
         let mut produced = Vec::new();
@@ -411,13 +418,15 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero output decodes");
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
-            &round_trip.ir().model.curves[0].geometry
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = round_trip.ir().model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&round_trip.ir().model.curves[0].geometry)
         else {
             panic!("{version:?}: expected a NURBS carrier");
         };
-        assert_eq!(nurbs.degree, 0, "{version:?}");
-        assert_eq!(nurbs.control_points.len(), 1, "{version:?}");
+        assert_eq!(nurbs.degree(), 0, "{version:?}");
+        assert_eq!(nurbs.control_points().len(), 1, "{version:?}");
         assert_eq!(
             round_trip.ir().model.curves[0].geometry,
             original.ir().model.curves[0].geometry,
@@ -449,11 +458,9 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
 
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("degree-zero B-spline surface is writable");
         let mut produced = Vec::new();
@@ -471,14 +478,20 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
         let round_trip = IgesCodec
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero surface output decodes");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-            &round_trip.ir().model.surfaces[0].geometry
-        else {
+        let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = round_trip.ir().model.surfaces
+            [0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&round_trip.ir().model.surfaces[0].geometry) else {
             panic!("{version:?}: expected a NURBS surface carrier");
         };
-        assert_eq!((surface.u_degree, surface.v_degree), (0, 0), "{version:?}");
         assert_eq!(
-            (surface.u_count, surface.v_count),
+            (surface.u_degree(), surface.v_degree()),
+            (0, 0),
+            "{version:?}"
+        );
+        assert_eq!(
+            (surface.u_count(), surface.v_count()),
             expected_counts,
             "{version:?}"
         );
@@ -527,11 +540,9 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             )
             .expect("hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("cache-less extrusion has an exact Type 122 writer path");
         let mut produced = Vec::new();
@@ -554,7 +565,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 .ir()
                 .native
                 .namespace("iges")
-                .and_then(|namespace| namespace.arenas.get("entities"))
+                .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|entity| {
                         entity.field("entity_type").and_then(|value| value.as_i64()) == Some(122)
@@ -574,9 +585,9 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -594,21 +605,16 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
             })
             .expect("round-trip extrusion surface");
-        let source_range = original
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == source_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+        let source_range = surface_construction(original.ir(), &source_surface.id)
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -616,13 +622,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 _ => None,
             })
             .expect("source extrusion interval");
-        let round_range = round_trip
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == round_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+        let round_range = surface_construction(round_trip.ir(), &round_surface.id)
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -684,11 +685,9 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             )
             .expect("placed hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("placed Type 122 has an exact semantic writer path");
         let mut produced = Vec::new();
@@ -718,9 +717,9 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(original.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -738,21 +737,16 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
-                        procedural.surface == surface.id
+                        construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
             })
             .expect("round-trip placed extrusion surface");
-        let source_range = original
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == source_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+        let source_range = surface_construction(original.ir(), &source_surface.id)
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -760,13 +754,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                 _ => None,
             })
             .expect("source placed extrusion interval");
-        let round_range = round_trip
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == round_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+        let round_range = surface_construction(round_trip.ir(), &round_surface.id)
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -826,11 +815,9 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             )
             .expect("placed line tabulated fixture decodes");
         let plan = Encoder::plan(
-            &IgesEncoder::new(IgesWriteOptions { version }),
-            EncodeInput {
-                ir: original.ir(),
-                fidelity: None,
-            },
+            &IgesCodec,
+            EncodeInput::new(original.ir(), None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("placed NURBS Type 122 has an exact semantic writer path");
         let mut produced = Vec::new();
@@ -854,7 +841,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
                 .surfaces
                 .iter()
                 .any(|surface| matches!(
-                    surface.geometry,
+                    *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
                     cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
                 )),
             "{version:?}: no NURBS tabulated surface"
@@ -887,11 +874,9 @@ fn assert_type120_round_trip(version: IgesVersion) {
         )
         .expect("hyperbola revolution fixture decodes");
     let plan = Encoder::plan(
-        &IgesEncoder::new(IgesWriteOptions { version }),
-        EncodeInput {
-            ir: original.ir(),
-            fidelity: None,
-        },
+        &IgesCodec,
+        EncodeInput::new(original.ir(), None),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
     .expect("cache-less revolution has an exact Type 120 writer path");
     let mut produced = Vec::new();
@@ -911,11 +896,11 @@ fn assert_type120_round_trip(version: IgesVersion) {
         .expect("Type 120 output decodes");
     assert_eq!(
         round_trip
-            .ir()
-            .source
-            .as_ref()
-            .expect("Type 120 output has source metadata")
-            .attributes["iges_version"],
+            .report()
+            .dialects()
+            .expect("Type 120 output has a dialect declaration")
+            .primary()
+            .declared()["effective_version"],
         version.name()
     );
     let source_surface = original
@@ -930,9 +915,9 @@ fn assert_type120_round_trip(version: IgesVersion) {
                 .procedural_surfaces
                 .iter()
                 .any(|procedural| {
-                    procedural.surface == surface.id
+                    construction_owns_surface(original.ir(), procedural, &surface.id)
                         && matches!(
-                            &procedural.definition,
+                            procedural.definition(),
                             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                         )
                 })
@@ -945,9 +930,9 @@ fn assert_type120_round_trip(version: IgesVersion) {
             .procedural_surfaces
             .iter()
             .any(|procedural| {
-                procedural.surface == surface.id
+                construction_owns_surface(round_trip.ir(), procedural, &surface.id)
                     && matches!(
-                        &procedural.definition,
+                        procedural.definition(),
                         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                     )
             })
@@ -959,13 +944,8 @@ fn assert_type120_round_trip(version: IgesVersion) {
     };
     let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
     let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
-    let source_range = original
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == source_surface.id)
-        .and_then(|procedural| match &procedural.definition {
+    let source_range = surface_construction(original.ir(), &source_surface.id)
+        .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 parameter_interval: Some(range),
                 ..
@@ -973,13 +953,8 @@ fn assert_type120_round_trip(version: IgesVersion) {
             _ => None,
         })
         .expect("source revolution interval");
-    let round_range = round_trip
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == round_surface.id)
-        .and_then(|procedural| match &procedural.definition {
+    let round_range = surface_construction(round_trip.ir(), &round_surface.id)
+        .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 parameter_interval: Some(range),
                 ..

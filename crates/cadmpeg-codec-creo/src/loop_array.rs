@@ -30,6 +30,33 @@ const PROTOTYPE_FIELDS: [&[u8]; 8] = [
     b"object_data",
 ];
 
+/// Layout marker between the loop-array label and its array opener.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutMarker {
+    /// The `f2` marker.
+    F2,
+    /// The `f3` marker.
+    F3,
+}
+
+impl serde::Serialize for LayoutMarker {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(match self {
+            Self::F2 => 0xf2,
+            Self::F3 => 0xf3,
+        })
+    }
+}
+
+/// Retention of positional rows in a loop-array frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopArrayFrameRows {
+    /// Number of complete positional rows retained.
+    Materialized(usize),
+    /// Additional validated rows exceed the declared extent.
+    Overfull,
+}
+
 /// One validated `lo_array` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopArrayFrame {
@@ -37,7 +64,7 @@ pub struct LoopArrayFrame {
     pub offset: usize,
     /// Optional layout marker immediately after the label: `f2` or `f3`.
     /// Older frames omit this marker and begin directly with `f8`.
-    pub variant: Option<u8>,
+    pub variant: Option<LayoutMarker>,
     /// Stored loop-array slot extent.
     pub declared_count: u32,
     /// Native class reference from the frame header and prototype close.
@@ -46,10 +73,8 @@ pub struct LoopArrayFrame {
     pub prototype_end: usize,
     /// Byte offset of the next array label or the section end.
     pub end: usize,
-    /// Number of complete positional rows retained from the frame.
-    pub materialized_count: usize,
-    /// True when an additional validated row starts after the declared extent.
-    pub overfull: bool,
+    /// Retention of this frame's positional rows.
+    pub rows: LoopArrayFrameRows,
 }
 
 /// One complete positional `lo_array` row.
@@ -200,14 +225,12 @@ fn parse_frame(
 ) -> Option<(LoopArrayFrame, Vec<LoopArrayRecord>)> {
     let mut cursor = offset.checked_add(LO_ARRAY_LABEL.len())?;
     let variant = match *data.get(cursor)? {
-        0xf2 | 0xf3 => {
-            let marker = data[cursor];
-            cursor += 1;
-            Some(marker)
-        }
+        0xf2 => Some(LayoutMarker::F2),
+        0xf3 => Some(LayoutMarker::F3),
         0xf8 => None,
         _ => return None,
     };
+    cursor += usize::from(variant.is_some());
     if data.get(cursor) != Some(&0xf8) {
         return None;
     }
@@ -232,7 +255,6 @@ fn parse_frame(
     .unwrap_or(0);
     let mut cursor = prototype_end;
     let mut records = Vec::new();
-    let mut overfull = false;
     while cursor < end && records.len() < max_records {
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
@@ -256,10 +278,12 @@ fn parse_frame(
         });
         cursor = close + 1;
     }
-    if records.len() == max_records && row_prefix(data, cursor, end).is_some() {
-        overfull = true;
+    let rows = if records.len() == max_records && row_prefix(data, cursor, end).is_some() {
         records.clear();
-    }
+        LoopArrayFrameRows::Overfull
+    } else {
+        LoopArrayFrameRows::Materialized(records.len())
+    };
     Some((
         LoopArrayFrame {
             offset,
@@ -268,8 +292,7 @@ fn parse_frame(
             class_id,
             prototype_end,
             end,
-            materialized_count: records.len(),
-            overfull,
+            rows,
         },
         records,
     ))

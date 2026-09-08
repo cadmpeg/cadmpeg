@@ -2,7 +2,12 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
+use crate::decode::pcurves::{
+    complete_intersection_pcurves_from_coedge_incidence,
+    complete_intersection_supports_from_edge_incidence, pcurve_matches_edge,
+};
+
+use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition};
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
@@ -39,40 +44,39 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
     let curve = edge.curve.expect("cube edge curve");
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("nx:test:intersection#0".into()),
+    let _attached = ir.model.add_procedural_curve(
         curve,
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(incident[0].clone()),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(incident[0].clone()),
+                            pcurve: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-        cache_fit_tolerance: None,
-    });
+        ),
+    );
 
-    crate::decode::complete_intersection_supports_from_edge_incidence(&mut ir);
+    complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
     assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
 
-    let pcurve_id = PcurveId("nx:test:pcurve#0".into());
+    let pcurve_id = PcurveId::mint("nx:test:pcurve#0").expect("identity grammar");
     let pcurve_geometry = PcurveGeometry::Line {
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(1.0, 0.0),
@@ -80,10 +84,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some([0.0, 1.0]),
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
     });
     let second_face = ir
         .model
@@ -112,13 +113,19 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         parameter_range: None,
     }];
 
-    crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
+    complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
-    assert_eq!(context.sides[1].pcurve.as_ref(), Some(&pcurve_geometry));
+    assert_eq!(
+        context.sides[1]
+            .pcurve
+            .as_ref()
+            .map(|binding| &binding.geometry),
+        Some(&pcurve_geometry)
+    );
 }
 
 #[test]
@@ -268,7 +275,6 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
-        &BTreeMap::new(),
         &crate::topology::Graph::default(),
         vec![construction(false, 10), construction(true, 20)],
         super::CrossFormCollision::Reject,
@@ -361,7 +367,7 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
             .curves
             .try_into()
             .expect("complemented curve");
-    assert_eq!(curve.parameters, [2.0, 5.0]);
+    assert_eq!(curve.samples.parameters(), [2.0, 5.0]);
 
     let base_chart = crate::intersection::chart_source_records(
         &base,
@@ -412,9 +418,8 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
     )
     .try_into()
     .expect("one wide chart");
-    assert_eq!(chart.count, count as u32);
-    assert_eq!(chart.chart_count, count as u32);
-    assert_eq!(chart.points.len(), count);
+    assert_eq!(chart.data.count(), count as u32);
+    assert_eq!(chart.data.points().len(), count);
 }
 
 #[test]
@@ -451,7 +456,7 @@ fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
     );
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 21);
-    assert_eq!(records[0].points.len(), count);
+    assert_eq!(records[0].data.points().len(), count);
 }
 
 #[test]
@@ -472,18 +477,18 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
     let records = crate::intersection::support_uv_records(&outer);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 23);
-    assert_eq!(records[0].values.len(), 4);
+    assert_eq!(records[0].values.values().len(), 4);
 }
 
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
     let ir = cadmpeg_ir::examples::unit_cube();
-    let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
+    let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
     let surface = ir
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
+        .find(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
         .and_then(|coedge| {
             let loop_ = ir
                 .model
@@ -498,21 +503,24 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         })
         .expect("bottom support surface");
     let pcurve = |end| PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), end],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), end],
+            None,
+            false,
+        )
+        .expect("valid intersection pcurve"),
     };
 
-    assert!(crate::decode::pcurve_matches_edge(
+    assert!(pcurve_matches_edge(
         &ir,
         &edge,
         &surface,
         &pcurve(Point2::new(10.0, 0.0)),
         None,
     ));
-    assert!(!crate::decode::pcurve_matches_edge(
+    assert!(!pcurve_matches_edge(
         &ir,
         &edge,
         &surface,
@@ -550,10 +558,10 @@ fn intersection_chart_layout_is_selected_by_stream_kind() {
     .try_into()
     .expect("one ext11 chart");
     assert_eq!(
-        chart.point_layout,
+        chart.data.point_layout(),
         crate::intersection::ChartPointLayout::Ext11
     );
-    assert_eq!(chart.native_parameters, Some(vec![2.0, 5.0]));
+    assert_eq!(chart.data.native_parameters(), Some(vec![2.0, 5.0]));
 }
 
 #[test]
@@ -571,8 +579,8 @@ fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound()
     )
     .try_into()
     .expect("one large-coordinate chart");
-    assert_eq!(chart.points[0].x, 1_000_000.0);
-    assert_eq!(chart.points[1].x, 1_000_010.0);
+    assert_eq!(chart.data.points()[0].x, 1_000_000.0);
+    assert_eq!(chart.data.points()[1].x, 1_000_010.0);
 }
 
 #[test]
@@ -588,5 +596,6 @@ fn intersection_support_order_follows_type_38_values_marker() {
     let [curve] = scan.curves.as_slice() else {
         panic!("one charted intersection");
     };
-    assert_eq!(curve.supports, [13, 6]);
+    assert_eq!(u32::from(curve.primary_support), 13);
+    assert_eq!(curve.secondary_support.map(u32::from), Some(6));
 }

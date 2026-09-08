@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -156,6 +158,19 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
+    let kernel = decoded
+        .report()
+        .dialects()
+        .as_ref()
+        .expect("the report is classified")
+        .iter()
+        .find(|matched| matched.format() == "acis")
+        .expect("text carrier has a shared kernel identity");
+    assert_eq!(kernel.dialect().as_str(), "acis:text-asm");
+    assert_eq!(
+        kernel.declared()["carrier"],
+        "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
+    );
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.surfaces.len(), 1);
@@ -208,6 +223,73 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
     );
 }
 
+#[test]
+fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    let valid_path = "FusionAssetName[Active]/Breps.BlobParts/BREP.valid.smb";
+    zip.start_file(valid_path, stored).unwrap();
+    zip.write_all(&synthetic_smbh()).unwrap();
+    let corrupt_path = "FusionAssetName[Active]/Breps.BlobParts/BREP.corrupt.smb";
+    zip.start_file(corrupt_path, stored).unwrap();
+    zip.write_all(b"not an ACIS kernel stream").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let inspected = F3dCodec
+        .inspect(
+            &mut Cursor::new(archive.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert!(inspected.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::KernelCarrierUnparseable.kind()
+            && loss.message.contains(corrupt_path)
+    }));
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+
+    let kernel_layers = decoded
+        .report()
+        .dialects()
+        .as_ref()
+        .expect("the report is classified")
+        .iter()
+        .filter(|matched| matched.format() == "acis")
+        .collect::<Vec<_>>();
+    assert_eq!(kernel_layers.len(), 2);
+    assert_eq!(kernel_layers[0].declared()["carrier"], valid_path);
+    assert_eq!(kernel_layers[0].instance(), Some(valid_path));
+    assert_eq!(kernel_layers[1].dialect().as_str(), "acis:unknown");
+    assert_eq!(kernel_layers[1].declared()["carrier"], corrupt_path);
+    assert_eq!(kernel_layers[1].instance(), Some(corrupt_path));
+    let loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::KernelCarrierUnparseable.kind())
+        .expect("the corrupt carrier is visible as a loss");
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(loss.message.contains(corrupt_path), "{}", loss.message);
+}
+
 /// The text encoding of an ASM stream carries the same entity model as the
 /// binary one, so its archive members are geometry carriers and must classify as
 /// such. Leaving them unclassified is what let the report state that a document
@@ -221,16 +303,16 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
     ] {
         assert_eq!(
             crate::container::classify(name),
-            crate::container::role::BREP_TEXT,
+            ContainerRole::BrepText,
             "{name} must classify as a text-encoded BREP carrier"
         );
     }
     assert_eq!(
         crate::container::classify("a/b.smb"),
-        crate::container::role::BREP_SMB
+        ContainerRole::BrepSmb
     );
     assert_eq!(
         crate::container::classify("a/b.smbh"),
-        crate::container::role::BREP_SMBH
+        ContainerRole::BrepSmbh
     );
 }

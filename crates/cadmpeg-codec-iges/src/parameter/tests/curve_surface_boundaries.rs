@@ -32,12 +32,19 @@ fn type126_entity_table_boundary_uses_k_and_degree() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "Form {form}");
-        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
-        let groups = analysis.groups.expect("Type 126 table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
+        let groups = analysis.groups().expect("Type 126 table boundary");
         assert_eq!(groups.token_start, expected_start, "Form {form}");
-        assert_eq!(groups.associations, vec![1], "Form {form}");
-        assert!(groups.properties.is_empty(), "Form {form}");
+        assert_eq!(
+            groups.associations().copied().collect::<Vec<_>>(),
+            vec![1],
+            "Form {form}"
+        );
+        assert!(
+            groups.properties().copied().collect::<Vec<_>>().is_empty(),
+            "Form {form}"
+        );
     }
 }
 
@@ -74,12 +81,12 @@ fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 126 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 126 table boundary");
     assert_eq!(groups.token_start, 24);
-    assert_eq!(groups.associations, vec![7]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![7]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -120,9 +127,9 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0, "K={k}, M={degree}");
-        assert_eq!(analysis.valid_candidate_count, 0, "K={k}, M={degree}");
-        assert!(analysis.groups.is_none(), "K={k}, M={degree}");
+        assert_eq!(analysis.candidate_count(), 0, "K={k}, M={degree}");
+        assert_eq!(analysis.valid_candidate_count(), 0, "K={k}, M={degree}");
+        assert!(analysis.groups().is_none(), "K={k}, M={degree}");
     }
 }
 
@@ -157,12 +164,12 @@ fn type112_entity_table_boundary_uses_segment_count() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 112 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 112 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -201,12 +208,12 @@ fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 112 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 112 table boundary");
     assert_eq!(groups.token_start, 31);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -247,9 +254,9 @@ fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0, "N={segment_count}");
-        assert_eq!(analysis.valid_candidate_count, 0, "N={segment_count}");
-        assert!(analysis.groups.is_none(), "N={segment_count}");
+        assert_eq!(analysis.candidate_count(), 0, "N={segment_count}");
+        assert_eq!(analysis.valid_candidate_count(), 0, "N={segment_count}");
+        assert!(analysis.groups().is_none(), "N={segment_count}");
     }
 }
 
@@ -309,12 +316,12 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 106 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 106 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -340,9 +347,9 @@ fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -367,9 +374,9 @@ fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 0);
-    assert_eq!(analysis.valid_candidate_count, 0);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(analysis.valid_candidate_count(), 0);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -408,12 +415,12 @@ fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 116 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 116 table boundary");
         assert_eq!(groups.token_start, 5);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -437,9 +444,9 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 2);
-    assert_eq!(analysis.valid_candidate_count, 2);
-    assert!(analysis.groups.is_none());
+    assert_eq!(analysis.candidate_count(), 2);
+    assert_eq!(analysis.valid_candidate_count(), 2);
+    assert!(analysis.groups().is_none());
 }
 
 #[test]
@@ -473,7 +480,7 @@ fn decode_uses_type116_boundary_without_assigning_malformed_groups() {
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
 
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#1")
         .unwrap();
@@ -518,7 +525,7 @@ fn decode_uses_type116_entity_boundary_for_explicit_and_omitted_display_pointer(
             .losses
             .iter()
             .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-        let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| record.id() == "iges:entity:directory#3")
             .unwrap();
@@ -572,7 +579,7 @@ fn decode_uses_type102_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#7")
         .unwrap();
@@ -611,7 +618,7 @@ fn decode_uses_type106_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -650,7 +657,7 @@ fn decode_uses_type123_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -696,7 +703,7 @@ fn decode_uses_type110_entity_boundary_for_form7_association() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#5")
         .unwrap();
@@ -751,7 +758,7 @@ fn decode_uses_type402_entity_boundary_for_group_forms() {
             result.report().losses
         );
         let native = result.ir().native.namespace("iges").unwrap();
-        let source = native.arenas["entities"]
+        let source = native.arenas()["entities"]
             .iter()
             .find(|record| record.id() == "iges:entity:directory#1")
             .unwrap();
@@ -759,7 +766,7 @@ fn decode_uses_type402_entity_boundary_for_group_forms() {
             source.fields()["association_links"].as_array().unwrap(),
             &[serde_json::json!("iges:entity:directory#7")]
         );
-        let group = native.arenas["groups"]
+        let group = native.arenas()["groups"]
             .iter()
             .find(|record| record.fields()["source_entity"] == "iges:entity:directory#1")
             .unwrap();
@@ -807,7 +814,7 @@ fn decode_uses_type126_entity_boundary_for_form7_association() {
 
         assert!(result.report().losses.is_empty(), "Form {form}");
         assert_eq!(result.ir().model.curves.len(), 1, "Form {form}");
-        let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| record.id() == "iges:entity:directory#3")
             .unwrap();
@@ -851,7 +858,7 @@ fn decode_uses_type112_entity_boundary_for_form7_association() {
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
     assert_eq!(result.ir().model.curves.len(), 1);
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -892,12 +899,12 @@ fn type114_entity_table_boundary_uses_segment_dimensions() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 114 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 114 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -934,12 +941,12 @@ fn type114_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 114 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 114 table boundary");
     assert_eq!(groups.token_start, 201);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -977,14 +984,19 @@ fn type114_malformed_segment_dimensions_do_not_enable_generic_recovery() {
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count, 0,
+            analysis.candidate_count(),
+            0,
             "M={u_segments}, N={v_segments}"
         );
         assert_eq!(
-            analysis.valid_candidate_count, 0,
+            analysis.valid_candidate_count(),
+            0,
             "M={u_segments}, N={v_segments}"
         );
-        assert!(analysis.groups.is_none(), "M={u_segments}, N={v_segments}");
+        assert!(
+            analysis.groups().is_none(),
+            "M={u_segments}, N={v_segments}"
+        );
     }
 }
 
@@ -1026,7 +1038,7 @@ fn decode_uses_type114_entity_boundary_for_form7_association() {
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
     assert_eq!(result.ir().model.surfaces.len(), 1);
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -1070,12 +1082,12 @@ fn type128_entity_table_boundary_uses_surface_indices() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 128 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 128 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -1106,12 +1118,12 @@ fn type128_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 128 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 128 table boundary");
     assert_eq!(groups.token_start, 38);
-    assert_eq!(groups.associations, vec![1]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -1147,15 +1159,17 @@ fn type128_malformed_indices_do_not_enable_generic_recovery() {
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count, 0,
+            analysis.candidate_count(),
+            0,
             "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
         );
         assert_eq!(
-            analysis.valid_candidate_count, 0,
+            analysis.valid_candidate_count(),
+            0,
             "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
         );
         assert!(
-            analysis.groups.is_none(),
+            analysis.groups().is_none(),
             "K1={k1}, K2={k2}, M1={m1}, M2={m2}"
         );
     }
@@ -1204,7 +1218,7 @@ fn decode_uses_type128_entity_boundary_for_form7_association() {
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::ParameterBoundaryAmbiguous.kind()));
     assert_eq!(result.ir().model.surfaces.len(), 1);
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#5")
         .unwrap();
@@ -1244,12 +1258,12 @@ fn type144_entity_table_boundary_uses_inner_boundary_count() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 144 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 144 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -1276,12 +1290,12 @@ fn type144_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 144 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 144 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![3]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -1311,9 +1325,9 @@ fn type144_malformed_inner_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -1403,7 +1417,7 @@ fn decode_uses_type144_entity_boundary_for_form0_association() {
         result.report().losses
     );
     assert_eq!(result.ir().model.faces.len(), 1);
-    let source = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let source = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#15")
         .unwrap();
@@ -1443,12 +1457,12 @@ fn type143_entity_table_boundary_uses_boundary_count() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 143 table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("Type 143 table boundary");
         assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }
 
@@ -1475,12 +1489,12 @@ fn type143_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 143 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 143 table boundary");
     assert_eq!(groups.token_start, 5);
-    assert_eq!(groups.associations, vec![3]);
-    assert!(groups.properties.is_empty());
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
 }
 
 #[test]
@@ -1510,9 +1524,9 @@ fn type143_malformed_boundary_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }
 
@@ -1525,12 +1539,12 @@ fn type140_form0_follows_five_primary_fields() {
     let record = integer_parameter_record(9, &[140, 0, 0, 1, 2, 3, 1, 1, 1, 5]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 140 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 140 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![1]);
-    assert_eq!(groups.properties, vec![5]);
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+    assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![5]);
 }
 
 #[test]
@@ -1550,19 +1564,19 @@ fn type140_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid)
+                .is_some_and(|groups| groups.fully_valid())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 140 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 140 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![3]);
-    assert_eq!(groups.properties, vec![5]);
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![5]);
 }
 
 #[test]
@@ -1587,16 +1601,16 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = analyze_trailing_pointer_groups(&wrong_field, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    assert_eq!(analysis.groups.expect("Type 140 boundary").token_start, 6);
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    assert_eq!(analysis.groups().expect("Type 140 boundary").token_start, 6);
 
     for values in [vec![140, 0, 0, 1, 2], vec![140, 0, 0, 1, 2, 3, 1, 1, 1]] {
         let analysis =
             analyze_trailing_pointer_groups(&integer_parameter_record(9, &values), &directory);
-        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
-        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
-        assert!(analysis.groups.is_none(), "values={values:?}");
+        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
+        assert!(analysis.groups().is_none(), "values={values:?}");
     }
 }
 
@@ -1619,12 +1633,20 @@ fn type308_form0_entity_table_boundary_follows_member_count() {
         values.extend([1.into(), 1.into(), 1.into(), 5.into()]);
         let analysis =
             analyze_trailing_pointer_groups(&token_parameter_record(11, values), &directory);
-        assert_eq!(analysis.candidate_count, 1, "N={member_count}");
-        assert_eq!(analysis.valid_candidate_count, 1, "N={member_count}");
-        let groups = analysis.groups.expect("Type 308 table boundary");
+        assert_eq!(analysis.candidate_count(), 1, "N={member_count}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "N={member_count}");
+        let groups = analysis.groups().expect("Type 308 table boundary");
         assert_eq!(groups.token_start, expected_start, "N={member_count}");
-        assert_eq!(groups.associations, vec![1], "N={member_count}");
-        assert_eq!(groups.properties, vec![5], "N={member_count}");
+        assert_eq!(
+            groups.associations().copied().collect::<Vec<_>>(),
+            vec![1],
+            "N={member_count}"
+        );
+        assert_eq!(
+            groups.properties().copied().collect::<Vec<_>>(),
+            vec![5],
+            "N={member_count}"
+        );
     }
 }
 
@@ -1659,17 +1681,17 @@ fn type308_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid)
+                .is_some_and(|groups| groups.fully_valid())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count, 1);
-    assert_eq!(analysis.valid_candidate_count, 1);
-    let groups = analysis.groups.expect("Type 308 table boundary");
+    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(analysis.valid_candidate_count(), 1);
+    let groups = analysis.groups().expect("Type 308 table boundary");
     assert_eq!(groups.token_start, 6);
-    assert_eq!(groups.associations, vec![3]);
-    assert_eq!(groups.properties, vec![5]);
+    assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![3]);
+    assert_eq!(groups.properties().copied().collect::<Vec<_>>(), vec![5]);
 }

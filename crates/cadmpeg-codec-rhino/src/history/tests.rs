@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use super::*;
 use crate::chunks::TCODE_CRC;
@@ -87,7 +87,7 @@ fn source_band_history_record_with_major(
 #[test]
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(ir.model.features.len(), 2);
@@ -95,17 +95,17 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         ir.model.features[1].dependencies,
         vec![ir.model.features[0].id.clone()]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Native {
-        kind,
-        parameters,
-        properties,
-    } = &ir.model.features[1].definition
+    let cadmpeg_ir::features::FeatureDefinition::Native { kind, parameters } =
+        &ir.model.features[1].definition
     else {
         panic!("native history operation");
     };
-    assert_eq!(kind, "00000000-0000-0000-0000-00000000000c");
+    assert_eq!(kind.as_str(), "00000000-0000-0000-0000-00000000000c");
     assert_eq!(parameters["value_7"], "2.5");
-    assert_eq!(properties["antecedent_objects"], id(40).to_string());
+    assert_eq!(
+        ir.model.features[1].source_properties["antecedent_objects"],
+        id(40).to_string()
+    );
     assert_eq!(
         ir.model.features[1].native_ref.as_deref(),
         Some("rhino:history:record#00000000-0000-0000-0000-000000000002")
@@ -115,7 +115,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 #[test]
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[0].dependencies.is_empty());
 }
@@ -127,7 +127,7 @@ fn projection_counts_dependency_with_ambiguous_producers() {
         record(2, 12, &[], &[40]),
         record(3, 13, &[40], &[41]),
     ];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[2].dependencies.is_empty());
 }
@@ -226,7 +226,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
         value: Value::Doubles(vec![3.5]),
     });
     let records = [producer, record(2, 12, &[40], &[41])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(
@@ -327,11 +327,13 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let polyedge_value = value(13, &anonymous_value(0, &polyedges));
     let (parsed, _) = parse_value(&polyedge_value, 0, polyedge_value.len(), ArchiveVersion::V8)
         .expect("polyedge");
-    assert!(matches!(parsed.value, Value::PolyEdges(values)
-        if values.len() == 1
-            && values[0].segments.is_empty()
-            && values[0].parameters == [0.25, 0.75]
-            && values[0].evaluation_mode == 3));
+    let Value::PolyEdges(values) = parsed.value else {
+        panic!("expected polyedges");
+    };
+    assert_eq!(values.len(), 1);
+    assert!(values[0].polyedge.segments.is_empty());
+    assert_eq!(values[0].polyedge.parameters, [0.25, 0.75]);
+    assert_eq!(Some(values[0].evaluation_mode), Some(3));
 
     let subd_id = id(42);
     let mut chain = [0_u8; 16].to_vec();
@@ -350,8 +352,8 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     assert!(matches!(parsed.value, Value::SubdEdgeChains(values)
         if values.len() == 1
             && values[0].subd_id == subd_id
-            && values[0].edge_ids == [11, 12]
-            && values[0].orientations == [0, 1]));
+            && values[0].edges.iter().map(|edge| edge.id).collect::<Vec<_>>() == [11, 12]
+            && values[0].edges.iter().map(|edge| u8::from(edge.reversed)).collect::<Vec<_>>() == [0, 1]));
 }
 
 #[test]
@@ -375,8 +377,7 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
         parsed.value,
         Value::SubdEdgeChains(values)
             if values.len() == 1
-                && values[0].edge_ids.is_empty()
-                && values[0].orientations.is_empty()
+                && values[0].edges.is_empty()
     ));
     assert_eq!(warnings.len(), 1);
 }
@@ -489,7 +490,7 @@ fn scan_retains_history_record_source_boundaries() {
         .expect("history table descriptor");
     assert_eq!(history.records.len(), 1);
     assert_eq!(history.records[0].typecode, 0x2000_807b);
-    assert_eq!(&scan.data[history.records[0].body.clone()], &[1, 2, 3, 4]);
+    assert_eq!(&scan.data[history.records[0].body()], &[1, 2, 3, 4]);
 }
 
 #[test]
@@ -627,4 +628,83 @@ pub(crate) fn scan_decodes_history_identity_dependencies_and_typed_values() {
         decoded.ir().model.features[0].native_ref.as_deref(),
         Some("rhino:history:record#00000001-0002-0003-0405-060708090a0b")
     );
+}
+
+#[test]
+fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
+    // The major-1 layouts are specified in rhino_3dm.md section 7.1.
+    let mut reference = id(9).to_wire().to_vec();
+    for value in [2_i32, 17, 4] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [1.0_f64, 2.0, 3.0] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [0_i32, 2, 17] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [0.0_f64, 1.0, 2.0, 3.0] {
+        reference.extend(value.to_le_bytes());
+    }
+    reference.extend(0_i32.to_le_bytes());
+    let reference = anonymous_value(0, &reference);
+
+    for minor in [0, 1] {
+        let mut proxy = reference.clone();
+        proxy.push(1);
+        for value in [10.0_f64, 20.0, 12.0, 18.0, 0.0, 1.0] {
+            proxy.extend(value.to_le_bytes());
+        }
+        if minor >= 1 {
+            for value in [2.0_f64, 6.0, 3.0, 5.0] {
+                proxy.extend(value.to_le_bytes());
+            }
+        }
+        let mut edge = 1_i32.to_le_bytes().to_vec();
+        edge.extend(anonymous_value(minor, &proxy));
+        edge.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 1.0] {
+            edge.extend(value.to_le_bytes());
+        }
+        edge.extend(3_i32.to_le_bytes());
+        let bytes = anonymous_value(0, &edge);
+        let (edge, next) = poly_edge(&bytes, 0, bytes.len(), ArchiveVersion::V8)
+            .expect("source-shaped history polyedge");
+        assert_eq!(next, bytes.len());
+        let mut properties = BTreeMap::new();
+        let mut sink = GeometrySink {
+            untyped: 0,
+            failed: 0,
+            redundant_repairs: 0,
+        };
+        structured_value_properties(
+            "value_7",
+            &Value::PolyEdges(vec![edge]),
+            None,
+            &mut properties,
+            &mut sink,
+        );
+        assert_eq!(properties["value_7.0.evaluation_mode"], "3");
+        assert_eq!(
+            properties["value_7.0.segment_0.curve.object_id"],
+            id(9).to_string()
+        );
+        assert_eq!(properties["value_7.0.segment_0.curve.component"], "2,17");
+        assert_eq!(properties["value_7.0.segment_0.reversed"], "true");
+        assert_eq!(properties["value_7.0.segment_0.full_domain"], "10,20");
+        assert_eq!(properties["value_7.0.segment_0.sub_domain"], "12,18");
+        assert_eq!(properties["value_7.0.segment_0.proxy_domain"], "0,1");
+        assert_eq!(
+            properties
+                .get("value_7.0.segment_0.edge_domain")
+                .map(String::as_str),
+            (minor >= 1).then_some("2,6")
+        );
+        assert_eq!(
+            properties
+                .get("value_7.0.segment_0.trim_domain")
+                .map(String::as_str),
+            (minor >= 1).then_some("3,5")
+        );
+    }
 }

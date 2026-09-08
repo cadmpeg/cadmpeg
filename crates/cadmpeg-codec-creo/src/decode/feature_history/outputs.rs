@@ -2,18 +2,20 @@
 //! Feature output bodies, sweep kind, and native parameter maps.
 
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::{
-    current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
-    feature_schema_class, unique_feature_revolution_extent_kind,
-};
 use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
 use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
+    feature_schema_class, unique_feature_revolution_extent,
+};
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
 use cadmpeg_ir::topology::BodyKind;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_output_bodies(
@@ -43,21 +45,24 @@ fn feature_output_bodies_with_history(
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .map(|row| SurfaceId(format!("creo:visibgeom:surface#{}", row.id)))
+        .map(|row| {
+            SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar")
+        })
         .chain(
             scan.features
                 .entity_tables
                 .iter()
-                .filter(|table| table.feature_id == Some(feature_id))
-                .flat_map(|table| &table.surface_ids)
-                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
+                .filter(|table| table.feature_id == feature_id)
+                .flat_map(crate::feature::FeatureEntityTable::surface_ids)
+                .map(|surface_id| {
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                        .expect("identity grammar")
+                }),
         )
-        .chain(
-            affected_geometry
-                .into_iter()
-                .flatten()
-                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
-        );
+        .chain(affected_geometry.into_iter().flatten().map(|surface_id| {
+            SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar")
+        }));
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
@@ -206,7 +211,10 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
 pub(in super::super) fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
     ["extrusion", "revolution"]
         .into_iter()
-        .map(|family| BodyId(format!("creo:feature:{family}#{feature_id}:body")))
+        .map(|family| {
+            BodyId::mint(format!("creo:feature:{family}#{feature_id}:body"))
+                .expect("identity grammar")
+        })
         .filter(|id| exactly_one(ir.model.bodies.iter().filter(|body| body.id == *id)).is_some())
         .collect()
 }
@@ -216,7 +224,8 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     family: &str,
     feature_id: u32,
 ) -> Option<BodyKind> {
-    let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
+    let id =
+        BodyId::mint(format!("creo:feature:{family}#{feature_id}:body")).expect("identity grammar");
     exactly_one(ir.model.bodies.iter().filter(|body| body.id == id)).map(|body| body.kind)
 }
 
@@ -227,7 +236,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
 ) -> Option<u32> {
     let owned = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .collect::<Vec<_>>();
     let unique_table = |class_id| {
         let mut matches = owned
@@ -245,9 +254,9 @@ pub(in super::super) fn new_sheet_output_surface_id(
     };
     let generated = unique_table(29)?;
     (owner.class_id == 200
-        && owner.source_entity_id == Some(feature_id)
+        && owner.source_entity_id() == Some(feature_id)
         && output.entity_id == owner.entity_id
-        && generated.surface_ids.contains(&output.class_id)
+        && generated.surface_ids().contains(&output.class_id)
         && generated
             .entries
             .iter()
@@ -276,7 +285,7 @@ pub(in super::super) fn sweep_output_kind(
         .map(|_| BodyKind::Sheet)
         .or_else(|| {
             current_feature_operation(&scan.features.operations, feature_id)
-                .filter(|operation| operation.kind == "Surface")
+                .filter(|operation| operation.kind.as_str() == "Surface")
                 .map(|_| BodyKind::Sheet)
         })
     })
@@ -492,25 +501,17 @@ pub(in super::super) fn feature_parameters(
             direction.value.to_string(),
         );
     }
-    if let Some(extent) =
-        unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
-    {
-        parameters.insert(
-            "revolution_extent".to_string(),
-            match extent {
-                crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
-            }
-            .to_string(),
-        );
+    if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_some() {
+        parameters.insert("revolution_extent".to_string(), "full_turn".to_string());
     }
     for table in scan
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
     {
         for entry in &table.entries {
-            let Some(source_entity_id) = entry.source_entity_id else {
+            let Some(source_entity_id) = entry.source_entity_id() else {
                 continue;
             };
             insert_feature_parameter(
@@ -532,7 +533,7 @@ pub(in super::super) fn feature_parameters(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
         .collect::<Vec<_>>();
     if let [definition] = owned_definitions.as_slice() {
         parameters.insert(
@@ -540,7 +541,7 @@ pub(in super::super) fn feature_parameters(
             definition
                 .segments
                 .as_ref()
-                .map_or(0, |segments| segments.rows.len())
+                .map_or(0, |segments| segments.rows.ordinary().count())
                 .to_string(),
         );
         parameters.insert(
@@ -584,17 +585,17 @@ pub(in super::super) fn feature_parameters(
     parameters
 }
 
-pub(in super::super) fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
+pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
     match schema_class {
-        911 => Some("Hole"),
-        913 => Some("Round"),
-        914 => Some("Chamfer"),
-        916 => Some("Cut"),
-        917 => Some("Protrusion"),
-        923 => Some("Datum Plane"),
-        926 => Some("Section"),
-        927 => Some("Draft"),
-        946 => Some("Surface Merge"),
+        SchemaClass::Hole => Some("Hole"),
+        SchemaClass::Round => Some("Round"),
+        SchemaClass::Chamfer => Some("Chamfer"),
+        SchemaClass::Cut => Some("Cut"),
+        SchemaClass::Protrusion => Some("Protrusion"),
+        SchemaClass::DatumPlane => Some("Datum Plane"),
+        SchemaClass::Section => Some("Section"),
+        SchemaClass::Draft => Some("Draft"),
+        SchemaClass::SurfaceMerge => Some("Surface Merge"),
         _ => None,
     }
 }
@@ -602,7 +603,7 @@ pub(in super::super) fn schema_operation_kind(schema_class: u32) -> Option<&'sta
 pub(in super::super) fn feature_reference_name<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&'a str> {
+) -> Option<Cow<'a, str>> {
     let mut records = scan
         .features
         .reference_names
@@ -611,7 +612,7 @@ pub(in super::super) fn feature_reference_name<'a>(
     let record = records.next()?;
     records
         .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
-        .then_some(record.name.as_str())
+        .then(|| record.name())
 }
 
 pub(in super::super) fn owned_section_feature_id(
@@ -622,7 +623,7 @@ pub(in super::super) fn owned_section_feature_id(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.id == definition_id)
+        .filter(|definition| definition.identity.id() == definition_id)
         .collect::<Vec<_>>();
     let [definition] = definitions.as_slice() else {
         return None;
@@ -632,7 +633,7 @@ pub(in super::super) fn owned_section_feature_id(
         .rows
         .iter()
         .filter(|row| {
-            row.root_schema_class == Some(926)
+            row.root_schema_class == Some(SchemaClass::Section)
                 && definition.offset >= row.body_offset
                 && definition.offset < row.body_offset.saturating_add(row.body.len())
         })
@@ -651,7 +652,9 @@ pub(in super::super) fn section_definition_for_history_feature<'a>(
         .features
         .rows
         .iter()
-        .filter(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
+        .filter(|row| {
+            row.feature_id == feature_id && row.root_schema_class == Some(SchemaClass::Section)
+        })
         .collect::<Vec<_>>();
     let [row] = rows.as_slice() else {
         return None;
@@ -692,7 +695,7 @@ pub(in super::super) fn feature_source_properties(
             "featdefs_row_schema_classes".to_string(),
             row_schema_classes
                 .iter()
-                .map(u32::to_string)
+                .map(SchemaClass::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         );

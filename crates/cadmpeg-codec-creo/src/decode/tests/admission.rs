@@ -6,13 +6,15 @@
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::Exactness;
 
-use crate::container::{self, role};
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -35,7 +37,7 @@ fn decode_refuses_when_max_entities_is_below_section_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"
@@ -67,7 +69,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit Creo entities"
         ),
@@ -93,21 +95,21 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         )
         .expect("decode thumbnail");
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = result
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == unknowns[0].id.as_str())
+        .find(|record| record.id() == unknowns[0].id.as_str())
         .expect("retained thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(jpeg_payload().as_slice()));
+    assert_eq!(retained.data(), Some(jpeg_payload().as_slice()));
     assert_annotation(
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
         "creo:THMB_IMG_MAIN",
-        retained.offset,
+        retained.offset(),
         "jpeg_thumbnail",
         Exactness::ByteExact,
     );
@@ -115,7 +117,10 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     assert_eq!(source.attributes["section_count"], "1");
     assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
     assert_eq!(source.attributes["section.0.raw_name"], "THMB_IMG_MAIN");
-    assert_eq!(source.attributes["section.0.role"], role::THUMBNAIL);
+    assert_eq!(
+        source.attributes["section.0.role"],
+        ContainerRole::Thumbnail.as_str()
+    );
     assert!(source.attributes["section.0.offset"]
         .parse::<usize>()
         .is_ok());
@@ -134,7 +139,8 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    assert!(container::summarize(&scan)
+    let classification = crate::dialect::classify(&scan);
+    assert!(container::summarize(&scan, &classification)
         .notes
         .iter()
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
@@ -155,9 +161,9 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == unknowns[0].id.as_str())
+        .find(|record| record.id() == unknowns[0].id.as_str())
         .expect("retained expanded thumbnail");
-    assert_eq!(retained.data.as_deref(), Some(jpeg.as_slice()));
+    assert_eq!(retained.data(), Some(jpeg.as_slice()));
     assert_annotation(
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
@@ -183,7 +189,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("geometry generator feature");
 
     assert!(matches!(
@@ -266,7 +272,7 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         .expect("decode ordered surface replay");
 
     let associations =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_surface_replays"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_surface_replays"];
     assert_eq!(associations.len(), 4);
     for (association, visible_id, replay_id, ordinal) in [
         (&associations[0], 7, 9, 0),
@@ -331,13 +337,13 @@ fn decode_annotations_cover_every_emitted_entity() {
             .source_fidelity()
             .retained_records
             .iter()
-            .find(|record| record.id == unknown.id.as_str())
+            .find(|record| record.id() == unknown.id.as_str())
             .expect("unknown source record");
         assert_annotation(
             &result.source_fidelity().annotations,
             unknown.id.as_str(),
             &format!("creo:{section_name}"),
-            retained.offset,
+            retained.offset(),
             "psb_geometry_section",
             Exactness::Unknown,
         );
@@ -359,7 +365,7 @@ fn decode_annotations_cover_every_emitted_entity() {
         emitted_entity_count
     );
     assert_eq!(
-        result.source_fidelity().annotations.exactness.len(),
+        result.source_fidelity().annotations.exactness().len(),
         emitted_entity_count
     );
 }
@@ -377,15 +383,16 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.features.operation_states.len(), 7);
     assert_eq!(scan.features.operation_states[0].feature_id, 40);
-    assert_eq!(scan.features.operation_states[0].kind, "Protrusion");
     assert_eq!(
-        scan.features.operation_states[0].stored_name.as_deref(),
+        scan.features.operation_states[0].kind.as_str(),
+        "Protrusion"
+    );
+    assert_eq!(
+        scan.features.operation_states[0].stored_name().as_deref(),
         Some("xProtrusion id 40")
     );
     assert_eq!(
-        scan.features.operation_states[0]
-            .identifier_keyword
-            .as_deref(),
+        scan.features.operation_states[0].identifier_keyword(),
         Some("id")
     );
     assert_eq!(
@@ -393,27 +400,28 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         scan.features.operation_states[0].offset
     );
     assert_eq!(scan.features.operation_states[5].feature_id, 40);
-    assert_eq!(scan.features.operation_states[5].kind, "Hole");
+    assert_eq!(scan.features.operation_states[5].kind.as_str(), "Hole");
     assert!(scan.features.operation_states[0].display_state_conflict);
     assert!(scan.features.operation_states[5].display_state_conflict);
     assert_eq!(scan.features.operations.len(), 6);
     assert_eq!(scan.features.operations[0].feature_id, 40);
-    assert_eq!(scan.features.operations[0].kind, "Native Feature");
-    assert!(!scan.features.operations[0].display_name_stored);
+    assert_eq!(scan.features.operations[0].kind.as_str(), "Native Feature");
+    assert!(!scan.features.operations[0].display_name_stored());
     assert!(scan.features.operations[0].display_state_conflict);
-    assert_eq!(scan.features.operations[0].stored_name_prefix, None);
+    assert_eq!(scan.features.operations[0].stored_name_prefix(), None);
     assert_eq!(scan.features.operations[1].feature_id, 41);
-    assert_eq!(scan.features.operations[1].kind, "Round");
-    assert_eq!(scan.features.operations[2].kind, "Future Feature");
-    assert_eq!(scan.features.operations[3].kind, "Datum Plane");
-    assert_eq!(scan.features.operations[4].kind, "Draft");
-    assert_eq!(scan.features.operations[5].kind, "Surface");
-    assert_eq!(scan.features.operations[5].stored_name_prefix, Some(b'y'));
+    assert_eq!(scan.features.operations[1].kind.as_str(), "Round");
+    assert_eq!(scan.features.operations[2].kind.as_str(), "Future Feature");
+    assert_eq!(scan.features.operations[3].kind.as_str(), "Datum Plane");
+    assert_eq!(scan.features.operations[4].kind.as_str(), "Draft");
+    assert_eq!(scan.features.operations[5].kind.as_str(), "Surface");
+    assert_eq!(scan.features.operations[5].stored_name_prefix(), Some(b'y'));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let states = &result.ir().native.namespace("creo").unwrap().arenas["feature_operation_states"];
+    let states =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()
@@ -451,7 +459,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert!(matches!(
         &result.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "Native Feature"
+            if kind.as_str() == "Native Feature"
     ));
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -465,10 +473,9 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.ir().model.features[1].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
-        }])
+        } if matches!(groups.as_slice(), [group]
+            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+                && group.radius.is_unresolved())
     ));
     assert_eq!(
         result
@@ -552,12 +559,12 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         .decode(&mut reader, &DecodeOptions::default())
         .expect("decode");
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     // The two PSB geometry sections are preserved as unknown records.
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 2);
-    assert!(unknowns.iter().any(|u| u.id.0.contains("VisibGeom")));
-    assert!(unknowns.iter().any(|u| u.id.0.contains("NovisGeom")));
+    assert!(unknowns.iter().any(|u| u.id.as_str().contains("VisibGeom")));
+    assert!(unknowns.iter().any(|u| u.id.as_str().contains("NovisGeom")));
     // No geometry arenas populated.
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.points.is_empty());
@@ -628,8 +635,8 @@ fn container_only_preserves_sections_without_transferring_entities() {
         )
         .expect("container decode");
 
-    assert!(result.report().container_only);
-    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 1);

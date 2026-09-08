@@ -1012,7 +1012,7 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
             carrier_surface: 2,
             source_surface: 3,
             distance: -0.5,
-            carrier_kind: 0x15,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
             parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
         })
     );
@@ -1064,7 +1064,7 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
             carrier_surface: 2,
             source_surface: 3,
             distance: -6.5,
-            carrier_kind: 0x09,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Sphere,
             parameter_bounds: [[0.0, 2.0], [-2.0, 4.0]],
         })
     );
@@ -1218,19 +1218,22 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
 #[test]
 fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
-    let source = B5Surface::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let source = B5Surface::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid bilinear NURBS"),
+    );
     let surfaces = BTreeMap::from([(3, source.clone()), (4, source)]);
     let mut cache_payload = vec![0x81, 0x84];
     for value in [-0.5f64, -2.0, -4.0, 3.0, 5.0] {
@@ -1265,7 +1268,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             carrier_surface: 2,
             source_surface: 3,
             distance: -0.5,
-            carrier_kind: 0x01,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Cache,
             parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
         })
     );

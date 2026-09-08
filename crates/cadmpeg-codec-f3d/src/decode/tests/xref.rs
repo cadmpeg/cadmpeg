@@ -6,11 +6,9 @@ use crate::loss::F3dLossCode;
 
 #[test]
 fn superseded_xref_placements_have_a_distinct_loss_note() {
-    let mut report = cadmpeg_ir::report::DecodeReport {
-        format: "f3d".into(),
-        container_only: false,
+    let mut report = cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: Default::default(),
@@ -28,7 +26,10 @@ fn superseded_xref_placements_have_a_distinct_loss_note() {
             transform: None,
         }],
         placement_failures: Vec::new(),
-        placement_overrides: vec![(4, 2)],
+        placement_overrides: vec![crate::xref::PlacementOverride {
+            ordinal: 4,
+            count: 2,
+        }],
     };
 
     report_xref_placement_overrides(&mut report, &table);

@@ -14,15 +14,6 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
     };
-    if !crate::native::native_version_supported(namespace.version) {
-        let version = namespace.version;
-        return vec![Finding {
-            check: Check::Version,
-            severity: Severity::Error,
-            message: format!("unsupported SolidWorks native namespace version {version}"),
-            entity: None,
-        }];
-    }
     let native = match crate::native::SldprtNative::load(namespace) {
         Ok(native) => native,
         Err(error) => {
@@ -81,9 +72,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             let root_features = history
                 .features
                 .iter()
-                .filter(|feature| {
-                    feature.tree_parent.is_none() && feature.parent_source_id.is_none()
-                })
+                .filter(|feature| feature.tree_parent.is_none())
                 .map(|feature| feature.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
             let all_features = history
@@ -234,8 +223,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             .zip(&actual_lane.sketch_entities)
         {
             expected.feature_ref.clone_from(&actual.feature_ref);
-            expected.links.clear();
-            expected.link_selector = None;
+            expected.links = None;
         }
         for (expected, actual) in expected_lane
             .references
@@ -375,9 +363,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     entity: Some(entity.id.clone()),
                 });
             }
-            if entity.links != expected_entity.links
-                || entity.link_selector != expected_entity.link_selector
-            {
+            if entity.links != expected_entity.links {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,

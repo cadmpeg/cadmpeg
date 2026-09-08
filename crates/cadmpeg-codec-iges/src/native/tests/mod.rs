@@ -4,7 +4,6 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
@@ -36,7 +35,7 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
                 .and_then(|source| source.tag.as_deref())
                 == Some(&tag)
         })
-        .map(|loss| loss.code.code.clone())
+        .map(|loss| loss.code.local_code().to_owned())
         .collect()
 }
 
@@ -66,7 +65,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         assert_eq!(
             charged
                 .iter()
-                .filter(|code| **code == overdeclared.code)
+                .filter(|code| **code == overdeclared.local_code())
                 .count(),
             1,
             "D{sequence} must carry the count loss once, got {charged:?}"
@@ -92,8 +91,8 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
     {
-        CodecError::StrictRefusal { loss_code, .. } => {
-            assert_eq!(loss_code, overdeclared.as_str());
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(rejection.loss().code.to_string(), overdeclared.to_string());
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
@@ -194,7 +193,7 @@ fn decode_preserves_native_entities_and_graph() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().source.as_ref().unwrap().format, "iges");
+    assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
         crate::document_digest(result.ir())
@@ -204,24 +203,25 @@ fn decode_preserves_native_entities_and_graph() {
             .source_fidelity()
             .retained_record(crate::SOURCE_IMAGE_ID)
             .unwrap()
-            .data
-            .as_deref(),
+            .data(),
         Some(bytes.as_slice())
     );
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 6);
-    assert_eq!(native.arenas["cards"].len(), 7);
-    assert_eq!(native.arenas["entities"].len(), 1);
-    assert!(native.arenas["colors"].is_empty());
-    assert_eq!(native.arenas["display_attributes"].len(), 1);
-    assert!(!native.arenas.contains_key("opaque_bytes"));
-    assert_eq!(native.arenas["entities"][0].id(), "iges:entity:directory#1");
+    assert_eq!(native.arenas()["cards"].len(), 7);
+    assert_eq!(native.arenas()["entities"].len(), 1);
+    assert!(native.arenas()["colors"].is_empty());
+    assert_eq!(native.arenas()["display_attributes"].len(), 1);
+    assert!(!native.arenas().contains_key("opaque_bytes"));
+    assert_eq!(
+        native.arenas()["entities"][0].id(),
+        "iges:entity:directory#1"
+    );
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.points[0].position.x, 1.0);
     assert_eq!(result.ir().model.points[0].position.y, 2.0);
     assert_eq!(result.ir().model.points[0].position.z, 3.0);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message == "IGES entity type 116 form 0 retained without neutral projection"
     }));

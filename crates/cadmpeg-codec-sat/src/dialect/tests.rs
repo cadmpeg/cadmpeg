@@ -1,0 +1,502 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The registry is the oracle for the pinned ids, so the test reads it rather
+//! than a second copy of the list.
+
+#![allow(clippy::unwrap_used)]
+
+use super::*;
+use crate::loss::SatLossCode;
+use crate::test_support::{
+    acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    UNVERIFIED_SAVE_FORMAT,
+};
+use crate::SatCodec;
+use crate::FORMAT;
+use cadmpeg_asm::dialect::{DECLARED_SAVE_FORMAT_MAJOR, DECLARED_SAVE_FORMAT_MINOR};
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::dialect::{Admission, Grammar};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
+
+#[test]
+fn enum_and_registry_rows_are_closed_bidirectionally() {
+    let kernel = header(None);
+    let reportable = [
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &kernel,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &kernel,
+            framed: true,
+        },
+        StreamEvidence::Text(None),
+    ]
+    .map(|evidence| evidence.dialect());
+    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT);
+}
+
+/// A kernel header declaring `save_format_version` and nothing else that
+/// classification reads.
+fn header(save_format_version: Option<u32>) -> KernelHeader {
+    KernelHeader {
+        width: cadmpeg_asm::kernel_header::RefWidth::Four,
+        save_format_version,
+        entity_count: None,
+        flags: None,
+        product_family: None,
+        product_version: None,
+        save_date: None,
+        scale: None,
+        linear: None,
+        angular: None,
+    }
+}
+
+#[test]
+fn only_the_acis_kernel_branches_are_banded() {
+    for version in [Some(10_000), Some(21_700), Some(21_800), Some(23_200), None] {
+        let kernel = header(version);
+        // Stated as the raw declared word, not as a second call to the code
+        // under test.
+        let verified = matches!(version, Some(21_700..=21_899));
+        let nearest = if matches!(version, Some(23_200)) {
+            "acis:save-format-218"
+        } else {
+            "acis:save-format-217"
+        };
+
+        for asm in [
+            StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &kernel,
+                framed: true,
+            },
+            StreamEvidence::Text(Some(TextEvidence {
+                branch: sat::Terminator::Asm,
+                header: &kernel,
+            })),
+        ] {
+            let (host, kernel) = layers(&asm);
+            assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
+            assert_eq!(kernel.admission(), &Admission::Admitted, "{version:?}");
+        }
+
+        let (host, matched) = layers(&StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &kernel,
+            framed: true,
+        });
+        assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
+        if verified {
+            assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
+            assert!(dialect_loss(&matched).is_none(), "{version:?}");
+        } else {
+            assert!(
+                matches!(matched.admission(), Admission::Unverified { .. }),
+                "{version:?}"
+            );
+            assert_eq!(
+                matched.using(),
+                Some(DialectId::pinned(nearest)),
+                "{version:?}"
+            );
+            let loss = dialect_loss(&matched).expect("the recovery is charged");
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert!(loss.message.contains(nearest), "{}", loss.message);
+        }
+
+        let (host, matched) = layers(&StreamEvidence::Text(Some(TextEvidence {
+            branch: sat::Terminator::Acis,
+            header: &kernel,
+        })));
+        assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
+        if verified {
+            assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
+            assert!(dialect_loss(&matched).is_none(), "{version:?}");
+        } else {
+            assert_eq!(matched.admission(), &Admission::Residual, "{version:?}");
+            let loss = dialect_loss(&matched).expect("the recovery is charged");
+            assert_eq!(loss.code, SatLossCode::SourceDialectUnverified.kind());
+            assert!(
+                !loss.message.contains("acis:save-format"),
+                "{}",
+                loss.message
+            );
+            assert!(loss
+                .message
+                .contains("no declared save-band grammar as a substitute"));
+        }
+    }
+}
+
+#[test]
+fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
+    let kernel = header(None);
+    // The three identified rows are shared by inspect and decode refusal.
+    for (evidence, id) in [
+        (
+            StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &kernel,
+                framed: false,
+            },
+            "sat:asm-binary",
+        ),
+        (
+            StreamEvidence::Binary {
+                family: Family::Acis,
+                header: &kernel,
+                framed: false,
+            },
+            "sat:acis-binary",
+        ),
+        (StreamEvidence::Text(None), "sat:text"),
+    ] {
+        let (matched, _) = layers(&evidence);
+        assert_eq!(matched.dialect().as_str(), id);
+        assert_eq!(matched.admission(), &Admission::Refused, "{id}");
+    }
+}
+
+#[test]
+fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
+    // The biconditional §7 requires: `Unverified`/`Residual` and the
+    // `source.kernel-dialect-unverified` charge are the same fact, read from one
+    // place. `Refused` here is structural — the discriminant matched and the
+    // stream did not frame — and carries no recovery mark.
+    let verified = header(Some(21_800));
+    let unverified = header(Some(UNVERIFIED_SAVE_FORMAT));
+    for evidence in [
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &verified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &unverified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &verified,
+            framed: false,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &verified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &unverified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &verified,
+            framed: false,
+        },
+        StreamEvidence::Text(Some(TextEvidence {
+            branch: sat::Terminator::Asm,
+            header: &unverified,
+        })),
+        StreamEvidence::Text(Some(TextEvidence {
+            branch: sat::Terminator::Acis,
+            header: &unverified,
+        })),
+        StreamEvidence::Text(None),
+    ] {
+        let (_, matched) = layers(&evidence);
+        assert_eq!(
+            matches!(
+                matched.admission(),
+                Admission::Unverified { .. } | Admission::Residual
+            ),
+            dialect_loss(&matched).is_some(),
+            "{:?}",
+            matched.admission()
+        );
+    }
+}
+
+#[test]
+fn the_declared_keys_are_pinned() {
+    let kernel = header(Some(21_804));
+
+    let binary = classify(&StreamEvidence::Binary {
+        family: Family::Acis,
+        header: &kernel,
+        framed: true,
+    })
+    .declared()
+    .clone();
+    assert_eq!(binary[DECLARED_ENCODING], "binary");
+    assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
+    assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MINOR));
+    assert!(!binary.contains_key(DECLARED_TERMINATOR));
+
+    let text = classify(&StreamEvidence::Text(Some(TextEvidence {
+        branch: sat::Terminator::Acis,
+        header: &kernel,
+    })))
+    .declared()
+    .clone();
+    assert_eq!(text[DECLARED_ENCODING], "text");
+    assert_eq!(text[DECLARED_TERMINATOR], "End-of-ACIS-data");
+    assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
+    assert!(!text.contains_key(DECLARED_SAVE_FORMAT_MINOR));
+
+    let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
+        branch: sat::Terminator::Asm,
+        header: &kernel,
+    })))
+    .declared()
+    .clone();
+    assert_eq!(asm_text[DECLARED_TERMINATOR], "End-of-ASM-data");
+
+    // An absent save-format word declares no band, which is a different
+    // statement from a declaration of zero.
+    let silent = classify(&StreamEvidence::Binary {
+        family: Family::Asm,
+        header: &header(None),
+        framed: true,
+    })
+    .declared()
+    .clone();
+    assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
+    assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MINOR));
+}
+
+/// An ACIS-terminated text stream at `save_format_version`.
+///
+/// The product strings name ASM while the terminator names ACIS, which is the
+/// asymmetry the gate must ignore: the branch comes from the terminator line.
+fn acis_text(save_format_version: u32) -> Vec<u8> {
+    format!(
+        "{save_format_version} 0 1 0 \n\
+         16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
+         1 1e-06 1.0e-10 \n\
+         body $-1 -1 $-1 $-1 $-1 $-1 #\n\
+         End-of-ACIS-data \n"
+    )
+    .into_bytes()
+}
+
+/// One end-to-end case: real bytes, the row they must classify into, and
+/// whether semantic decode is admitted.
+struct Case {
+    label: &'static str,
+    bytes: Vec<u8>,
+    id: &'static str,
+    kernel_id: &'static str,
+    kernel_admission: Admission,
+}
+
+fn cases() -> Vec<Case> {
+    vec![
+        Case {
+            label: "asm text sphere",
+            bytes: text_sphere_stream(1.0),
+            id: "sat:text",
+            kernel_id: "acis:text-asm",
+            kernel_admission: Admission::Admitted,
+        },
+        Case {
+            label: "asm binary sphere",
+            bytes: binary_sphere_stream(BinaryFixtureKind::Asm),
+            id: "sat:asm-binary",
+            kernel_id: "acis:asm-binaryfile-8",
+            kernel_admission: Admission::Admitted,
+        },
+        Case {
+            label: "acis binary sphere at 218",
+            bytes: binary_sphere_stream(BinaryFixtureKind::Acis),
+            id: "sat:acis-binary",
+            kernel_id: "acis:save-format-218",
+            kernel_admission: Admission::Admitted,
+        },
+        Case {
+            label: "acis text at 700",
+            bytes: acis_text(700),
+            id: "sat:text",
+            kernel_id: "acis:text-acis",
+            kernel_admission: Admission::Residual,
+        },
+        Case {
+            label: "acis text sphere outside the verified band",
+            bytes: acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT),
+            id: "sat:text",
+            kernel_id: "acis:text-acis",
+            kernel_admission: Admission::Residual,
+        },
+        Case {
+            label: "acis binary sphere outside the verified band",
+            bytes: binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
+            id: "sat:acis-binary",
+            kernel_id: "acis:save-format-binary-other",
+            kernel_admission: Admission::Unverified {
+                using: Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+            },
+        },
+        Case {
+            label: "acis text at 218",
+            bytes: acis_text(21_800),
+            id: "sat:text",
+            kernel_id: "acis:text-acis",
+            kernel_admission: Admission::Admitted,
+        },
+    ]
+}
+
+#[test]
+fn decode_admission_matches_the_stream_and_carries_the_recovery_mark() {
+    // End to end on real bytes: the admission the decode reports, and the
+    // recovery loss charged exactly with it.
+    let recovery = SatLossCode::SourceDialectUnverified.kind();
+    for case in cases() {
+        let result = SatCodec
+            .decode(
+                &mut Cursor::new(case.bytes.clone()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", case.label));
+        let charged = result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == recovery);
+        let matched = result
+            .report()
+            .dialects()
+            .expect("SAT reports dialect layers")
+            .primary();
+
+        assert_eq!(matched.admission(), &Admission::Admitted, "{}", case.label);
+        let kernel = result
+            .report()
+            .dialects()
+            .as_ref()
+            .expect("SAT reports dialect layers")
+            .iter()
+            .nth(1)
+            .expect("SAT reports its ACIS layer");
+        assert_eq!(kernel.admission(), &case.kernel_admission, "{}", case.label);
+        assert_eq!(
+            matches!(
+                kernel.admission(),
+                Admission::Unverified { .. } | Admission::Residual
+            ),
+            charged,
+            "{}: admission and the recovery mark must agree",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn an_unverified_band_recovers_the_same_solid_as_the_verified_one() {
+    // The recovery is real, not a relabelled refusal: the same records under a
+    // band no row verifies decode to the same solid, in both encodings.
+    for (label, bytes) in [
+        ("text", acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT)),
+        (
+            "binary",
+            binary_sphere_stream(BinaryFixtureKind::AcisUnverifiedBand),
+        ),
+    ] {
+        let result = SatCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
+        assert!(result.report().geometry_transferred(), "{label}");
+        assert_eq!(result.ir().model.bodies.len(), 1, "{label}");
+        assert_eq!(result.ir().model.faces.len(), 1, "{label}");
+        assert_eq!(result.ir().model.surfaces.len(), 1, "{label}");
+        assert_eq!(result.report().coverage()["unknown_records"], 0, "{label}");
+    }
+}
+
+#[test]
+fn decode_reports_exactly_one_primary_layer_match_and_mirrors_it_into_the_source() {
+    for case in cases() {
+        let result = SatCodec
+            .decode(
+                &mut Cursor::new(case.bytes.clone()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", case.label));
+        let dialects = result
+            .report()
+            .dialects()
+            .expect("SAT reports dialect layers");
+
+        assert_eq!(dialects.iter().count(), 2, "{}", case.label);
+        let matched = dialects.primary();
+        assert_eq!(matched.format(), FORMAT, "{}", case.label);
+        assert_eq!(matched.dialect().as_str(), case.id, "{}", case.label);
+        let kernel = dialects.iter().nth(1).expect("SAT reports its ACIS layer");
+        assert_eq!(kernel.format(), "acis", "{}", case.label);
+        assert_eq!(kernel.dialect().as_str(), case.kernel_id, "{}", case.label);
+
+        // Identity survives refusal: the empty-IR result carries the same row.
+        let source = result.ir().source.as_ref().expect("source metadata");
+        assert_eq!(source.dialect(), Some(matched), "{}", case.label);
+        assert!(
+            !source.dialect().unwrap().declared().is_empty(),
+            "{}: every stream declares at least its encoding",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn inspect_and_decode_agree_on_the_row_and_the_admission() {
+    for case in cases() {
+        let summary = SatCodec
+            .inspect(
+                &mut Cursor::new(case.bytes.clone()),
+                &InspectOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", case.label));
+        let decoded = SatCodec
+            .decode(
+                &mut Cursor::new(case.bytes.clone()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", case.label));
+
+        assert_eq!(
+            summary
+                .dialects()
+                .as_ref()
+                .expect("SAT inspection reports dialect layers")
+                .iter()
+                .count(),
+            2,
+            "{}",
+            case.label
+        );
+        assert_eq!(
+            summary.dialects(),
+            decoded.report().dialects(),
+            "{}: inspect and decode read the same evidence",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn a_stream_matching_no_discriminant_never_reaches_a_report() {
+    // `sat:unknown` is unreachable through the normal catalog: detection
+    // reports no confidence, and both entry points refuse the bytes outright.
+    let bytes = b"not a stream at all".to_vec();
+    assert!(SatCodec
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+        .is_err());
+    assert!(SatCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .is_err());
+}

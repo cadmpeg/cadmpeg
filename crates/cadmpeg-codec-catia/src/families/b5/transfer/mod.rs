@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition,
+    CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
@@ -33,7 +33,7 @@ mod vertices;
 
 use edges::{
     b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, b5_vertex_point,
-    curve_cache_has_ordered_knots, merge_curve_plan, orient_b5_supports_to_edge,
+    merge_curve_plan, orient_b5_supports_to_edge,
 };
 use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
@@ -91,15 +91,36 @@ struct HelixPlan {
 
 struct OwnershipPlan {
     body_kind: BodyKind,
-    components: Vec<Vec<usize>>,
     face_components: Vec<usize>,
     loop_owners: HashMap<u32, usize>,
 }
 
+impl OwnershipPlan {
+    fn components(&self) -> BTreeMap<usize, Vec<usize>> {
+        let mut components = BTreeMap::<usize, Vec<usize>>::new();
+        for (face, &component) in self.face_components.iter().enumerate() {
+            components.entry(component).or_default().push(face);
+        }
+        components
+    }
+}
+
 struct OrientedLoop {
-    member_order: Vec<usize>,
-    reversed: Vec<bool>,
-    pcurve_reversed: Vec<bool>,
+    flipped: bool,
+    members: Vec<OrientedLoopMember>,
+}
+
+#[derive(Clone, Copy)]
+struct OrientedLoopMember {
+    reversed: bool,
+    pcurve_reversed: bool,
+}
+
+impl OrientedLoop {
+    fn member_order(&self) -> impl DoubleEndedIterator<Item = usize> + '_ {
+        let n = self.members.len();
+        (0..n).map(move |i| if self.flipped { n - 1 - i } else { i })
+    }
 }
 
 /// Cross-pass id tables and resolved geometry plans shared between the emit
@@ -144,23 +165,18 @@ pub(crate) fn transfer(
 ) -> bool {
     if !graph.complete {
         graph.loops.retain(|_, loop_| {
-            loop_
-                .pcurves
-                .iter()
-                .zip(&loop_.edges)
-                .all(|(pcurve, edge)| {
-                    (graph
-                        .pcurves
-                        .get(pcurve)
+            loop_.members.iter().all(|member| {
+                (graph
+                    .pcurves
+                    .get(&member.pcurve)
+                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                    || graph
+                        .opaque_pcurves
+                        .get(&member.pcurve)
                         .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || graph
-                            .opaque_pcurves
-                            .get(pcurve)
-                            .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
-                        && graph.edge_vertices.contains_key(edge)
-                })
-                && loop_chain_closes(loop_, &graph.edge_vertices)
+                    || graph.implicit_pcurves.get(&member.pcurve) == Some(&loop_.surface))
+                    && graph.edge_vertices.contains_key(&member.edge)
+            }) && loop_chain_closes(loop_, &graph.edge_vertices)
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -270,9 +286,7 @@ fn referenced_surface_ids(
 /// when any referenced surface, pcurve, edge endpoint, or loop chain fails to
 /// close so the caller leaves the model untouched.
 fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
-    if graph.faces.is_empty()
-        || graph.logical_vertex_refs.len() != graph.logical_vertex_points.len()
-    {
+    if graph.faces.is_empty() {
         return None;
     }
 
@@ -302,7 +316,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = BTreeSet::new();
     for loop_ in graph.loops.values() {
-        if loop_.pcurves.len() != loop_.edges.len() || loop_.pcurves.is_empty() {
+        if loop_.members.is_empty() {
             return None;
         }
         let owner = ownership.loop_owners.get(&loop_.object_id).copied()?;
@@ -313,7 +327,9 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             return None;
         }
         loop_senses.insert(loop_.object_id, loop_.edge_senses());
-        for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
+        for member in &loop_.members {
+            let pcurve_id = member.pcurve;
+            let edge_id = member.edge;
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
                 if let Some(opaque) = graph
                     .opaque_pcurves
@@ -391,15 +407,18 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots,
-                control_points: pcurve
-                    .control_points
-                    .iter()
-                    .map(|point| neutral_pcurve_point(*point, surface))
-                    .collect(),
-                weights: pcurve.weights.clone(),
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(*point, surface))
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                )
+                .ok()?,
             };
             pcurve_plan.entry(pcurve_id).or_insert((
                 geometry,
@@ -415,15 +434,13 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             }) {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
-            let lifted = lifted_curve_geometry(pcurve, surface)
-                .or_else(|| {
-                    let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
-                    else {
-                        return None;
-                    };
-                    nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
-                })
-                .filter(curve_cache_has_ordered_knots);
+            let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
+                let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
+                else {
+                    return None;
+                };
+                nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
+            });
             if let Some(geometry) = lifted {
                 let endpoints = graph.edge_vertices[&edge_id];
                 let (Some(edge_start), Some(edge_end)) = (
@@ -600,7 +617,8 @@ pub(crate) fn resolved_surface_geometry(
     surface_id: u32,
 ) -> Option<SurfaceGeometry> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     let geometry = surfaces::neutral_surface(surface, graph, surface_id, &payload).geometry;
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
@@ -631,7 +649,8 @@ pub(crate) fn resolved_revolution_surface(
     surface_id: u32,
 ) -> Option<ResolvedRevolutionSurface> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     let SurfacePlan {
         geometry,
         procedure,
@@ -718,25 +737,22 @@ pub(crate) fn resolved_object_stream_pcurve(
     let carrier = graph
         .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id))
         .or_else(|| resolved_surface_carrier(surface))?;
-    let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
-        pcurve.degree,
-        &pcurve.knots,
-        &pcurve.points,
-        &pcurve.first_derivatives,
-        &pcurve.second_derivatives,
-    )?;
+    let (knots, control_points) = pcurve.bspline()?;
     Some(ResolvedObjectStreamPcurve {
         surface_object_id: pcurve.support_id,
         carrier,
         geometry: PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots,
-            control_points: control_points
-                .into_iter()
-                .map(|point| pcurves::neutral_pcurve_point(point, surface))
-                .collect(),
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                crate::families::a5a8::records::A8Pcurve::DEGREE,
+                knots,
+                control_points
+                    .into_iter()
+                    .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                    .collect(),
+                None,
+                false,
+            )
+            .ok()?,
         },
         parameter_range: pcurve.range,
     })
@@ -747,7 +763,8 @@ pub(crate) fn resolved_surface_procedural_definition(
     surface_id: u32,
 ) -> Option<(u32, ProceduralSurfaceDefinition)> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     match surfaces::neutral_surface(surface, graph, surface_id, &payload).procedure? {
         SurfaceProcedure::RollingBall {
             carrier_object_id,
@@ -872,15 +889,18 @@ pub(crate) fn resolved_extrusion_surface(
             let domain = pcurve_parameter_domain(pcurve)?;
             bounded_occurrence_range(pcurve_parameter_range, domain)?;
             let pcurve_geometry = PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots,
-                control_points: pcurve
-                    .control_points
-                    .iter()
-                    .map(|point| neutral_pcurve_point(*point, source_surface))
-                    .collect(),
-                weights: pcurve.weights.clone(),
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(*point, source_surface))
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                )
+                .ok()?,
             };
             let curve = lifted_curve_geometry(pcurve, source_surface);
             Some(ResolvedExtrusionSupport {
@@ -978,9 +998,13 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Nurbs(mut curve) => {
-            for knot in &mut curve.knots {
-                *knot = target[0] + (*knot - source[0]) * target_per_source;
-            }
+            curve
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot = target[0] + (*knot - source[0]) * target_per_source;
+                    }
+                })
+                .ok()?;
             Some(CurveGeometry::Nurbs(curve))
         }
         CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {

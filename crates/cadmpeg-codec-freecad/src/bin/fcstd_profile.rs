@@ -8,10 +8,10 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_codec_freecad::{
-    validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
-    FcstdWriteOptions,
+    FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};
@@ -38,7 +38,6 @@ struct Envelope {
     container: &'static str,
     schema_version: u32,
     file_version: u32,
-    native_namespace_version: u32,
     cadir_version: &'static str,
     write_support: bool,
 }
@@ -143,7 +142,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
     let mut total_counts = BTreeMap::<String, usize>::new();
-    let mut namespace_version = None;
     for path in paths {
         let bytes = fs::read(&path)?;
         let first = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
@@ -151,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let canonical = first.ir().to_canonical_json()?;
         let deterministic = canonical == second.ir().to_canonical_json()?;
         let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new());
-        let native = validate_native(first.ir());
+        let native = FcstdCodec.validate_native(first.ir());
         let namespace = first
             .ir()
             .native
@@ -159,17 +157,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
         FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: first.ir(),
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
         FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: first.ir(),
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
@@ -188,26 +180,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         let mut edited_bytes = Vec::new();
         FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &edited_ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&edited_ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut edited_bytes))?;
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
         let typed_edit_round_trip =
             property_value_attribute(edited.ir(), "fcstd:native:document#0", "Label", 0, "value")
                 == Some("cadmpeg L9 edit".to_owned());
-        namespace_version = Some(namespace.version);
         observed.native_arenas.extend(
             namespace
-                .arenas
+                .arenas()
                 .iter()
                 .filter(|(_, records)| !records.is_empty())
                 .map(|(name, _)| name.clone()),
         );
         let has_gui = namespace
-            .arenas
+            .arenas()
             .get("gui_documents")
             .is_some_and(|records| !records.is_empty());
         observed
@@ -215,9 +203,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .insert(if has_gui { "gui" } else { "headless" }.to_owned());
         collect_native_observations(first.ir(), &mut observed);
         for (name, count) in &neutral.entity_counts {
-            *total_counts.entry(name.clone()).or_default() += count;
-            if *count > 0 && !name.starts_with("native.") {
-                observed.neutral_arenas.insert(name.clone());
+            *total_counts.entry(name.to_string()).or_default() += count;
+            if *count > 0 && !name.as_str().starts_with("native.") {
+                observed.neutral_arenas.insert(name.to_string());
             }
         }
         fixtures.push(FixtureProfile {
@@ -245,7 +233,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             semantic_round_trip,
             side_entries_preserved,
             typed_edit_round_trip,
-            entity_counts: neutral.entity_counts,
+            entity_counts: neutral
+                .entity_counts
+                .iter()
+                .map(|(name, count)| (name.to_string(), *count))
+                .collect(),
         });
     }
 
@@ -267,7 +259,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             container: "ZIP-packaged FCStd",
             schema_version: 4,
             file_version: 1,
-            native_namespace_version: namespace_version.unwrap_or_default(),
             cadir_version: cadmpeg_ir::document::IR_VERSION,
             write_support: true,
         },
@@ -361,7 +352,12 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return;
     };
-    for record in namespace.arenas.get("carrier_census").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("carrier_census")
+        .into_iter()
+        .flatten()
+    {
         let fields = record.fields();
         insert_string(&fields, "form", &mut observed.shape_forms);
         insert_map_keys(&fields, "curves_2d", &mut observed.curves_2d);
@@ -369,7 +365,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         insert_map_keys(&fields, "surfaces", &mut observed.surfaces);
         insert_map_keys(&fields, "topology", &mut observed.topology);
     }
-    for record in namespace.arenas.get("applications").into_iter().flatten() {
+    for record in namespace.arenas().get("applications").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "type_name", &mut observed.application_types);
         if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
@@ -394,7 +390,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("embedded_payload".into());
         }
     }
-    for record in namespace.arenas.get("drawings").into_iter().flatten() {
+    for record in namespace.arenas().get("drawings").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.drawing_types);
         if fields
@@ -407,7 +403,12 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("drawing_asset".into());
         }
     }
-    for record in namespace.arenas.get("gui_documents").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("gui_documents")
+        .into_iter()
+        .flatten()
+    {
         if let Some(states) = record.field("states").as_ref().and_then(Value::as_array) {
             for state in states {
                 if let Some(kind) = state.get("kind").and_then(Value::as_str) {
@@ -419,7 +420,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace
-        .arenas
+        .arenas()
         .get("gui_view_providers")
         .into_iter()
         .flatten()
@@ -431,20 +432,25 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
             observed.presentation_constructs.insert("tree_state".into());
         }
     }
-    for record in namespace.arenas.get("gui_properties").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("gui_properties")
+        .into_iter()
+        .flatten()
+    {
         if let Some(Value::String(name)) = record.field("name") {
             observed
                 .presentation_constructs
                 .insert(format!("view_property:{name}"));
         }
     }
-    for record in namespace.arenas.get("entries").into_iter().flatten() {
+    for record in namespace.arenas().get("entries").into_iter().flatten() {
         if record.field("role").as_ref().and_then(Value::as_str) == Some("thumbnail") {
             observed.presentation_constructs.insert("thumbnail".into());
         }
     }
     let product_nodes = namespace
-        .arenas
+        .arenas()
         .get("product_nodes")
         .into_iter()
         .flatten()
@@ -493,7 +499,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("nested_occurrence".into());
         }
     }
-    for record in namespace.arenas.get("joints").into_iter().flatten() {
+    for record in namespace.arenas().get("joints").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.joint_kinds);
         if fields
@@ -642,7 +648,7 @@ fn insert_map_keys(
 fn exact_byte_coverage(ir: &CadIr) -> bool {
     ir.native
         .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas.get("byte_coverage"))
+        .and_then(|namespace| namespace.arenas().get("byte_coverage"))
         .is_some_and(|records| {
             records.len() == 1
                 && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
@@ -655,9 +661,9 @@ fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Err
         source.attributes.remove("physical_ledger_spans");
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
-        namespace.arenas.remove("physical_ledger");
-        namespace.arenas.remove("byte_coverage");
-        namespace.arenas.remove("logical_ledger");
+        namespace.arenas_mut().remove("physical_ledger");
+        namespace.arenas_mut().remove("byte_coverage");
+        namespace.arenas_mut().remove("logical_ledger");
     }
     Ok(ir.to_canonical_json()?)
 }
@@ -670,7 +676,7 @@ fn logical_side_entries(
         .namespace("fcstd")
         .ok_or("CADIR has no fcstd namespace")?;
     Ok(namespace
-        .arenas
+        .arenas()
         .get("entries")
         .into_iter()
         .flatten()
@@ -692,7 +698,7 @@ fn property_value_attribute(
 ) -> Option<String> {
     ir.native
         .namespace("fcstd")?
-        .arenas
+        .arenas()
         .get("properties")?
         .iter()
         .find(|record| {
@@ -735,17 +741,11 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
     let ir = builder.build()?;
     let mut first = Vec::new();
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut first))?;
     let mut second = Vec::new();
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
@@ -754,7 +754,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         .namespace("fcstd")
         .ok_or("generated CADIR has no fcstd namespace")?;
     let object_type = namespace
-        .arenas
+        .arenas()
         .get("objects")
         .into_iter()
         .flatten()
@@ -772,19 +772,15 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         })
         .collect();
     let unsupported_target_rejected = FcstdCodec
-        .encode_with_options(
-            &ir,
-            &mut Vec::new(),
-            FcstdWriteOptions {
-                schema_version: 3,
-                file_version: 1,
-            },
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("fcstd:schema-3"),
         )
         .is_err();
     Ok(SourceLessWriteProfile {
         generated: true,
         deterministic: first == second,
-        decodes_cleanly: validate_native(decoded.ir()).is_empty(),
+        decodes_cleanly: FcstdCodec.validate_native(decoded.ir()).is_empty(),
         object_type,
         typed_parameters,
         unsupported_target_rejected,

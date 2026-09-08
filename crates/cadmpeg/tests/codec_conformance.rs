@@ -162,7 +162,8 @@ mod budget {
                         },
                     )
                     .expect_err("starved decode must fail");
-                let CodecError::ResourceLimit(limit) = error else {
+                let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error
+                else {
                     panic!(
                         "{} returned the wrong error classification: {error}",
                         case.name
@@ -214,9 +215,12 @@ mod product_roundtrip {
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_codec_step::StepCodec;
-    use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput};
+    use cadmpeg_ir::codec::write::EncodeInput;
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::codec::write::TargetRequest;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
-    use cadmpeg_ir::{CadIr, Encoder};
+    use cadmpeg_ir::CadIr;
 
     const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -229,7 +233,7 @@ mod product_roundtrip {
             .iter()
             .map(|definition| {
                 (
-                    definition.id.0.as_str(),
+                    definition.id.as_str(),
                     definition
                         .part_number
                         .as_ref()
@@ -249,12 +253,12 @@ mod product_roundtrip {
             definitions: &HashMap<&str, String>,
             memo: &mut HashMap<String, String>,
         ) -> String {
-            if let Some(path) = memo.get(occurrence.id.0.as_str()) {
+            if let Some(path) = memo.get(occurrence.id.as_str()) {
                 return path.clone();
             }
             let definition = match &occurrence.prototype {
                 PrototypeReference::Local { definition } => definitions
-                    .get(definition.0.as_str())
+                    .get(definition.as_str())
                     .expect("local prototype resolves"),
                 _ => panic!("round-trip fixture contains only local prototypes"),
             };
@@ -265,7 +269,7 @@ mod product_roundtrip {
                     "{}/{}",
                     path(
                         occurrences
-                            .get(parent.0.as_str())
+                            .get(parent.as_str())
                             .expect("parent occurrence resolves"),
                         occurrences,
                         definitions,
@@ -274,7 +278,7 @@ mod product_roundtrip {
                     segment
                 ),
             };
-            memo.insert(occurrence.id.0.clone(), resolved.clone());
+            memo.insert(occurrence.id.as_str().to_owned(), resolved.clone());
             resolved
         }
 
@@ -283,7 +287,7 @@ mod product_roundtrip {
             .model
             .occurrences
             .iter()
-            .map(|occurrence| (occurrence.id.0.as_str(), occurrence))
+            .map(|occurrence| (occurrence.id.as_str(), occurrence))
             .collect::<HashMap<_, _>>();
         let graph = AssemblyGraph::new(&ir.model.occurrences).expect("valid assembly graph");
         let mut memo = HashMap::new();
@@ -296,7 +300,7 @@ mod product_roundtrip {
                     graph
                         .resolved_transform(&occurrence.id)
                         .expect("resolved transform")
-                        .rows,
+                        .rows(),
                 )
             })
             .collect()
@@ -378,10 +382,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput {
-                ir: &source,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP assembly");
         let decoded = StepCodec::default()

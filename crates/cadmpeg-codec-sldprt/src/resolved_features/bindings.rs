@@ -120,10 +120,9 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern { seeds, pattern, .. } => (
-                        matches!(pattern, PatternKind::Unresolved { .. }),
-                        seeds.is_empty(),
-                    ),
+                    FeatureDefinition::Pattern { seeds, pattern, .. } => {
+                        (pattern.is_unresolved(), seeds.is_empty())
+                    }
                     _ => continue,
                 };
                 if !needs_plane && !needs_seeds {
@@ -198,10 +197,7 @@ pub(crate) fn bind_pattern_inputs(
                 let (needs_seed, needs_axis) = match &model_features[model_index].definition {
                     FeatureDefinition::Pattern {
                         seeds,
-                        pattern:
-                            PatternKind::Unresolved {
-                                form: Some(cadmpeg_ir::features::PatternForm::Circular),
-                            },
+                        pattern: PatternKind::UnresolvedCircular,
                         ..
                     } => (seeds.is_empty(), true),
                     FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
@@ -281,9 +277,7 @@ pub(crate) fn bind_pattern_inputs(
                 if matches!(
                     model_features[model_index].definition,
                     FeatureDefinition::Pattern {
-                        pattern: PatternKind::Unresolved {
-                            form: Some(cadmpeg_ir::features::PatternForm::Linear)
-                        },
+                        pattern: PatternKind::UnresolvedLinear,
                         ..
                     }
                 ) {
@@ -444,9 +438,7 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &model_features[target_index].definition
             else {
                 continue;
@@ -556,15 +548,13 @@ pub(crate) fn bind_pattern_inputs(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        if let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::Unresolved { .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            *slot = PatternKind::Mirror {
-                plane_origin: *origin,
-                plane_normal: *normal,
-            };
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
+            if pattern.is_unresolved() {
+                *pattern = PatternKind::Mirror {
+                    plane_origin: *origin,
+                    plane_normal: *normal,
+                };
+            }
         }
     }
     let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
@@ -627,10 +617,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if let FeatureDefinition::Pattern {
-            pattern:
-                slot @ PatternKind::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Circular),
-                },
+            pattern: slot @ PatternKind::UnresolvedCircular,
             ..
         } = &mut model_features[index].definition
         {
@@ -663,7 +650,7 @@ pub(crate) fn bind_mirror_surface_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {
@@ -677,29 +664,30 @@ pub(crate) fn bind_mirror_surface_planes(
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
-    for (face, source, local) in face_identities {
-        let candidates = faces_by_identity.entry((*source, *local)).or_default();
+    for (face, identity) in face_identities {
+        let candidates = faces_by_identity
+            .entry((identity.feature_source_id, identity.local_id))
+            .or_default();
         if !candidates.contains(&face.as_str()) {
-            candidates.push(face);
+            candidates.push(face.as_str());
         }
     }
     let faces_by_id = faces
         .iter()
-        .map(|face| (face.id.0.as_str(), face))
+        .map(|face| (face.id.as_str(), face))
         .collect::<HashMap<_, _>>();
     let surfaces_by_id = surfaces
         .iter()
-        .map(|surface| (surface.id.0.as_str(), surface))
+        .map(|surface| (surface.id.as_str(), surface))
         .collect::<HashMap<_, _>>();
 
     for feature in features {
-        let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::Unresolved { .. },
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Pattern { pattern, .. } = &mut feature.definition else {
             continue;
         };
+        if !pattern.is_unresolved() {
+            continue;
+        }
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
@@ -726,7 +714,7 @@ pub(crate) fn bind_mirror_surface_planes(
             };
             let Some(surface) = faces_by_id
                 .get(face_id)
-                .and_then(|face| surfaces_by_id.get(face.surface.0.as_str()))
+                .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
             else {
                 continue;
             };
@@ -740,7 +728,7 @@ pub(crate) fn bind_mirror_surface_planes(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        *slot = PatternKind::Mirror {
+        *pattern = PatternKind::Mirror {
             plane_origin: *origin,
             plane_normal: *normal,
         };
@@ -803,9 +791,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &model_features[profile_index].definition
             else {
                 continue;
@@ -817,9 +803,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 }
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
                 let FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: Some(path),
-                    ..
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path)),
                 } = &model_features[path_index].definition
                 else {
                     return None;
@@ -891,8 +875,7 @@ pub(crate) fn bind_scalar_operands(
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
-            entity.links.clear();
-            entity.link_selector = None;
+            entity.links = None;
         }
         let mut starts = histories
             .iter()
@@ -1010,9 +993,8 @@ pub(super) fn finalize_lane_bindings(
                 })
             })
             .collect::<Vec<_>>();
-        if !links.is_empty() {
-            entity.links = links;
-            entity.link_selector = Some(selector);
+        if let Some(links) = crate::records::SketchInputLinks::new(selector, links) {
+            entity.links = Some(links);
         }
     }
     bind_resolved_curve_vertices(lane);
@@ -1102,7 +1084,12 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     let unresolved = model_features
         .iter()
         .filter_map(|feature| match &feature.definition {
-            FeatureDefinition::Sketch { sketch: None, .. } => feature.native_ref.clone(),
+            FeatureDefinition::Sketch {
+                sketch:
+                    cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                ..
+            } => feature.native_ref.clone(),
             _ => None,
         })
         .collect::<HashSet<_>>();

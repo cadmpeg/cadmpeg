@@ -5,7 +5,7 @@
 #![no_main]
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;

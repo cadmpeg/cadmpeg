@@ -10,8 +10,12 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let (mut exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
     let mut extended = input.to_vec();
     extended.push(0xc3);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&extended, &arena, &policy)
+        .expect("root fits the test policy");
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), None)
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &ctx)
         .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);
@@ -22,15 +26,14 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
 
     let result = decode_exchange_mode(
         &extended,
-        cadmpeg_ir::codec::DecodeOptions::default(),
         &mut exchange,
         &[],
-        true,
-        None,
+        super::DecodeMode::Decode(Packaging::Bare),
+        &ctx,
     )
     .expect("synthesized unknown record conversion")
-    .0;
-    assert!(result.report().losses.iter().any(|loss| {
+    .decoded;
+    assert!(result.body.losses.iter().any(|loss| {
         loss.code == StepLossCode::ByteAccountingUnclassified.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")
@@ -88,7 +91,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+        let error = crate::reader::decode(source, &ctx, Packaging::Bare)
             .expect_err("a small work budget must refuse one decode stage");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -119,7 +122,7 @@ fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+        let error = crate::reader::decode(source, &ctx, Packaging::Bare)
             .expect_err("a model entity must be admitted before the next semantic stage");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -160,7 +163,7 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
             &policy,
         )
         .expect("root fits the test policy");
-        let error = crate::reader::decode(source.as_bytes(), DecodeOptions::default(), &ctx)
+        let error = crate::reader::decode(source.as_bytes(), &ctx, Packaging::Bare)
             .expect_err("bounded implicit-plane work must be refused at some budget");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -186,22 +189,24 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode parsed STEP document");
 
-    assert_eq!(result.ir().source.as_ref().unwrap().format, "step");
+    assert_eq!(result.ir().source.as_ref().unwrap().format(), "step");
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
-    assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
+    assert_eq!(unknowns[0].id.as_str(), "step:data:example_record#1");
     let retained = result
         .source_fidelity()
-        .retained_record(&unknowns[0].id.0)
+        .retained_record(unknowns[0].id.as_str())
         .expect("opaque payload is retained in source fidelity");
     assert_eq!(
-        retained.data.as_deref(),
-        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+        retained.data(),
+        Some(
+            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+        )
     );
     assert!(unknowns[0]
         .links
         .contains(&"step:data:opaque_target#2".to_string()));
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result
         .report()
         .losses
@@ -221,15 +226,17 @@ pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
         .native_unknowns("step")
         .unwrap()
         .into_iter()
-        .find(|record| record.id.0 == "step:file:signature#0")
+        .find(|record| record.id.as_str() == "step:file:signature#0")
         .expect("signature is retained as an opaque source record");
     let retained = result
         .source_fidelity()
-        .retained_record(&signature.id.0)
+        .retained_record(signature.id.as_str())
         .expect("signature source fidelity");
     assert_eq!(
-        retained.data.as_deref(),
-        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+        retained.data(),
+        Some(
+            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+        )
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::OpaqueRecordPreserved.kind()
@@ -255,29 +262,29 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
 
     let target = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:!vendor_target#1")
+        .find(|record| record.id.as_str() == "step:data:!vendor_target#1")
         .expect("user-defined target record");
     assert!(target.links.is_empty());
     let target_source = result
         .source_fidelity()
-        .retained_record(&target.id.0)
+        .retained_record(target.id.as_str())
         .expect("retained user-defined target span");
     assert_eq!(
-        target_source.data.as_deref(),
+        target_source.data(),
         Some(b"#1=!VENDOR_TARGET('target');".as_slice())
     );
 
     let entity = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:!vendor_entity#2")
+        .find(|record| record.id.as_str() == "step:data:!vendor_entity#2")
         .expect("user-defined entity record");
     assert_eq!(entity.links, vec!["step:data:!vendor_target#1".to_string()]);
     let entity_source = result
         .source_fidelity()
-        .retained_record(&entity.id.0)
+        .retained_record(entity.id.as_str())
         .expect("retained user-defined entity span");
     assert_eq!(
-        entity_source.data.as_deref(),
+        entity_source.data(),
         Some(b"#2=!VENDOR_ENTITY('vendor payload',#1,!VENDOR_TYPE((#1)));".as_slice())
     );
 
@@ -318,7 +325,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.0 == "step:data:curve#1"));
+        .any(|curve| curve.id.as_str() == "step:data:curve#1"));
 
     let unknowns = result
         .ir()
@@ -326,7 +333,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .expect("STEP unknown records");
     let example = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:example_record#2")
+        .find(|record| record.id.as_str() == "step:data:example_record#2")
         .expect("opaque record referencing fallback carrier");
     assert!(example.links.contains(&"step:data:curve#1".to_string()));
 
@@ -466,20 +473,19 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:definitional_representation#70"));
+        .any(|record| record.id.as_str() == "step:data:definitional_representation#70"));
     let line = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:line#71")
+        .find(|record| record.id.as_str() == "step:data:line#71")
         .expect("unowned pcurve line is retained");
     assert!(decoded
         .source_fidelity()
-        .retained_record(&line.id.0)
+        .retained_record(line.id.as_str())
         .expect("unowned pcurve line payload is retained")
-        .data
-        .as_deref()
+        .data()
         .is_some_and(|data| data.starts_with(b"#71=LINE")));
     assert!(decoded
         .ir()
@@ -521,7 +527,7 @@ fn a_protected_unowned_pcurve_stays_opaque() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
 }
 
 #[test]
@@ -543,10 +549,10 @@ fn failed_mandatory_point_root_remains_opaque_and_unbound() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:unsupported_point#3"));
+        .any(|record| record.id.as_str() == "step:data:unsupported_point#3"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
+        .any(|record| record.id.as_str() == "step:data:shell_based_surface_model#31"));
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("STEP topology root #31 rejected: vertex point #3")));
@@ -565,7 +571,7 @@ fn unsupported_invisibility_relation_is_retained_as_opaque() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#1"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#1"));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("INVISIBILITY #1 targets unsupported item #2")
@@ -639,7 +645,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
     );
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(provenance.format, "step");
+    assert_eq!(provenance.format(), "step");
     assert_eq!(
         provenance.offset,
         source.find("FILE_SCHEMA").unwrap() as u64
@@ -665,6 +671,51 @@ fn decode_does_not_charge_a_loss_for_a_valid_schema_object_identifier() {
 }
 
 #[test]
+fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("the framed implementation-level declaration is recoverable");
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::ImplementationLevelUnverified.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1;1"));
+    assert!(losses[0].message.contains("4;3 grammar"));
+    assert_eq!(
+        losses[0].code.strict_floor(),
+        Some(cadmpeg_ir::report::Severity::Warning)
+    );
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(
+        provenance.offset,
+        source.find("FILE_DESCRIPTION").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("implementation_level"));
+}
+
+#[test]
+fn strict_decode_rejects_an_unverified_implementation_level() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("strict mode rejects a guessed implementation grammar");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
+    ));
+    assert!(error
+        .to_string()
+        .contains("parse.implementation-level-unverified"));
+}
+
+#[test]
 fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     let bytes = include_bytes!("../../tests/fixtures/noncanonical_solid_angle.p21");
     let result = StepCodec::default()
@@ -680,8 +731,8 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(provenance.format, "step");
-    assert_eq!(provenance.stream, "");
+    assert_eq!(provenance.format(), "step");
+    assert_eq!(provenance.stream(), None);
     assert_eq!(
         provenance.offset,
         bytes.windows(2).position(|window| window == b"#1").unwrap() as u64
@@ -705,13 +756,16 @@ fn strict_decode_rejects_noncanonical_complex_partial_order() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
 }
 
 #[test]
 fn strict_decode_rejects_omitted_entity_name_recovery() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    // The schema is a declared dialect so that the refusal this test asserts is
+    // the omitted-name one. A bare 'AP242' declares no registry row and would
+    // refuse first on `source.dialect-unverified`.
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
     let error = StepCodec::default()
@@ -720,7 +774,7 @@ fn strict_decode_rejects_omitted_entity_name_recovery() {
 
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::StrictRefusal { .. }
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
     ));
     assert!(error.to_string().contains("parse.noncanonical-syntax"));
 }

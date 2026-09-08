@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -23,17 +23,20 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "269".into(),
-        members: vec![100],
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: vec![200],
-            trailing_record_offsets: vec![943],
+            trailing_records: vec![crate::records::Located {
+                value: 200,
+                offset: 943,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -43,18 +46,18 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 953,
 
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -86,17 +89,24 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some("2265".into()),
-        design_id_offset: None,
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 9,
-            byte_offset: 0,
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "2265".into(),
+                offset: None,
+            },
+            selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
         }),
         recipe_index: 0,
         record_index: 0,
     };
-    let scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "BoundaryFill", 80);
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#80",
+        crate::records::feature::DesignFeatureKind::BoundaryFill,
+        80,
+    );
 
     let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand");
@@ -105,11 +115,14 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(operand.references[0].form, 3);
     assert_eq!(operand.references[1].design_reference, 2266);
     assert_eq!(operand.references[1].form, 32);
-    assert_eq!(operand.selector_tail, Some([7, 0, 0, 0]));
-    assert_eq!(operand.selector_tail_offset, Some(220));
+    assert_eq!(
+        operand.selector_tail.map(|tail| tail.value),
+        Some([7, 0, 0, 0])
+    );
+    assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(220));
     assert_eq!(
         operand.owner,
-        crate::records::DesignBodyRecipeOperandOwner::Group {
+        crate::records::topology::DesignOperandOwner::Group {
             group_record_index: 90,
             group_member_ordinal: 0,
         }
@@ -124,7 +137,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: String::new(),
                 design_references: vec![2265],
@@ -132,7 +147,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
+                ),
                 selector: 2,
                 token: String::new(),
                 design_references: vec![2265, 2266],
@@ -140,7 +157,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("other-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
+                ),
                 selector: 0,
                 token: String::new(),
                 design_references: vec![2265],
@@ -152,8 +171,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(
         operand.references[0].candidate_faces,
         [
-            FaceId("other-selector".into()),
-            FaceId("same-stream".into())
+            FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
+            FaceId::mint("test:model:face#same-stream").expect("identity grammar")
         ]
     );
 
@@ -176,27 +195,34 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(empty.nested_record_index, 103);
     assert_eq!(empty.next_byte_offset, empty_next_at as u64);
 
-    let mut combine_scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "Combine", 80);
-    combine_scope.combine_operation = Some(crate::records::DesignCombineOperation {
-        form: crate::records::DesignCombineForm::Standard,
-        operation: crate::records::DesignExtrudeOperation::Join,
-        operation_offset: 0,
-        keep_tools: false,
-        keep_tools_offset: 0,
-        target: crate::records::DesignCombineBodySelection {
-            record_index: 0,
-            external_identity: None,
-        },
-        tools: Vec::new(),
-    });
-    let combine_recipe = ConstructionRecipe {
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
+    let mut combine_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#80",
+        crate::records::feature::DesignFeatureKind::Combine,
+        80,
+    );
+    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut combine_scope.payload {
+        *slot = Some(crate::records::feature::DesignCombineOperation {
+            form: crate::records::feature::DesignCombineForm::Standard,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target_record_index: 0,
+            tools: crate::records::feature::DesignCombineTools {
+                first: crate::records::feature::DesignCombineBodySelection {
+                    record_index: record.record_index,
+                    external_identity: None,
+                },
+                additional: Vec::new(),
+            },
+        });
+    }
+    let mut combine_recipe = recipe.clone();
+    combine_recipe.design.as_mut().unwrap().selector =
+        Some(crate::records::ConstructionRecipeSelector {
             value: 1,
             byte_offset: 0,
-        }),
-        ..recipe.clone()
-    };
+        });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut combine_operand),
@@ -204,7 +230,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("test:model:face#same-stream").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: String::new(),
                 design_references: vec![2265],
@@ -212,7 +240,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
+                ),
                 selector: 2,
                 token: String::new(),
                 design_references: vec![2265, 2266],
@@ -223,7 +253,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(
         combine_operand.references[0].candidate_faces,
-        [FaceId("same-stream".into())]
+        [FaceId::mint("test:model:face#same-stream").expect("identity grammar")]
     );
 
     let mut nested = Vec::new();
@@ -272,17 +302,17 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         scope_reference_ordinal: 1,
         record_index: 90,
         byte_offset: 0,
-        class_tag: "287".into(),
-        members: vec![100],
+        class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 21,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![21],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -292,17 +322,17 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "367".into(),
+        class_tag: crate::records::DesignClassTag::try_from("367".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -310,11 +340,15 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some("301".into()),
-        design_id_offset: None,
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 6,
-            byte_offset: 0,
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "301".into(),
+                offset: None,
+            },
+            selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 6,
+                byte_offset: 0,
+            }),
         }),
         recipe_index: 0,
         record_index: 0,
@@ -325,8 +359,11 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     assert_eq!(operand.references.len(), 1);
     assert_eq!(operand.references[0].design_reference, 301);
     assert_eq!(operand.references[0].form, 33);
-    assert_eq!(operand.selector_tail, Some([1, 0, 0, 0]));
-    assert_eq!(operand.selector_tail_offset, Some(208));
+    assert_eq!(
+        operand.selector_tail.map(|tail| tail.value),
+        Some([1, 0, 0, 0])
+    );
+    assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(208));
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.next_byte_offset, next_at as u64);
 }
@@ -360,87 +397,32 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#1".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 200,
-        kind: "Fillet".into(),
         kind_offset: 1100,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: vec![100],
-        reference_member_offsets: vec![1085],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100],
+            vec![1085],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::feature::DesignFeatureKind::Fillet.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -448,9 +430,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         byte_offset: recipe_name_at as u64,
         record_index_offset: Some(recipe_record_at + 8),
         kind: ConstructionRecipeKind::Edge,
-        design_id: None,
-        design_id_offset: None,
-        design_selector: None,
+        design: None,
         recipe_index: 7,
         record_index: 303,
     };
@@ -473,7 +453,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.resolved_edge_slot, None);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
-    work_point_scope.kind = "WorkPoint".into();
+    work_point_scope.payload = crate::records::feature::DesignFeatureKind::WorkPoint.into();
     let work_point_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -487,7 +467,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(work_point_operand.next_record_index, 105);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
-    sweep_scope.kind = "Sweep".into();
+    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep.into();
     let sweep_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -553,7 +533,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         record_index: 200,
     };
     let vertex_recipe = ConstructionRecipe {
@@ -561,9 +541,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
         record_index_offset: Some(vertex_recipe_record_at + 8),
         kind: ConstructionRecipeKind::Vertex,
-        design_id: None,
-        design_id_offset: None,
-        design_selector: None,
+        design: None,
         recipe_index: 9,
         record_index: 303,
     };
@@ -589,7 +567,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         vec![&[17][..], &[18, 19][..]]
     );
     let reference_context = |reference_ordinal, changed_reference_edge_slots| {
-        crate::records::DesignEdgeRecipeReferenceContext {
+        crate::records::topology::DesignEdgeRecipeReferenceContext {
             reference_ordinal,
             result_faces: Vec::new(),
             result_face_boundaries: Vec::new(),
@@ -652,11 +630,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     edge_operand.changed_boundary_edge_slots = vec![17, 18];
     edge_operand.deleted_boundary_edge_slots = vec![17, 18];
     edge_operand.treatment_radius_candidates = vec![
-        crate::records::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 17,
             radius: 3.0,
         },
-        crate::records::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 18,
             radius: 3.0,
         },
@@ -678,18 +656,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let mut chain_left = edge_operand.clone();
     chain_left.treatment_radius_candidates.push(
-        crate::records::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
             radius: 3.0,
         },
     );
     let mut chain_right = edge_operand.clone();
     chain_right.treatment_radius_candidates = vec![
-        crate::records::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
             radius: 3.0,
         },
-        crate::records::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 20,
             radius: 3.0,
         },
@@ -739,17 +717,21 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "288".into(),
-        members: vec![100],
+        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
-        member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: vec![91],
-            trailing_record_offsets: vec![950],
+            trailing_records: vec![crate::records::Located {
+                value: 91,
+                offset: 950,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -759,12 +741,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 972,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 960,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1_000,
     };
     let recovered = crate::design::edge_resolve::resolved_edge_group(
@@ -773,7 +755,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&proven_operand),
         &[],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
     );
     assert!(matches!(
         recovered,
@@ -781,7 +764,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     let mut terminal_group = recovered_group.clone();
     terminal_group.lost_edge_references.clear();
-    terminal_group.members = vec![100, 104];
+    terminal_group.members = vec![100, 104]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut terminal_resolved = proven_operand.clone();
     terminal_resolved.recipe_state_id = Some(8);
     let mut terminal_unresolved = proven_operand.clone();
@@ -792,21 +778,22 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     terminal_unresolved.changed_boundary_edge_slots.clear();
     terminal_unresolved.deleted_boundary_edge_slots.clear();
     terminal_unresolved.treatment_radius_candidates.clear();
-    terminal_unresolved.recipe_selectors = vec![crate::records::DesignEdgeRecipeSelectorContext {
-        selector: 0,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
-        incidence_matching_edge_slots: vec![18, 19],
-        unique_incidence_edge_slot: None,
-        boundary_count_matching_edge_slots: vec![18, 19],
-    }];
+    terminal_unresolved.recipe_selectors =
+        vec![crate::records::topology::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clauses: vec![None, None],
+            incidence_matching_edge_slots: vec![18, 19],
+
+            boundary_count_matching_edge_slots: vec![18, 19],
+        }];
     let terminal = crate::design::edge_resolve::resolved_edge_group(
         &terminal_group,
         std::slice::from_ref(&terminal_group),
         &[terminal_resolved, terminal_unresolved.clone()],
         &[],
         None,
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
     );
     assert!(
         matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
@@ -819,17 +806,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         group_member_ordinal: ordinal,
         record_index,
         byte_offset: u64::from(record_index),
-        class_tag: "297".into(),
-        compact_layout: false,
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+        layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
         local_id: u64::from(record_index),
-        local_id_offset: 0,
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
-        historical_entity_kind: None,
-        historical_entity_ref: None,
-        historical_state_ids: Vec::new(),
+        historical: None,
         treatment_radius_candidates: Vec::new(),
         transition_edge_candidates: Vec::new(),
         resolved_edge_slots: Vec::new(),
@@ -846,7 +836,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone(), terminal_unresolved.clone()],
         &[identity(100, 0, Some(17)), identity(104, 1, None)],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
     );
     assert!(matches!(
         merged,
@@ -858,7 +849,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone(), terminal_unresolved],
         &[identity(100, 0, Some(17)), identity(104, 1, Some(18))],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
     );
     assert!(matches!(
         complete,
@@ -874,25 +866,23 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone()],
         &[first_rule, second_rule],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
     );
     assert!(matches!(
         face_rules,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
             if edges == &[
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:18".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:19".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:18").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:19").expect("identity grammar"),
             ]
     ));
     let mut chain_group = terminal_group.clone();
-    chain_group.members = vec![100];
+    chain_group.members = vec![100]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut chain_recipe = recipe_unresolved.clone();
     chain_recipe.changed_boundary_edge_slots = vec![17, 18];
     let mut chain_identity = identity(100, 0, None);
@@ -903,7 +893,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[chain_recipe],
         &[chain_identity],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+            .expect("identity grammar"),
         None,
     );
     assert!(matches!(
@@ -939,16 +930,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         4
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].vertex_ordinal,
+        structured.sides[0].entries[0].topology_triplets[0].vertex_ordinal(),
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+        structured.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         Some(3)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident_side,
-        Some(crate::records::DesignTopologyIncidentSide::Following)
+        structured.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
+        Some(crate::records::topology::DesignTopologyIncidentSide::Following)
     );
     assert_eq!(
         structured.sides[0].entries[0].topology_triplets[1]
@@ -961,12 +956,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident_edge_ordinal,
+        structured.sides[0].entries[0].topology_triplets[1]
+            .incident
+            .map(|incident| incident.ordinal),
         Some(2)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident_side,
-        Some(crate::records::DesignTopologyIncidentSide::Preceding)
+        structured.sides[0].entries[0].topology_triplets[1]
+            .incident
+            .map(|incident| incident.side),
+        Some(crate::records::topology::DesignTopologyIncidentSide::Preceding)
     );
     assert_eq!(structured.sides[1].field_count.get(), 3);
     assert_eq!(structured.sides[1].header_value, 0);
@@ -1012,7 +1011,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .expect("signed topology middle is retained");
     assert_eq!(signed_middle[0].topology_triplets[0].middle, -2);
     assert_eq!(
-        signed_middle[0].topology_triplets[0].incident_edge_ordinal,
+        signed_middle[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
     let signed_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -1025,7 +1026,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         -2
     );
     assert_eq!(
-        signed_face.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+        signed_face.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
     let postlude_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -1033,7 +1036,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1, 4, -1, 0, 0, -1,
     ])
     .expect("face-node topology postlude");
-    assert_eq!(postlude_face.postlude, [-1, 4, -1, 0, 0, -1]);
+    assert_eq!(postlude_face.postlude_value, Some(4));
     let unambiguous_payload_face = crate::design::decode::operands::face_recipe_structure(&[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, -1, 3, 0, -1, 0, -1, 1, -1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, -1,
@@ -1063,24 +1066,38 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let wrap =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
-    assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
-    assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, Some(4));
-    assert_eq!(wrap[0].common_incident_edge_ordinal, None);
+    assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal(), 0);
     assert_eq!(
-        wrap[0].topology_triplets[0].incident_side,
-        Some(crate::records::DesignTopologyIncidentSide::Preceding)
+        wrap[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
+        Some(4)
+    );
+    assert_eq!(wrap[0].common_incident_edge_ordinal(), None);
+    assert_eq!(
+        wrap[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
+        Some(crate::records::topology::DesignTopologyIncidentSide::Preceding)
     );
     let common =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
-    assert_eq!(common[0].common_incident_edge_ordinal, Some(0));
+    assert_eq!(common[0].common_incident_edge_ordinal(), Some(0));
     let underived =
         crate::design::decode::operands::edge_recipe_entries(&[0, 6, 6, 4, 6, 1, 1, 1]).unwrap();
-    assert_eq!(underived[0].topology_triplets[0].vertex_ordinal, 5);
+    assert_eq!(underived[0].topology_triplets[0].vertex_ordinal(), 5);
     assert_eq!(
-        underived[0].topology_triplets[0].incident_edge_ordinal,
+        underived[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
-    assert_eq!(underived[0].topology_triplets[0].incident_side, None);
+    assert_eq!(
+        underived[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
+        None
+    );
     assert_eq!(
         crate::design::decode::operands::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0]
             .selector,
@@ -1171,7 +1188,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         4,
     )
     .expect("SurfacePatch two-clause recipe structure");
-    assert_eq!(surface_patch.root, 2);
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
@@ -1208,21 +1224,23 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     surface_patch_operand.recipe_state_id = Some(8);
     surface_patch_operand.resolved_edge_slot = Some(17);
     let mut surface_patch_group = terminal_group.clone();
-    surface_patch_group.members = vec![100];
+    surface_patch_group.members = vec![100]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let surface_selection = crate::design::edge_resolve::resolved_edge_group(
         &surface_patch_group,
         std::slice::from_ref(&surface_patch_group),
         std::slice::from_ref(&surface_patch_operand),
         &[],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+            .expect("identity grammar"),
     );
     assert!(matches!(
         surface_selection,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#13:surface-patch:8:17".into()
-            )]
+            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#13:surface-patch:8:17").expect("identity grammar")]
     ));
     surface_patch_operand.resolved_edge_slot = None;
     assert!(matches!(
@@ -1232,7 +1250,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             std::slice::from_ref(&surface_patch_operand),
             &[],
             Some(8),
-            &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+            &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+                .expect("identity grammar"),
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
@@ -1261,7 +1280,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1269,7 +1290,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1279,7 +1302,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert_eq!(
         edge_operand.candidate_faces,
-        [FaceId("f3d:brep:entity#50".into())]
+        [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")]
     );
     let mut local_recipe = recipe.clone();
     local_recipe.record_index = -1335;
@@ -1288,7 +1311,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&local_recipe),
         &[PersistentSubentityTag {
             id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            ),
             selector: 1,
             token: "3".into(),
             design_references: vec![303],
@@ -1306,7 +1331,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_id: "recipe".into(),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: "423".into(),
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 4,
         prefix_offset: 0,
@@ -1347,10 +1372,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     let face_next_at = header(&mut face_bytes, *b"306", 104);
     let mut face_scope = scope;
-    face_scope.kind = "Extrude".into();
+    face_scope.payload = crate::records::feature::DesignFeatureKind::Extrude.into();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-    face_recipe.design_id = Some("303".into());
+    face_recipe.design = Some(crate::records::ConstructionRecipeDesign {
+        id: crate::records::RecordedValue {
+            value: "303".into(),
+            offset: None,
+        },
+        selector: None,
+    });
     face_recipe.byte_offset = face_recipe_name_at as u64;
     face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
     let mut operand = parse_face_operand(
@@ -1394,7 +1425,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceRecipeProgramKind::Counted { header_value: 4 })
     );
     assert_eq!(
-        operand.recipe_node_offsets,
+        operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.byte_offset)
+            .collect::<Vec<_>>(),
         [
             face_recipe_name_at as u64 + 36,
             face_recipe_name_at as u64 + 52,
@@ -1437,7 +1472,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("face recipe operand with counted prelude");
     assert_eq!(prelude.recipe_program[0..7], [0, 0, 4, 4, 5, 6, 7]);
     assert_eq!(
-        prelude.recipe_node_offsets[0],
+        prelude.recipe_nodes[0].byte_offset,
         prelude.recipe_program_offset + 28
     );
     assert_eq!(prelude.recipe_nodes[0].program, [-1, -1, 2, 7]);
@@ -1534,7 +1569,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1542,7 +1579,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#51".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "4".into(),
                 design_references: vec![303],
@@ -1550,7 +1589,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1561,13 +1602,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         operand.candidate_faces,
         [
-            FaceId("f3d:brep:entity#50".into()),
-            FaceId("f3d:brep:entity#51".into())
+            FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            FaceId::mint("f3d:brep:entity#51").expect("identity grammar")
         ]
     );
     assert_eq!(
         operand.unreferenced_candidate_faces,
-        [FaceId("f3d:brep:entity#51".into())]
+        [FaceId::mint("f3d:brep:entity#51").expect("identity grammar")]
     );
     let mut direct_face = operand.clone();
     direct_face.recipe_kind = ConstructionRecipeKind::Face;
@@ -1578,7 +1619,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         token_offset: 1_202,
         design_reference: 303,
         design_reference_offset: 1_203,
-        candidate_faces: vec![FaceId("f3d:brep:entity#50".into())],
+        candidate_faces: vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -1591,17 +1632,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "306".into(),
-        members: vec![operand.record_index],
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: operand.record_index,
+            offset: 924,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![924],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 920,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: vec![91],
-            trailing_record_offsets: vec![935],
+            trailing_records: vec![crate::records::Located {
+                value: 91,
+                offset: 935,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -1611,27 +1655,28 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 958,
             variant: false,
         },
-        role: 0x0000_0011_0000_0000,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces),
-        extrude_face_role: Some(DesignExtrudeFaceRole::Termination),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        },
         role_offset: 946,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 980,
     };
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&direct_face)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#51".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#51").expect("identity grammar")] && native == group.id
     ));
     operand
         .unreferenced_candidate_faces
-        .push(FaceId("f3d:brep:entity#50".into()));
+        .push(FaceId::mint("f3d:brep:entity#50").expect("identity grammar"));
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     operand.recipe_program = vec![0, -1, 1];
     operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
@@ -1661,7 +1706,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     entries: Vec::new(),
                 },
             ],
-            postlude: Vec::new(),
+            postlude_value: None,
         }),
     });
     assert!(matches!(
@@ -1671,7 +1716,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     operand.recipe_nodes[0].recipe_structure = None;
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
-    operand.preceding_candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+    operand.preceding_candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     assert_eq!(
         crate::design::face_resolve::resolve_face_operand_history_candidates(&operand),
         Some(50)
@@ -1680,15 +1726,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
     let mut namespaced_slot = operand.clone();
-    namespaced_slot.candidate_faces = vec![FaceId("f3d:brep/example.smbh/brep:entity#50".into())];
+    namespaced_slot.candidate_faces =
+        vec![FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")];
     namespaced_slot.unreferenced_candidate_faces.clear();
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep/example.smbh/brep:entity#50".into())]
+            if faces == [FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")]
                 && native == group.id
     ));
     namespaced_slot.resolved_face_slots = vec![51];
@@ -1703,20 +1750,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&historical_face_scope), 49)
                 && faces.len() == 1
-                && faces[0].0.ends_with(":49:50")
+                && faces[0].as_str().ends_with(":49:50")
                 && native == historical_face_scope.id
     ));
     operand.resolved_face_slots.clear();
     assert!(crate::design::face_resolve::retain_face_operand_resolution(
         &group,
         std::slice::from_mut(&mut operand),
-        &FaceId("f3d:brep:entity#50".into()),
+        &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
     ));
     assert_eq!(operand.resolved_face_slots, [50]);
     operand.resolved_face_slots.clear();
     operand.alternate_selector_candidate_faces = vec![
-        FaceId("f3d:brep:entity#50".into()),
-        FaceId("f3d:brep:entity#51".into()),
+        FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+        FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
     ];
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
@@ -1730,7 +1777,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         !crate::design::face_resolve::retain_face_operand_resolution(
             &group,
             &mut ambiguous,
-            &FaceId("f3d:brep:entity#50".into()),
+            &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
         )
     );
 
@@ -1739,22 +1786,31 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("split-face context recipe structure");
     let mut split_scope = face_scope.clone();
-    split_scope.kind = "SplitFace".into();
+    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace.into();
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
-    split_group.role = 0x0000_0010_0000_0000;
-    split_group.members = vec![operand.record_index, operand.record_index + 1];
+    split_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
+    split_group.members = vec![operand.record_index, operand.record_index + 1]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut split_selected = operand.clone();
-    split_selected.group_record_index = Some(split_group.record_index);
-    split_selected.group_member_ordinal = Some(0);
+    split_selected.group = Some(crate::records::topology::DesignOperandGroup {
+        group_record_index: split_group.record_index,
+        group_member_ordinal: 0,
+    });
     split_selected.resolved_face_slots = vec![50];
     for node in &mut split_selected.recipe_nodes {
         node.recipe_structure = Some(split_structure.clone());
     }
     let mut split_context = split_selected.clone();
     split_context.record_index += 1;
-    split_context.group_member_ordinal = Some(1);
+    if let Some(group) = &mut split_context.group {
+        group.group_member_ordinal = 1;
+    }
     split_context.candidate_faces.clear();
     split_context.unreferenced_candidate_faces.clear();
     split_context.alternate_selector_candidate_faces.clear();
@@ -1774,11 +1830,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .cloned()
         .expect("nested bounded-face candidate");
     let nested_slot = nested_candidate
-        .0
+        .as_str()
         .rsplit_once('#')
         .and_then(|(_, slot)| slot.parse::<i64>().ok())
         .expect("nested bounded-face slot");
-    split_context.changed_candidate_faces = vec![FaceId("f3d:brep:entity#999".into())];
+    split_context.changed_candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#999").expect("identity grammar")];
     assert_eq!(
         crate::design::face_resolve::resolve_face_operand_history_candidates(&split_context),
         None
@@ -1792,17 +1849,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_historical_split_face_target_group(
             &split_scope,
+            split_scope.previous_history_state_id,
             &split_group,
             &[split_selected.clone(), split_context.clone()],
         ),
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
-                && faces[0].0.ends_with(":49:50")
+                && faces[0].as_str().ends_with(":49:50")
                 && native == split_group.id
     ));
     let mut candidate_context = split_context.clone();
-    candidate_context.candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+    candidate_context.candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     candidate_context.unreferenced_candidate_faces = candidate_context.candidate_faces.clone();
     candidate_context.preceding_candidate_faces = candidate_context.candidate_faces.clone();
     candidate_context
@@ -1811,6 +1870,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     candidate_context.recipe_program = vec![0, -1, 2];
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
+        split_scope.previous_history_state_id,
         &split_group,
         &[split_selected.clone(), candidate_context],
     )
@@ -1822,6 +1882,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
+        split_scope.previous_history_state_id,
         &split_group,
         &[split_selected, unresolved_context],
     )

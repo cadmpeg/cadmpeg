@@ -103,7 +103,7 @@ pub struct SegmentStreamLink {
     /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Decoded stream classification.
-    pub stream_kind: String,
+    pub stream_kind: crate::parasolid::StreamKind,
     /// Bytes from the wrapper start to its zlib header.
     pub wrapper_byte_len: u32,
     /// Absolute file offset of the wrapper.
@@ -120,7 +120,7 @@ pub struct SegmentBodyBinding {
     /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
-    pub stream_kind: String,
+    pub stream_kind: crate::parasolid::StreamKind,
     /// Object index used by feature-history body operands.
     pub body_object_index: u32,
     /// Second object index naming the same body image in feature history.
@@ -273,14 +273,14 @@ pub fn terminal_feature_body_indices(
             if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
-            record_writer(canonical(reference.body_object_index), position);
+            record_writer(canonical(reference.body.value()), position);
         }
         for operation in booleans
             .iter()
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
             let position = *positions.get(operation.operation_label.as_str())?;
-            record_writer(canonical(operation.target_object_index), position);
+            record_writer(canonical(operation.target.token.value()), position);
         }
     }
     let mut consumed = BTreeSet::new();
@@ -289,8 +289,8 @@ pub fn terminal_feature_body_indices(
         .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
     {
         let position = *positions.get(operation.operation_label.as_str())?;
-        for tool in &operation.tool_object_indices {
-            let tool = canonical(*tool);
+        for tool in &operation.tools {
+            let tool = canonical(tool.token.value());
             if last_writers
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -302,7 +302,7 @@ pub fn terminal_feature_body_indices(
     for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
             let position = *positions.get(reference.operation_label.as_str())?;
-            let body = canonical(reference.body_object_index);
+            let body = canonical(reference.body.value());
             if last_writers
                 .get(&body)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -324,7 +324,7 @@ pub fn terminal_feature_body_indices(
             continue;
         }
         let position = *positions.get(operand.operation_label.as_str())?;
-        let body = canonical(operand.operand_object_index);
+        let body = canonical(operand.operand.atom.value());
         if last_writers
             .get(&body)
             .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -339,7 +339,7 @@ pub fn terminal_feature_body_indices(
     Some(
         object_references
             .iter()
-            .map(|reference| reference.body_object_index)
+            .map(|reference| reference.body.value())
             .chain(
                 bindings.iter().flat_map(|binding| {
                     [binding.body_object_index, binding.body_alias_object_index]
@@ -415,8 +415,8 @@ pub(crate) fn boolean_offset_store_resolution(
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
 ) -> BooleanOffsetStoreResolution {
-    let participants = std::iter::once(operation.target_object_index)
-        .chain(operation.tool_object_indices.iter().copied())
+    let participants = std::iter::once(operation.target.token.value())
+        .chain(operation.tools.iter().map(|token| token.token.value()))
         .collect::<Vec<_>>();
     let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
     for block in data_blocks {
@@ -596,13 +596,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
             row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
             slot,
             stream_ordinal: stream_ordinal as u32,
-            stream_kind: match stream.kind {
-                StreamKind::Partition => "partition",
-                StreamKind::Deltas => "deltas",
-                StreamKind::Plain => "plain",
-                StreamKind::Preview => "preview",
-            }
-            .to_string(),
+            stream_kind: stream.kind(),
             wrapper_byte_len: wrapper.wrapper_byte_len as u32,
             source_offset: wrapper.wrapper_offset as u64,
         });
@@ -623,7 +617,12 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
         .collect::<Vec<_>>();
     segment_stream_links(container, streams)
         .into_iter()
-        .filter(|link| matches!(link.stream_kind.as_str(), "partition" | "plain"))
+        .filter(|link| {
+            matches!(
+                link.stream_kind,
+                crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+            )
+        })
         .filter_map(|link| {
             let row = link.row.rsplit_once('#')?.1.parse::<usize>().ok()?;
             let slot = match link.slot {
@@ -673,7 +672,6 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result.ir().native.namespace("nx").expect("NX namespace");
-        assert_eq!(namespace.version, 189);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");
@@ -701,7 +699,7 @@ mod tests {
         assert_eq!(links[0].row, "nx:segment-index:row#0");
         assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
         assert_eq!(links[0].stream_ordinal, 0);
-        assert_eq!(links[0].stream_kind, "deltas");
+        assert_eq!(links[0].stream_kind.label(), "deltas");
         assert_eq!(links[0].wrapper_byte_len, 8);
     }
 
@@ -723,7 +721,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
-        assert_eq!(bindings[0].stream_kind, "partition");
+        assert_eq!(bindings[0].stream_kind.label(), "partition");
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
@@ -748,7 +746,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
-        assert_eq!(bindings[0].stream_kind, "plain");
+        assert_eq!(bindings[0].stream_kind.label(), "plain");
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
@@ -925,17 +923,20 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 2 - u64::from(ordinal),
         };
         let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
         let reference = |operation: &str, body_object_index| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{body_object_index}"),
             operation_label: operation.to_string(),
-            body_object_index,
-            raw_body_object_index: vec![body_object_index as u8],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                body_object_index,
+                &[body_object_index as u8],
+            )
+            .unwrap(),
             source_offset: 0,
         };
         let references = [reference("operation#0", 10), reference("operation#1", 20)];
@@ -943,12 +944,10 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#2".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 0,
-            tool_object_indices: vec![20],
-            raw_tool_object_indices: vec![vec![20]],
-            tool_source_offsets: vec![0],
+            target: crate::test_support::native_references::boolean_reference(10, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                20, 0,
+            )],
             source_offset: 0,
         }];
 
@@ -979,8 +978,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
@@ -989,12 +987,14 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: target,
-            raw_target_object_index: vec![target as u8],
-            target_source_offset: ordinal as u64,
-            tool_object_indices: tools,
-            raw_tool_object_indices: Vec::new(),
-            tool_source_offsets: Vec::new(),
+            target: crate::test_support::native_references::boolean_reference(
+                target,
+                ordinal as u64,
+            ),
+            tools: tools
+                .into_iter()
+                .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
+                .collect(),
             source_offset: ordinal as u64,
         };
         let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
@@ -1003,7 +1003,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1013,7 +1013,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1049,29 +1049,30 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let labels = [label(2, "EXTRUDE"), label(1, "UNITE"), label(0, "UNITE")];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#2".to_string(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 2,
         }];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: target,
-            raw_target_object_index: vec![target as u8],
-            target_source_offset: ordinal as u64,
-            tool_object_indices: tools,
-            raw_tool_object_indices: Vec::new(),
-            tool_source_offsets: Vec::new(),
+            target: crate::test_support::native_references::boolean_reference(
+                target,
+                ordinal as u64,
+            ),
+            tools: tools
+                .into_iter()
+                .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
+                .collect(),
             source_offset: ordinal as u64,
         };
         let booleans = [boolean(0, 10, Vec::new()), boolean(1, 20, vec![10])];
@@ -1080,7 +1081,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1090,7 +1091,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1123,23 +1124,22 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1171,24 +1171,25 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
         let references = [
             FeatureBodyReference {
+                ordinal: None,
                 id: "reference#10".to_string(),
                 operation_label: labels[0].id.clone(),
-                body_object_index: 10,
-                raw_body_object_index: vec![10],
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10])
+                    .unwrap(),
                 source_offset: 0,
             },
             FeatureBodyReference {
+                ordinal: None,
                 id: "reference#20".to_string(),
                 operation_label: labels[0].id.clone(),
-                body_object_index: 20,
-                raw_body_object_index: vec![20],
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20])
+                    .unwrap(),
                 source_offset: 1,
             },
         ];
@@ -1197,7 +1198,7 @@ mod tests {
                 id: "binding#0".to_string(),
                 stream_link: "stream#0".to_string(),
                 stream_ordinal: 0,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 10,
                 body_alias_object_index: 11,
                 stream_role: 19,
@@ -1207,7 +1208,7 @@ mod tests {
                 id: "binding#1".to_string(),
                 stream_link: "stream#1".to_string(),
                 stream_ordinal: 1,
-                stream_kind: "partition".to_string(),
+                stream_kind: crate::parasolid::StreamKind::Partition,
                 body_object_index: 20,
                 body_alias_object_index: 21,
                 stream_role: 19,
@@ -1240,23 +1241,22 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: labels[0].id.clone(),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: 0,
         }];
         let binding = |ordinal, body_object_index, body_alias_object_index| SegmentBodyBinding {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index,
             body_alias_object_index,
             stream_role: 19,
@@ -1292,16 +1292,15 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 11,
-            raw_body_object_index: vec![11],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
             source_offset: 0,
         }];
         let data_block_uses = [FeatureBodyDataBlockUse {
@@ -1313,7 +1312,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1348,24 +1347,22 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "DELETE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
-            body_object_index: 11,
-            raw_body_object_index: vec![11],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11]).unwrap(),
             source_offset: 0,
         }];
         let inputs = [FeatureInputBlock {
             id: "input#3".to_string(),
             operation_label: "operation#delete".to_string(),
-            input_slot: 0,
-            object_index: 3,
-            raw_object_index: vec![3],
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
             data_block: "block#3".to_string(),
             source_offset: 0,
         }];
@@ -1385,7 +1382,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1421,8 +1418,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1430,12 +1426,10 @@ mod tests {
             id: "boolean#offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 11,
-            raw_target_object_index: vec![11],
-            target_source_offset: 0,
-            tool_object_indices: vec![21],
-            raw_tool_object_indices: vec![vec![21]],
-            tool_source_offsets: vec![0],
+            target: crate::test_support::native_references::boolean_reference(11, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                21, 0,
+            )],
             source_offset: 0,
         }];
         let block = |ordinal| DataBlock {
@@ -1455,7 +1449,7 @@ mod tests {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: body,
             body_alias_object_index: alias,
             stream_role: 19,
@@ -1492,8 +1486,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "UNITE".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1501,12 +1494,10 @@ mod tests {
             id: "boolean#unresolved-offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 11,
-            raw_target_object_index: vec![11],
-            target_source_offset: 0,
-            tool_object_indices: vec![21],
-            raw_tool_object_indices: vec![vec![21]],
-            tool_source_offsets: vec![0],
+            target: crate::test_support::native_references::boolean_reference(11, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                21, 0,
+            )],
             source_offset: 0,
         }];
         let blocks = [DataBlock {
@@ -1525,7 +1516,7 @@ mod tests {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),
             stream_ordinal: ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: body,
             body_alias_object_index: alias,
             stream_role: 19,
@@ -1558,8 +1549,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1567,10 +1557,10 @@ mod tests {
         // order places the later writer before the earlier delete.
         let labels = [label(0, "EXTRUDE"), label(1, "DELETE")];
         let reference = |ordinal: u32| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: u64::from(ordinal),
         };
         let references = [reference(0), reference(1)];
@@ -1578,7 +1568,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1610,16 +1600,15 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let reference = |ordinal: u32| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
-            body_object_index: 10,
-            raw_body_object_index: vec![10],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
             source_offset: u64::from(ordinal),
         };
         // The raw order is newest-first, so this encodes a writer followed by
@@ -1630,7 +1619,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 10,
             body_alias_object_index: 11,
             stream_role: 19,
@@ -1664,8 +1653,7 @@ mod tests {
             section_link: section_link.to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: u64::from(ordinal),
         };
@@ -1674,22 +1662,20 @@ mod tests {
             label("operation#late", "history#1", 0, "UNITE"),
         ];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#20".to_string(),
             operation_label: "operation#early".to_string(),
-            body_object_index: 20,
-            raw_body_object_index: vec![20],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
             id: "boolean#0".to_string(),
             operation_label: "operation#late".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 1,
-            tool_object_indices: vec![20],
-            raw_tool_object_indices: vec![vec![20]],
-            tool_source_offsets: vec![1],
+            target: crate::test_support::native_references::boolean_reference(10, 1),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                20, 1,
+            )],
             source_offset: 1,
         }];
 
@@ -1721,36 +1707,34 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal,
             value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#150".to_string(),
             operation_label: "operation#0".to_string(),
-            body_object_index: 150,
-            raw_body_object_index: vec![0x80, 150],
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(150, &[0x80, 150])
+                .unwrap(),
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
             id: "boolean#0".to_string(),
             operation_label: "operation#1".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 0,
-            tool_object_indices: vec![94],
-            raw_tool_object_indices: vec![vec![94]],
-            tool_source_offsets: vec![0],
+            target: crate::test_support::native_references::boolean_reference(10, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                94, 0,
+            )],
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 94,
             body_alias_object_index: 150,
             stream_role: 19,
@@ -1781,8 +1765,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "SEW".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1790,7 +1773,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 20,
             body_alias_object_index: 30,
             stream_role: 0,
@@ -1802,11 +1785,12 @@ mod tests {
             body_object_index: 10,
             body_reference_ordinal: 0,
             ordinal: 0,
-            operand_object_index: 30,
-            raw_operand_object_index: vec![30],
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(30, &[30]).unwrap(),
+                offset: 0,
+            },
             operand_data_block: None,
             segment_body_bindings: vec!["binding#0".to_string()],
-            source_offset: 0,
         }];
         assert_eq!(
             super::terminal_feature_body_indices(
@@ -1832,8 +1816,7 @@ mod tests {
             section_link: "history#0".to_string(),
             ordinal: 0,
             value: "TRIM BODY".to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            objects: crate::om::header_references::HeaderReferences([None; 4]),
             stable_identity: None,
             source_offset: 0,
         }];
@@ -1841,7 +1824,7 @@ mod tests {
             id: "binding#0".to_string(),
             stream_link: "stream#0".to_string(),
             stream_ordinal: 0,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index: 20,
             body_alias_object_index: 30,
             stream_role: 0,
@@ -1853,11 +1836,12 @@ mod tests {
             body_object_index: 10,
             body_reference_ordinal: 0,
             ordinal: 0,
-            operand_object_index: 30,
-            raw_operand_object_index: vec![30],
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(30, &[30]).unwrap(),
+                offset: 0,
+            },
             operand_data_block: Some("data-block#0".to_string()),
             segment_body_bindings: Vec::new(),
-            source_offset: 0,
         }];
         assert_eq!(
             super::terminal_feature_body_indices(

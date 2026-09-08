@@ -3,7 +3,8 @@
 
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
-use cadmpeg_ir::features::{Angle, RevolveExtent, Termination};
+use crate::feature::schema::SchemaClass;
+use cadmpeg_ir::features::{Angle, AngularTermination, RevolveExtent};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_recipe(
@@ -27,10 +28,10 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     feature_id: u32,
 ) -> bool {
     current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
-        operation.recipe_conflict
+        operation.recipe.is_conflicting()
             || (operation.display_state_conflict
-                && operation.recipe.is_none()
-                && operation.kind == "Native Feature")
+                && matches!(operation.recipe, crate::feature::RecipeResolution::None)
+                && operation.kind == crate::feature::OperationKind::Native)
     })
 }
 
@@ -78,14 +79,18 @@ pub(in super::super) fn feature_is_first_material_operation(
         else {
             continue;
         };
-        let recipe_is_material = operation.recipe.is_some_and(|recipe| {
+        let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
             matches!(
                 recipe.effect(),
                 crate::feature::FeatureRecipeEffect::Protrude
                     | crate::feature::FeatureRecipeEffect::Cut
             )
         });
-        if !recipe_is_material && !matches!(feature_schema_class(scan, candidate), Some(916 | 917))
+        if !recipe_is_material
+            && !matches!(
+                feature_schema_class(scan, candidate),
+                Some(SchemaClass::Cut | SchemaClass::Protrusion)
+            )
         {
             continue;
         }
@@ -112,7 +117,9 @@ pub(in super::super) fn current_feature_recipe(
     operations: &[crate::feature::FeatureOperation],
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipe> {
-    current_feature_operation(operations, feature_id)?.recipe
+    current_feature_operation(operations, feature_id)?
+        .recipe
+        .resolved()
 }
 
 pub(in super::super) fn current_feature_recipe_parent(
@@ -120,8 +127,8 @@ pub(in super::super) fn current_feature_recipe_parent(
     feature_id: u32,
 ) -> Option<u32> {
     let operation = current_feature_operation(operations, feature_id)?;
-    operation.recipe?;
-    operation.parent_feature_id
+    operation.recipe.resolved()?;
+    operation.parent_feature_id()
 }
 
 pub(in super::super) fn current_feature_operation(
@@ -135,7 +142,10 @@ pub(in super::super) fn current_feature_operation(
     matches.next().is_none().then_some(operation)
 }
 
-pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
+pub(in super::super) fn feature_schema_class(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<SchemaClass> {
     resolved_feature_schema_class_from_classes(
         &scan.features.operations,
         feature_row_schema_classes(scan, feature_id),
@@ -146,17 +156,17 @@ pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u
             .legacy_rounds
             .iter()
             .any(|round| round.feature_id == feature_id)
-            .then_some(913)
+            .then_some(SchemaClass::Round)
     })
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(
     operations: &[crate::feature::FeatureOperation],
-    classes: BTreeSet<u32>,
+    classes: BTreeSet<SchemaClass>,
     feature_id: u32,
-) -> Option<u32> {
+) -> Option<SchemaClass> {
     if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(|operation| operation.root_schema_class)
+        .and_then(crate::feature::FeatureOperation::root_schema_class)
     {
         return Some(schema_class);
     }
@@ -171,7 +181,7 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
 pub(in super::super) fn feature_row_schema_classes(
     scan: &ContainerScan,
     feature_id: u32,
-) -> BTreeSet<u32> {
+) -> BTreeSet<SchemaClass> {
     row_feature_schema_classes(&scan.features.rows, feature_id)
         .into_iter()
         .chain(row_feature_schema_classes(
@@ -184,7 +194,7 @@ pub(in super::super) fn feature_row_schema_classes(
 pub(in super::super) fn row_feature_schema_classes(
     rows: &[crate::feature::FeatureRow],
     feature_id: u32,
-) -> BTreeSet<u32> {
+) -> BTreeSet<SchemaClass> {
     rows.iter()
         .filter(|row| row.feature_id == feature_id)
         .filter_map(|row| row.root_schema_class)
@@ -195,25 +205,20 @@ pub(in super::super) fn feature_revolution_extent(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<RevolveExtent> {
-    unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id).map(
-        |kind| match kind {
-            crate::feature::FeatureRevolutionExtentKind::FullTurn => RevolveExtent::OneSided {
-                termination: Termination::Angle {
-                    angle: Angle(std::f64::consts::TAU),
-                },
+    unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
+        RevolveExtent::OneSided {
+            termination: AngularTermination::Angle {
+                angle: Angle(std::f64::consts::TAU),
             },
-        },
-    )
+        }
+    })
 }
 
-pub(in super::super) fn unique_feature_revolution_extent_kind(
+pub(in super::super) fn unique_feature_revolution_extent(
     records: &[crate::feature::FeatureRevolutionExtent],
     feature_id: u32,
-) -> Option<crate::feature::FeatureRevolutionExtentKind> {
-    let mut kinds = records
+) -> Option<&crate::feature::FeatureRevolutionExtent> {
+    records
         .iter()
-        .filter(|record| record.feature_id == feature_id)
-        .map(|record| record.kind);
-    let kind = kinds.next()?;
-    kinds.all(|candidate| candidate == kind).then_some(kind)
+        .find(|record| record.feature_id == feature_id)
 }

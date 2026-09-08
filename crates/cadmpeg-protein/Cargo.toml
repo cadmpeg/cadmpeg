@@ -15,10 +15,14 @@ categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+# Select flate2's default Rust backend when this crate is built in isolation.
 flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -83,7 +83,10 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     assert_eq!(attributes["bmp_thumbnail_0_width"], "320");
     assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
     assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");
-    assert_eq!(attributes["sw_version"], "34000");
+    assert_eq!(
+        decoded.report().dialects().unwrap().primary().declared()["sw_version"],
+        "34000"
+    );
     assert_eq!(attributes["sw_creation_time_unix"], "1700000000");
     assert_eq!(attributes["sw_path"], r"C:\part.SLDPRT");
     assert_eq!(attributes["sw_name"], "Part");
@@ -104,20 +107,20 @@ fn decode_without_geometry_falls_back_to_metadata() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
     assert_eq!(result.source_fidelity().retained_records.len(), 2);
     assert!(result
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
-        .is_some_and(|record| record.data.is_some()));
+        .is_some_and(|record| record.data().is_some()));
     assert!(result
         .source_fidelity()
         .retained_records
         .iter()
-        .any(|record| record.id != "sldprt:file:source-image#0" && record.sha256.len() == 64));
+        .any(|record| record.id() != "sldprt:file:source-image#0" && record.sha256().len() == 64));
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.format, "sldprt");
+    assert_eq!(source.format(), "sldprt");
     assert_eq!(
         source
             .attributes
@@ -134,7 +137,7 @@ fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message.contains("geometry was not transferred")
@@ -159,7 +162,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report().geometry_transferred);
+    assert!(!decoded.report().geometry_transferred());
     let feature = decoded
         .ir()
         .model
@@ -208,7 +211,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report().geometry_transferred);
+    assert!(!decoded.report().geometry_transferred());
     let feature = decoded
         .ir()
         .model

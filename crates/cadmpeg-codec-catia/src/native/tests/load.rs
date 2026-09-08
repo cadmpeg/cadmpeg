@@ -29,7 +29,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
     for arena_name in ["catalogs", "object_graphs"] {
         let mut malformed = namespace.clone();
         malformed
-            .arenas
+            .arenas_mut()
             .get_mut(arena_name)
             .expect("owner arena")
             .clear();
@@ -41,7 +41,10 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
 
     for arena_name in ["catalogs", "object_graphs"] {
         let mut malformed = namespace.clone();
-        let arena = malformed.arenas.get_mut(arena_name).expect("owner arena");
+        let arena = malformed
+            .arenas_mut()
+            .get_mut(arena_name)
+            .expect("owner arena");
         arena.push(arena.first().expect("owner record").clone());
         assert!(matches!(
             crate::native::CatiaNative::load(&malformed),
@@ -51,7 +54,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
 
     let mut stale_design_objects = namespace.clone();
     stale_design_objects
-        .arenas
+        .arenas_mut()
         .get_mut("design_objects")
         .expect("derived design-object arena")
         .clear();
@@ -143,12 +146,11 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
 
-    let mut invalid_count = native.clone();
-    invalid_count.catalogs[0].declared_count += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_count
-        .store(&mut namespace)
-        .expect("store invalid catalog count");
+    native.store(&mut namespace).expect("store catalogs");
+    let mut catalogs: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
+    catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0].declared_count() + 1);
+    namespace.set_arena("catalogs", &catalogs).unwrap();
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
@@ -209,14 +211,14 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .store(&mut canonical_namespace)
         .expect("store canonical value selections");
     assert!(canonical_namespace
-        .arenas
+        .arenas()
         .get("value_blocks")
         .is_some_and(|blocks| blocks
             .iter()
             .all(|block| !block.fields().contains_key("schema_selections"))));
     assert_eq!(
         canonical_namespace
-            .arenas
+            .arenas()
             .get("value_schema_selections")
             .map(Vec::len),
         Some(native.value_blocks[0].schema_selections.len())
@@ -245,17 +247,17 @@ fn native_load_rejects_noncanonical_value_block_views() {
         ));
     };
 
-    let mut invalid_length = native.clone();
-    invalid_length.value_blocks[0].declared_len += 1;
-    assert_rejected(invalid_length);
+    let mut invalid_wire = serde_json::to_value(&native.value_blocks[0]).unwrap();
+    invalid_wire["declared_len"] = serde_json::json!(native.value_blocks[0].declared_len() + 1);
+    assert!(serde_json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_payload = native.clone();
     invalid_payload.value_blocks[0].payload.push(0x80);
     assert_rejected(invalid_payload);
 
-    let mut invalid_fields = native.clone();
-    invalid_fields.value_blocks[0].fields.clear();
-    assert_rejected(invalid_fields);
+    let mut invalid_wire = serde_json::to_value(&native.value_blocks[0]).unwrap();
+    invalid_wire["fields"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_selections = native;
     assert!(!invalid_selections.value_blocks[0]
@@ -266,72 +268,41 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
-fn native_load_rejects_noncanonical_entity_frame_lengths() {
-    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
-    let native =
-        crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
-
-    for mutate in [
-        |record: &mut crate::native::CatiaEntityRecord| record.definition_len += 1,
-        |record: &mut crate::native::CatiaEntityRecord| record.value_len += 1,
-        |record: &mut crate::native::CatiaEntityRecord| record.byte_len += 1,
-    ] as [fn(&mut crate::native::CatiaEntityRecord); 3]
-    {
-        let mut malformed = native.clone();
-        mutate(&mut malformed.entity_records[0]);
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        malformed
-            .store(&mut namespace)
-            .expect("store malformed entity frame");
-        assert!(matches!(
-            crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-        ));
-    }
-}
-
-#[test]
 fn schema_configuration_productions_retain_exact_same_graph_incidence() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let configuration = native.entity_records[0]
-        .schema_configuration_record
-        .as_ref()
+        .schema_configuration_record()
         .expect("complete schema-configuration production");
     assert_eq!(configuration.schema_ordinal, 8);
     assert_eq!(configuration.schema_name, "Boolean");
     assert_eq!(configuration.schema_payload_offset, 0);
     assert_eq!(configuration.entity_reference.payload_offset, 10);
-    assert_eq!(configuration.entity_reference.reference.entity_id, 5);
+    assert_eq!(configuration.entity_reference.reference.entity_id(), 5);
     assert_eq!(
-        configuration.entity_reference.reference.entity.as_deref(),
+        configuration.entity_reference.reference.entity(),
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
-        configuration
-            .entity_reference
-            .reference
-            .class_name
-            .as_deref(),
+        configuration.entity_reference.reference.class_name(),
         Some("Configuration")
     );
     let row = native.entity_records[1]
-        .schema_configuration_row_link
-        .as_ref()
+        .schema_configuration_row_link()
         .expect("complete configrow production");
-    assert_eq!(row.class_reference.entity_id, 6);
+    assert_eq!(row.class_reference.entity_id(), 6);
     assert_eq!(
-        row.class_reference.entity.as_deref(),
+        row.class_reference.entity(),
         Some(native.entity_records[1].id.as_str())
     );
-    assert_eq!(row.class_reference.class_name.as_deref(), Some("configrow"));
+    assert_eq!(row.class_reference.class_name(), Some("configrow"));
     assert_eq!(row.successor_payload_offset, 5);
-    assert_eq!(row.successor.entity_id, 7);
+    assert_eq!(row.successor.entity_id(), 7);
     assert_eq!(
-        row.successor.entity.as_deref(),
+        row.successor.entity(),
         Some(native.entity_records[2].id.as_str())
     );
-    assert_eq!(row.successor.class_name.as_deref(), Some("body"));
+    assert_eq!(row.successor.class_name(), Some("body"));
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
     let chain = &native.schema_configuration_row_chains[0];
     assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
@@ -344,30 +315,30 @@ fn schema_configuration_productions_retain_exact_same_graph_incidence() {
         chain.id,
         format!("catia:outer:schema-configuration-row-chain#{graph_key}:6")
     );
-    assert_eq!(chain.links.len(), 1);
-    assert_eq!(chain.links[0].row, row.class_reference);
+    assert_eq!(chain.links().len(), 1);
+    assert_eq!(chain.links()[0].row, row.class_reference);
     assert_eq!(
-        chain.links[0].successor_payload_offset,
+        chain.links()[0].successor_payload_offset,
         row.successor_payload_offset
     );
     assert_eq!(
         chain
-            .links
+            .links()
             .iter()
-            .map(|link| link.row.entity_id)
+            .map(|link| link.row.entity_id())
             .collect::<Vec<_>>(),
         [6]
     );
     assert_eq!(
-        chain.links[0].row.entity.as_deref(),
+        chain.links()[0].row.entity(),
         Some(native.entity_records[1].id.as_str())
     );
-    assert_eq!(chain.links[0].successor, row.successor);
+    assert_eq!(chain.successor(0), Some(&row.successor));
     assert!(native.entity_records[2]
-        .schema_configuration_record
+        .schema_configuration_record()
         .is_none());
     assert!(native.entity_records[2]
-        .schema_configuration_row_link
+        .schema_configuration_row_link()
         .is_none());
 
     let decoded = CatiaCodec
@@ -472,22 +443,22 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
     let chain = &native.schema_configuration_row_chains[0];
-    assert_eq!(chain.links[0].row.entity_id, 5);
+    assert_eq!(chain.links()[0].row.entity_id(), 5);
     assert_eq!(
         chain
-            .links
+            .links()
             .iter()
-            .map(|link| link.row.entity_id)
+            .map(|link| link.row.entity_id())
             .collect::<Vec<_>>(),
         [5, 7, 9]
     );
     assert!(chain
-        .links
+        .links()
         .iter()
-        .all(|link| link.row.class_name.as_deref() == Some("configrow")));
+        .all(|link| link.row.class_name() == Some("configrow")));
     assert_eq!(
         chain
-            .links
+            .links()
             .iter()
             .map(|link| link.successor_payload_offset)
             .collect::<Vec<_>>(),
@@ -495,30 +466,30 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
     );
     assert_eq!(
         chain
-            .links
+            .links()
             .iter()
             .map(|link| {
                 link.intervening_entities
                     .as_ref()
                     .expect("source-ordered row interval")
                     .iter()
-                    .map(|entity| entity.entity_id)
+                    .map(super::super::CatiaEntityReference::entity_id)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
         [vec![6], vec![8], vec![10]]
     );
     assert!(chain
-        .links
+        .links()
         .iter()
         .flat_map(|link| {
             link.intervening_entities
                 .as_ref()
                 .expect("source-ordered row interval")
         })
-        .all(|reference| reference.class_name.as_deref() == Some("body")));
-    assert_eq!(chain.links[2].successor.entity_id, 11);
-    assert_eq!(chain.links[2].successor.class_name.as_deref(), Some("body"));
+        .all(|reference| reference.class_name() == Some("body")));
+    assert_eq!(chain.successor(2).unwrap().entity_id(), 11);
+    assert_eq!(chain.successor(2).unwrap().class_name(), Some("body"));
 
     let decoded = CatiaCodec
         .decode(
@@ -546,22 +517,20 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
         &standard_catpart_with_configuration_incidences(8, 15, 16),
     );
     let configuration = native.entity_records[0]
-        .schema_configuration_record
-        .as_ref()
+        .schema_configuration_record()
         .expect("complete schema-configuration production");
     assert_eq!(configuration.schema_name, "Boolean");
-    assert!(configuration.entity_reference.reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.entity().is_none());
     let row = native.entity_records[1]
-        .schema_configuration_row_link
-        .as_ref()
+        .schema_configuration_row_link()
         .expect("complete configrow production");
-    assert!(row.successor.entity.is_none());
+    assert!(row.successor.entity().is_none());
 
     let mismatched_schema = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(14, 15, 16),
     );
     assert!(mismatched_schema.entity_records[0]
-        .schema_configuration_record
+        .schema_configuration_record()
         .is_none());
 
     let mut malformed = standard_catpart_with_configuration_incidences(8, 15, 16);
@@ -575,7 +544,7 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
     assert!(malformed
         .entity_records
         .iter()
-        .all(|entity| entity.schema_configuration_row_link.is_none()));
+        .all(|entity| entity.schema_configuration_row_link().is_none()));
 
     let cyclic_file = standard_catpart_with_configuration_incidences(8, 15, 6);
     let cyclic_native = crate::native::CatiaNative::decode(&cyclic_file);
@@ -606,7 +575,7 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
         &standard_catpart_with_configuration_incidences(8, 15, 5),
     );
     assert_eq!(descending.schema_configuration_row_chains.len(), 1);
-    assert!(descending.schema_configuration_row_chains[0].links[0]
+    assert!(descending.schema_configuration_row_chains[0].links()[0]
         .intervening_entities
         .is_none());
 }
@@ -616,24 +585,18 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
     let file = standard_catpart_with_configuration_incidences(8, 8, 8);
     let native = crate::native::CatiaNative::decode(&file);
     let configuration = native.entity_records[0]
-        .schema_configuration_record
-        .as_ref()
+        .schema_configuration_record()
         .expect("complete schema-configuration production");
-    assert!(configuration.entity_reference.reference.is_null);
-    assert!(configuration.entity_reference.reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.is_null());
+    assert!(configuration.entity_reference.reference.entity().is_none());
     let row = native.entity_records[1]
-        .schema_configuration_row_link
-        .as_ref()
+        .schema_configuration_row_link()
         .expect("complete configrow production");
-    assert!(!row.class_reference.is_null);
-    assert!(row.successor.is_null);
-    assert!(row.successor.entity.is_none());
+    assert!(!row.class_reference.is_null());
+    assert!(row.successor.is_null());
+    assert!(row.successor.entity().is_none());
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
-    assert!(
-        native.schema_configuration_row_chains[0].links[0]
-            .successor
-            .is_null
-    );
+    assert!(native.schema_configuration_row_chains[0].terminal.is_null());
 
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
@@ -689,243 +652,16 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
 }
 
 #[test]
-fn native_load_migrates_and_validates_configuration_incidences() {
+fn native_load_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 5, 7),
     );
-    let mut legacy_named = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut legacy_named)
-        .expect("store schema-configuration namespace");
-    let entity = legacy_named
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-        .first_mut()
-        .expect("stored schema-configuration entity");
-    let mut fields = entity.fields_mut();
-    let configuration = fields
-        .remove("schema_configuration_record")
-        .expect("stored schema-configuration record");
-    fields.insert("configuration_record".to_string(), configuration);
-    drop(fields);
-    let row_entity = legacy_named
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-        .get_mut(1)
-        .expect("stored schema-configuration-row entity");
-    let mut fields = row_entity.fields_mut();
-    let row_link = fields
-        .remove("schema_configuration_row_link")
-        .expect("stored schema-configuration-row link");
-    fields.insert("configuration_row_link".to_string(), row_link);
-    drop(fields);
-    let row_chains = legacy_named
-        .arenas
-        .remove("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains");
-    legacy_named
-        .arenas
-        .insert("configuration_row_chains".to_string(), row_chains);
-    legacy_named.version = crate::native::CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION - 1;
-    let chain = legacy_named
-        .arenas
-        .get_mut("configuration_row_chains")
-        .expect("stored legacy-named schema-configuration-row chains")
-        .first_mut()
-        .expect("stored legacy-named schema-configuration-row chain");
-    let legacy_id = chain.id().replace(
-        ":schema-configuration-row-chain#",
-        ":configuration-row-chain#",
-    );
-    let fields = chain.fields();
-    *chain = cadmpeg_ir::NativeRecord::new(legacy_id, fields);
-    let loaded = crate::native::CatiaNative::load(&legacy_named)
-        .expect("load legacy-named schema-configuration incidences");
-    assert_eq!(
-        loaded.entity_records[0].schema_configuration_record,
-        native.entity_records[0].schema_configuration_record
-    );
-    assert_eq!(
-        loaded.entity_records[1].schema_configuration_row_link,
-        native.entity_records[1].schema_configuration_row_link
-    );
-    assert_eq!(
-        loaded.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut older = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut older)
-        .expect("store configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION - 1;
-    for entity in older
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-    {
-        let id = entity.id().to_owned();
-        let mut fields = entity.fields();
-        fields.remove("schema_configuration_record");
-        fields.remove("schema_configuration_row_link");
-        *entity = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    let migrated =
-        crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
-    assert_eq!(
-        migrated.entity_records[0].schema_configuration_record,
-        native.entity_records[0].schema_configuration_record
-    );
-    assert_eq!(
-        migrated.entity_records[1].schema_configuration_row_link,
-        native.entity_records[1].schema_configuration_row_link
-    );
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut version_250 = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut version_250)
-        .expect("store configuration payload offsets");
-    let entities = version_250
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records");
-    let mut stored_fields = entities[0].fields_mut();
-    let configuration = stored_fields
-        .get_mut("schema_configuration_record")
-        .expect("stored schema-configuration record")
-        .as_object_mut()
-        .expect("stored configuration object");
-    configuration.remove("schema_payload_offset");
-    let entity_reference = configuration["entity_reference"]
-        .as_object()
-        .expect("stored configuration incidence")["reference"]
-        .clone();
-    configuration.insert("entity_reference".to_string(), entity_reference);
-    drop(stored_fields);
-    entities[1]
-        .fields()
-        .get_mut("schema_configuration_row_link")
-        .expect("stored schema-configuration-row link")
-        .as_object_mut()
-        .expect("stored schema-configuration-row object")
-        .remove("successor_payload_offset");
-    version_250.version = crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1;
-    let migrated = crate::native::CatiaNative::load(&version_250)
-        .expect("migrate configuration payload offsets");
-    assert_eq!(
-        migrated.entity_records[0].schema_configuration_record,
-        native.entity_records[0].schema_configuration_record
-    );
-    assert_eq!(
-        migrated.entity_records[1].schema_configuration_row_link,
-        native.entity_records[1].schema_configuration_row_link
-    );
-
-    let interval_native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
-    let mut older = cadmpeg_ir::NativeNamespace::default();
-    interval_native
-        .store(&mut older)
-        .expect("store pre-interval configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION - 1;
-    for chain in older
-        .arenas
-        .get_mut("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains")
-    {
-        let id = chain.id().to_owned();
-        let mut fields = chain.fields();
-        for link in fields
-            .get_mut("links")
-            .expect("stored schema-configuration-row links")
-            .as_array_mut()
-            .expect("stored schema-configuration-row links")
-        {
-            link.as_object_mut()
-                .expect("stored schema-configuration-row link")
-                .remove("intervening_entities");
-        }
-        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    let migrated = crate::native::CatiaNative::load(&older)
-        .expect("migrate schema-configuration-row successor intervals");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        interval_native.schema_configuration_row_chains
-    );
-
-    let mut older = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut older)
-        .expect("store pre-chain configuration namespace");
-    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION - 1;
-    older.arenas.remove("schema_configuration_row_chains");
-    let migrated =
-        crate::native::CatiaNative::load(&older).expect("migrate schema-configuration-row chains");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut version_254 = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut version_254)
-        .expect("store pre-link-incidence configuration namespace");
-    for chain in version_254
-        .arenas
-        .get_mut("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains")
-    {
-        let id = chain.id().to_owned();
-        let mut fields = chain.fields();
-        fields.remove("links");
-        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    version_254.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
-    let migrated = crate::native::CatiaNative::load(&version_254)
-        .expect("migrate schema-configuration-row link incidences");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut expected_nulls = crate::native::CatiaNative::decode(
-        &standard_catpart_with_configuration_incidences(8, 8, 8),
-    );
-    let mut stale_nulls = expected_nulls.clone();
-    let configuration = stale_nulls.entity_records[0]
-        .schema_configuration_record
-        .as_mut()
-        .expect("complete schema-configuration production");
-    configuration.entity_reference.reference.is_null = false;
-    let row = stale_nulls.entity_records[1]
-        .schema_configuration_row_link
-        .as_mut()
-        .expect("complete configrow production");
-    row.successor.is_null = false;
-    stale_nulls.schema_configuration_row_chains[0].links[0]
-        .successor
-        .is_null = false;
-    let mut version_239 = cadmpeg_ir::NativeNamespace::default();
-    stale_nulls
-        .store(&mut version_239)
-        .expect("store pre-null-incidence namespace");
-    version_239.version = crate::native::CATIA_TYPED_INCIDENCE_NULL_VERSION - 1;
-    let migrated =
-        crate::native::CatiaNative::load(&version_239).expect("migrate incidence null states");
-    expected_nulls.version = migrated.version;
-    assert_eq!(migrated, expected_nulls);
-
     let mut malformed_chain = native.clone();
-    malformed_chain.schema_configuration_row_chains[0].links[0]
-        .successor
-        .entity_id = 6;
+    malformed_chain.schema_configuration_row_chains[0].terminal = malformed_chain
+        .schema_configuration_row_chains[0]
+        .terminal
+        .clone()
+        .with_entity_id(6);
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_chain
         .store(&mut current)
@@ -936,8 +672,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed_chain_offset = native.clone();
-    malformed_chain_offset.schema_configuration_row_chains[0].links[0].successor_payload_offset +=
-        1;
+    malformed_chain_offset.schema_configuration_row_chains[0].links_mut()[0]
+        .successor_payload_offset += 1;
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_chain_offset
         .store(&mut current)
@@ -949,14 +685,12 @@ fn native_load_migrates_and_validates_configuration_incidences() {
 
     let mut malformed_offsets = native.clone();
     let configuration = malformed_offsets.entity_records[0]
-        .schema_configuration_record
-        .as_mut()
+        .schema_configuration_record_mut()
         .expect("decoded schema-configuration record");
     configuration.schema_payload_offset += 1;
     configuration.entity_reference.payload_offset += 1;
     malformed_offsets.entity_records[1]
-        .schema_configuration_row_link
-        .as_mut()
+        .schema_configuration_row_link_mut()
         .expect("decoded configrow link")
         .successor_payload_offset += 1;
     let mut current = cadmpeg_ir::NativeNamespace::default();
@@ -968,12 +702,20 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
+    let interval_native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let mut malformed_intervals = interval_native;
-    malformed_intervals.schema_configuration_row_chains[0].links[0]
+    malformed_intervals.schema_configuration_row_chains[0].links_mut()[0]
         .intervening_entities
         .as_mut()
-        .expect("source-ordered row interval")[0]
-        .entity_id = 8;
+        .expect("source-ordered row interval")[0] = {
+        let current = malformed_intervals.schema_configuration_row_chains[0].links_mut()[0]
+            .intervening_entities
+            .as_ref()
+            .expect("source-ordered row interval")[0]
+            .clone();
+        current.with_entity_id(8)
+    };
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_intervals
         .store(&mut current)
@@ -984,12 +726,16 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed = native;
-    malformed.entity_records[1]
-        .schema_configuration_row_link
-        .as_mut()
+    let malformed_successor = malformed.entity_records[1]
+        .schema_configuration_row_link()
         .expect("decoded configrow link")
         .successor
-        .entity_id = 6;
+        .clone()
+        .with_entity_id(6);
+    malformed.entity_records[1]
+        .schema_configuration_row_link_mut()
+        .expect("decoded configrow link")
+        .successor = malformed_successor;
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut current)
@@ -1005,8 +751,8 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     assert!(native.object_graphs[0].catalog_byte_offset.is_some());
     assert!(native.object_graphs[0].catalog.is_some());
-    assert!(native.object_graphs[0].records[0].class_name.is_some());
-    assert!(native.object_graphs[0].records[0].class_entry.is_some());
+    assert!(native.object_graphs[0].records[0].class_name().is_some());
+    assert!(native.object_graphs[0].records[0].class_entry().is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
@@ -1027,11 +773,19 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     assert_rejected(missing_catalog_identity);
 
     let mut invalid_class = native.clone();
-    invalid_class.object_graphs[0].records[0].class_name = Some("WrongClass".to_string());
+    invalid_class.object_graphs[0].records[0]
+        .class
+        .as_mut()
+        .expect("decoded class role")
+        .class_name = Some("WrongClass".to_string());
     assert_rejected(invalid_class);
 
     let mut invalid_class_entry = native;
-    invalid_class_entry.object_graphs[0].records[0].class_entry = None;
+    invalid_class_entry.object_graphs[0].records[0]
+        .class
+        .as_mut()
+        .expect("decoded class role")
+        .class_entry = None;
     assert_rejected(invalid_class_entry);
 }
 
@@ -1071,7 +825,7 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 }
 
 #[test]
-fn native_store_paths_write_the_current_schema_version() {
+fn native_store_paths_cover_every_declared_arena() {
     let catalogue_names = crate::native::CATIA_FAMILIES
         .iter()
         .map(|row| row.arena)
@@ -1084,29 +838,6 @@ fn native_store_paths_write_the_current_schema_version() {
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
     );
-
-    let borrowed = crate::native::CatiaNative {
-        version: 1,
-        ..crate::native::CatiaNative::default()
-    };
-    let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::default();
-    borrowed
-        .store(&mut borrowed_namespace)
-        .expect("store borrowed CATIA namespace");
-    assert_eq!(
-        borrowed_namespace.version,
-        crate::native::CATIA_NATIVE_VERSION
-    );
-
-    let owned = crate::native::CatiaNative {
-        version: 1,
-        ..crate::native::CatiaNative::default()
-    };
-    let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
-    owned
-        .store_owned(&mut owned_namespace)
-        .expect("store owned CATIA namespace");
-    assert_eq!(owned_namespace.version, crate::native::CATIA_NATIVE_VERSION);
 
     let rich = crate::native::CatiaNative::decode(&standard_catpart());
     let mut rich_borrowed = cadmpeg_ir::NativeNamespace::default();
@@ -1124,7 +855,7 @@ fn native_store_paths_write_the_current_schema_version() {
 }
 
 #[test]
-fn native_migrates_and_validates_evaluated_value_names() {
+fn native_validates_evaluated_value_names() {
     let mut bytes = Vec::new();
     bytes.push(0xea);
     bytes.extend(1_u32.to_le_bytes());
@@ -1148,17 +879,6 @@ fn native_migrates_and_validates_evaluated_value_names() {
         .store(&mut invalid_namespace)
         .expect("store noncanonical evaluated value name");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
-
-    let mut previous_namespace = invalid_namespace;
-    previous_namespace.version = 223;
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate evaluated value name");
-    assert_eq!(
-        migrated.legacy_entity_runs[0].integer_values[0]
-            .name
-            .as_deref(),
-        Some("Count")
-    );
 }
 
 #[test]

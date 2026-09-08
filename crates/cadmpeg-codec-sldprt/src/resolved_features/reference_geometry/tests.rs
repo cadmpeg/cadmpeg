@@ -72,7 +72,7 @@ fn decode_projects_fixed_reference_plane_frame() {
 
 #[test]
 fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 
     let mut resolved = resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plane", 42)]);
     resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
@@ -101,13 +101,15 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].definition,
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     ));
 }
 
 #[test]
 fn incomplete_coordinate_system_projects_as_typed_unresolved() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -121,6 +123,8 @@ fn incomplete_coordinate_system_projects_as_typed_unresolved() {
 
     assert!(matches!(
         decoded.ir().model.features[0].definition,
-        FeatureDefinition::DatumCoordinateSystemUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem
+        }
     ));
 }

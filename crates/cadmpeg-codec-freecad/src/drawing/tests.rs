@@ -59,16 +59,20 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
+    let crate::native::DrawingRole::Page {
+        views,
+        template: page_template,
+    } = &page.role
+    else {
+        panic!("page record is not DrawingRole::Page");
+    };
     assert_eq!(
-        page.template.as_deref(),
+        page_template.as_deref(),
         Some("fcstd:native:object#Template")
     );
-    assert_eq!(page.views, ["fcstd:native:object#View"]);
+    assert_eq!(views.as_slice(), ["fcstd:native:object#View"]);
     assert_eq!(template.side_entries, ["page.svg"]);
-    assert_eq!(
-        view.sources[0].object.as_deref(),
-        Some("fcstd:native:object#Model")
-    );
+    assert_eq!(view.sources[0].object(), Some("fcstd:native:object#Model"));
     assert!(view.parameters.contains_key("Direction"));
     assert_eq!(
         view.parameters["Scale"],
@@ -99,11 +103,11 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
         neutral_page.template.as_deref(),
-        Some(neutral_template.id.0.as_str())
+        Some(neutral_template.id.as_str())
     );
     assert_eq!(
-        neutral_page.relationships["Views"][0].target.as_deref(),
-        Some(neutral_view.id.0.as_str())
+        neutral_page.relationships["Views"][0].local_target(),
+        Some(neutral_view.id.as_str())
     );
     assert_eq!(neutral_template.assets.len(), 1);
     assert_eq!(neutral_view.position, Some([25.0, 40.0]));
@@ -164,9 +168,9 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .find(|drawing| drawing.object.ends_with("#PageNull"))
         .expect("null page");
     assert!(null_page.template.is_none());
-    assert!(null_page.relationships["Template"][0].is_null);
+    assert!(null_page.relationships["Template"][0].is_null());
     assert_eq!(
-        null_page.relationships["Views"][0].target.as_deref(),
+        null_page.relationships["Views"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
     let model_page = pages
@@ -175,7 +179,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .expect("model page");
     assert!(model_page.template.is_none());
     assert_eq!(
-        model_page.relationships["Template"][0].target.as_deref(),
+        model_page.relationships["Template"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -218,7 +222,7 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("native view");
     assert_eq!(
-        native_view.relationships["Template"][0].object.as_deref(),
+        native_view.relationships["Template"][0].object(),
         Some("fcstd:native:object#Template")
     );
 
@@ -245,11 +249,11 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .expect("neutral view");
     assert_eq!(
         neutral_page.template.as_deref(),
-        Some(neutral_template.id.0.as_str())
+        Some(neutral_template.id.as_str())
     );
     assert_eq!(
-        neutral_view.relationships["Template"][0].target.as_deref(),
-        Some(neutral_template.id.0.as_str())
+        neutral_view.relationships["Template"][0].local_target(),
+        Some(neutral_template.id.as_str())
     );
     assert!(neutral_view.template.is_none());
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -330,7 +334,10 @@ fn rejects_noncanonical_page_link_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("noncanonical page link carrier");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -365,7 +372,9 @@ fn rejects_duplicate_drawing_carrier_properties_and_values() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -395,7 +404,9 @@ fn rejects_noncanonical_drawing_scalar_attributes() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -510,7 +521,9 @@ fn rejects_wrong_drawing_carrier_types() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -540,7 +553,9 @@ fn rejects_invalid_drawing_numeric_admission() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }

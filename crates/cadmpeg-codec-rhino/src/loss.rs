@@ -13,12 +13,17 @@
 //! leaves only the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `rhino` namespace.
 //!
-//! [`RhinoLossCode::shared_code`] is an exhaustive match with no fall-through
+//! [`RhinoLossCode::shared_taxonomy`] is an exhaustive match with no fall-through
 //! arm. A default arm would silently assign a category to a code added later,
 //! and the categories this codec spans (geometry, annotation, attribute,
 //! diagnostic) have no honest common default.
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+
+/// Construct the loss charged when a reading depends on an absent writer stamp.
+pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
+    RhinoLossCode::SourceWriterStampUnverified.note(message)
+}
 
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
@@ -99,11 +104,39 @@ pub enum RhinoLossCode {
     MeshVertexPrecisionReduced,
     /// Mesh normals are written at reduced (f32) precision.
     MeshNormalPrecisionReduced,
+    /// A field was read under the legacy reading because the archive carries no
+    /// openNURBS writer-version stamp to verify that record against.
+    ///
+    /// Per record, inside a dialect the archive word already identified and
+    /// whose grammar this codec verified. It is deliberately *not*
+    /// `source.dialect-unverified`: the other codecs pin that string for the
+    /// document-level statement "the dialect itself was not verified", which
+    /// holds exactly when `Admission::Residual` is reported. Rhino
+    /// charges this one inside `Admission::Admitted` documents, so a consumer
+    /// joining loss code to admission state must be able to tell them apart.
+    /// The taxonomy family below is still the right one.
+    SourceWriterStampUnverified,
+    /// The archive-version word is outside the declared set, so the document
+    /// was read by the residual chunk-width route without a declared identity.
+    ///
+    /// Document level, and the counterpart of the per-record code above:
+    /// charged exactly when the primary-layer `crate::dialect` match is
+    /// `Admission::Residual`, from the same predicate that decides
+    /// the admission. A word no row claims still selects its own chunk width
+    /// and checksum mechanics. No declared archive row is substituted, and
+    /// nothing verified that the observed word means those mechanics.
+    SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
+    /// Body kind came from the closed-shell gauge or from an unverified stored
+    /// solid flag rather than from a flag the writer stamp vouches for.
+    TopologyBodyKindGaugeSubstituted,
 }
 
 impl RhinoLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [RhinoLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [RhinoLossCode] = &[
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
@@ -140,6 +173,10 @@ impl RhinoLossCode {
         Self::HistoryGeometryNotTransferred,
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
+        Self::SourceWriterStampUnverified,
+        Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
+        Self::TopologyBodyKindGaugeSubstituted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -182,6 +219,10 @@ impl RhinoLossCode {
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
+            Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
 
@@ -238,6 +279,11 @@ impl RhinoLossCode {
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
                 LossTaxonomy::MeshVertexPrecision
             }
+            Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
 
@@ -249,6 +295,7 @@ impl RhinoLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
+            Self::SourceWriterStampUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -317,6 +364,10 @@ mod tests {
                 "history.geometry-not-transferred",
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
+                "source.writer-stamp-unverified",
+                "source.dialect-unverified",
+                "target.source-dialect-displaced",
+                "topology.body-kind-gauge-substituted",
             ]
         );
     }
@@ -349,5 +400,19 @@ mod tests {
             assert_eq!(note.code.local_code(), code.code());
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn missing_writer_stamp_does_not_trigger_document_dialect_strictness() {
+        assert_eq!(
+            RhinoLossCode::SourceWriterStampUnverified
+                .kind()
+                .strict_floor(),
+            None
+        );
+        assert_eq!(
+            RhinoLossCode::SourceDialectUnverified.kind().strict_floor(),
+            Some(cadmpeg_ir::report::Severity::Warning)
+        );
     }
 }

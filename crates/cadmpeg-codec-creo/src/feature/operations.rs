@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-state recipes, operation names, and model reference names.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::schema::SchemaClass;
 use crate::psb;
 
 /// Exact procedural recipe stored in a feature-state record.
@@ -71,38 +73,294 @@ const FEATURE_RECIPES: &[(&[u8], FeatureRecipe)] = &[
     (b"cutrevolve\0", FeatureRecipe::CutRevolve),
 ];
 
+/// Stored identifier keyword, preserving `id` versus `ID`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdKeyword {
+    /// Lowercase `id`.
+    Id,
+    /// Uppercase `ID`.
+    ID,
+}
+
+impl IdKeyword {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            b"id" => Some(Self::Id),
+            b"ID" => Some(Self::ID),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::ID => "ID",
+        }
+    }
+}
+
+/// Source of a feature-operation display name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperationName {
+    /// Stored `<Kind> id <N>` display name.
+    Stored {
+        /// Exact stored operation-name bytes excluding the NUL terminator.
+        bytes: Vec<u8>,
+        /// Stored identifier keyword.
+        keyword: IdKeyword,
+        /// Optional stored-name byte immediately preceding the family name.
+        prefix: Option<u8>,
+    },
+    /// Derived operation name with no stored display name.
+    Derived,
+}
+
+impl OperationName {
+    pub fn display_name_stored(&self) -> bool {
+        matches!(self, Self::Stored { .. })
+    }
+
+    pub fn stored_name(&self) -> Option<String> {
+        self.stored_name_bytes()
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Stored { bytes, .. } => Some(bytes),
+            Self::Derived => None,
+        }
+    }
+
+    pub fn identifier_keyword(&self) -> Option<&str> {
+        match self {
+            Self::Stored { keyword, .. } => Some(keyword.as_str()),
+            Self::Derived => None,
+        }
+    }
+
+    pub fn stored_name_prefix(&self) -> Option<u8> {
+        match self {
+            Self::Stored { prefix, .. } => *prefix,
+            Self::Derived => None,
+        }
+    }
+}
+
+/// Operation-family kind named by a feature-state record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperationKind {
+    /// Family name taken from a stored display name.
+    Stored(String),
+    /// Linear section-sweep family.
+    Extrude,
+    /// Rotational section-sweep family.
+    Revolve,
+    /// Consensus or conflict fallback.
+    Native,
+}
+
+impl OperationKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Stored(value) => value,
+            Self::Extrude => "Extrude",
+            Self::Revolve => "Revolve",
+            Self::Native => "Native Feature",
+        }
+    }
+
+    fn from_recipe(recipe: FeatureRecipe) -> Self {
+        match recipe.kind() {
+            FeatureRecipeKind::Extrude => Self::Extrude,
+            FeatureRecipeKind::Revolve => Self::Revolve,
+        }
+    }
+}
+
+/// DEPDB recipe prefix pairing a schema class with a parent feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepdbPrefix {
+    /// Root feature-definition schema class.
+    pub schema: SchemaClass,
+    /// Previous or parent feature identifier.
+    pub parent: u32,
+}
+
+/// Resolution of a feature's procedural recipe in one stored source state.
+///
+/// A source state that competes with another may still name the recipe it
+/// stored; that candidate is source evidence, not a resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecipeState {
+    /// No recipe is stored.
+    None,
+    /// One recipe is resolved.
+    Resolved(FeatureRecipe),
+    /// Competing recipes prevent resolution.
+    Conflicting {
+        /// Candidate retained by this source state.
+        candidate: Option<FeatureRecipe>,
+    },
+}
+
+impl RecipeState {
+    /// Resolved recipe available to geometry consumers.
+    pub fn resolved(self) -> Option<FeatureRecipe> {
+        match self {
+            Self::Resolved(recipe) => Some(recipe),
+            Self::None | Self::Conflicting { .. } => None,
+        }
+    }
+
+    /// Stored recipe candidate retained for source records.
+    pub fn candidate(self) -> Option<FeatureRecipe> {
+        match self {
+            Self::Resolved(recipe) => Some(recipe),
+            Self::Conflicting { candidate } => candidate,
+            Self::None => None,
+        }
+    }
+
+    /// Whether competing recipes prevent resolution.
+    pub fn is_conflicting(self) -> bool {
+        matches!(self, Self::Conflicting { .. })
+    }
+}
+
+impl From<Option<FeatureRecipe>> for RecipeState {
+    fn from(recipe: Option<FeatureRecipe>) -> Self {
+        recipe.map_or(Self::None, Self::Resolved)
+    }
+}
+
+/// Resolution of a feature's procedural recipe across its stored states.
+///
+/// The projection selects one state per feature, so competing recipes leave
+/// no candidate to carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecipeResolution {
+    /// No recipe is stored.
+    None,
+    /// One recipe is resolved.
+    Resolved(FeatureRecipe),
+    /// Competing recipes prevent resolution.
+    Conflicting,
+}
+
+impl RecipeResolution {
+    /// Resolved recipe available to geometry consumers.
+    pub fn resolved(self) -> Option<FeatureRecipe> {
+        match self {
+            Self::Resolved(recipe) => Some(recipe),
+            Self::None | Self::Conflicting => None,
+        }
+    }
+
+    /// Whether competing recipes prevent resolution.
+    pub fn is_conflicting(self) -> bool {
+        matches!(self, Self::Conflicting)
+    }
+}
+
+impl From<Option<FeatureRecipe>> for RecipeResolution {
+    fn from(recipe: Option<FeatureRecipe>) -> Self {
+        recipe.map_or(Self::None, Self::Resolved)
+    }
+}
+
+impl From<RecipeState> for RecipeResolution {
+    fn from(state: RecipeState) -> Self {
+        match state {
+            RecipeState::None => Self::None,
+            RecipeState::Resolved(recipe) => Self::Resolved(recipe),
+            RecipeState::Conflicting { .. } => Self::Conflicting,
+        }
+    }
+}
+
+mod sealed {
+    /// Closed set of procedural recipe forms.
+    pub trait Sealed {}
+
+    impl Sealed for super::RecipeState {}
+    impl Sealed for super::RecipeResolution {}
+}
+
+/// Stored or resolved procedural recipe form.
+pub trait RecipeForm: sealed::Sealed {}
+
+impl RecipeForm for RecipeState {}
+impl RecipeForm for RecipeResolution {}
+
+/// One stored feature-state record, before current-state selection.
+pub type FeatureOperationState = FeatureOperation<RecipeState>;
+
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOperation {
+pub struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     /// Numeric feature identifier following `id` in the stored name.
     pub feature_id: u32,
-    /// Stored operation-family name.
-    pub kind: String,
-    /// Whether `kind` came from a stored `<Kind> id <N>` display name.
-    pub display_name_stored: bool,
-    /// Display form of the stored operation name. Recipe-only states have no
-    /// stored name.
-    pub stored_name: Option<String>,
-    /// Exact stored operation-name bytes excluding the NUL terminator.
-    pub stored_name_bytes: Option<Vec<u8>>,
-    /// Stored identifier keyword, preserving `id` versus `ID`.
-    pub identifier_keyword: Option<String>,
-    /// Optional stored-name byte immediately preceding the family name.
-    pub stored_name_prefix: Option<u8>,
-    /// Procedural recipe name stored in the same current-state record.
-    pub recipe: Option<FeatureRecipe>,
-    /// Multiple complete recipe candidates prevent a unique feature projection.
-    pub recipe_conflict: bool,
+    /// Operation-family kind.
+    pub kind: OperationKind,
+    /// Display-name source.
+    pub name: OperationName,
+    /// Procedural recipe resolution for this state.
+    pub recipe: R,
     /// Multiple stored display states prevent a unique current-state selection.
     pub display_state_conflict: bool,
-    /// Root feature-definition schema class from a DEPDB recipe prefix.
-    pub root_schema_class: Option<u32>,
-    /// Previous or parent feature identifier from a DEPDB recipe prefix.
-    pub parent_feature_id: Option<u32>,
+    /// DEPDB recipe prefix, when present.
+    pub depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
     /// Byte offset including the optional stored-name prefix.
     pub state_offset: usize,
+}
+
+impl FeatureOperationState {
+    /// Project one selected source state onto the current-state operation.
+    fn project(self) -> FeatureOperation {
+        FeatureOperation {
+            feature_id: self.feature_id,
+            kind: self.kind,
+            name: self.name,
+            recipe: self.recipe.into(),
+            display_state_conflict: self.display_state_conflict,
+            depdb: self.depdb,
+            offset: self.offset,
+            state_offset: self.state_offset,
+        }
+    }
+}
+
+impl<R: RecipeForm> FeatureOperation<R> {
+    pub fn display_name_stored(&self) -> bool {
+        self.name.display_name_stored()
+    }
+
+    pub fn stored_name(&self) -> Option<String> {
+        self.name.stored_name()
+    }
+
+    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+        self.name.stored_name_bytes()
+    }
+
+    pub fn identifier_keyword(&self) -> Option<&str> {
+        self.name.identifier_keyword()
+    }
+
+    pub fn stored_name_prefix(&self) -> Option<u8> {
+        self.name.stored_name_prefix()
+    }
+
+    pub fn root_schema_class(&self) -> Option<SchemaClass> {
+        self.depdb.map(|prefix| prefix.schema)
+    }
+
+    pub fn parent_feature_id(&self) -> Option<u32> {
+        self.depdb.map(|prefix| prefix.parent)
+    }
 }
 
 /// Feature name joined to its model feature identifier by `mdl_feat_ref_info_new`.
@@ -110,8 +368,6 @@ pub struct FeatureOperation {
 pub struct FeatureReferenceName {
     /// Numeric model feature identifier.
     pub feature_id: u32,
-    /// Stored feature name.
-    pub name: String,
     /// Exact stored feature-name bytes excluding the NUL terminator.
     pub name_bytes: Vec<u8>,
     /// Reference-database object identifier.
@@ -120,6 +376,13 @@ pub struct FeatureReferenceName {
     pub reference_type: u32,
     /// Byte offset of the `f7 0x71` entry header.
     pub offset: usize,
+}
+
+impl FeatureReferenceName {
+    /// Stored name decoded with replacement for invalid UTF-8 sequences.
+    pub fn name(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(&self.name_bytes)
+    }
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
@@ -161,7 +424,6 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
         }
         names.push(FeatureReferenceName {
             feature_id,
-            name: String::from_utf8_lossy(name_bytes).into_owned(),
             name_bytes: name_bytes.to_vec(),
             own_reference_id,
             reference_type,
@@ -174,7 +436,7 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureRecipeBinding {
     recipe: FeatureRecipe,
-    root_schema_class: u32,
+    root_schema_class: SchemaClass,
     parent_feature_id: u32,
     offset: usize,
 }
@@ -219,7 +481,7 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
                 feature_id,
                 FeatureRecipeBinding {
                     recipe: *recipe,
-                    root_schema_class: schema_class,
+                    root_schema_class: SchemaClass::from(schema_class),
                     parent_feature_id,
                     offset: marker,
                 },
@@ -241,17 +503,17 @@ fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureR
         .then_some(first)
 }
 
-fn inline_recipe_resolution(record: &[u8]) -> (Option<FeatureRecipe>, bool) {
+fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
         for _ in record.windows(name.len()).filter(|window| *window == *name) {
             if found.is_some() {
-                return (None, true);
+                return RecipeState::Conflicting { candidate: None };
             }
             found = Some(*recipe);
         }
     }
-    (found, false)
+    found.into()
 }
 
 fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTreeSet<u32> {
@@ -276,7 +538,7 @@ fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<
 
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
-pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
+pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
@@ -340,37 +602,28 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .map(|(_, binding)| *binding)
             .collect::<Vec<_>>();
         let bound_recipe = agreeing_recipe_binding(&matching_recipes);
-        let (recipe, recipe_conflict) = if matching_recipes.is_empty() {
+        let recipe = if matching_recipes.is_empty() {
             inline_recipe_resolution(record)
         } else {
-            (
-                bound_recipe.map(|binding| binding.recipe),
-                bound_recipe.is_none(),
-            )
+            bound_recipe.map_or(RecipeState::Conflicting { candidate: None }, |binding| {
+                RecipeState::Resolved(binding.recipe)
+            })
         };
         result.push(FeatureOperation {
             feature_id,
-            kind: String::from_utf8_lossy(family).into_owned(),
-            display_name_stored: true,
-            stored_name: Some(
-                String::from_utf8_lossy(
-                    &payload[state_offset..separator + separator_bytes.len() + end],
-                )
-                .into_owned(),
-            ),
-            stored_name_bytes: Some(
-                payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
-            ),
-            identifier_keyword: Some(
-                String::from_utf8_lossy(&separator_bytes[1..separator_bytes.len() - 1])
-                    .into_owned(),
-            ),
-            stored_name_prefix,
+            kind: OperationKind::Stored(String::from_utf8_lossy(family).into_owned()),
+            name: OperationName::Stored {
+                bytes: payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
+                keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
+                    .unwrap_or(IdKeyword::Id),
+                prefix: stored_name_prefix,
+            },
             recipe,
-            recipe_conflict,
             display_state_conflict: false,
-            root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
-            parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
+            depdb: bound_recipe.map(|binding| DepdbPrefix {
+                schema: binding.root_schema_class,
+                parent: binding.parent_feature_id,
+            }),
             offset,
             state_offset,
         });
@@ -379,30 +632,29 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         if recipe_binding_counts.get(&feature_id) == Some(&1)
             && result.iter().any(|operation| {
                 operation.feature_id == feature_id
-                    && operation.recipe == Some(binding.recipe)
-                    && operation.root_schema_class == Some(binding.root_schema_class)
-                    && operation.parent_feature_id == Some(binding.parent_feature_id)
+                    && operation.recipe == RecipeState::Resolved(binding.recipe)
+                    && operation.root_schema_class() == Some(binding.root_schema_class)
+                    && operation.parent_feature_id() == Some(binding.parent_feature_id)
             })
         {
             continue;
         }
         result.push(FeatureOperation {
             feature_id,
-            kind: match binding.recipe.kind() {
-                FeatureRecipeKind::Extrude => "Extrude",
-                FeatureRecipeKind::Revolve => "Revolve",
-            }
-            .to_string(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
-            recipe: Some(binding.recipe),
-            recipe_conflict: conflicting_features.contains(&feature_id),
+            kind: OperationKind::from_recipe(binding.recipe),
+            name: OperationName::Derived,
+            recipe: if conflicting_features.contains(&feature_id) {
+                RecipeState::Conflicting {
+                    candidate: Some(binding.recipe),
+                }
+            } else {
+                RecipeState::Resolved(binding.recipe)
+            },
             display_state_conflict: false,
-            root_schema_class: Some(binding.root_schema_class),
-            parent_feature_id: Some(binding.parent_feature_id),
+            depdb: Some(DepdbPrefix {
+                schema: binding.root_schema_class,
+                parent: binding.parent_feature_id,
+            }),
             offset: binding.offset,
             state_offset: binding.offset,
         });
@@ -410,7 +662,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
     result.sort_by_key(|operation| operation.offset);
     let conflicting_display_features = result
         .iter()
-        .filter(|operation| operation.display_name_stored)
+        .filter(|operation| operation.display_name_stored())
         .fold(BTreeMap::<u32, usize>::new(), |mut counts, operation| {
             *counts.entry(operation.feature_id).or_default() += 1;
             counts
@@ -429,7 +681,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     let bindings = recipe_bindings(payload);
     let conflicting_features = conflicting_recipe_features(&bindings);
-    let mut by_feature = BTreeMap::<u32, Vec<FeatureOperation>>::new();
+    let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
     for operation in operation_states(payload) {
         by_feature
             .entry(operation.feature_id)
@@ -441,46 +693,40 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         .filter_map(|states| {
             let display_states = states
                 .iter()
-                .filter(|state| state.display_name_stored)
+                .filter(|state| state.display_name_stored())
                 .collect::<Vec<_>>();
             match display_states.as_slice() {
-                [] => states.first().cloned(),
-                [display] => Some((*display).clone()),
+                [] => states.first().cloned().map(FeatureOperationState::project),
+                [display] => Some((*display).clone().project()),
                 displays => {
-                    let mut projection = (*displays.last()?).clone();
-                    let first_recipe = displays.first()?.recipe;
+                    let mut projection = (*displays.last()?).clone().project();
                     projection.offset = displays.first()?.offset;
                     projection.state_offset = displays.first()?.state_offset;
-                    projection.recipe_conflict = displays.iter().any(|state| state.recipe_conflict)
-                        || displays
-                            .iter()
-                            .skip(1)
-                            .any(|state| state.recipe != first_recipe);
                     projection.display_state_conflict = true;
                     projection.kind =
                         agreeing_value(displays.iter().map(|state| state.kind.clone()))
                             .or_else(|| {
-                                agreeing_value(displays.iter().map(|state| state.recipe))
+                                agreeing_value(displays.iter().map(|state| state.recipe.resolved()))
                                     .flatten()
-                                    .map(|recipe| match recipe.kind() {
-                                        FeatureRecipeKind::Extrude => "Extrude".to_string(),
-                                        FeatureRecipeKind::Revolve => "Revolve".to_string(),
-                                    })
+                                    .map(OperationKind::from_recipe)
                             })
-                            .unwrap_or_else(|| "Native Feature".to_string());
-                    projection.display_name_stored = false;
-                    projection.stored_name = None;
-                    projection.stored_name_bytes = None;
-                    projection.identifier_keyword = None;
-                    projection.stored_name_prefix = None;
-                    projection.recipe =
-                        agreeing_value(displays.iter().map(|state| state.recipe)).flatten();
-                    projection.root_schema_class =
-                        agreeing_value(displays.iter().map(|state| state.root_schema_class))
-                            .flatten();
-                    projection.parent_feature_id =
-                        agreeing_value(displays.iter().map(|state| state.parent_feature_id))
-                            .flatten();
+                            .unwrap_or(OperationKind::Native);
+                    projection.name = OperationName::Derived;
+                    projection.recipe = agreeing_value(
+                        displays
+                            .iter()
+                            .map(|state| RecipeResolution::from(state.recipe)),
+                    )
+                    .unwrap_or(RecipeResolution::Conflicting);
+                    projection.depdb = match (
+                        agreeing_value(displays.iter().map(|state| state.root_schema_class()))
+                            .flatten(),
+                        agreeing_value(displays.iter().map(|state| state.parent_feature_id()))
+                            .flatten(),
+                    ) {
+                        (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
+                        _ => None,
+                    };
                     Some(projection)
                 }
             }
@@ -490,14 +736,31 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         if !conflicting_features.contains(&operation.feature_id) {
             continue;
         }
-        operation.recipe = None;
-        operation.recipe_conflict = true;
-        operation.root_schema_class = None;
-        operation.parent_feature_id = None;
-        if !operation.display_name_stored {
-            operation.kind = "Native Feature".to_string();
+        operation.recipe = RecipeResolution::Conflicting;
+        operation.depdb = None;
+        if !operation.display_name_stored() {
+            operation.kind = OperationKind::Native;
         }
     }
     current.sort_by_key(|operation| operation.offset);
     current
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reference_names;
+    use std::borrow::Cow;
+
+    #[test]
+    fn reference_name_text_follows_stored_bytes() {
+        let mut names = reference_names(b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01");
+        let [record] = names.as_mut_slice() else {
+            panic!("one closed reference name");
+        };
+        assert_eq!(record.name_bytes, b"N\xff");
+        assert_eq!(record.name(), "N\u{fffd}");
+        assert!(matches!(record.name(), Cow::Owned(_)));
+        record.name_bytes = b"Renamed".to_vec();
+        assert_eq!(record.name(), Cow::Borrowed("Renamed"));
+    }
 }

@@ -38,9 +38,9 @@ fn faces_decode_nurbs_surface() {
             _ => None,
         })
         .expect("NURBS surface");
-    assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
-    assert_eq!(nurbs.control_points.len(), 4);
+    assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
+    assert_eq!(nurbs.control_points().len(), 4);
 }
 
 #[test]
@@ -65,12 +65,12 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("compact counted NURBS surface");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-    assert_eq!((surface.u_count, surface.v_count), (2, 2));
-    assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points.len(), 4);
-    assert_eq!(surface.control_points[3].z, 500.0);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points().len(), 4);
+    assert_eq!(surface.control_points()[3].z, 500.0);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
@@ -138,14 +138,14 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
         matches!(
-            surface.definition,
+            surface.definition(),
             ProceduralSurfaceDefinition::Offset { distance, .. }
                 if (distance - 2.0).abs() < f64::EPSILON
         )
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { .. })
-            && surface.id.0.contains("hidden-support-surf#100")
+            && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
     let face_surface = &result.ir().model.faces[0].surface;
@@ -175,7 +175,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     let ProceduralSurfaceDefinition::Blend { supports, .. } =
-        &result.ir().model.procedural_surfaces[0].definition
+        result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };
@@ -201,7 +201,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         SurfaceGeometry::Unknown { .. }
     ));
     for surface in support_surfaces {
-        assert!(surface.id.0.contains("hidden-support-surf#"));
+        assert!(surface.id.as_str().contains("hidden-support-surf#"));
     }
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
@@ -245,6 +245,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
                     &surface.geometry,
                     cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
                         construction: candidate,
+                        ..
                     } if candidate == &construction.id
                 )
             })
@@ -323,12 +324,11 @@ fn surface_descriptor_uses_terminal_array_references() {
     let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)
         .expect("surface carrier");
-    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(surface)) = carrier.geometry
-    else {
+    let SurfaceGeometry::Nurbs(surface) = carrier.geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points[0].x, 10_000.0);
-    assert_eq!(surface.control_points[3].y, 1_000.0);
+    assert_eq!(surface.control_points()[0].x, 10_000.0);
+    assert_eq!(surface.control_points()[3].y, 1_000.0);
 }
 
 #[test]
@@ -360,7 +360,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
             _ => None,
         })
         .expect("NURBS surface");
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
 }
 
 #[test]
@@ -385,7 +385,10 @@ fn face_on_untyped_surface_keeps_topology() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque surface record");
-    assert!(retained.links.contains(&result.ir().model.surfaces[0].id.0));
+    assert!(retained
+        .links
+        .iter()
+        .any(|link| link == result.ir().model.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses
@@ -431,15 +434,19 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
-    let cadmpeg_core::CodecError::StrictRefusal { loss_code, .. } = &error else {
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
-    assert!(loss_code.starts_with("sldprt/"), "unexpected: {loss_code}");
+    assert!(
+        rejection.loss().code.to_string().starts_with("sldprt/"),
+        "unexpected: {}",
+        rejection.loss().code
+    );
 }
 
 #[test]
 fn compact_carrier_shapes_decode() {
-    use crate::brep::{parse_carrier, CarrierGeometry};
+    use crate::brep::{parse_carrier, Carrier, CurveCarrier, SurfaceCarrier};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     // Cylinder (tag 00 33, 10 f64): origin, axis, radius, refdir.
@@ -453,8 +460,11 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.05, 1.0, 0.0, 0.0] {
         bef64(&mut cyl, v);
     }
-    match parse_carrier(&cyl, 0).unwrap().geometry {
-        CarrierGeometry::Surface(SurfaceGeometry::Cylinder { radius, axis, .. }) => {
+    match parse_carrier(&cyl, 0).unwrap() {
+        Carrier::Surface(SurfaceCarrier {
+            geometry: SurfaceGeometry::Cylinder { radius, axis, .. },
+            ..
+        }) => {
             assert_eq!(radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
@@ -472,8 +482,11 @@ fn compact_carrier_shapes_decode() {
     for v in [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.003] {
         bef64(&mut circ, v);
     }
-    match parse_carrier(&circ, 0).unwrap().geometry {
-        CarrierGeometry::Curve(CurveGeometry::Circle { radius, .. }) => assert_eq!(radius, 3.0),
+    match parse_carrier(&circ, 0).unwrap() {
+        Carrier::Curve(CurveCarrier {
+            geometry: CurveGeometry::Circle { radius, .. },
+            ..
+        }) => assert_eq!(radius, 3.0),
         other => panic!("expected circle, got {other:?}"),
     }
 

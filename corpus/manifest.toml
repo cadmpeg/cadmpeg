@@ -1,9 +1,21 @@
 # SPDX-License-Identifier: CC0-1.0
 # Public corpus files authored from blank documents by repository-owned scripts.
+#
+# Every field is donor-supplied except `dialect`. That one is derived: the
+# codec's own `inspect()` classifies the fixture's bytes and the primary
+# layer's `docs/dialects.toml` id is pinned here, the way a golden is pinned.
+# A codec change that reclassifies a corpus file then fails a test instead of
+# passing silently. `authoring_app_version` is the producer axis and stays
+# donor-supplied; neither field is derivable from the other.
+#
+# Regenerate with:
+#   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
+# and read the diff as a classification change.
 
 [[file]]
 filename = "freecad_fcstd/fixtures/application_payloads.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -15,6 +27,7 @@ notes = "Blank-document mesh, point cloud, FEM analysis and constraint, CAM tool
 [[file]]
 filename = "freecad_fcstd/fixtures/core_design_product.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -26,6 +39,7 @@ notes = "Blank-document exact geometry, persistent names, sketch constraints, de
 [[file]]
 filename = "freecad_fcstd/fixtures/techdraw_annotations.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -37,6 +51,7 @@ notes = "Blank-document TechDraw page, template, model view, dimension, visible 
 [[file]]
 filename = "freecad_fcstd/fixtures/geometry_topology.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -48,6 +63,7 @@ notes = "Deterministic text B-rep carrier and connected-topology matrix: free cu
 [[file]]
 filename = "freecad_fcstd/fixtures/binary_exact_shape.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -59,6 +75,7 @@ notes = "Deterministically packaged binary exact-shape payload exported by FreeC
 [[file]]
 filename = "freecad_fcstd/fixtures/design_history.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -70,6 +87,7 @@ notes = "Deterministic PartDesign Body with constrained sketches, additive Pad, 
 [[file]]
 filename = "freecad_fcstd/fixtures/gui_appearance.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -81,6 +99,7 @@ notes = "Deterministic GUI document, thumbnail, camera, and object-, face-, edge
 [[file]]
 filename = "freecad_fcstd/fixtures/sketch_constraints.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -92,6 +111,7 @@ notes = "Deterministic independent geometric, dimensional, and symmetry Sketcher
 [[file]]
 filename = "freecad_fcstd/fixtures/sketch_conics.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -103,6 +123,7 @@ notes = "Deterministic rotated circular arc, bounded and full ellipse, hyperbola
 [[file]]
 filename = "freecad_fcstd/fixtures/core_operations.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -114,6 +135,7 @@ notes = "Deterministic Part revolution, loft, sweep, fillet, chamfer, thickness,
 [[file]]
 filename = "freecad_fcstd/fixtures/product_assembly.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
@@ -125,6 +147,7 @@ notes = "Deterministic Assembly container with groups, nested, array, and extern
 [[file]]
 filename = "freecad_fcstd/fixtures/external_component.FCStd"
 format = "fcstd"
+dialect = "fcstd:schema-4"
 author = "cadmpeg project contributors"
 authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"

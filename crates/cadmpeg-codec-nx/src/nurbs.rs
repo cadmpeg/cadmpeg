@@ -7,9 +7,13 @@
 //! weights cause the affected carrier to be omitted.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::deltas::record_family::RecordFamily;
 use crate::framing::read_xmt_width as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
+pub(crate) mod curve_references;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
@@ -18,6 +22,7 @@ use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]
@@ -65,7 +70,7 @@ fn decode_surfaces(
     descriptors: &BTreeMap<u32, SurfaceDescriptor>,
 ) -> Vec<Surface> {
     graph
-        .of_kind(124)
+        .of_kind(NodeKind::BSurface)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
@@ -134,19 +139,22 @@ fn decode_surfaces(
             }
             Some(Surface {
                 pos: node.pos,
-                geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                    u_degree: descriptor.u_degree as u32,
-                    v_degree: descriptor.v_degree as u32,
-                    u_knots: full_u,
-                    v_knots: full_v,
-                    u_count: descriptor.u_count as u32,
-                    v_count: descriptor.v_count as u32,
-                    control_points,
-                    weights,
-                    normal_reversed: node.byte_at(18)? == b'-',
-                    u_periodic: descriptor.u_periodic,
-                    v_periodic: descriptor.v_periodic,
-                }),
+                geometry: SurfaceGeometry::Nurbs(
+                    NurbsSurface::new(
+                        descriptor.u_degree as u32,
+                        descriptor.v_degree as u32,
+                        full_u,
+                        full_v,
+                        descriptor.u_count as u32,
+                        descriptor.v_count as u32,
+                        control_points,
+                        weights,
+                        node.byte_at(18)? == b'-',
+                        descriptor.u_periodic,
+                        descriptor.v_periodic,
+                    )
+                    .ok()?,
+                ),
             })
         })
         .collect()
@@ -168,35 +176,35 @@ fn decode_pcurves(
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Pcurve> {
     graph
-        .of_kind(134)
+        .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
-            (descriptor.dimension == 2).then_some(())?;
+            (descriptor.basis.dimension == 2).then_some(())?;
             let control = controls.get(&refs[1])?;
             let value_count = control.value_count();
-            let stride = value_count.checked_div(descriptor.poles)?;
-            let expected_values = descriptor.poles.checked_mul(stride)?;
+            let stride = value_count.checked_div(descriptor.basis.poles)?;
+            let expected_values = descriptor.basis.poles.checked_mul(stride)?;
             if !(stride == 2 || stride == 3) || value_count != expected_values {
                 return None;
             }
             let mult = arrays
                 .u16s
-                .get(&descriptor.mult)?
-                .u16_prefix(descriptor.distinct)?;
+                .get(&descriptor.references.multiplicities())?
+                .u16_prefix(descriptor.basis.distinct)?;
             let distinct = arrays
                 .f64s
-                .get(&descriptor.knots)?
-                .f64_prefix(descriptor.distinct)?;
+                .get(&descriptor.references.knots())?
+                .f64_prefix(descriptor.basis.distinct)?;
             let knots = expand_knots(
                 &distinct,
                 &mult,
-                required_knot_count(descriptor.degree, descriptor.poles)?,
+                required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
             )?;
-            valid_basis(descriptor.degree, descriptor.poles, &knots)?;
+            valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
             let mut control_points = Vec::new();
             let mut weights = (stride == 3).then(Vec::new);
-            for pole_index in 0..descriptor.poles {
+            for pole_index in 0..descriptor.basis.poles {
                 let base = pole_index.checked_mul(stride)?;
                 let weight = if stride == 3 {
                     control.value_at(base.checked_add(2)?)?
@@ -219,11 +227,14 @@ fn decode_pcurves(
             Some(Pcurve {
                 pos: node.pos,
                 geometry: PcurveGeometry::Nurbs {
-                    degree: descriptor.degree as u32,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic: descriptor.periodic,
+                    nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                        descriptor.basis.degree as u32,
+                        knots,
+                        control_points,
+                        weights,
+                        descriptor.basis.periodic,
+                    )
+                    .ok()?,
                 },
             })
         })
@@ -249,37 +260,37 @@ fn decode_curves(
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Curve> {
     graph
-        .of_kind(134)
+        .of_kind(NodeKind::BCurve)
         .filter_map(|node| {
             let refs = node.compact_tail_references(2)?;
             let descriptor = descriptors.get(&refs[0])?;
-            matches!(descriptor.dimension, 3 | 4).then_some(())?;
+            matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?;
             let value_count = control.value_count();
-            let stride = value_count.checked_div(descriptor.poles)?;
-            let expected_values = descriptor.poles.checked_mul(stride)?;
-            if !matches!((descriptor.dimension, stride), (3, 3 | 4) | (4, 4))
+            let stride = value_count.checked_div(descriptor.basis.poles)?;
+            let expected_values = descriptor.basis.poles.checked_mul(stride)?;
+            if !matches!((descriptor.basis.dimension, stride), (3, 3 | 4) | (4, 4))
                 || value_count != expected_values
             {
                 return None;
             }
             let mult = arrays
                 .u16s
-                .get(&descriptor.mult)?
-                .u16_prefix(descriptor.distinct)?;
+                .get(&descriptor.references.multiplicities())?
+                .u16_prefix(descriptor.basis.distinct)?;
             let distinct = arrays
                 .f64s
-                .get(&descriptor.knots)?
-                .f64_prefix(descriptor.distinct)?;
+                .get(&descriptor.references.knots())?
+                .f64_prefix(descriptor.basis.distinct)?;
             let knots = expand_knots(
                 &distinct,
                 &mult,
-                required_knot_count(descriptor.degree, descriptor.poles)?,
+                required_knot_count(descriptor.basis.degree, descriptor.basis.poles)?,
             )?;
-            valid_basis(descriptor.degree, descriptor.poles, &knots)?;
+            valid_basis(descriptor.basis.degree, descriptor.basis.poles, &knots)?;
             let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
-            for pole_index in 0..descriptor.poles {
+            for pole_index in 0..descriptor.basis.poles {
                 let base = pole_index.checked_mul(stride)?;
                 let weight = if stride == 4 {
                     control.value_at(base.checked_add(3)?)?
@@ -302,13 +313,16 @@ fn decode_curves(
             }
             Some(Curve {
                 pos: node.pos,
-                geometry: CurveGeometry::Nurbs(NurbsCurve {
-                    degree: descriptor.degree as u32,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic: descriptor.periodic,
-                }),
+                geometry: CurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        descriptor.basis.degree as u32,
+                        knots,
+                        control_points,
+                        weights,
+                        descriptor.basis.periodic,
+                    )
+                    .ok()?,
+                ),
             })
         })
         .collect()
@@ -756,15 +770,18 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
 
 #[derive(Clone, PartialEq, Eq)]
 struct CurveDescriptor {
+    basis: CurveBasis,
+    references: CurveDescriptorReferences,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct CurveBasis {
     degree: u16,
     poles: usize,
     dimension: u16,
     distinct: usize,
     knot_type: u8,
     periodic: bool,
-    mult: u32,
-    knots: u32,
-    references: Vec<u32>,
 }
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
@@ -785,11 +802,10 @@ fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
             conflicts.insert(xmt);
             continue;
         }
-        let mut current_basis = current.clone();
-        let mut descriptor_basis = descriptor.clone();
-        current_basis.references.clear();
-        descriptor_basis.references.clear();
-        if current_basis == descriptor_basis {
+        if current.basis == descriptor.basis
+            && current.references.multiplicities() == descriptor.references.multiplicities()
+            && current.references.knots() == descriptor.references.knots()
+        {
             descriptors.insert(xmt, current);
         } else {
             conflicts.insert(xmt);
@@ -830,30 +846,30 @@ fn curve_descriptor_at(
     ) {
         let status_references = (|| {
             let mut at = pos + curve_desc::LEN + shift;
-            let mut references = [0; 3];
-            for reference in &mut references {
+            let mut read_reference = || {
                 let (value, consumed) = read_xmt(bytes, at)?;
-                (value > 1).then_some(())?;
-                *reference = value;
+                let reference = NonNullXmt::try_from(value).ok()?;
                 at = at.checked_add(consumed)?;
                 (bytes.get(at) == Some(&0)).then_some(())?;
                 at = at.checked_add(1)?;
-            }
+                Some(reference)
+            };
+            let references = [read_reference()?, read_reference()?, read_reference()?];
             Some((references, at))
         })();
         if let Some((references, at)) = status_references {
             return Some((
                 xmt,
                 CurveDescriptor {
-                    degree,
-                    poles,
-                    dimension,
-                    distinct,
-                    knot_type,
-                    periodic,
-                    mult: references[1],
-                    knots: references[2],
-                    references: references.to_vec(),
+                    basis: CurveBasis {
+                        degree,
+                        poles,
+                        dimension,
+                        distinct,
+                        knot_type,
+                        periodic,
+                    },
+                    references: CurveDescriptorReferences::Status(references),
                 },
                 at,
             ));
@@ -865,29 +881,27 @@ fn curve_descriptor_at(
     Some((
         xmt,
         CurveDescriptor {
-            degree,
-            poles,
-            dimension,
-            distinct,
-            knot_type,
-            periodic,
-            mult,
-            knots,
-            references: vec![mult, knots],
+            basis: CurveBasis {
+                degree,
+                poles,
+                dimension,
+                distinct,
+                knot_type,
+                periodic,
+            },
+            references: CurveDescriptorReferences::Compact([mult, knots]),
         },
         pos + 23 + shift + mult_len + knots_len,
     ))
 }
 
 /// Exact frame of one NURBS descriptor, payload, knot, or multiplicity record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AuxiliaryRecord {
-    /// Parasolid record type.
-    pub(crate) kind: u16,
+    /// Record layout and its references.
+    pub(crate) family: RecordFamily,
     /// Stream-local record identity.
     pub(crate) xmt: u32,
-    /// Ordered stream-local references retained by the record.
-    pub(crate) references: Vec<u32>,
     /// First byte after the complete record.
     pub(crate) end: usize,
 }
@@ -895,35 +909,41 @@ pub(crate) struct AuxiliaryRecord {
 /// Decode one complete NURBS auxiliary record at `pos`.
 pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryRecord> {
     let kind = View::u16_be_at(bytes, pos)?;
-    let (xmt, references, end) = match kind {
+    let (xmt, family, end) = match kind {
         125 => surface_payload_at(bytes, pos)
             .map(|(xmt, _, end)| (xmt, end))
             .or_else(|| surface_data_header_at(bytes, pos))
-            .map(|(xmt, end)| (xmt, Vec::new(), end))?,
+            .map(|(xmt, end)| (xmt, RecordFamily::BSurfaceData, end))?,
         126 => {
             let (xmt, _, end) = surface_descriptor_at(bytes, pos)?;
-            (xmt, Vec::new(), end)
+            (xmt, RecordFamily::BSurfaceDescriptor, end)
         }
         127 | 128 => {
             let record = array_record_at(bytes, pos)?;
-            (record.reference, Vec::new(), record.end)
+            let family = if kind == 127 {
+                RecordFamily::Multiplicities
+            } else {
+                RecordFamily::Knots
+            };
+            (record.reference, family, record.end)
         }
         135 => curve_payload_at(bytes, pos)
             .map(|(xmt, _, end)| (xmt, end))
             .or_else(|| curve_data_header_at(bytes, pos))
-            .map(|(xmt, end)| (xmt, Vec::new(), end))?,
+            .map(|(xmt, end)| (xmt, RecordFamily::BCurveData, end))?,
         136 => {
             let (xmt, descriptor, end) = curve_descriptor_at(bytes, pos, false)?;
-            (xmt, descriptor.references, end)
+            (
+                xmt,
+                RecordFamily::BCurveDescriptor {
+                    references: descriptor.references,
+                },
+                end,
+            )
         }
         _ => return None,
     };
-    Some(AuxiliaryRecord {
-        kind,
-        xmt,
-        references,
-        end,
-    })
+    Some(AuxiliaryRecord { family, xmt, end })
 }
 
 fn unique_records<T>(records: impl IntoIterator<Item = (u32, T)>) -> BTreeMap<u32, T> {

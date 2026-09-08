@@ -9,6 +9,7 @@ use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
+use crate::framing::node_kind::NodeKind;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::CadIr;
@@ -47,7 +48,7 @@ pub(crate) fn saved_offset_carriers(
         return BTreeMap::new();
     }
     let face_surfaces = graph
-        .of_kind(14)
+        .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
         .map(|face| face.surface)
         .collect::<BTreeSet<_>>();
@@ -75,7 +76,7 @@ pub(crate) fn saved_offset_carriers(
         .iter()
         .filter(|offset| !face_surfaces.contains(&offset.xmt))
     {
-        let Some(support_id) = surfaces_by_xmt.get(&offset.support) else {
+        let Some(support_id) = surfaces_by_xmt.get(&offset.state.support()) else {
             continue;
         };
         let Some(support) = ir
@@ -94,7 +95,7 @@ pub(crate) fn saved_offset_carriers(
             let key = (
                 support_id.clone(),
                 (*candidate_id).clone(),
-                offset.distance.to_bits(),
+                offset.state.distance().to_bits(),
                 tolerance.to_bits(),
             );
             let fit = if let Some(fit) = fit_cache.get(&key).copied() {
@@ -103,7 +104,7 @@ pub(crate) fn saved_offset_carriers(
                 let fit = certified_offset_cache_fit_with_budget(
                     support,
                     candidate,
-                    offset.distance,
+                    offset.state.distance(),
                     tolerance,
                     geometry_budget,
                 );
@@ -165,25 +166,13 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
     else {
         return None;
     };
-    let compatible_parameterization = support.u_degree > 0
-        && support.v_degree > 0
-        && candidate.u_degree > 0
-        && candidate.v_degree > 0
-        && support.u_periodic == candidate.u_periodic
-        && support.v_periodic == candidate.v_periodic
+    let compatible_parameterization = support.u_periodic() == candidate.u_periodic()
+        && support.v_periodic() == candidate.v_periodic()
         && nurbs_active_domain(support)
             .zip(nurbs_active_domain(candidate))
             .is_some_and(|(support, candidate)| support == candidate)
-        && support
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == support.control_points.len())
-        && candidate
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == candidate.control_points.len())
-        && positive_weights(support.weights.as_deref())
-        && positive_weights(candidate.weights.as_deref());
+        && positive_weights(support.weights())
+        && positive_weights(candidate.weights());
     if !compatible_parameterization
         || !distance.is_finite()
         || !tolerance.is_finite()
@@ -191,14 +180,13 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
     {
         return None;
     }
-    let same_basis = candidate.u_degree == support.u_degree
-        && candidate.v_degree == support.v_degree
-        && support.u_knots == candidate.u_knots
-        && support.v_knots == candidate.v_knots
-        && support.u_count == candidate.u_count
-        && support.v_count == candidate.v_count
-        && support.weights == candidate.weights
-        && support.control_points.len() == candidate.control_points.len();
+    let same_basis = candidate.u_degree() == support.u_degree()
+        && candidate.v_degree() == support.v_degree()
+        && support.u_knots() == candidate.u_knots()
+        && support.v_knots() == candidate.v_knots()
+        && support.u_count() == candidate.u_count()
+        && support.v_count() == candidate.v_count()
+        && support.weights() == candidate.weights();
     if same_basis {
         if let Some(normal) = translation_net_normal(support) {
             let translation = Vector3::new(
@@ -207,9 +195,9 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
                 distance * normal.z,
             );
             let maximum_error = support
-                .control_points
+                .control_points()
                 .iter()
-                .zip(&candidate.control_points)
+                .zip(candidate.control_points())
                 .map(|(support, candidate)| {
                     let expected = Point3::new(
                         support.x + translation.x,
@@ -252,18 +240,18 @@ fn offset_candidate_sample_error(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
     let active_domain = |surface: &NurbsSurface| {
-        let u_degree = usize::try_from(surface.u_degree).ok()?;
-        let v_degree = usize::try_from(surface.v_degree).ok()?;
-        let u_count = usize::try_from(surface.u_count).ok()?;
-        let v_count = usize::try_from(surface.v_count).ok()?;
+        let u_degree = usize::try_from(surface.u_degree()).ok()?;
+        let v_degree = usize::try_from(surface.v_degree()).ok()?;
+        let u_count = usize::try_from(surface.u_count()).ok()?;
+        let v_count = usize::try_from(surface.v_count()).ok()?;
         Some([
             [
-                *surface.u_knots.get(u_degree)?,
-                *surface.u_knots.get(u_count)?,
+                *surface.u_knots().get(u_degree)?,
+                *surface.u_knots().get(u_count)?,
             ],
             [
-                *surface.v_knots.get(v_degree)?,
-                *surface.v_knots.get(v_count)?,
+                *surface.v_knots().get(v_degree)?,
+                *surface.v_knots().get(v_count)?,
             ],
         ])
     };
@@ -295,18 +283,18 @@ fn offset_candidate_sample_error(
 }
 
 pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     Some([
         [
-            surface.u_knots.get(u_degree)?.to_bits(),
-            surface.u_knots.get(u_count)?.to_bits(),
+            surface.u_knots().get(u_degree)?.to_bits(),
+            surface.u_knots().get(u_count)?.to_bits(),
         ],
         [
-            surface.v_knots.get(v_degree)?.to_bits(),
-            surface.v_knots.get(v_count)?.to_bits(),
+            surface.v_knots().get(v_degree)?.to_bits(),
+            surface.v_knots().get(v_count)?.to_bits(),
         ],
     ])
 }
@@ -337,8 +325,8 @@ impl HomogeneousSurfaceNet {
         for ((control, support), candidate) in net
             .controls
             .iter_mut()
-            .zip(&support.control_points)
-            .zip(&candidate.control_points)
+            .zip(support.control_points())
+            .zip(candidate.control_points())
         {
             control[0] = (candidate.x - support.x) * control[3];
             control[1] = (candidate.y - support.y) * control[3];
@@ -355,44 +343,33 @@ impl HomogeneousSurfaceNet {
         surface: &NurbsSurface,
         components: impl Fn(Point3, f64) -> [f64; 4],
     ) -> Option<Self> {
-        let u_degree = usize::try_from(surface.u_degree).ok()?;
-        let v_degree = usize::try_from(surface.v_degree).ok()?;
-        let u_count = usize::try_from(surface.u_count).ok()?;
-        let v_count = usize::try_from(surface.v_count).ok()?;
-        let control_count = u_count.checked_mul(v_count)?;
-        if u_degree == 0
-            || v_degree == 0
-            || u_degree >= u_count
-            || v_degree >= v_count
-            || surface.control_points.len() != control_count
-            || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-            || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
+        let u_degree = usize::try_from(surface.u_degree()).ok()?;
+        let v_degree = usize::try_from(surface.v_degree()).ok()?;
+        let u_count = usize::try_from(surface.u_count()).ok()?;
+        let v_count = usize::try_from(surface.v_count()).ok()?;
+        if surface
+            .u_knots()
+            .iter()
+            .chain(surface.v_knots())
+            .any(|knot| !knot.is_finite())
+            || !knots_nondecreasing(surface.u_knots())
+            || !knots_nondecreasing(surface.v_knots())
             || surface
-                .u_knots
-                .iter()
-                .chain(&surface.v_knots)
-                .any(|knot| !knot.is_finite())
-            || !knots_nondecreasing(&surface.u_knots)
-            || !knots_nondecreasing(&surface.v_knots)
-            || surface
-                .control_points
+                .control_points()
                 .iter()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-            || !positive_weights(surface.weights.as_deref())
+            || !positive_weights(surface.weights())
         {
             return None;
         }
         let controls = surface
-            .control_points
+            .control_points()
             .iter()
             .enumerate()
             .map(|(index, point)| {
                 components(
                     *point,
-                    surface
-                        .weights
-                        .as_ref()
-                        .map_or(1.0, |weights| weights[index]),
+                    surface.weights().map_or(1.0, |weights| weights[index]),
                 )
             })
             .collect::<Vec<_>>();
@@ -406,8 +383,8 @@ impl HomogeneousSurfaceNet {
         Some(Self {
             u_degree,
             v_degree,
-            u_knots: surface.u_knots.clone(),
-            v_knots: surface.v_knots.clone(),
+            u_knots: surface.u_knots().to_vec(),
+            v_knots: surface.v_knots().to_vec(),
             u_count,
             v_count,
             controls,
@@ -785,25 +762,11 @@ pub(crate) fn subdivide_offset_rectangle(
 }
 
 pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    if u_count < 2
-        || v_count < 2
-        || u_degree >= u_count
-        || v_degree >= v_count
-        || surface.control_points.len() != u_count.checked_mul(v_count)?
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
-    {
-        return None;
-    }
-    let point = |u: usize, v: usize| surface.control_points[u * v_count + v];
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let point = |u: usize, v: usize| surface.control_points()[u * v_count + v];
     let difference = |end: Point3, start: Point3| {
         Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
     };
@@ -819,7 +782,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
             && dot_vector(increment, direction) > 0.0
     };
     for u in 0..u_count - 1 {
-        let denominator = surface.u_knots[u + u_degree + 1] - surface.u_knots[u + 1];
+        let denominator = surface.u_knots()[u + u_degree + 1] - surface.u_knots()[u + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
             || !positive_collinear(difference(point(u + 1, 0), point(u, 0)), u_direction)
@@ -828,7 +791,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
         }
     }
     for v in 0..v_count - 1 {
-        let denominator = surface.v_knots[v + v_degree + 1] - surface.v_knots[v + 1];
+        let denominator = surface.v_knots()[v + v_degree + 1] - surface.v_knots()[v + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
             || !positive_collinear(difference(point(0, v + 1), point(0, v)), v_direction)
@@ -850,7 +813,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
 
 fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vector3> {
     let normal = unit_vector(normal)?;
-    Some(if surface.normal_reversed {
+    Some(if surface.normal_reversed() {
         Vector3::new(-normal.x, -normal.y, -normal.z)
     } else {
         normal
@@ -879,16 +842,15 @@ fn offset_support_control_hull_excludes_point(
     }
     let excluded =
         index
-            .surfaces(surface.0.as_str())
+            .surfaces(surface.as_str())
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Nurbs(nurbs)
-                    if !nurbs.control_points.is_empty()
-                        && positive_weights(nurbs.weights.as_deref())
-                        && nurbs.control_points.iter().all(|control| {
+                    if positive_weights(nurbs.weights())
+                        && nurbs.control_points().iter().all(|control| {
                             control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
                         }) =>
                 {
-                    let (minimum, maximum) = nurbs.control_points.iter().fold(
+                    let (minimum, maximum) = nurbs.control_points().iter().fold(
                         (
                             Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
                             Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
@@ -915,10 +877,9 @@ fn offset_support_control_hull_excludes_point(
                         || point.z < minimum.z - allowance
                         || point.z > maximum.z + allowance
                 }
-                SurfaceGeometry::Procedural { construction } => index
-                    .procedural_surfaces(construction.0.as_str())
-                    .filter(|procedural| &procedural.surface == surface)
-                    .and_then(|procedural| match &procedural.definition {
+                SurfaceGeometry::Procedural { construction, .. } => index
+                    .procedural_surfaces(construction.as_str())
+                    .and_then(|procedural| match procedural.definition() {
                         ProceduralSurfaceDefinition::Offset {
                             support,
                             distance,
@@ -996,19 +957,17 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
     (!geometry_budget.exhausted()).then_some(())?;
-    let carrier = index.surfaces(surface.0.as_str())?;
-    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+    let carrier = index.surfaces(surface.as_str())?;
+    let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return None;
     };
-    let procedural = index
-        .procedural_surfaces(construction.0.as_str())
-        .filter(|candidate| &candidate.surface == surface)?;
+    let procedural = index.procedural_surfaces(construction.as_str())?;
     let ProceduralSurfaceDefinition::Offset {
         support,
         distance,
         support_extension,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -1196,16 +1155,14 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
     {
         return None;
     }
-    let carrier = index.surfaces(surface.0.as_str())?;
-    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+    let carrier = index.surfaces(surface.as_str())?;
+    let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return None;
     };
-    let procedural = index
-        .procedural_surfaces(construction.0.as_str())
-        .filter(|candidate| &candidate.surface == surface)?;
+    let procedural = index.procedural_surfaces(construction.as_str())?;
     let ProceduralSurfaceDefinition::Offset {
         support_extension, ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -1345,7 +1302,7 @@ fn coarse_surface_sample_counts(
     if depth >= 32 {
         return [9, 9];
     }
-    let Some(carrier) = index.surfaces(surface.0.as_str()) else {
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
         return [9, 9];
     };
     match &carrier.geometry {
@@ -1355,16 +1312,13 @@ fn coarse_surface_sample_counts(
                     .ok()
                     .map_or(9, |count| count.saturating_add(1).clamp(3, 9))
             };
-            [sample_count(nurbs.u_count), sample_count(nurbs.v_count)]
+            [sample_count(nurbs.u_count()), sample_count(nurbs.v_count())]
         }
-        SurfaceGeometry::Procedural { construction } => {
-            let Some(procedural) = index
-                .procedural_surfaces(construction.0.as_str())
-                .filter(|candidate| &candidate.surface == surface)
-            else {
+        SurfaceGeometry::Procedural { construction, .. } => {
+            let Some(procedural) = index.procedural_surfaces(construction.as_str()) else {
                 return [9, 9];
             };
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     coarse_surface_sample_counts(index, support, depth + 1)
                 }
@@ -1383,7 +1337,7 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
     fit_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let carrier = index.surfaces(surface.0.as_str())?;
+    let carrier = index.surfaces(surface.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
             || nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget),
@@ -1397,13 +1351,11 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
                 )
             },
         ),
-        SurfaceGeometry::Procedural { construction } => {
-            let procedural = index
-                .procedural_surfaces(construction.0.as_str())
-                .filter(|candidate| &candidate.surface == surface)?;
+        SurfaceGeometry::Procedural { construction, .. } => {
+            let procedural = index.procedural_surfaces(construction.as_str())?;
             let ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
-            } = &procedural.definition
+            } = procedural.definition()
             else {
                 return None;
             };
@@ -1428,23 +1380,28 @@ pub(crate) fn surface_parameter_domain_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([f64; 2], [f64; 2])> {
-    let carrier = index.surfaces(surface.0.as_str())?;
+    let carrier = index.surfaces(surface.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => {
-            let u_degree = usize::try_from(nurbs.u_degree).ok()?;
-            let v_degree = usize::try_from(nurbs.v_degree).ok()?;
-            let u_count = usize::try_from(nurbs.u_count).ok()?;
-            let v_count = usize::try_from(nurbs.v_count).ok()?;
+            let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
+            let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
+            let u_count = usize::try_from(nurbs.u_count()).ok()?;
+            let v_count = usize::try_from(nurbs.v_count()).ok()?;
             Some((
-                [*nurbs.u_knots.get(u_degree)?, *nurbs.u_knots.get(u_count)?],
-                [*nurbs.v_knots.get(v_degree)?, *nurbs.v_knots.get(v_count)?],
+                [
+                    *nurbs.u_knots().get(u_degree)?,
+                    *nurbs.u_knots().get(u_count)?,
+                ],
+                [
+                    *nurbs.v_knots().get(v_degree)?,
+                    *nurbs.v_knots().get(v_count)?,
+                ],
             ))
         }
-        SurfaceGeometry::Procedural { construction } => {
-            let procedural = index
-                .procedural_surfaces(construction.0.as_str())
-                .filter(|candidate| &candidate.surface == surface)?;
-            let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+        SurfaceGeometry::Procedural { construction, .. } => {
+            let procedural = index.procedural_surfaces(construction.as_str())?;
+            let ProceduralSurfaceDefinition::Offset { support, .. } = procedural.definition()
+            else {
                 return None;
             };
             surface_parameter_domain_with_index(index, support)
@@ -1648,7 +1605,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         return None;
     }
     let mut fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
-        let geometry = &index.surfaces(surface.0.as_str())?.geometry;
+        let geometry = &index.surfaces(surface.as_str())?.geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
                 nurbs,
@@ -1830,7 +1787,7 @@ fn surface_parameter_periods_inner(
     if !visiting.insert(surface.clone()) {
         return [None, None];
     }
-    let Some(carrier) = index.surfaces(surface.0.as_str()) else {
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
         visiting.remove(surface);
         return [None, None];
     };
@@ -1850,23 +1807,22 @@ fn surface_parameter_periods_inner(
             };
             [
                 period(
-                    nurbs.u_periodic,
-                    &nurbs.u_knots,
-                    nurbs.u_degree,
-                    nurbs.u_count,
+                    nurbs.u_periodic(),
+                    nurbs.u_knots(),
+                    nurbs.u_degree(),
+                    nurbs.u_count(),
                 ),
                 period(
-                    nurbs.v_periodic,
-                    &nurbs.v_knots,
-                    nurbs.v_degree,
-                    nurbs.v_count,
+                    nurbs.v_periodic(),
+                    nurbs.v_knots(),
+                    nurbs.v_degree(),
+                    nurbs.v_count(),
                 ),
             ]
         }
-        SurfaceGeometry::Procedural { construction } => index
-            .procedural_surfaces(construction.0.as_str())
-            .filter(|candidate| &candidate.surface == surface)
-            .and_then(|procedural| match &procedural.definition {
+        SurfaceGeometry::Procedural { construction, .. } => index
+            .procedural_surfaces(construction.as_str())
+            .and_then(|procedural| match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     Some(surface_parameter_periods_inner(index, support, visiting))
                 }
@@ -2238,10 +2194,10 @@ pub(crate) fn point_distance(first: Point3, second: Point3) -> f64 {
 pub(crate) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    surface_xmt: u32,
+    surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[[f64; 2]], &[f64])>,
 ) -> IntcurveSupportSide {
-    let surface = surfaces_by_xmt.get(&surface_xmt).cloned();
+    let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
     let pcurve = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
             .model
@@ -2262,17 +2218,19 @@ pub(crate) fn intersection_side(
             .map(|pair| surface_parameters(geometry, *pair))
             .collect::<Option<Vec<_>>>()?;
         Some(PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: linear_knots(parameters),
-            control_points,
-            weights: None,
-            periodic: false,
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                linear_knots(parameters),
+                control_points,
+                None,
+                false,
+            )
+            .ok()?,
         })
     });
     IntcurveSupportSide {
         surface,
-        pcurve,
-        pcurve_parameter_range: None,
+        pcurve: pcurve.map(Into::into),
     }
 }
 
@@ -2285,7 +2243,7 @@ pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
         SurfaceGeometry::Transformed { basis, .. } => return surface_parameters(basis, uv),
@@ -2311,12 +2269,15 @@ pub(crate) fn normalize_pcurve_parameters(
                 converted_end.v - converted_origin.v,
             );
         }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            let converted = control_points
+        PcurveGeometry::Nurbs { nurbs } => {
+            let converted = nurbs
+                .control_points()
                 .iter()
                 .map(|point| surface_parameters(surface, [point.u, point.v]))
                 .collect::<Option<Vec<_>>>()?;
-            *control_points = converted;
+            nurbs
+                .edit_control_points(|points| points.copy_from_slice(&converted))
+                .ok()?;
         }
         _ => {}
     }
@@ -2331,14 +2292,14 @@ mod tests {
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
-        let support = NurbsSurface {
-            u_degree: 2,
-            v_degree: 2,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            u_count: 3,
-            v_count: 3,
-            control_points: (0..3)
+        let support = NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            (0..3)
                 .flat_map(|u| {
                     (0..3).map(move |v| {
                         Point3::new(
@@ -2349,13 +2310,16 @@ mod tests {
                     })
                 })
                 .collect(),
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid offset support");
         let mut candidate = support.clone();
-        candidate.control_points[4].z += 1.0;
+        candidate
+            .edit_control_points(|points| points[4].z += 1.0)
+            .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Nurbs(support);
         let candidate = SurfaceGeometry::Nurbs(candidate);
         let budget = GeometryWorkBudget::new(200);
@@ -2370,28 +2334,32 @@ mod tests {
 
     #[test]
     fn positive_weight_control_hull_bounds_offset_queries() {
-        let support = SurfaceId("synthetic:hull-support".into());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let support =
+            SurfaceId::mint("test:model:entity#synthetic:hull-support").expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                weights: Some(vec![1.0; 4]),
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    Some(vec![1.0; 4]),
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid rational hull support"),
+            ),
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -2414,57 +2382,64 @@ mod tests {
 
     #[test]
     fn offset_inverse_continues_past_a_linear_support_boundary() {
-        let support = SurfaceId("synthetic:linear-support".into());
-        let offset = SurfaceId("synthetic:linear-offset".into());
-        let construction =
-            cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:linear-offset-construction".into());
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let support = SurfaceId::mint("test:model:entity#synthetic:linear-support")
+            .expect("identity grammar");
+        let offset =
+            SurfaceId::mint("test:model:entity#synthetic:linear-offset").expect("identity grammar");
+        let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+            "test:model:entity#synthetic:linear-offset-construction",
+        )
+        .expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid linear support"),
+            ),
             source_object: None,
         });
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: offset.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         });
         ir.model
             .procedural_surfaces
-            .push(cadmpeg_ir::geometry::ProceduralSurface {
-                id: construction,
-                surface: offset.clone(),
-                definition: ProceduralSurfaceDefinition::Offset {
+            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: 1.0,
                     u_sense: None,
                     v_sense: None,
                     support_extension: Some(OffsetSupportExtension::Linear),
-                    extension_flags: Vec::new(),
-                    revision_form: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
 
         let fit_tolerance = f64::EPSILON.sqrt();
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

@@ -13,40 +13,13 @@ surface bodies in §3.3. The fixed-width Unix-compress and CMNM prefixes in §1
 are also tabled as byte layouts. The other ASCII container records are
 variable-width delimiters or whitespace-delimited fields.
 
-The rest of what is tabulatable is the PSB primitive encoding: the compact
-integer, structural token, and three-byte IEEE-fill tables of §2. Those are
-recorded as token inventories. Slot layouts (records that are a fixed ordered
-sequence of variable-width tokens) are recorded for the two cleanest cases;
-about twenty-five more exist in the specification and are not covered in this
-pass.
+Slot layouts describe fixed ordered sequences of variable-width tokens.
+The pcurve endpoint body and local-system support frame are recorded below.
 
 Endianness: §2.1 states the compact integer is big-endian and §8.4 states the
 `92`/`da` DICT forms store big-endian integers. Elsewhere the scalar tokens are
 described as reconstructing IEEE-754 byte images without an explicit byte-order
 statement, so those fields carry `unstated`.
-
-## Tag inventory
-
-| Tag | Name | Payload | Meaning | Spec |
-| --- | ---- | ------: | ------- | ---- |
-| `00..7f` | one-byte direct integer | 0 B | the byte itself is the value | §2.1 |
-| `80..bf` | two-byte big-endian integer | 1 B | value is `((head - 0x80) << 8) \| XX` | §2.1 |
-| `c0..ff` | control or special-token range | variable | control or special-token range on typed paths; in `segtab`, `order_table`, and `ent_tab` these are single-byte null sentinels | §2.1 |
-| `e0` | named-record header | variable | `e0 <type> <name>\0` | §2.2 |
-| `f8` | array opener | variable | `f8 <count>` | §2.2 |
-| `f9` | count-bounded scalar body | variable | `f9 <ndim> <count>`; the field declares exactly `dimensions * count` scalar slots | §2.2 |
-| `f7` | entity reference | variable | `f7 <id>` | §2.2 |
-| `fb` | array close | 0 B | closes an `f8` array | §2.2 |
-| `e2` | nested compound-body opener or continuation | 0 B | opens or continues a nested compound body | §2.2 |
-| `e3` | compound close or row terminator | 0 B | meaning depends on context | §2.2 |
-| `29` | IEEE-fill, byte0 3F, repeated fill | 2 B | three-byte form: `29 XX YY` reconstructs `(0x3F, XX, YY repeated 6 times)` | §Three-byte IEEE-fill form |
-| `2a` | IEEE-fill, byte0 3F, zero fill | 2 B | three-byte form: `2a XX YY` reconstructs `(0x3F, XX, YY 00 00 00 00 00)` | §Three-byte IEEE-fill form |
-| `2e` | IEEE-fill, byte0 40, repeated fill | 2 B | three-byte form; `2f 43 00` is 38.0 and `2f 20 00` is 8.0 in the sibling row | §Three-byte IEEE-fill form |
-| `2f` | IEEE-fill, byte0 40, zero fill | 2 B | three-byte form | §Three-byte IEEE-fill form |
-| `42` | IEEE-fill, byte0 BF, repeated fill | 2 B | three-byte form | §Three-byte IEEE-fill form |
-| `43` | IEEE-fill, byte0 BF, zero fill | 2 B | three-byte form | §Three-byte IEEE-fill form |
-| `47` | IEEE-fill, byte0 C0, repeated fill | 2 B | three-byte form | §Three-byte IEEE-fill form |
-| `48` | IEEE-fill, byte0 C0, zero fill | 2 B | three-byte form; `48 22 00` is -9.0 | §Three-byte IEEE-fill form |
 
 ## `unix_compress_header`
 

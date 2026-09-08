@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,11 +7,11 @@
     clippy::wildcard_imports
 )]
 
-use super::prelude::*;
 use super::project_rectangular_pattern_scalars;
-use crate::records::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
-    DesignRectangularPatternConstruction,
+use crate::records::feature::{DesignParameterScope, DesignRectangularPatternConstruction};
+use crate::records::topology::DesignOperandRole;
+use crate::records::topology::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
@@ -20,24 +19,28 @@ use cadmpeg_ir::features::{
 
 const EPS_SPACING: f64 = 1.0e-12;
 
-fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstructionOperandGroup {
+fn group(
+    scope_record_index: u32,
+    record_index: u32,
+    role: DesignOperandRole,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
         scope_record_index,
         scope_reference_ordinal: 1,
         record_index,
         byte_offset: 0,
-        class_tag: "313".into(),
-        members: vec![record_index + 1],
+        class_tag: crate::records::DesignClassTag::try_from("313".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: record_index + 1,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -47,11 +50,9 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
         role_offset: 0,
-        paired_class_tag: "263".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("263".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
@@ -59,18 +60,22 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
 fn rectangular_scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:parameter-scope#10",
-        "R-Pattern",
+        crate::records::feature::DesignFeatureKind::RPattern,
         10,
     );
-    scope.rectangular_pattern_construction = Some(DesignRectangularPatternConstruction {
-        u_count: 3,
-        v_count: 1,
-        u_extent: 10.0,
-        v_extent: 0.0,
-        owner_record_indices: [11, 12, 13, 14],
-        value_offsets: [101, 102, 103, 104],
-        instances: None,
-    });
+    if let crate::records::feature::DesignScopePayload::RPattern(slot)
+    | crate::records::feature::DesignScopePayload::RectangularPattern(slot) = &mut scope.payload
+    {
+        *slot = Some(DesignRectangularPatternConstruction {
+            u_count: 3,
+            v_count: 1,
+            u_extent: 10.0,
+            v_extent: 0.0,
+            owner_record_indices: [11, 12, 13, 14],
+            value_offsets: [101, 102, 103, 104],
+            instances: None,
+        });
+    }
     scope
 }
 
@@ -97,7 +102,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 #[test]
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
-    let body_group = group(10, 20, 0x0000_0008_0000_0000);
+    let body_group = group(10, 20, DesignOperandRole::BODIES_B);
     let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
         .expect("body rectangular pattern");
     assert_linear_seed(
@@ -108,7 +113,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
     );
 
     let face_scope = rectangular_scope();
-    let face_group = group(10, 30, 0x0000_0004_0000_0000);
+    let face_group = group(10, 30, DesignOperandRole::BODIES_A);
     let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
         .expect("face rectangular pattern");
     assert_linear_seed(

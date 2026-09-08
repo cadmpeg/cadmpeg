@@ -20,19 +20,17 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-  "schema_version": 6,
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const SIDECAR: &str = r#"{
-  "version": "1",
   "ir_sha256": "abc123"
 }"#;
 
 const BREP_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "bodies": [{"id": "body#1", "regions": ["region#1"]}],
     "regions": [{"id": "region#1", "shells": ["shell#1"]}],
@@ -42,7 +40,7 @@ const BREP_DOC: &str = r#"{
 }"#;
 
 const GRAPH_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "features": [
       {
@@ -55,12 +53,10 @@ const GRAPH_DOC: &str = r#"{
   },
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "n1", "kind": "curve"},
-          {"id": "n2", "kind": "other"}
-        ]
-      }
+      "unknowns": [
+        {"id": "n1", "kind": "curve"},
+        {"id": "n2", "kind": "other"}
+      ]
     }
   }
 }"#;
@@ -155,9 +151,8 @@ fn graph_json_envelope() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
-    assert_eq!(value["command"], "query graph");
-    let graph = value["graph"].as_array().unwrap();
+    assert_eq!(value["command"], "query");
+    let graph = value["payload"].as_array().unwrap();
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[0]["start"], "model.features#f1");
     assert!(graph[0]["path"].as_array().unwrap().is_empty());
@@ -188,7 +183,7 @@ fn graph_brep_hops_3_reaches_faces() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let ids: Vec<&str> = value["graph"]
+    let ids: Vec<&str> = value["payload"]
         .as_array()
         .unwrap()
         .iter()

@@ -17,12 +17,12 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
-    Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry, SurfaceParameterAxis,
+    Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, VertexId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -35,9 +35,9 @@ use super::blend::BlendSupportRef;
 use super::entity;
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
-use super::topology::{self, Record};
+use super::topology;
 use super::typed;
-use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
+use super::{scan_carriers, CarrierIndex, CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -116,120 +116,219 @@ impl Brep {
             )
         };
         for body in &mut self.bodies {
-            body.id.0 = qualify(&body.id.0);
-            body.regions.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            body.id = qualify(body.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            body.regions
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for region in &mut self.regions {
-            region.id.0 = qualify(&region.id.0);
-            region.body.0 = qualify(&region.body.0);
+            region.id = qualify(region.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            region.body = qualify(region.body.as_str())
+                .try_into()
+                .expect("qualified identity");
             region
                 .shells
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for shell in &mut self.shells {
-            shell.id.0 = qualify(&shell.id.0);
-            shell.region.0 = qualify(&shell.region.0);
-            shell.faces.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            shell.id = qualify(shell.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            shell.region = qualify(shell.region.as_str())
+                .try_into()
+                .expect("qualified identity");
+            shell
+                .faces
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
                 .wire_edges
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
             shell
                 .free_vertices
                 .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for face in &mut self.faces {
-            face.id.0 = qualify(&face.id.0);
-            face.shell.0 = qualify(&face.shell.0);
-            face.surface.0 = qualify(&face.surface.0);
-            face.loops.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            face.id = qualify(face.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.shell = qualify(face.shell.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.surface = qualify(face.surface.as_str())
+                .try_into()
+                .expect("qualified identity");
+            face.loops
+                .iter_mut()
+                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
         }
         for loop_ in &mut self.loops {
-            loop_.id.0 = qualify(&loop_.id.0);
-            loop_.face.0 = qualify(&loop_.face.0);
-            loop_
-                .coedges
-                .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+            loop_.id = qualify(loop_.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            loop_.face = qualify(loop_.face.as_str())
+                .try_into()
+                .expect("qualified identity");
+            match &mut loop_.boundary {
+                cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
+                    *vertex = qualify(vertex.as_str())
+                        .try_into()
+                        .expect("qualified identity");
+                    for pcurve in pcurves {
+                        pcurve.pcurve = qualify(pcurve.pcurve.as_str())
+                            .try_into()
+                            .expect("qualified identity");
+                    }
+                }
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
+                    let mut coedges = ring.coedges().to_vec();
+                    let mut vertex_uses = ring.vertex_uses().to_vec();
+                    for id in &mut coedges {
+                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                    }
+                    for vertex_use in &mut vertex_uses {
+                        vertex_use.vertex = qualify(vertex_use.vertex.as_str())
+                            .try_into()
+                            .expect("qualified identity");
+                        vertex_use.after = qualify(vertex_use.after.as_str())
+                            .try_into()
+                            .expect("qualified identity");
+                        for pcurve in &mut vertex_use.pcurves {
+                            pcurve.pcurve = qualify(pcurve.pcurve.as_str())
+                                .try_into()
+                                .expect("qualified identity");
+                        }
+                    }
+                    *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses)
+                        .expect("qualified loop ring preserves anchors");
+                }
+            }
         }
         for coedge in &mut self.coedges {
-            coedge.id.0 = qualify(&coedge.id.0);
-            coedge.owner_loop.0 = qualify(&coedge.owner_loop.0);
-            coedge.edge.0 = qualify(&coedge.edge.0);
-            coedge.next.0 = qualify(&coedge.next.0);
-            coedge.previous.0 = qualify(&coedge.previous.0);
-            coedge.radial_next.0 = qualify(&coedge.radial_next.0);
+            coedge.id = qualify(coedge.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.owner_loop = qualify(coedge.owner_loop.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.edge = qualify(coedge.edge.as_str())
+                .try_into()
+                .expect("qualified identity");
+            coedge.radial_next = qualify(coedge.radial_next.as_str())
+                .try_into()
+                .expect("qualified identity");
             for use_ in &mut coedge.pcurves {
-                use_.pcurve.0 = qualify(&use_.pcurve.0);
+                use_.pcurve = qualify(use_.pcurve.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
         }
         for edge in &mut self.edges {
-            edge.id.0 = qualify(&edge.id.0);
+            edge.id = qualify(edge.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             if let Some(curve) = &mut edge.curve {
-                curve.0 = qualify(&curve.0);
+                *curve = qualify(curve.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
-            edge.start.0 = qualify(&edge.start.0);
-            edge.end.0 = qualify(&edge.end.0);
+            edge.start = qualify(edge.start.as_str())
+                .try_into()
+                .expect("qualified identity");
+            edge.end = qualify(edge.end.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
         for vertex in &mut self.vertices {
-            vertex.id.0 = qualify(&vertex.id.0);
-            vertex.point.0 = qualify(&vertex.point.0);
+            vertex.id = qualify(vertex.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            vertex.point = qualify(vertex.point.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
-        self.points
-            .iter_mut()
-            .for_each(|point| point.id.0 = qualify(&point.id.0));
+        self.points.iter_mut().for_each(|point| {
+            point.id = qualify(point.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+        });
         for surface in &mut self.surfaces {
-            surface.id.0 = qualify(&surface.id.0);
+            surface.id = qualify(surface.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             match &mut surface.geometry {
-                SurfaceGeometry::Procedural { construction } => {
-                    construction.0 = qualify(&construction.0);
+                SurfaceGeometry::Procedural { construction, .. } => {
+                    *construction = qualify(construction.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 SurfaceGeometry::Unknown {
                     record: Some(record),
                 } => {
-                    record.0 = qualify(&record.0);
+                    *record = qualify(record.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 _ => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id.0 = qualify(&procedural.id.0);
-            procedural.surface.0 = qualify(&procedural.surface.0);
-            match &mut procedural.definition {
+            procedural.id = qualify(procedural.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+            procedural.edit_definition(|definition| match definition {
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..
                 } => {
                     for support in supports.iter_mut().flatten() {
-                        support.surface.0 = qualify(&support.surface.0);
+                        support.surface = qualify(support.surface.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                     }
                     if let Some(spine) = spine {
-                        spine.0 = qualify(&spine.0);
+                        *spine = qualify(spine.as_str())
+                            .try_into()
+                            .expect("qualified identity");
                     }
                 }
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    support.0 = qualify(&support.0);
+                    *support = qualify(support.as_str())
+                        .try_into()
+                        .expect("qualified identity");
                 }
                 _ => {}
-            }
+            });
         }
         for curve in &mut self.curves {
-            curve.id.0 = qualify(&curve.id.0);
+            curve.id = qualify(curve.id.as_str())
+                .try_into()
+                .expect("qualified identity");
             if let CurveGeometry::Unknown {
                 record: Some(record),
             } = &mut curve.geometry
             {
-                record.0 = qualify(&record.0);
+                *record = qualify(record.as_str())
+                    .try_into()
+                    .expect("qualified identity");
             }
         }
-        self.pcurves
-            .iter_mut()
-            .for_each(|pcurve| pcurve.id.0 = qualify(&pcurve.id.0));
+        self.pcurves.iter_mut().for_each(|pcurve| {
+            pcurve.id = qualify(pcurve.id.as_str())
+                .try_into()
+                .expect("qualified identity");
+        });
         for record in &mut self.unknowns {
-            record.id.0 = qualify(&record.id.0);
+            let id = UnknownId::mint(qualify(record.id().as_str())).expect("identity grammar");
+            record.set_id(id);
             record
-                .links
+                .links_mut()
                 .iter_mut()
                 .for_each(|link| *link = qualify(link));
         }
@@ -239,9 +338,9 @@ impl Brep {
             }
         }
         for atom in &mut self.face_atoms {
-            if let Some(target) = &mut atom.target {
-                *target = qualify(target);
-            }
+            atom.face = qualify(atom.face.as_str())
+                .try_into()
+                .expect("qualified identity");
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
@@ -252,10 +351,9 @@ impl Brep {
             .into_iter()
             .map(|(id, value)| (qualify(&id), value))
             .collect();
-        self.annotations.exactness = std::mem::take(&mut self.annotations.exactness)
-            .into_iter()
-            .map(|(id, value)| (qualify(&id), value))
-            .collect();
+        let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
+        annotations.map_exactness_ids(qualify);
+        self.annotations = annotations.build();
     }
 }
 
@@ -263,24 +361,24 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
     let candidates = out
         .faces
         .iter()
-        .filter(|face| face.shell.0 == native_shell_id)
+        .filter(|face| face.shell.as_str() == native_shell_id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     let candidate_ids = candidates
         .iter()
-        .map(|face| face.0.as_str())
+        .map(cadmpeg_ir::ids::FaceId::as_str)
         .collect::<HashSet<_>>();
     let loop_faces = out
         .loops
         .iter()
-        .filter(|loop_| candidate_ids.contains(loop_.face.0.as_str()))
-        .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
+        .filter(|loop_| candidate_ids.contains(loop_.face.as_str()))
+        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
         .collect::<HashMap<_, _>>();
     let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
     for coedge in &out.coedges {
-        if let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) {
+        if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
             faces_by_edge
-                .entry(coedge.edge.0.as_str())
+                .entry(coedge.edge.as_str())
                 .or_default()
                 .insert(*face);
         }
@@ -298,20 +396,20 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
     let mut assigned = HashSet::new();
     let mut components = Vec::new();
     for face in &candidates {
-        if !assigned.insert(face.0.as_str()) {
+        if !assigned.insert(face.as_str()) {
             continue;
         }
         let mut component = Vec::new();
-        let mut pending = vec![face.0.as_str()];
+        let mut pending = vec![face.as_str()];
         while let Some(current) = pending.pop() {
-            component.push(FaceId(current.to_string()));
+            component.push(FaceId::mint(current.to_string()).expect("identity grammar"));
             for &neighbor in neighbors.get(current).into_iter().flatten() {
                 if assigned.insert(neighbor) {
                     pending.push(neighbor);
                 }
             }
         }
-        component.sort_by(|left, right| left.0.cmp(&right.0));
+        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         components.push(component);
     }
     components
@@ -402,7 +500,7 @@ fn id_closed_vertex(edge: u16) -> String {
 struct WalkedFace {
     bridge_attr: u16,
     surface_attr: u16,
-    marker: u8,
+    sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
 }
@@ -421,14 +519,11 @@ fn resolve_sweep_surface(
 ) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
-    let CarrierGeometry::Curve(profile_geometry) = &profile.geometry else {
-        return None;
-    };
-    let curve = sweep::profile_nurbs(profile_geometry)?;
+    let curve = sweep::profile_nurbs(&profile.geometry)?;
     let profile_derived = carriers.curve_is_derived(construction.profile_attr);
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
-            SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)),
+            SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
             construction.offset,
             "00_44",
             profile_derived,
@@ -443,19 +538,15 @@ fn resolve_sweep_surface(
             let mut point_hi = f64::NEG_INFINITY;
             for (_, ring) in &face.loops {
                 for ce_attr in ring {
-                    let Some(vuse) = tables
-                        .coedges
-                        .get(ce_attr)
-                        .and_then(|ce| ce.refs.get(4).copied())
-                    else {
+                    let Some(vuse) = tables.coedges.get(ce_attr).map(|ce| ce.refs[4]) else {
                         continue;
                     };
                     let Some(coordinates) = tables
                         .vertex_uses
                         .get(&vuse)
-                        .and_then(|vu| vu.refs.get(4).copied())
+                        .map(|vu| vu.refs[4])
                         .and_then(|pa| tables.points.get(&pa))
-                        .and_then(|p| p.xyz_m)
+                        .map(|p| p.xyz_m)
                     else {
                         continue;
                     };
@@ -469,7 +560,7 @@ fn resolve_sweep_surface(
             if point_lo > point_hi {
                 return None;
             }
-            let pole_travel: Vec<f64> = curve.control_points.iter().map(project).collect();
+            let pole_travel: Vec<f64> = curve.control_points().iter().map(project).collect();
             let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
             let pole_hi = pole_travel
                 .iter()
@@ -494,11 +585,12 @@ fn resolve_sweep_surface(
 }
 
 fn id_hidden_support_surface(attr: u16) -> SurfaceId {
-    SurfaceId(format!("sldprt:brep:hidden-support-surf#{attr}"))
+    SurfaceId::mint(format!("sldprt:brep:hidden-support-surf#{attr}")).expect("identity grammar")
 }
 
 fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
-    ProceduralSurfaceId(format!("sldprt:brep:offset-support-construction#{attr}"))
+    ProceduralSurfaceId::mint(format!("sldprt:brep:offset-support-construction#{attr}"))
+        .expect("identity grammar")
 }
 
 fn emit_offset_surface(
@@ -513,25 +605,27 @@ fn emit_offset_surface(
     annotations
         .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
-    out.procedural_surfaces.push(ProceduralSurface {
-        id: construction.clone(),
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
+    out.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Offset {
             support,
             distance: offset.distance,
             u_sense: None,
             v_sense: None,
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
     out.surfaces.push(Surface {
         id: surface,
         source_object: None,
-        geometry: SurfaceGeometry::Procedural { construction },
+        geometry: SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        },
     });
 }
 
@@ -571,18 +665,15 @@ fn ensure_surface_support(
         if let Some(carrier) = carriers.surface(attr) {
             let id = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId(id_surf(*bridge)),
+                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
             );
             if !out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let CarrierGeometry::Surface(geometry) = &carrier.geometry else {
-                    unreachable!("surface index contains only surface carriers");
-                };
-                let mut geometry = geometry.clone();
-                if let Some((_, u_reference, v_reference)) = carrier.frame {
+                let mut geometry = carrier.geometry.clone();
+                if let Some((u_reference, v_reference)) = carrier.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(annotations, &id.0, &geometry);
+                    annotate_surface_frame(annotations, id.as_str(), &geometry);
                 }
                 annotations
                     .note(&id, source_stream, carrier.offset as u64)
@@ -606,7 +697,7 @@ fn ensure_surface_support(
             )?;
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId(id_surf(*bridge)),
+                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
             );
             if !emitted_face_surface_by_carrier.contains_key(&attr)
                 && !out.surfaces.iter().any(|candidate| candidate.id == surface)
@@ -626,7 +717,7 @@ fn ensure_surface_support(
         } else {
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId(id_surf(*bridge)),
+                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
             );
             if !emitted_face_surface_by_carrier.contains_key(&attr)
                 && !out.surfaces.iter().any(|candidate| candidate.id == surface)
@@ -646,16 +737,16 @@ fn ensure_surface_support(
     result
 }
 
-fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
-    let surface_attr = *bridge.refs.get(4).unwrap_or(&0);
+fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
+    let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
-    let mut loop_ref = *bridge.refs.get(2).unwrap_or(&0);
+    let mut loop_ref = bridge.refs[2];
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 && loop_guard.insert(loop_ref) {
         let Some(lp) = t.loops.get(&loop_ref) else {
             break;
         };
-        let owner_bridge = lp.refs.get(2).copied().unwrap_or(0);
+        let owner_bridge = lp.refs[2];
         let same_face_use = owner_bridge == bridge.attr
             || bridge.owner.is_some_and(|owner| {
                 t.bridges
@@ -666,7 +757,7 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
         if !same_face_use {
             break;
         }
-        let first = *lp.refs.get(1).unwrap_or(&0);
+        let first = lp.refs[1];
         let mut ring = Vec::new();
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
@@ -675,11 +766,11 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
             let Some(ce) = t.coedges.get(&ce_ref) else {
                 break;
             };
-            if ce.refs.get(1).copied() != Some(loop_ref) {
+            if ce.refs[1] != loop_ref {
                 break;
             }
             ring.push(ce_ref);
-            ce_ref = *ce.refs.get(3).unwrap_or(&0);
+            ce_ref = ce.refs[3];
             if ce_ref == first {
                 ring_closed = true;
                 break;
@@ -688,35 +779,25 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
         if ring_closed {
             loops.push((loop_ref, ring));
         }
-        loop_ref = *lp.refs.get(3).unwrap_or(&0);
+        loop_ref = lp.refs[3];
     }
     WalkedFace {
         bridge_attr: bridge.attr,
         surface_attr,
-        marker: bridge.marker.unwrap_or(0x2b),
+        sense: bridge.sense,
         loops,
     }
 }
 
-fn sense_of(marker: u8) -> Sense {
-    if marker == 0x2d {
-        Sense::Reversed
-    } else {
-        Sense::Forward
-    }
-}
-
 fn edge_parameter_range(
-    carrier: &Carrier,
+    carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Option<([f64; 2], bool)> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
     let range = carrier.parameter_range?;
     let range = match &carrier.geometry {
-        CarrierGeometry::Curve(CurveGeometry::Line { .. }) => {
-            range.map(|parameter| parameter * LEN_TO_MM)
-        }
+        CurveGeometry::Line { .. } => range.map(|parameter| parameter * LEN_TO_MM),
         _ => range,
     };
     let range = if range[0] <= range[1] {
@@ -727,9 +808,7 @@ fn edge_parameter_range(
     let Some(endpoints) = endpoints else {
         return Some((range, false));
     };
-    let CarrierGeometry::Curve(geometry) = &carrier.geometry else {
-        return None;
-    };
+    let geometry = &carrier.geometry;
     let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
     let [Some(first), Some(second)] = evaluated else {
         return None;
@@ -751,34 +830,33 @@ fn edge_parameter_range(
 /// Resolve the coedge that defines an edge's stored direction.
 ///
 /// Bare records carry an explicit coedge attr in `refs[0]`. Prefixed records
-/// carry no such slot, so a zero/sentinel slot is resolved only when exactly
+/// carry no such slot. An absent or source-null slot is resolved only when exactly
 /// one same-edge forward coedge exists. A non-sentinel explicit reference is
 /// authoritative: a dangling, cross-edge, or reversed reference is rejected.
 fn canonical_coedge_attr(
     edge_attr: u16,
-    edge_use: Option<&topology::Record>,
-    coedges: &HashMap<u16, topology::Record>,
+    edge_use: Option<&topology::EdgeUse>,
+    coedges: &HashMap<u16, topology::Coedge>,
 ) -> Option<u16> {
     if let Some(explicit) = edge_use
-        .and_then(|record| record.refs.first().copied())
+        .and_then(|record| record.references.canonical())
         .filter(|attr| *attr > 1)
     {
         let coedge = coedges.get(&explicit)?;
-        return (coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b))
-            .then_some(explicit);
+        return (coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward).then_some(explicit);
     }
 
-    let mut candidates = coedges.iter().filter(|(_, coedge)| {
-        coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b)
-    });
+    let mut candidates = coedges
+        .iter()
+        .filter(|(_, coedge)| coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward);
     let (&attr, _) = candidates.next()?;
     candidates.next().is_none().then_some(attr)
 }
 
-fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology::Record>) -> u16 {
+fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology::Coedge>) -> u16 {
     let Some(twin) = coedges
         .get(&canonical)
-        .and_then(|coedge| coedge.refs.get(5).copied())
+        .map(|coedge| coedge.refs[5])
         .filter(|twin| *twin != canonical)
     else {
         return ring_end;
@@ -786,14 +864,14 @@ fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology:
     let Some(twin_record) = coedges.get(&twin) else {
         return ring_end;
     };
-    if twin_record.refs.get(5) != Some(&canonical) {
+    if twin_record.refs[5] != canonical {
         return ring_end;
     }
-    twin_record.refs.get(4).copied().unwrap_or(ring_end)
+    twin_record.refs[4]
 }
 
-fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
-    match (sense_of(marker), orientation_reversed) {
+fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
+    match (sense, orientation_reversed) {
         (Sense::Forward, true) => Sense::Reversed,
         (Sense::Reversed, true) => Sense::Forward,
         (sense, false) => sense,
@@ -1057,7 +1135,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
         regions.sort_by_key(|region| region.attr);
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
-            kind: hierarchy.kind,
+            kind: hierarchy.body.kind,
             refs: body_refs,
             offset: hierarchy.body.offset,
             regions,
@@ -1082,32 +1160,27 @@ fn decode_graph(
     let mut face_bridge_sequences = t
         .bridges
         .values()
-        .filter_map(|bridge| bridge.sequence.map(|sequence| (sequence, bridge.attr)))
+        .map(|bridge| (bridge.sequence, bridge.attr))
         .collect::<Vec<_>>();
     face_bridge_sequences.sort_unstable();
     face_bridge_sequences.dedup();
     let mut edge_use_sequences = t
         .edge_uses
         .values()
-        .filter_map(|edge_use| edge_use.sequence.map(|sequence| (sequence, edge_use.attr)))
+        .map(|edge_use| (edge_use.sequence, edge_use.attr))
         .collect::<Vec<_>>();
     edge_use_sequences.sort_unstable();
     edge_use_sequences.dedup();
     let mut vertex_use_sequences = t
         .vertex_uses
         .values()
-        .filter_map(|vertex_use| {
-            vertex_use
-                .sequence
-                .map(|sequence| (sequence, vertex_use.attr))
-        })
+        .map(|vertex_use| (vertex_use.sequence, vertex_use.attr))
         .collect::<Vec<_>>();
     vertex_use_sequences.sort_unstable();
     vertex_use_sequences.dedup();
 
     let mut out = Brep {
         face_colors,
-        face_atoms: entity_facts.face_atoms,
         face_bridge_sequences,
         edge_use_sequences,
         vertex_use_sequences,
@@ -1130,7 +1203,7 @@ fn decode_graph(
     // face identity. Equivalent bridge payloads are duplicate uses; distinct
     // payloads have no source selector and must remain unresolved together.
     let mut faces = Vec::new();
-    let mut owned_faces = HashMap::<u16, Vec<(&topology::Record, WalkedFace)>>::new();
+    let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
     for bridge in t.bridges.values() {
         let face = walk_face(bridge, t);
         if let Some(owner) = bridge.owner {
@@ -1147,9 +1220,9 @@ fn decode_graph(
         };
         let equivalent = uses.iter().skip(1).all(|(bridge, face)| {
             bridge.refs == first_bridge.refs
-                && bridge.marker == first_bridge.marker
+                && bridge.sense == first_bridge.sense
                 && face.surface_attr == first_face.surface_attr
-                && face.marker == first_face.marker
+                && face.sense == first_face.sense
                 && face.loops == first_face.loops
         });
         if equivalent {
@@ -1174,13 +1247,9 @@ fn decode_graph(
                     continue;
                 };
                 let next_attr = ring[(i + 1) % k];
-                let start_vuse = ce.refs.get(4).copied().unwrap_or(0);
-                let next_vuse = t
-                    .coedges
-                    .get(&next_attr)
-                    .and_then(|next| next.refs.get(4).copied())
-                    .unwrap_or(0);
-                let edge_attr = ce.refs.get(6).copied().unwrap_or(0);
+                let start_vuse = ce.refs[4];
+                let next_vuse = t.coedges.get(&next_attr).map_or(0, |next| next.refs[4]);
+                let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     edge_incidence
                         .entry(edge_attr)
@@ -1212,15 +1281,14 @@ fn decode_graph(
         let curve_attr = t
             .edge_uses
             .get(&edge_attr)
-            .and_then(|edge_use| edge_use.refs.get(3).copied())
-            .unwrap_or(0);
+            .map_or(0, |edge_use| edge_use.references.curve());
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
             if vuse == 0 {
                 continue;
             }
             if let Some(vu) = t.vertex_uses.get(&vuse) {
-                let point_attr = vu.refs.get(4).copied().unwrap_or(0);
+                let point_attr = vu.refs[4];
                 if t.points.contains_key(&point_attr) {
                     kept_vertices.insert(vuse);
                     kept_points.insert(point_attr);
@@ -1237,9 +1305,9 @@ fn decode_graph(
         annotations
             .note(id_point(a), source_stream, rec.offset as u64)
             .tag("00_1d");
-        let [x, y, z] = rec.xyz_m.unwrap_or([0.0, 0.0, 0.0]);
+        let [x, y, z] = rec.xyz_m;
         out.points.push(Point {
-            id: PointId(id_point(a)),
+            id: PointId::mint(id_point(a)).expect("identity grammar"),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
             source_object: None,
         });
@@ -1250,13 +1318,13 @@ fn decode_graph(
     vuse_attrs.sort_unstable();
     for a in vuse_attrs {
         let rec = &t.vertex_uses[&a];
-        let point_attr = *rec.refs.get(4).unwrap_or(&0);
+        let point_attr = rec.refs[4];
         annotations
             .note(id_vertex(a), source_stream, rec.offset as u64)
             .tag("00_12");
         out.vertices.push(Vertex {
-            id: VertexId(id_vertex(a)),
-            point: PointId(id_point(point_attr)),
+            id: VertexId::mint(id_vertex(a)).expect("identity grammar"),
+            point: PointId::mint(id_point(point_attr)).expect("identity grammar"),
             tolerance: None,
         });
     }
@@ -1275,12 +1343,12 @@ fn decode_graph(
             .then(|| carriers.curve(curve_attr))
             .flatten()
             .and_then(|carrier| match &carrier.geometry {
-                CarrierGeometry::Curve(CurveGeometry::Circle {
+                CurveGeometry::Circle {
                     center,
                     ref_direction,
                     radius,
                     ..
-                }) => Some(cadmpeg_ir::math::Point3::new(
+                } => Some(cadmpeg_ir::math::Point3::new(
                     center.x + ref_direction.x * radius,
                     center.y + ref_direction.y * radius,
                     center.z + ref_direction.z * radius,
@@ -1302,23 +1370,29 @@ fn decode_graph(
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
             out.points.push(Point {
-                id: PointId(point_id.clone()),
+                id: PointId::mint(point_id.clone()).expect("identity grammar"),
                 position,
                 source_object: None,
             });
             out.vertices.push(Vertex {
-                id: VertexId(vertex_id.clone()),
-                point: PointId(point_id),
+                id: VertexId::mint(vertex_id.clone()).expect("identity grammar"),
+                point: PointId::mint(point_id).expect("identity grammar"),
                 tolerance: None,
             });
-            (VertexId(vertex_id.clone()), VertexId(vertex_id))
+            (
+                VertexId::mint(vertex_id.clone()).expect("identity grammar"),
+                VertexId::mint(vertex_id).expect("identity grammar"),
+            )
         } else {
-            (VertexId(id_vertex(start_v)), VertexId(id_vertex(end_v)))
+            (
+                VertexId::mint(id_vertex(start_v)).expect("identity grammar"),
+                VertexId::mint(id_vertex(end_v)).expect("identity grammar"),
+            )
         };
         if resolved_endpoints {
             let position = |vertex_use: u16| {
-                let point_attr = t.vertex_uses.get(&vertex_use)?.refs.get(4)?;
-                let [x, y, z] = t.points.get(point_attr)?.xyz_m?;
+                let point_attr = &t.vertex_uses.get(&vertex_use)?.refs[4];
+                let [x, y, z] = t.points.get(point_attr)?.xyz_m;
                 Some(cadmpeg_ir::math::Point3::new(
                     x * LEN_TO_MM,
                     y * LEN_TO_MM,
@@ -1342,25 +1416,19 @@ fn decode_graph(
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
-            match carriers.curve(curve_attr).map(|c| &c.geometry) {
-                Some(CarrierGeometry::Curve(_)) => {
+            match carriers.curve(curve_attr) {
+                Some(carrier) => {
                     if emitted_curves.insert(curve_attr) {
-                        emit_curve(
-                            &mut out,
-                            carriers.curve(curve_attr).expect("matched curve carrier"),
-                        );
+                        emit_curve(&mut out, carrier);
                         if carriers.curve_is_derived(curve_attr) {
-                            let offset = carriers
-                                .curve(curve_attr)
-                                .expect("matched curve carrier")
-                                .offset;
+                            let offset = carrier.offset;
                             annotations
                                 .note(id_curve(curve_attr), source_stream, offset as u64)
                                 .tag("surface_intersection");
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
-                    curve = Some(CurveId(id_curve(curve_attr)));
+                    curve = Some(CurveId::mint(id_curve(curve_attr)).expect("identity grammar"));
                 }
                 _ => {
                     if emitted_curves.insert(curve_attr) {
@@ -1370,12 +1438,12 @@ fn decode_graph(
                             .tag("unknown_curve");
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         out.curves.push(Curve {
-                            id: CurveId(id_curve(curve_attr)),
+                            id: CurveId::mint(id_curve(curve_attr)).expect("identity grammar"),
                             source_object: None,
                             geometry: CurveGeometry::Unknown { record: None },
                         });
                     }
-                    curve = Some(CurveId(id_curve(curve_attr)));
+                    curve = Some(CurveId::mint(id_curve(curve_attr)).expect("identity grammar"));
                     out.stats.unknown_curve_edges += 1;
                 }
             }
@@ -1385,7 +1453,7 @@ fn decode_graph(
             .note(id_edge(e), source_stream, off as u64)
             .tag("00_10");
         out.edges.push(Edge {
-            id: EdgeId(id_edge(e)),
+            id: EdgeId::mint(id_edge(e)).expect("identity grammar"),
             curve,
             start: start_id,
             end: end_id,
@@ -1397,7 +1465,7 @@ fn decode_graph(
         .edges
         .iter()
         .map(|e| {
-            e.id.0
+            e.id.as_str()
                 .rsplit('#')
                 .next()
                 .expect("invariant: id_edge always emits a '#'-separated suffix")
@@ -1416,7 +1484,7 @@ fn decode_graph(
                 && ring.iter().all(|c| {
                     t.coedges
                         .get(c)
-                        .is_some_and(|ce| edge_set.contains(ce.refs.get(6).unwrap_or(&0)))
+                        .is_some_and(|ce| edge_set.contains(&ce.refs[6]))
                 });
             if ok {
                 kept_loops.insert(*loop_attr);
@@ -1437,19 +1505,16 @@ fn decode_graph(
             if !kept_loops.contains(loop_attr) {
                 continue;
             }
-            let k = ring.len();
-            for (i, &ce_attr) in ring.iter().enumerate() {
+            for &ce_attr in ring {
                 let ce = &t.coedges[&ce_attr];
-                let edge_attr = *ce.refs.get(6).unwrap_or(&0);
-                let next = ring[(i + 1) % k];
-                let prev = ring[(i + k - 1) % k];
-                let twin = *ce.refs.get(5).unwrap_or(&0);
+                let edge_attr = ce.refs[6];
+                let twin = ce.refs[5];
                 let partner = t
                     .coedges
                     .get(&twin)
-                    .filter(|tw| tw.refs.get(5) == Some(&ce_attr))
+                    .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
-                    .map(|_| CoedgeId(id_coedge(twin)));
+                    .map(|_| CoedgeId::mint(id_coedge(twin)).expect("identity grammar"));
                 annotations
                     .note(id_coedge(ce_attr), source_stream, ce.offset as u64)
                     .tag("00_11");
@@ -1458,15 +1523,11 @@ fn decode_graph(
                     .and_then(|(_, _, curve_attr)| {
                         let support_data = carriers.intersection_support_data(*curve_attr)?;
                         let curve_carrier = carriers.curve(*curve_attr)?;
-                        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
-                            &curve_carrier.geometry
-                        else {
+                        let CurveGeometry::Nurbs(curve) = &curve_carrier.geometry else {
                             return None;
                         };
                         let surface = carriers.surface(f.surface_attr)?;
-                        let CarrierGeometry::Surface(surface) = &surface.geometry else {
-                            return None;
-                        };
+                        let surface = &surface.geometry;
                         let (geometry, parameter_range, source) = intersection_support_pcurve(
                             support_data,
                             curve,
@@ -1474,7 +1535,9 @@ fn decode_graph(
                             surface,
                             *edge_endpoint_positions.get(&edge_attr)?,
                         )?;
-                        let id = PcurveId(format!("sldprt:brep:pcurve#intersection:{ce_attr}"));
+                        let id =
+                            PcurveId::mint(format!("sldprt:brep:pcurve#intersection:{ce_attr}"))
+                                .expect("identity grammar");
                         let offset = curve_carrier.offset;
                         annotations
                             .note(&id, source_stream, offset as u64)
@@ -1491,10 +1554,11 @@ fn decode_graph(
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            wrapper_reversed: None,
-                            native_tail_flags: None,
-                            parameter_range: Some(parameter_range),
-                            fit_tolerance: Some(support_data.fit_tolerance_mm),
+                            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                                None,
+                                Some(parameter_range),
+                                Some(support_data.fit_tolerance_mm),
+                            ),
                         });
                         Some(vec![cadmpeg_ir::topology::PcurveUse {
                             pcurve: id,
@@ -1503,7 +1567,7 @@ fn decode_graph(
                         }])
                     })
                     .unwrap_or_default();
-                let mut sense = sense_of(ce.marker.unwrap_or(0x2b));
+                let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
                     sense = match sense {
                         Sense::Forward => Sense::Reversed,
@@ -1511,15 +1575,14 @@ fn decode_graph(
                     };
                 }
                 out.coedges.push(Coedge {
-                    id: CoedgeId(id_coedge(ce_attr)),
-                    owner_loop: LoopId(id_loop(*loop_attr)),
-                    edge: EdgeId(id_edge(edge_attr)),
-                    next: CoedgeId(id_coedge(next)),
-                    previous: CoedgeId(id_coedge(prev)),
-                    radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
+                    id: CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar"),
+                    owner_loop: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
+                    edge: EdgeId::mint(id_edge(edge_attr)).expect("identity grammar"),
+                    radial_next: partner.unwrap_or_else(|| {
+                        CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar")
+                    }),
                     sense,
                     use_curve: None,
-                    use_curve_parameter_range: None,
                     pcurves,
                 });
             }
@@ -1532,17 +1595,21 @@ fn decode_graph(
             if !kept_loops.contains(loop_attr) {
                 continue;
             }
-            let coedges: Vec<CoedgeId> = ring.iter().map(|a| CoedgeId(id_coedge(*a))).collect();
+            let coedges: Vec<CoedgeId> = ring
+                .iter()
+                .map(|a| CoedgeId::mint(id_coedge(*a)).expect("identity grammar"))
+                .collect();
             let off = t.loops.get(loop_attr).map_or(0, |r| r.offset);
             annotations
                 .note(id_loop(*loop_attr), source_stream, off as u64)
                 .tag("00_0f");
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
+                continue;
+            };
             out.loops.push(Loop {
-                id: LoopId(id_loop(*loop_attr)),
-                face: FaceId(id_face(f.bridge_attr)),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges,
-                vertex_uses: Vec::new(),
+                id: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
+                face: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
     }
@@ -1592,7 +1659,7 @@ fn decode_graph(
             .iter()
             .flat_map(|(_, ring)| ring)
             .filter_map(|coedge| t.coedges.get(coedge))
-            .filter_map(|coedge| coedge.refs.get(6).copied())
+            .map(|coedge| coedge.refs[6])
             .filter(|edge| *edge != 0)
             .collect();
         face_edges_by_surface_carrier
@@ -1618,7 +1685,7 @@ fn decode_graph(
             .loops
             .iter()
             .filter(|(la, _)| loop_set.contains(la))
-            .map(|(la, _)| LoopId(id_loop(*la)))
+            .map(|(la, _)| LoopId::mint(id_loop(*la)).expect("identity grammar"))
             .collect();
         if loops.is_empty() {
             continue;
@@ -1626,19 +1693,19 @@ fn decode_graph(
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
-        match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
-            Some((c, CarrierGeometry::Surface(geo))) => {
+        match carriers.surface(f.surface_attr) {
+            Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");
-                let mut geometry = geo.clone();
-                if let Some((_, u_reference, v_reference)) = c.frame {
+                let mut geometry = c.geometry.clone();
+                if let Some((u_reference, v_reference)) = c.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
                     annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
                 }
                 out.surfaces.push(Surface {
-                    id: SurfaceId(id_surf(f.bridge_attr)),
+                    id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                     source_object: None,
                     geometry,
                 });
@@ -1665,7 +1732,7 @@ fn decode_graph(
                         .iter()
                         .flat_map(|(_, ring)| ring)
                         .filter_map(|coedge| t.coedges.get(coedge))
-                        .filter_map(|coedge| coedge.refs.get(6).copied())
+                        .map(|coedge| coedge.refs[6])
                         .filter(|edge| *edge != 0)
                         .collect();
                     let [Some(first_attr), Some(second_attr)] =
@@ -1718,15 +1785,16 @@ fn decode_graph(
                     Some((blend, first, second))
                 });
                 if let Some((offset, support)) = resolved_offset {
-                    let construction = ProceduralSurfaceId(format!(
+                    let construction = ProceduralSurfaceId::mint(format!(
                         "sldprt:brep:offset-construction#{}",
                         f.bridge_attr
-                    ));
+                    ))
+                    .expect("identity grammar");
                     emit_offset_surface(
                         &mut out,
                         &mut annotations,
                         source_stream,
-                        SurfaceId(id_surf(f.bridge_attr)),
+                        SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         construction,
                         support,
                         offset,
@@ -1739,16 +1807,16 @@ fn decode_graph(
                                 .note(id_curve(blend.spine), source_stream, carrier.offset as u64)
                                 .tag("blend_spine");
                         }
-                        CurveId(id_curve(blend.spine))
+                        CurveId::mint(id_curve(blend.spine)).expect("identity grammar")
                     });
-                    let procedural_id = ProceduralSurfaceId(format!(
+                    let procedural_id = ProceduralSurfaceId::mint(format!(
                         "sldprt:brep:blend-construction#{}",
                         f.bridge_attr
-                    ));
-                    out.procedural_surfaces.push(ProceduralSurface {
-                        id: procedural_id.clone(),
-                        surface: SurfaceId(id_surf(f.bridge_attr)),
-                        definition: ProceduralSurfaceDefinition::Blend {
+                    ))
+                    .expect("identity grammar");
+                    out.procedural_surfaces.push(ProceduralSurface::new(
+                        procedural_id.clone(),
+                        ProceduralSurfaceDefinition::Blend {
                             supports: [
                                 Some(BlendSupport {
                                     surface: first,
@@ -1766,17 +1834,17 @@ fn decode_graph(
                             cross_section: BlendCrossSection::Circular,
                             native: None,
                         },
-                        cache_fit_tolerance: None,
-                        record_bounds: None,
-                    });
+                        None,
+                    ));
                     annotations
                         .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
                         .tag("00_38");
                     out.surfaces.push(Surface {
-                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         source_object: None,
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id,
+                            cache: None,
                         },
                     });
                 } else if let Some((geometry, offset, tag, derived)) =
@@ -1789,7 +1857,7 @@ fn decode_graph(
                         annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
                     }
                     out.surfaces.push(Surface {
-                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         source_object: None,
                         geometry,
                     });
@@ -1800,7 +1868,7 @@ fn decode_graph(
                         .tag("unknown_surface");
                     annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     out.surfaces.push(Surface {
-                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         source_object: None,
                         geometry: SurfaceGeometry::Unknown { record: None },
                     });
@@ -1811,18 +1879,19 @@ fn decode_graph(
             .note(id_face(f.bridge_attr), source_stream, surf_off as u64)
             .tag("00_0e");
         out.faces.push(Face {
-            id: FaceId(id_face(f.bridge_attr)),
-            shell: ShellId(format!(
+            id: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
+            shell: ShellId::mint(format!(
                 "sldprt:brep:shell#{}",
                 bridge_shell
                     .get(&f.bridge_attr)
                     .copied()
                     .or_else(|| bridge_group.get(&f.bridge_attr).copied().map(|v| v as u16))
                     .unwrap_or(0)
-            )),
-            surface: SurfaceId(id_surf(f.bridge_attr)),
-            sense: surface_sense(f.marker, surface_orientation_reversed),
-            loops,
+            ))
+            .expect("identity grammar"),
+            surface: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+            sense: surface_sense(f.sense, surface_orientation_reversed),
+            loops: loops.into(),
             name: None,
             color: t
                 .bridges
@@ -1840,8 +1909,8 @@ fn decode_graph(
     let emitted_faces = out
         .faces
         .iter()
-        .map(|face| face.id.0.as_str())
-        .collect::<HashSet<_>>();
+        .map(|face| (face.id.as_str(), &face.id))
+        .collect::<HashMap<_, _>>();
     for appearance in &mut out.face_colors {
         appearance.target = faces
             .iter()
@@ -1852,15 +1921,22 @@ fn decode_graph(
                     == Some(appearance.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
-            .filter(|face| emitted_faces.contains(face.as_str()));
-    }
-    for atom in &mut out.face_atoms {
-        atom.target =
-            Some(id_face(atom.face_attr)).filter(|face| emitted_faces.contains(face.as_str()));
+            .filter(|face| emitted_faces.contains_key(face.as_str()));
     }
     let mut bound_faces = HashSet::new();
-    out.face_atoms
-        .retain(|atom| atom.target.is_some() && bound_faces.insert(atom.face_attr));
+    out.face_atoms = entity_facts
+        .face_atoms
+        .into_iter()
+        .filter_map(|atom| {
+            let face = emitted_faces.get(id_face(atom.face_attr).as_str())?;
+            bound_faces
+                .insert(atom.face_attr)
+                .then(|| attrib::FaceAtom {
+                    face: (*face).clone(),
+                    identity: atom.identity,
+                })
+        })
+        .collect();
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
@@ -1917,28 +1993,28 @@ fn decode_graph(
                 annotate_group(&shell_id, None);
                 let face_ids = faces
                     .iter()
-                    .map(|face| face.0.as_str())
+                    .map(cadmpeg_ir::ids::FaceId::as_str)
                     .collect::<HashSet<_>>();
                 for face in &mut out.faces {
-                    if face_ids.contains(face.id.0.as_str()) {
-                        face.shell = ShellId(shell_id.clone());
+                    if face_ids.contains(face.id.as_str()) {
+                        face.shell = ShellId::mint(shell_id.clone()).expect("identity grammar");
                     }
                 }
                 out.shells.push(Shell {
-                    id: ShellId(shell_id.clone()),
-                    region: RegionId(region_id.clone()),
+                    id: ShellId::mint(shell_id.clone()).expect("identity grammar"),
+                    region: RegionId::mint(region_id.clone()).expect("identity grammar"),
                     faces,
                     wire_edges: Vec::new(),
                     free_vertices: Vec::new(),
                 });
-                region_shells.push(ShellId(shell_id));
+                region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
             }
             out.regions.push(Region {
-                id: RegionId(region_id.clone()),
-                body: BodyId(body_id.clone()),
+                id: RegionId::mint(region_id.clone()).expect("identity grammar"),
+                body: BodyId::mint(body_id.clone()).expect("identity grammar"),
                 shells: region_shells,
             });
-            body_regions.push(RegionId(region_id));
+            body_regions.push(RegionId::mint(region_id).expect("identity grammar"));
         } else {
             for region in native_regions {
                 let region_id = format!("sldprt:brep:region#{}", region.attr);
@@ -1961,33 +2037,34 @@ fn decode_graph(
                         );
                         let face_ids = faces
                             .iter()
-                            .map(|face| face.0.as_str())
+                            .map(cadmpeg_ir::ids::FaceId::as_str)
                             .collect::<HashSet<_>>();
                         for face in &mut out.faces {
-                            if face_ids.contains(face.id.0.as_str()) {
-                                face.shell = ShellId(shell_id.clone());
+                            if face_ids.contains(face.id.as_str()) {
+                                face.shell =
+                                    ShellId::mint(shell_id.clone()).expect("identity grammar");
                             }
                         }
                         out.shells.push(Shell {
-                            id: ShellId(shell_id.clone()),
-                            region: RegionId(region_id.clone()),
+                            id: ShellId::mint(shell_id.clone()).expect("identity grammar"),
+                            region: RegionId::mint(region_id.clone()).expect("identity grammar"),
                             faces,
                             wire_edges: Vec::new(),
                             free_vertices: Vec::new(),
                         });
-                        region_shells.push(ShellId(shell_id));
+                        region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
                     }
                 }
                 out.regions.push(Region {
-                    id: RegionId(region_id.clone()),
-                    body: BodyId(body_id.clone()),
+                    id: RegionId::mint(region_id.clone()).expect("identity grammar"),
+                    body: BodyId::mint(body_id.clone()).expect("identity grammar"),
                     shells: region_shells,
                 });
-                body_regions.push(RegionId(region_id));
+                body_regions.push(RegionId::mint(region_id).expect("identity grammar"));
             }
         }
         out.bodies.push(Body {
-            id: BodyId(body_id),
+            id: BodyId::mint(body_id).expect("identity grammar"),
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
             regions: body_regions,
             transform: None,
@@ -2001,7 +2078,7 @@ fn decode_graph(
     for body in &out.bodies {
         let Some(attr) = body
             .id
-            .0
+            .as_str()
             .strip_prefix("sldprt:brep:body#")
             .and_then(|value| value.parse::<u16>().ok())
         else {
@@ -2009,7 +2086,7 @@ fn decode_graph(
         };
         match body_ids_by_attr.entry(attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(body.id.0.clone()));
+                entry.insert(Some(body.id.as_str().to_owned()));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = None;
@@ -2023,7 +2100,7 @@ fn decode_graph(
     for curve in &out.curves {
         let Some(attr) = curve
             .id
-            .0
+            .as_str()
             .strip_prefix("sldprt:brep:curve#")
             .and_then(|value| value.parse::<u16>().ok())
         else {
@@ -2055,30 +2132,30 @@ fn decode_graph(
     let retained_ids = out
         .bodies
         .iter()
-        .map(|entity| entity.id.0.as_str())
-        .chain(out.regions.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.shells.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.faces.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.loops.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.coedges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.edges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.vertices.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.points.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.surfaces.iter().map(|entity| entity.id.0.as_str()))
+        .map(|entity| entity.id.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
         .chain(
             out.procedural_surfaces
                 .iter()
-                .map(|entity| entity.id.0.as_str()),
+                .map(|entity| entity.id.as_str()),
         )
-        .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
+        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     out.annotations
         .provenance
         .retain(|id, _| retained_ids.contains(id.as_str()));
-    out.annotations
-        .exactness
-        .retain(|id, _| retained_ids.contains(id.as_str()));
+    let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+    annotations.retain_exactness(|id| retained_ids.contains(id));
+    out.annotations = annotations.build();
     out
 }
 
@@ -2094,7 +2171,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_coedges = out
         .loops
         .iter()
-        .flat_map(|loop_| &loop_.coedges)
+        .flat_map(cadmpeg_ir::topology::Loop::coedges)
         .cloned()
         .collect::<HashSet<_>>();
     out.coedges
@@ -2144,7 +2221,7 @@ fn prune_rejected_topology(out: &mut Brep) {
         .filter_map(|edge| edge.curve.clone())
         .collect::<HashSet<_>>();
     kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
-        if let ProceduralSurfaceDefinition::Blend { spine, .. } = &surface.definition {
+        if let ProceduralSurfaceDefinition::Blend { spine, .. } = surface.definition() {
             spine.clone()
         } else {
             None
@@ -2193,7 +2270,7 @@ fn fold_surface_frame(
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
             SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Unknown { .. } => break,
         }
     }
@@ -2225,7 +2302,7 @@ fn annotate_surface_frame(
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
             SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Unknown { .. } => break,
         }
     }
@@ -2386,17 +2463,15 @@ fn derive_planar_pcurves(
             }
             _ => continue,
         };
-        let id = PcurveId(format!(
+        let id = PcurveId::mint(format!(
             "sldprt:brep:pcurve#{}",
-            coedge.id.0.rsplit('#').next().unwrap_or("0")
-        ));
+            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
+        ))
+        .expect("identity grammar");
         let pcurve = Pcurve {
             id: id.clone(),
             geometry,
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
@@ -2605,7 +2680,7 @@ fn derive_cylindrical_pcurves(
             }
             CurveGeometry::Nurbs(nurbs) => {
                 let radial_control_points = nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| {
                         let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
@@ -2617,8 +2692,8 @@ fn derive_cylindrical_pcurves(
                     .collect::<Vec<_>>();
                 if !quadratic_nurbs_has_constant_radius(
                     &radial_control_points,
-                    nurbs.weights.as_deref(),
-                    &nurbs.knots,
+                    nurbs.weights(),
+                    nurbs.knots(),
                     radius.abs(),
                 ) {
                     continue;
@@ -2645,7 +2720,7 @@ fn derive_cylindrical_pcurves(
                     }
                 };
                 let axial_control_points = nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| {
                         dot(
@@ -2654,31 +2729,36 @@ fn derive_cylindrical_pcurves(
                         )
                     })
                     .collect();
-                PcurveGeometry::PolarNurbs {
-                    degree: nurbs.degree,
-                    knots: nurbs.knots.clone(),
+                let Ok(polar) = PolarPcurveNurbs::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
                     radial_control_points,
                     axial_control_points,
-                    weights: nurbs.weights.clone(),
-                    periodic: nurbs.periodic,
-                }
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                ) else {
+                    continue;
+                };
+                PcurveGeometry::PolarNurbs { nurbs: polar }
             }
             _ => continue,
         };
-        let id = PcurveId(format!(
+        let id = PcurveId::mint(format!(
             "sldprt:brep:pcurve#cylinder:{}",
-            coedge.id.0.rsplit('#').next().unwrap_or("0")
-        ));
+            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
+        ))
+        .expect("identity grammar");
         derived.push((
             coedge.id.clone(),
             id.clone(),
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    parameter_range,
+                    None,
+                ),
             },
         ));
     }
@@ -2836,10 +2916,10 @@ fn nurbs_parameter_at_point(
 ) -> InverseResolution<f64> {
     let squared_distance = |parameter: f64| {
         let point = nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter,
         )?;
         Some(
@@ -2851,14 +2931,14 @@ fn nurbs_parameter_at_point(
     let Some(domain) = nurbs_curve_parameter_domain(nurbs) else {
         return InverseResolution::NoMatch;
     };
-    let Some(candidates) = sampled_parameter_minima(&nurbs.knots, domain, squared_distance) else {
+    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance) else {
         return InverseResolution::NoMatch;
     };
     unique_inverse_parameter(
         candidates,
         inverse_coordinate_tolerance(
             nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
                 .chain(std::iter::once(target)),
@@ -3087,10 +3167,11 @@ fn derive_revolved_circle_pcurves(
         ) else {
             continue;
         };
-        let id = PcurveId(format!(
+        let id = PcurveId::mint(format!(
             "sldprt:brep:pcurve#revolved-circle:{}",
-            coedge.id.0.rsplit('#').next().unwrap_or("0")
-        ));
+            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
+        ))
+        .expect("identity grammar");
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -3100,10 +3181,7 @@ fn derive_revolved_circle_pcurves(
                     origin: cadmpeg_ir::math::Point2::new(phase, v),
                     direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
                 },
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             },
         ));
     }
@@ -3229,20 +3307,18 @@ fn derive_spherical_pcurves(
         } else {
             continue;
         };
-        let id = PcurveId(format!(
+        let id = PcurveId::mint(format!(
             "sldprt:brep:pcurve#sphere:{}",
-            coedge.id.0.rsplit('#').next().unwrap_or("0")
-        ));
+            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
+        ))
+        .expect("identity grammar");
         derived.push((
             coedge.id.clone(),
             id.clone(),
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             },
         ));
     }
@@ -3378,25 +3454,27 @@ fn derive_nurbs_isoparametric_pcurves(
             }
             _ => continue,
         };
-        let id = PcurveId(format!(
+        let id = PcurveId::mint(format!(
             "sldprt:brep:pcurve#{}:{}",
             if cache {
                 "nurbs-surface-cache"
             } else {
                 "nurbs-isoparametric"
             },
-            coedge.id.0.rsplit('#').next().unwrap_or("0")
-        ));
+            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
+        ))
+        .expect("identity grammar");
         derived.push((
             coedge.id.clone(),
             id.clone(),
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range,
-                fit_tolerance,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    parameter_range,
+                    fit_tolerance,
+                ),
             },
             cache,
         ));
@@ -3412,7 +3490,7 @@ fn derive_nurbs_isoparametric_pcurves(
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
-                parameter_range: pcurve.parameter_range,
+                parameter_range: pcurve.parameter_range(),
             }];
         }
         annotations.note(&id, source_stream, 0).tag(if cache {
@@ -3480,13 +3558,11 @@ fn intersection_support_pcurve(
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
 ) -> Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)> {
-    if chart.degree != 1
-        || chart.weights.is_some()
-        || chart.periodic
-        || chart.control_points.len() < 2
-        || chart.knots.len() != chart.control_points.len() + 2
-        || chart.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&chart.knots)
+    if chart.degree() != 1
+        || chart.weights().is_some()
+        || chart.periodic()
+        || chart.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(chart.knots())
         || !support_data.fit_tolerance_mm.is_finite()
         || support_data.fit_tolerance_mm <= 0.0
     {
@@ -3502,8 +3578,8 @@ fn intersection_support_pcurve(
         (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
     };
     let model_endpoints = [
-        *chart.control_points.first()?,
-        *chart.control_points.last()?,
+        *chart.control_points().first()?,
+        *chart.control_points().last()?,
     ];
     let direct_error = squared_distance(model_endpoints[0], edge_endpoints[0])
         + squared_distance(model_endpoints[1], edge_endpoints[1]);
@@ -3537,8 +3613,8 @@ fn intersection_support_pcurve(
     } else {
         match surface {
             SurfaceGeometry::Nurbs(surface) => {
-                let mut control_points = Vec::with_capacity(chart.control_points.len());
-                for point in &chart.control_points {
+                let mut control_points = Vec::with_capacity(chart.control_points().len());
+                for point in chart.control_points() {
                     let parameters = nurbs_surface_parameter_within_tolerance(
                         surface,
                         *point,
@@ -3551,7 +3627,7 @@ fn intersection_support_pcurve(
             }
             _ => {
                 let mut control_points = chart
-                    .control_points
+                    .control_points()
                     .iter()
                     .copied()
                     .map(|point| analytic_surface_parameters(surface, point))
@@ -3582,7 +3658,7 @@ fn intersection_support_pcurve(
             }
         }
     };
-    if control_points.len() != chart.control_points.len() {
+    if control_points.len() != chart.control_points().len() {
         return None;
     }
     if let SurfaceGeometry::Nurbs(surface) = surface {
@@ -3638,7 +3714,7 @@ fn intersection_support_pcurve(
         .collect::<Option<Vec<_>>>()?;
     let control_errors = mapped_points
         .iter()
-        .zip(&chart.control_points)
+        .zip(chart.control_points())
         .map(|(point, target)| squared_distance(*point, *target).sqrt())
         .collect::<Vec<_>>();
     if control_errors
@@ -3649,7 +3725,7 @@ fn intersection_support_pcurve(
     }
     if control_points
         .windows(2)
-        .zip(chart.control_points.windows(2))
+        .zip(chart.control_points().windows(2))
         .zip(control_errors.windows(2))
         .any(|((parameters, chord), endpoint_errors)| match surface {
             SurfaceGeometry::Nurbs(surface) => nurbs_surface_parameter_segment_chord_bound(
@@ -3668,17 +3744,8 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    Some((
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: chart.knots.clone(),
-            control_points,
-            weights: None,
-            periodic: false,
-        },
-        parameter_range,
-        source,
-    ))
+    let nurbs = PcurveNurbs::new(1, chart.knots().to_vec(), control_points, None, false).ok()?;
+    Some((PcurveGeometry::Nurbs { nurbs }, parameter_range, source))
 }
 
 fn resolve_axis_candidates<T, const N: usize>(
@@ -3703,19 +3770,19 @@ fn nurbs_boundary_pcurve(
 ) -> InverseResolution<PcurveGeometry> {
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.u_degree as usize,
-            surface.u_count as usize,
-            &surface.u_knots,
+            surface.u_degree() as usize,
+            surface.u_count() as usize,
+            surface.u_knots(),
         ),
         SurfaceParameterAxis::V => (
-            surface.v_degree as usize,
-            surface.v_count as usize,
-            &surface.v_knots,
+            surface.v_degree() as usize,
+            surface.v_count() as usize,
+            surface.v_knots(),
         ),
     };
     let (varying_degree, varying_knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.v_degree as usize, &surface.v_knots),
-        SurfaceParameterAxis::V => (surface.u_degree as usize, &surface.u_knots),
+        SurfaceParameterAxis::U => (surface.v_degree() as usize, surface.v_knots()),
+        SurfaceParameterAxis::V => (surface.u_degree() as usize, surface.u_knots()),
     };
     let (Some(&fixed_min), Some(&fixed_max), Some(&varying_min)) = (
         fixed_knots.get(fixed_degree),
@@ -3733,27 +3800,27 @@ fn nurbs_boundary_pcurve(
     }
     let tolerance = inverse_coordinate_tolerance(
         surface
-            .control_points
+            .control_points()
             .iter()
             .copied()
-            .chain(curve.control_points.iter().copied()),
+            .chain(curve.control_points().iter().copied()),
     );
     let same_curve = |candidate: &cadmpeg_ir::geometry::NurbsCurve| {
-        candidate.degree == curve.degree
-            && candidate.knots == curve.knots
-            && candidate.periodic == curve.periodic
-            && candidate.control_points.len() == curve.control_points.len()
+        candidate.degree() == curve.degree()
+            && candidate.knots() == curve.knots()
+            && candidate.periodic() == curve.periodic()
+            && candidate.control_points().len() == curve.control_points().len()
             && candidate
-                .control_points
+                .control_points()
                 .iter()
-                .zip(&curve.control_points)
+                .zip(curve.control_points())
                 .all(|(candidate, actual)| {
                     (candidate.x - actual.x).powi(2)
                         + (candidate.y - actual.y).powi(2)
                         + (candidate.z - actual.z).powi(2)
                         <= tolerance * tolerance
                 })
-            && match (candidate.weights.as_deref(), curve.weights.as_deref()) {
+            && match (candidate.weights(), curve.weights()) {
                 (None, None) => true,
                 (Some(candidate), Some(actual)) => {
                     candidate.len() == actual.len()
@@ -3794,27 +3861,39 @@ fn nurbs_strict_isocurve_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> InverseResolution<PcurveGeometry> {
     let axis_candidate = |fixed_axis| {
-        let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-        if surface.control_points.len() != uc.saturating_mul(vc)
-            || surface
-                .weights
-                .as_ref()
-                .is_some_and(|weights| weights.len() != surface.control_points.len())
-        {
-            return InverseResolution::NoMatch;
-        }
+        let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
         let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
-            SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
-            SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
+            SurfaceParameterAxis::U => (
+                surface.u_degree(),
+                uc,
+                surface.u_knots(),
+                surface.u_periodic(),
+            ),
+            SurfaceParameterAxis::V => (
+                surface.v_degree(),
+                vc,
+                surface.v_knots(),
+                surface.v_periodic(),
+            ),
         };
         let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
-            SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
-            SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+            SurfaceParameterAxis::U => (
+                surface.v_degree(),
+                vc,
+                surface.v_knots(),
+                surface.v_periodic(),
+            ),
+            SurfaceParameterAxis::V => (
+                surface.u_degree(),
+                uc,
+                surface.u_knots(),
+                surface.u_periodic(),
+            ),
         };
-        if curve.degree != varying_degree
-            || curve.knots != *varying_knots
-            || curve.periodic != varying_periodic
-            || curve.control_points.len() != varying_count
+        if curve.degree() != varying_degree
+            || curve.knots() != varying_knots
+            || curve.periodic() != varying_periodic
+            || curve.control_points().len() != varying_count
         {
             return InverseResolution::NoMatch;
         }
@@ -3824,7 +3903,7 @@ fn nurbs_strict_isocurve_pcurve(
         if fixed_degree != 1
             || fixed_count != 2
             || fixed_periodic
-            || fixed_knots.as_slice() != [fixed_min, fixed_min, fixed_max, fixed_max]
+            || fixed_knots != [fixed_min, fixed_min, fixed_max, fixed_max]
             || !fixed_min.is_finite()
             || !fixed_max.is_finite()
             || fixed_min >= fixed_max
@@ -3835,17 +3914,17 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let expected_weights = surface.weights.as_ref().map(|weights| {
+        let expected_weights = surface.weights().map(|weights| {
             (0..varying_count)
                 .map(|varying| weights[pole_indices(varying).0])
                 .collect::<Vec<_>>()
         });
-        if surface.weights.as_ref().is_some_and(|weights| {
+        if surface.weights().is_some_and(|weights| {
             (0..varying_count).any(|varying| {
                 let (a, b) = pole_indices(varying);
                 (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
             })
-        }) || match (curve.weights.as_deref(), expected_weights.as_deref()) {
+        }) || match (curve.weights(), expected_weights.as_deref()) {
             (None, None) => false,
             (Some(actual), Some(expected)) => {
                 actual.len() != expected.len()
@@ -3860,10 +3939,10 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let mut delta_squared = 0.0;
         let mut relative_dot_delta = 0.0;
-        for (varying, point) in curve.control_points.iter().enumerate() {
+        for (varying, point) in curve.control_points().iter().enumerate() {
             let (a_index, b_index) = pole_indices(varying);
-            let a = surface.control_points[a_index];
-            let b = surface.control_points[b_index];
+            let a = surface.control_points()[a_index];
+            let b = surface.control_points()[b_index];
             let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
             let relative = [point.x - a.x, point.y - a.y, point.z - a.z];
             delta_squared += delta.iter().map(|value| value * value).sum::<f64>();
@@ -3875,15 +3954,15 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let tolerance = inverse_coordinate_tolerance(
             surface
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
-                .chain(curve.control_points.iter().copied()),
+                .chain(curve.control_points().iter().copied()),
         );
         if delta_squared <= f64::EPSILON {
             let all_equal = (0..varying_count).all(|varying| {
-                let a = surface.control_points[pole_indices(varying).0];
-                let point = curve.control_points[varying];
+                let a = surface.control_points()[pole_indices(varying).0];
+                let point = curve.control_points()[varying];
                 (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
                     <= tolerance * tolerance
             });
@@ -3897,9 +3976,9 @@ fn nurbs_strict_isocurve_pcurve(
         let residual_squared = (0..varying_count)
             .map(|varying| {
                 let (a_index, b_index) = pole_indices(varying);
-                let a = surface.control_points[a_index];
-                let b = surface.control_points[b_index];
-                let point = curve.control_points[varying];
+                let a = surface.control_points()[a_index];
+                let b = surface.control_points()[b_index];
+                let point = curve.control_points()[varying];
                 (point.x - (a.x + factor * (b.x - a.x))).powi(2)
                     + (point.y - (a.y + factor * (b.y - a.y))).powi(2)
                     + (point.z - (a.z + factor * (b.z - a.z))).powi(2)
@@ -3969,46 +4048,50 @@ fn nurbs_representation_matches(
     expected: &cadmpeg_ir::geometry::NurbsCurve,
     actual: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> bool {
-    if expected.degree != actual.degree
-        || expected.periodic != actual.periodic
-        || expected.knots.len() != actual.knots.len()
-        || expected.control_points.len() != actual.control_points.len()
+    if expected.degree() != actual.degree()
+        || expected.periodic() != actual.periodic()
+        || expected.knots().len() != actual.knots().len()
+        || expected.control_points().len() != actual.control_points().len()
     {
         return false;
     }
     let scale = expected
-        .control_points
+        .control_points()
         .iter()
-        .chain(&actual.control_points)
+        .chain(actual.control_points())
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
         .chain(
             expected
-                .weights
-                .iter()
-                .flat_map(|weights| weights.iter().copied().map(f64::abs)),
+                .weights()
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(f64::abs),
         )
         .chain(
             actual
-                .weights
-                .iter()
-                .flat_map(|weights| weights.iter().copied().map(f64::abs)),
+                .weights()
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(f64::abs),
         )
         .fold(1.0_f64, f64::max);
     expected
-        .knots
+        .knots()
         .iter()
-        .zip(&actual.knots)
+        .zip(actual.knots())
         .all(|(left, right)| nurbs_roundoff_equal(*left, *right, scale))
         && expected
-            .control_points
+            .control_points()
             .iter()
-            .zip(&actual.control_points)
+            .zip(actual.control_points())
             .all(|(left, right)| {
                 nurbs_roundoff_equal(left.x, right.x, scale)
                     && nurbs_roundoff_equal(left.y, right.y, scale)
                     && nurbs_roundoff_equal(left.z, right.z, scale)
             })
-        && match (expected.weights.as_deref(), actual.weights.as_deref()) {
+        && match (expected.weights(), actual.weights()) {
             (None, None) => true,
             (Some(expected), Some(actual)) => {
                 expected.len() == actual.len()
@@ -4022,28 +4105,15 @@ fn nurbs_representation_matches(
 }
 
 fn nurbs_homogeneous_controls(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<Vec<[f64; 4]>> {
-    if curve.control_points.is_empty()
-        || curve.knots.len()
-            != curve
-                .control_points
-                .len()
-                .checked_add(usize::try_from(curve.degree).ok()?)?
-                .checked_add(1)?
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
-    {
+    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
         return None;
     }
     curve
-        .control_points
+        .control_points()
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
             (point.x.is_finite()
                 && point.y.is_finite()
                 && point.z.is_finite()
@@ -4114,16 +4184,19 @@ fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     domain: [f64; 2],
 ) -> Option<cadmpeg_ir::geometry::NurbsCurve> {
-    if curve.periodic || !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1]
+    if curve.periodic()
+        || !domain[0].is_finite()
+        || !domain[1].is_finite()
+        || domain[0] >= domain[1]
     {
         return None;
     }
-    let degree = usize::try_from(curve.degree).ok()?;
+    let degree = usize::try_from(curve.degree()).ok()?;
     let original_domain = nurbs_curve_parameter_domain(curve)?;
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
         return None;
     }
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let mut controls = nurbs_homogeneous_controls(curve)?;
     let full_multiplicity = degree.checked_add(1)?;
     for value in domain {
@@ -4146,7 +4219,7 @@ fn clamp_nurbs_curve_to_domain(
     if segment_knots.len() != segment_controls.len().checked_add(degree)?.checked_add(1)? {
         return None;
     }
-    let rational = curve.weights.is_some();
+    let rational = curve.weights().is_some();
     let mut control_points = Vec::with_capacity(segment_controls.len());
     let mut weights = rational.then(Vec::new);
     for [x, y, z, weight] in segment_controls {
@@ -4162,13 +4235,14 @@ fn clamp_nurbs_curve_to_domain(
             weights.push(weight);
         }
     }
-    Some(cadmpeg_ir::geometry::NurbsCurve {
-        degree: curve.degree,
-        knots: segment_knots,
+    cadmpeg_ir::geometry::NurbsCurve::new(
+        curve.degree(),
+        segment_knots,
         control_points,
         weights,
-        periodic: false,
-    })
+        false,
+    )
+    .ok()
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
@@ -4178,45 +4252,33 @@ fn extended_nurbs_isocurve_axis_candidate(
 ) -> InverseResolution<PcurveGeometry> {
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.u_degree,
-            surface.u_count,
-            &surface.u_knots,
-            surface.u_periodic,
+            surface.u_degree(),
+            surface.u_count(),
+            surface.u_knots(),
+            surface.u_periodic(),
         ),
         SurfaceParameterAxis::V => (
-            surface.v_degree,
-            surface.v_count,
-            &surface.v_knots,
-            surface.v_periodic,
+            surface.v_degree(),
+            surface.v_count(),
+            surface.v_knots(),
+            surface.v_periodic(),
         ),
     };
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.v_degree,
-            surface.v_count,
-            &surface.v_knots,
-            surface.v_periodic,
+            surface.v_degree(),
+            surface.v_count(),
+            surface.v_knots(),
+            surface.v_periodic(),
         ),
         SurfaceParameterAxis::V => (
-            surface.u_degree,
-            surface.u_count,
-            &surface.u_knots,
-            surface.u_periodic,
+            surface.u_degree(),
+            surface.u_count(),
+            surface.u_knots(),
+            surface.u_periodic(),
         ),
     };
-    let Some(expected_control_count) = usize::try_from(surface.u_count).ok().and_then(|u| {
-        usize::try_from(surface.v_count)
-            .ok()
-            .and_then(|v| u.checked_mul(v))
-    }) else {
-        return InverseResolution::NoMatch;
-    };
-    if fixed_periodic
-        || varying_periodic
-        || curve.periodic
-        || curve.degree != varying_degree
-        || surface.control_points.len() != expected_control_count
-    {
+    if fixed_periodic || varying_periodic || curve.periodic() || curve.degree() != varying_degree {
         return InverseResolution::NoMatch;
     }
     let Some(fixed_domain) = nurbs_active_domain(fixed_knots, fixed_degree, fixed_count) else {
@@ -4241,15 +4303,15 @@ fn extended_nurbs_isocurve_axis_candidate(
     if overlap[0] < overlap[1] {
         let parameter = (overlap[0] + overlap[1]) * 0.5;
         if let Some(point) = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         ) {
             let tolerance = inverse_coordinate_tolerance(
                 surface
-                    .control_points
+                    .control_points()
                     .iter()
                     .copied()
                     .chain(std::iter::once(point)),
@@ -4351,7 +4413,7 @@ fn nurbs_curve_sample_parameters(
         return None;
     }
     let mut parameters = vec![range[0], range[1]];
-    for span in curve.knots.windows(2) {
+    for span in curve.knots().windows(2) {
         let start = span[0].max(range[0]);
         let end = span[1].min(range[1]);
         if !span[0].is_finite() || !span[1].is_finite() || start >= end {
@@ -4383,19 +4445,24 @@ fn nurbs_edge_endpoint_parameters(
 ) -> Option<[cadmpeg_ir::math::Point2; 2]> {
     let curve_points = range.map(|parameter| {
         nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
     });
     let [Some(first), Some(last)] = curve_points else {
         return None;
     };
-    let tolerance =
-        inverse_coordinate_tolerance(surface.control_points.iter().copied().chain([first, last]))
-            .max(NURBS_ENDPOINT_TOLERANCE_MM);
+    let tolerance = inverse_coordinate_tolerance(
+        surface
+            .control_points()
+            .iter()
+            .copied()
+            .chain([first, last]),
+    )
+    .max(NURBS_ENDPOINT_TOLERANCE_MM);
     let project = |point| {
         let parameters = nurbs_seeded_surface_projection(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
@@ -4422,10 +4489,10 @@ fn nurbs_curve_surface_deviation(
     let mut maximum = 0.0_f64;
     for parameter in parameters {
         let point = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )?;
         let parameters = seed
@@ -4443,18 +4510,16 @@ fn nurbs_degree_one_cache_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     range: [f64; 2],
 ) -> Option<(PcurveGeometry, f64)> {
-    if curve.degree != 1
-        || curve.weights.is_some()
-        || curve.periodic
-        || curve.control_points.len() < 2
-        || curve.knots.len() != curve.control_points.len() + 2
-        || !knots_nondecreasing(&curve.knots)
+    if curve.degree() != 1
+        || curve.weights().is_some()
+        || curve.periodic()
+        || !knots_nondecreasing(curve.knots())
     {
         return None;
     }
-    let mut control_points = Vec::with_capacity(curve.control_points.len());
+    let mut control_points = Vec::with_capacity(curve.control_points().len());
     let mut seed = None;
-    for point in &curve.control_points {
+    for point in curve.control_points() {
         let parameters = seed
             .and_then(|seed| nurbs_seeded_surface_projection(surface, *point, Some(seed)))
             .or_else(|| nurbs_seeded_surface_projection(surface, *point, None))?;
@@ -4472,29 +4537,21 @@ fn nurbs_degree_one_cache_pcurve(
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
         let model_point = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
             None,
             parameter,
         )?;
-        let uv = nurbs_curve_point(1, &curve.knots, &uv_control_points, None, parameter)?;
+        let uv = nurbs_curve_point(1, curve.knots(), &uv_control_points, None, parameter)?;
         let mapped_point = nurbs_surface_point(surface, uv.x, uv.y)?;
         fit_tolerance = fit_tolerance.max(point_distance(model_point, mapped_point));
     }
     if !fit_tolerance.is_finite() {
         return None;
     }
-    Some((
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: curve.knots.clone(),
-            control_points,
-            weights: None,
-            periodic: false,
-        },
-        fit_tolerance,
-    ))
+    let nurbs = PcurveNurbs::new(1, curve.knots().to_vec(), control_points, None, false).ok()?;
+    Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance))
 }
 
 fn nurbs_edge_parameter_range(
@@ -4557,22 +4614,24 @@ fn ruled_surface_line_pcurve(
     line_origin: cadmpeg_ir::math::Point3,
     line_direction: cadmpeg_ir::math::Vector3,
 ) -> InverseResolution<PcurveGeometry> {
-    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-    if surface.control_points.len() != uc.saturating_mul(vc)
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return InverseResolution::NoMatch;
-    }
+    let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
-        SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+        SurfaceParameterAxis::U => (
+            surface.v_degree(),
+            vc,
+            surface.v_knots(),
+            surface.v_periodic(),
+        ),
+        SurfaceParameterAxis::V => (
+            surface.u_degree(),
+            uc,
+            surface.u_knots(),
+            surface.u_periodic(),
+        ),
     };
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots),
-        SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots),
+        SurfaceParameterAxis::U => (surface.u_degree(), uc, surface.u_knots()),
+        SurfaceParameterAxis::V => (surface.v_degree(), vc, surface.v_knots()),
     };
     let (Some(&varying_min), Some(&varying_max)) = (varying_knots.get(1), varying_knots.get(2))
     else {
@@ -4581,11 +4640,11 @@ fn ruled_surface_line_pcurve(
     if varying_degree != 1
         || varying_count != 2
         || varying_periodic
-        || varying_knots.as_slice() != [varying_min, varying_min, varying_max, varying_max]
+        || varying_knots != [varying_min, varying_min, varying_max, varying_max]
         || !varying_min.is_finite()
         || !varying_max.is_finite()
         || varying_min >= varying_max
-        || surface.weights.as_ref().is_some_and(|weights| {
+        || surface.weights().is_some_and(|weights| {
             (0..fixed_count).any(|fixed| {
                 let (a, b) = match fixed_axis {
                     SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
@@ -4652,7 +4711,7 @@ fn ruled_surface_line_pcurve(
         candidates,
         inverse_coordinate_tolerance(
             surface
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
                 .chain(std::iter::once(line_origin)),
@@ -4791,13 +4850,13 @@ fn synthesize_cylinder_seams(
         let Some(b) = loops.get(&face.loops[1]) else {
             continue;
         };
-        if a.coedges.len() != 1 || b.coedges.len() != 1 {
+        if a.coedges().len() != 1 || b.coedges().len() != 1 {
             continue;
         }
-        let Some(ca) = coedges.get(&a.coedges[0]) else {
+        let Some(ca) = coedges.get(&a.coedges()[0]) else {
             continue;
         };
-        let Some(cb) = coedges.get(&b.coedges[0]) else {
+        let Some(cb) = coedges.get(&b.coedges()[0]) else {
             continue;
         };
         let Some(ea) = edges.get(&ca.edge) else {
@@ -4866,12 +4925,21 @@ fn synthesize_cylinder_seams(
             direction.y / norm,
             direction.z / norm,
         );
-        let suffix = face_id.0.rsplit('#').next().unwrap_or("0");
-        let curve_id = CurveId(format!("sldprt:brep:curve#seam:{suffix}"));
-        let edge_id = EdgeId(format!("sldprt:brep:edge#seam:{suffix}"));
-        let seam_a = CoedgeId(format!("sldprt:brep:coedge#seam:{suffix}:0"));
-        let seam_b = CoedgeId(format!("sldprt:brep:coedge#seam:{suffix}:1"));
-        for id in [&curve_id.0, &edge_id.0, &seam_a.0, &seam_b.0] {
+        let suffix = face_id.as_str().rsplit('#').next().unwrap_or("0");
+        let curve_id =
+            CurveId::mint(format!("sldprt:brep:curve#seam:{suffix}")).expect("identity grammar");
+        let edge_id =
+            EdgeId::mint(format!("sldprt:brep:edge#seam:{suffix}")).expect("identity grammar");
+        let seam_a = CoedgeId::mint(format!("sldprt:brep:coedge#seam:{suffix}:0"))
+            .expect("identity grammar");
+        let seam_b = CoedgeId::mint(format!("sldprt:brep:coedge#seam:{suffix}:1"))
+            .expect("identity grammar");
+        for id in [
+            curve_id.as_str(),
+            edge_id.as_str(),
+            seam_a.as_str(),
+            seam_b.as_str(),
+        ] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_periodic_seam");
@@ -4898,12 +4966,9 @@ fn synthesize_cylinder_seams(
             id: seam_a.clone(),
             owner_loop: loop_a.clone(),
             edge: edge_id.clone(),
-            next: circle_b.clone(),
-            previous: circle_a.clone(),
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
@@ -4911,28 +4976,25 @@ fn synthesize_cylinder_seams(
             id: seam_b.clone(),
             owner_loop: loop_a.clone(),
             edge: edge_id,
-            next: circle_a.clone(),
-            previous: circle_b.clone(),
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
-        for (index, id) in ring.iter().enumerate() {
+        for id in &ring {
             if let Some(coedge_index) = coedge_indices.get(id) {
-                let coedge = &mut out.coedges[*coedge_index];
-                coedge.owner_loop = loop_a.clone();
-                coedge.previous = ring[(index + 3) % 4].clone();
-                coedge.next = ring[(index + 1) % 4].clone();
+                out.coedges[*coedge_index].owner_loop = loop_a.clone();
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_a) {
-            lp.coedges = ring.to_vec();
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(ring.to_vec(), Vec::new())
+                    .expect("periodic seam ring is nonempty"),
+            );
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = vec![loop_a];
+            face.loops = vec![loop_a].into();
         }
         removed.insert(loop_b);
     }
@@ -4952,7 +5014,7 @@ fn synthesize_sphere_seams(
     let loop_coedges = out
         .loops
         .iter()
-        .map(|lp| (&lp.id, &lp.coedges))
+        .map(|lp| (&lp.id, lp.coedges()))
         .collect::<HashMap<_, _>>();
     let coedge_edges = out
         .coedges
@@ -5053,12 +5115,18 @@ fn synthesize_sphere_seams(
                 vertex_point.position = point;
             }
         }
-        let suffix = out.edges[edge_index].id.0.rsplit('#').next().unwrap_or("0");
-        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
+        let suffix = out.edges[edge_index]
+            .id
+            .as_str()
+            .rsplit('#')
+            .next()
+            .unwrap_or("0");
+        let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam:{suffix}"))
+            .expect("identity grammar");
         annotations
-            .note(&curve_id.0, source_stream, 0)
+            .note(curve_id.as_str(), source_stream, 0)
             .tag("derived_sphere_seam");
-        annotations.exactness(&curve_id.0, Exactness::Derived);
+        annotations.exactness(curve_id.as_str(), Exactness::Derived);
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
@@ -5094,10 +5162,10 @@ fn synthesize_sphere_seams(
         let Some(lp) = loops.get(&face.loops[0]) else {
             continue;
         };
-        if lp.coedges.len() != 3 {
+        if lp.coedges().len() != 3 {
             continue;
         }
-        let all_circles = lp.coedges.iter().all(|id| {
+        let all_circles = lp.coedges().iter().all(|id| {
             coedges
                 .get(id)
                 .and_then(|coedge| edges.get(&coedge.edge))
@@ -5118,7 +5186,7 @@ fn synthesize_sphere_seams(
                 center.z + radius * axis.z,
             );
             let mut pole_vertices = lp
-                .coedges
+                .coedges()
                 .iter()
                 .filter_map(|id| coedges.get(id))
                 .filter_map(|coedge| edges.get(&coedge.edge))
@@ -5133,13 +5201,13 @@ fn synthesize_sphere_seams(
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            pole_vertices.sort_by(|left, right| left.0.cmp(&right.0));
+            pole_vertices.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             pole_vertices.dedup();
             candidates.push((
                 face_index,
                 face.id.clone(),
                 lp.id.clone(),
-                lp.coedges.clone(),
+                lp.coedges().to_vec(),
                 seam_point,
                 pole_vertices.first().cloned(),
             ));
@@ -5152,14 +5220,22 @@ fn synthesize_sphere_seams(
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
     for (face_index, _face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
-        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam-face:{face_index}"));
-        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam-face:{face_index}"));
-        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam-face:{face_index}"));
-        let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam-face:{face_index}"));
+        let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam-face:{face_index}"))
+            .expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("sldprt:brep:edge#sphere-seam-face:{face_index}"))
+            .expect("identity grammar");
+        let coedge_id = CoedgeId::mint(format!("sldprt:brep:coedge#sphere-seam-face:{face_index}"))
+            .expect("identity grammar");
+        let pcurve_id = PcurveId::mint(format!("sldprt:brep:pcurve#sphere-seam-face:{face_index}"))
+            .expect("identity grammar");
         let pole_vertex = pole_vertex.unwrap_or_else(|| {
-            let point_id = PointId(format!("sldprt:brep:point#sphere-seam-face:{face_index}"));
-            let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"));
-            for id in [&point_id.0, &vertex_id.0] {
+            let point_id =
+                PointId::mint(format!("sldprt:brep:point#sphere-seam-face:{face_index}"))
+                    .expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"))
+                    .expect("identity grammar");
+            for id in [point_id.as_str(), vertex_id.as_str()] {
                 annotations
                     .note(id, source_stream, 0)
                     .tag("derived_sphere_seam");
@@ -5177,7 +5253,12 @@ fn synthesize_sphere_seams(
             });
             vertex_id
         });
-        for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {
+        for id in [
+            curve_id.as_str(),
+            edge_id.as_str(),
+            coedge_id.as_str(),
+            pcurve_id.as_str(),
+        ] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
@@ -5202,10 +5283,11 @@ fn synthesize_sphere_seams(
                 origin: cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2),
                 direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, std::f64::consts::TAU]),
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some([0.0, std::f64::consts::TAU]),
+                None,
+            ),
         });
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
@@ -5213,63 +5295,89 @@ fn synthesize_sphere_seams(
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: ring[0].clone(),
-            previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
                 parameter_range: Some([0.0, std::f64::consts::TAU]),
             }],
         });
-        for (index, id) in ring.iter().enumerate() {
-            if let Some(coedge_index) = coedge_indices.get(id) {
-                let coedge = &mut out.coedges[*coedge_index];
-                coedge.next = ring[(index + 1) % ring.len()].clone();
-                coedge.previous = ring[(index + ring.len() - 1) % ring.len()].clone();
-            }
-        }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
-            lp.coedges = ring;
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(ring, Vec::new())
+                    .expect("sphere seam ring is nonempty"),
+            );
         }
     }
 }
 
-fn emit_curve(out: &mut Brep, carrier: &Carrier) {
-    if let CarrierGeometry::Curve(geo) = &carrier.geometry {
-        out.curves.push(Curve {
-            id: CurveId(id_curve(carrier.attr)),
-            source_object: None,
-            geometry: geo.clone(),
-        });
-    }
+fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
+    out.curves.push(Curve {
+        id: CurveId::mint(id_curve(carrier.attr)).expect("identity grammar"),
+        source_object: None,
+        geometry: carrier.geometry.clone(),
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::unique_face_colors;
     use crate::brep::entity;
-    use crate::brep::topology::{Record, Tables};
+    use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
     use cadmpeg_ir::topology::Color;
+    use cadmpeg_ir::topology::Sense;
+
+    fn test_nurbs_curve(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<cadmpeg_ir::math::Point3>,
+        weights: Option<Vec<f64>>,
+    ) -> cadmpeg_ir::geometry::NurbsCurve {
+        cadmpeg_ir::geometry::NurbsCurve::new(degree, knots, control_points, weights, false)
+            .expect("valid test NURBS curve")
+    }
+
+    // The fixture helper states each independent NURBS grid parameter explicitly.
+    #[allow(clippy::too_many_arguments)]
+    fn test_nurbs_surface(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_count: u32,
+        v_count: u32,
+        control_points: Vec<cadmpeg_ir::math::Point3>,
+        weights: Option<Vec<f64>>,
+    ) -> cadmpeg_ir::geometry::NurbsSurface {
+        cadmpeg_ir::geometry::NurbsSurface::new(
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            weights,
+            false,
+            false,
+            false,
+        )
+        .expect("valid test NURBS surface")
+    }
 
     #[test]
     fn line_edge_parameters_convert_from_metres_to_millimetres() {
-        let carrier = crate::brep::Carrier {
+        let carrier = crate::brep::CurveCarrier {
             attr: 1,
             offset: 0,
             end: 0,
-            geometry: crate::brep::CarrierGeometry::Curve(
-                cadmpeg_ir::geometry::CurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point3::new(0.0, 17.5, 0.0),
-                    direction: cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
-                },
-            ),
-            frame: None,
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 17.5, 0.0),
+                direction: cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+            },
             parameter_range: Some([-0.014, 0.0165]),
-            orientation_reversed: false,
         };
 
         let endpoints = [
@@ -5282,29 +5390,42 @@ mod tests {
         );
     }
 
-    fn topology_record(attr: u16, refs: Vec<u16>) -> Record {
-        Record {
+    fn bridge_record(attr: u16, refs: [u16; 5]) -> Bridge {
+        Bridge {
             attr,
-            sequence: None,
+            sequence: 0,
             refs,
-            marker: None,
-            xyz_m: None,
-            xyz_offset: None,
+            sense: Sense::Forward,
             owner: None,
+            offset: 0,
+        }
+    }
+
+    fn loop_record(attr: u16, refs: [u16; 4]) -> Loop {
+        Loop {
+            attr,
+            refs,
+            offset: 0,
+        }
+    }
+
+    fn coedge_record(attr: u16, refs: [u16; 9]) -> Coedge {
+        Coedge {
+            attr,
+            refs,
+            sense: Sense::Forward,
             offset: 0,
         }
     }
 
     #[test]
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
-        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables
-            .loops
-            .insert(20, topology_record(20, vec![0, 40, 11, 0]));
+        tables.loops.insert(20, loop_record(20, [0, 40, 11, 0]));
         tables
             .coedges
-            .insert(40, topology_record(40, vec![0, 0, 0, 40]));
+            .insert(40, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5313,14 +5434,12 @@ mod tests {
 
     #[test]
     fn face_walk_rejects_a_ring_owned_by_another_loop() {
-        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables
-            .loops
-            .insert(20, topology_record(20, vec![0, 40, 10, 0]));
+        tables.loops.insert(20, loop_record(20, [0, 40, 10, 0]));
         tables
             .coedges
-            .insert(40, topology_record(40, vec![0, 21, 0, 40]));
+            .insert(40, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5434,13 +5553,7 @@ mod tests {
             cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("cylinder start"),
             cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("cylinder end"),
         ];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: endpoints.to_vec(),
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.2,
@@ -5458,11 +5571,17 @@ mod tests {
         let (geometry, range, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("support parameterization");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 3.0));
-        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(0.5, 2.0));
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(0.0, 3.0)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(0.5, 2.0)
+        );
         assert_eq!(range, [0.0, 1.0]);
         assert_eq!(source, super::IntersectionPcurveSource::StoredCache);
 
@@ -5497,13 +5616,7 @@ mod tests {
             .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("cylinder point"))
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.011,
@@ -5513,12 +5626,14 @@ mod tests {
         let (geometry, _, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("analytic support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points
-            .iter()
-            .zip([(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)])
+        for (point, expected) in
+            nurbs
+                .control_points()
+                .iter()
+                .zip([(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)])
         {
             assert!((point.u - expected.0).abs() < 1.0e-12);
             assert!((point.v - expected.1).abs() < 1.0e-12);
@@ -5553,13 +5668,7 @@ mod tests {
             .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("torus point"))
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.08,
@@ -5569,10 +5678,10 @@ mod tests {
         let (geometry, _, _) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("torus support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points.iter().zip(expected) {
+        for (point, expected) in nurbs.control_points().iter().zip(expected) {
             assert!((point.u - expected.0).abs() < 1.0e-12);
             assert!((point.v - expected.1).abs() < 1.0e-12);
         }
@@ -5580,24 +5689,21 @@ mod tests {
 
     #[test]
     fn nurbs_intersection_chart_inverts_with_continuation_seeds() {
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let nurbs = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone());
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
@@ -5606,13 +5712,7 @@ mod tests {
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 1.0e-9,
@@ -5622,10 +5722,10 @@ mod tests {
         let (geometry, _, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("NURBS support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points.iter().zip(expected) {
+        for (point, expected) in nurbs.control_points().iter().zip(expected) {
             assert!((point.u - expected.0).abs() < 1.0e-10);
             assert!((point.v - expected.1).abs() < 1.0e-10);
         }
@@ -5634,36 +5734,27 @@ mod tests {
 
     #[test]
     fn nurbs_intersection_chart_requires_a_complete_chord_certificate() {
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let nurbs = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs);
         let endpoints = [
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
         ];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: endpoints.to_vec(),
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = |fit_tolerance_mm| super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm,
@@ -5692,46 +5783,57 @@ mod tests {
     fn canonical_edge_direction_uses_explicit_or_unique_forward_coedge() {
         use std::collections::HashMap;
 
-        let record = |attr, refs, marker| super::Record {
+        let record = |attr, refs, sense| Coedge {
             attr,
-            sequence: None,
             refs,
-            marker,
-            xyz_m: None,
-            xyz_offset: None,
-            owner: None,
+            sense,
+            offset: 0,
+        };
+        let edge = |attr, references| EdgeUse {
+            attr,
+            references,
+            sequence: 0,
             offset: 0,
         };
         let mut coedges = HashMap::from([
-            (10, record(10, vec![0, 0, 0, 0, 101, 0, 7], Some(0x2d))),
-            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7], Some(0x2b))),
+            (
+                10,
+                record(10, [0, 0, 0, 0, 101, 0, 7, 0, 0], Sense::Reversed),
+            ),
+            (
+                11,
+                record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0], Sense::Forward),
+            ),
         ]);
-        let prefixed_edge = record(7, vec![0, 0, 0, 300, 0, 0], None);
+        let prefixed_edge = edge(7, EdgeReferences::Compact { curve: 300 });
 
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
             Some(11)
         );
 
-        let bare_edge = record(7, vec![11, 0, 0, 300, 0, 0], None);
+        let bare_edge = edge(7, EdgeReferences::Bare([11, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&bare_edge), &coedges),
             Some(11)
         );
 
-        let sentinel_edge = record(7, vec![1, 0, 0, 300, 0, 0], None);
+        let sentinel_edge = edge(7, EdgeReferences::Bare([1, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&sentinel_edge), &coedges),
             Some(11)
         );
 
-        let reversed_edge = record(7, vec![10, 0, 0, 300, 0, 0], None);
+        let reversed_edge = edge(7, EdgeReferences::Bare([10, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&reversed_edge), &coedges),
             None
         );
 
-        coedges.insert(12, record(12, vec![0, 0, 0, 0, 103, 0, 7], Some(0x2b)));
+        coedges.insert(
+            12,
+            record(12, [0, 0, 0, 0, 103, 0, 7, 0, 0], Sense::Forward),
+        );
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
             None
@@ -5742,22 +5844,18 @@ mod tests {
     fn boundary_coedge_uses_ring_endpoint_but_reciprocal_twin_supplies_edge_end() {
         use std::collections::HashMap;
 
-        let record = |attr, refs| super::Record {
+        let record = |attr, refs| Coedge {
             attr,
-            sequence: None,
             refs,
-            marker: Some(0x2b),
-            xyz_m: None,
-            xyz_offset: None,
-            owner: None,
+            sense: Sense::Forward,
             offset: 0,
         };
-        let boundary = HashMap::from([(10, record(10, vec![0, 0, 0, 0, 101, 10, 7]))]);
+        let boundary = HashMap::from([(10, record(10, [0, 0, 0, 0, 101, 10, 7, 0, 0]))]);
         assert_eq!(super::edge_end_vuse(10, 102, &boundary), 102);
 
         let reciprocal = HashMap::from([
-            (10, record(10, vec![0, 0, 0, 0, 101, 11, 7])),
-            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7])),
+            (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
+            (11, record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0])),
         ]);
         assert_eq!(super::edge_end_vuse(10, 103, &reciprocal), 102);
     }
@@ -5766,10 +5864,13 @@ mod tests {
     fn normalized_surface_parameter_reversal_toggles_face_sense() {
         use cadmpeg_ir::topology::Sense;
 
-        assert_eq!(super::surface_sense(0x2b, false), Sense::Forward);
-        assert_eq!(super::surface_sense(0x2d, false), Sense::Reversed);
-        assert_eq!(super::surface_sense(0x2b, true), Sense::Reversed);
-        assert_eq!(super::surface_sense(0x2d, true), Sense::Forward);
+        assert_eq!(super::surface_sense(Sense::Forward, false), Sense::Forward);
+        assert_eq!(
+            super::surface_sense(Sense::Reversed, false),
+            Sense::Reversed
+        );
+        assert_eq!(super::surface_sense(Sense::Forward, true), Sense::Reversed);
+        assert_eq!(super::surface_sense(Sense::Reversed, true), Sense::Forward);
     }
 
     #[test]
@@ -5778,32 +5879,37 @@ mod tests {
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
         let face = |id: &str, lp: &str| Face {
-            id: FaceId(id.into()),
-            shell: ShellId("shell".into()),
-            surface: SurfaceId(format!("surface-{id}")),
+            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:entity#surface-{id}"))
+                .expect("identity grammar"),
             sense: Sense::Forward,
-            loops: vec![LoopId(lp.into())],
+            loops: vec![LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar")]
+                .into(),
             name: None,
             color: None,
             tolerance: None,
         };
         let lp = |id: &str, face: &str, coedge: &str| Loop {
-            id: LoopId(id.into()),
-            face: FaceId(face.into()),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![CoedgeId(coedge.into())],
-            vertex_uses: Vec::new(),
+            id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         };
         let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
-            id: CoedgeId(id.into()),
-            owner_loop: LoopId(lp.into()),
-            edge: EdgeId("edge".into()),
-            next: CoedgeId(id.into()),
-            previous: CoedgeId(id.into()),
-            radial_next: CoedgeId(radial.into()),
+            id: CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            owner_loop: LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar"),
+            edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
+            radial_next: CoedgeId::mint(format!("test:model:entity#{radial}"))
+                .expect("identity grammar"),
             sense,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         };
         let mut brep = super::Brep {
@@ -5850,7 +5956,7 @@ mod tests {
                 node_id: 7,
                 topology_refs: [7, 8, 9, 10, 1, 12, 11],
                 ownership_refs: Vec::new(),
-                body_type: 3,
+                kind: BodyKind::Sheet,
                 offset: 1,
                 end: 2,
             }],
@@ -5866,7 +5972,6 @@ mod tests {
                     attr: 11,
                     node_id: 244,
                     refs: [1, 3, 39, 1, 44],
-                    kind: b'V',
                     offset: 5,
                     end: 6,
                 },
@@ -5874,7 +5979,6 @@ mod tests {
                     attr: 39,
                     node_id: 815,
                     refs: [1, 3, 1, 11, 7],
-                    kind: b'S',
                     offset: 7,
                     end: 8,
                 },
@@ -5882,9 +5986,8 @@ mod tests {
             faces: vec![FaceNode {
                 attr: 100,
                 node_id: 900,
-                attribute_chain: 1,
                 refs: [1, 1, 49, 7, 8],
-                sense: 0x2b,
+                sense: Sense::Forward,
                 offset: 9,
                 end: 10,
             }],
@@ -5892,13 +5995,11 @@ mod tests {
         let mut tables = Tables::default();
         tables.bridges.insert(
             100,
-            Record {
+            Bridge {
                 attr: 100,
-                sequence: None,
-                refs: vec![1, 1, 49, 7, 8],
-                marker: Some(0x2b),
-                xyz_m: None,
-                xyz_offset: None,
+                sequence: 0,
+                refs: [1, 1, 49, 7, 8],
+                sense: Sense::Forward,
                 owner: None,
                 offset: 11,
             },
@@ -5914,6 +6015,7 @@ mod tests {
             facts
                 .hierarchies(&HashSet::from([100]))
                 .expect("typed hierarchy")[0]
+                .body
                 .kind,
             BodyKind::Sheet
         );
@@ -5921,13 +6023,11 @@ mod tests {
 
     #[test]
     fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
-        let bridge = |attr, surface, offset| super::Record {
+        let bridge = |attr, surface, offset| Bridge {
             attr,
-            sequence: None,
-            refs: vec![0, 0, 0, 0, surface],
-            marker: Some(0x2b),
-            xyz_m: None,
-            xyz_offset: None,
+            sequence: 0,
+            refs: [0, 0, 0, 0, surface],
+            sense: Sense::Forward,
             owner: Some(700),
             offset,
         };
@@ -5955,9 +6055,9 @@ mod tests {
             BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
             ProceduralSurfaceDefinition,
         };
-        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 
-        let spine = CurveId("spine".into());
+        let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
         let mut brep = super::Brep {
             curves: vec![Curve {
                 id: spine.clone(),
@@ -5967,19 +6067,17 @@ mod tests {
                 },
                 source_object: None,
             }],
-            procedural_surfaces: vec![ProceduralSurface {
-                id: ProceduralSurfaceId("blend".into()),
-                surface: SurfaceId("surface".into()),
-                definition: ProceduralSurfaceDefinition::Blend {
+            procedural_surfaces: vec![ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:model:entity#blend").expect("identity grammar"),
+                ProceduralSurfaceDefinition::Blend {
                     supports: [None, None],
                     spine: Some(spine.clone()),
                     radius: BlendRadiusLaw::Constant { signed_radius: 0.5 },
                     cross_section: BlendCrossSection::Circular,
                     native: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            }],
+                None,
+            )],
             ..Default::default()
         };
 
@@ -6016,24 +6114,21 @@ mod tests {
 
     #[test]
     fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(2.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let geometry = match super::ruled_surface_line_pcurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::V,
@@ -6055,14 +6150,14 @@ mod tests {
 
     #[test]
     fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![-0.1, -0.1, 0.9, 0.9],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![-0.1, -0.1, 0.9, 0.9],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, -1.0),
@@ -6070,22 +6165,18 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0),
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, 3.0),
             ],
-            weights: Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: surface.u_knots.clone(),
-            control_points: vec![
+            Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
+        );
+        let curve = test_nurbs_curve(
+            2,
+            surface.u_knots().to_vec(),
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
             ],
-            weights: Some(vec![1.0, 2.0, 1.0]),
-            periodic: false,
-        };
+            Some(vec![1.0, 2.0, 1.0]),
+        );
         let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve) {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
@@ -6102,34 +6193,30 @@ mod tests {
 
     #[test]
     fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![-1.0, -1.0, 2.0, 2.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![-1.0, -1.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
         let super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line {
             origin,
@@ -6155,14 +6242,14 @@ mod tests {
 
     #[test]
     fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 3,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            2,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            2,
+            3,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
@@ -6170,22 +6257,18 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            2,
+            vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9]);
         assert!(matches!(
             resolution,
@@ -6209,34 +6292,30 @@ mod tests {
 
     #[test]
     fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 1.2, 1.0, 1.2]),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![-1.0, -1.0, 2.0, 2.0],
-            control_points: vec![
+            Some(vec![1.0, 1.2, 1.0, 1.2]),
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![-1.0, -1.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.4 / 1.4, 0.0),
             ],
-            weights: Some(vec![0.8, 1.4]),
-            periodic: false,
-        };
+            Some(vec![0.8, 1.4]),
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
         assert!(matches!(
             resolution,
@@ -6260,14 +6339,14 @@ mod tests {
 
     #[test]
     fn degree_one_nurbs_cache_pcurve_keeps_measured_chordal_error() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0),
@@ -6275,75 +6354,60 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]);
         let super::NurbsPcurveResolution::Cache {
-            geometry:
-                cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                    degree,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic,
-                },
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs },
             fit_tolerance,
         } = resolution
         else {
             panic!("degree-one cache was not accepted");
         };
-        assert_eq!(degree, 1);
-        assert_eq!(knots, curve.knots);
-        assert_eq!(control_points.len(), 2);
-        assert!(weights.is_none());
-        assert!(!periodic);
+        assert_eq!(nurbs.degree(), 1);
+        assert_eq!(nurbs.knots(), curve.knots());
+        assert_eq!(nurbs.control_points().len(), 2);
+        assert!(nurbs.weights().is_none());
+        assert!(!nurbs.periodic());
         assert!(fit_tolerance > 0.4);
         assert!(fit_tolerance < 0.6);
     }
 
     #[test]
     fn off_surface_nurbs_edge_is_classified_before_cache_inversion() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 10.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 10.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]),
             super::NurbsPcurveResolution::OffSurface
@@ -6352,14 +6416,14 @@ mod tests {
 
     #[test]
     fn v_linear_surface_line_has_axis_symmetric_inverse() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
@@ -6367,11 +6431,8 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let geometry = match super::ruled_surface_line_pcurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::U,
@@ -6393,14 +6454,14 @@ mod tests {
 
     #[test]
     fn repeated_ruled_surface_line_candidates_are_ambiguous() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 3,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            2,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            2,
+            3,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -6408,11 +6469,8 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::ruled_surface_line_pcurve(
                 &surface,
@@ -6426,17 +6484,16 @@ mod tests {
 
     #[test]
     fn repeated_nurbs_endpoint_candidates_are_ambiguous() {
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
+        let curve = test_nurbs_curve(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),),
             super::InverseResolution::Ambiguous
@@ -6446,19 +6503,21 @@ mod tests {
     #[test]
     fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
         use cadmpeg_ir::annotations::AnnotationBuilder;
-        use cadmpeg_ir::geometry::{Curve, NurbsCurve, Surface};
+        use cadmpeg_ir::geometry::{Curve, Surface};
         use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
         use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
-        let surface_id = SurfaceId("surface".into());
-        let curve_id = CurveId("curve".into());
-        let loop_id = LoopId("loop".into());
-        let edge_id = EdgeId("edge".into());
-        let start_vertex = VertexId("start-vertex".into());
-        let end_vertex = VertexId("end-vertex".into());
-        let start_point = PointId("start-point".into());
-        let end_point = PointId("end-point".into());
-        let coedge_id = cadmpeg_ir::ids::CoedgeId("coedge".into());
+        let surface_id = SurfaceId::mint("test:model:entity#surface").expect("identity grammar");
+        let curve_id = CurveId::mint("test:model:entity#curve").expect("identity grammar");
+        let loop_id = LoopId::mint("test:model:entity#loop").expect("identity grammar");
+        let edge_id = EdgeId::mint("test:model:entity#edge").expect("identity grammar");
+        let start_vertex =
+            VertexId::mint("test:model:entity#start-vertex").expect("identity grammar");
+        let end_vertex = VertexId::mint("test:model:entity#end-vertex").expect("identity grammar");
+        let start_point = PointId::mint("test:model:entity#start-point").expect("identity grammar");
+        let end_point = PointId::mint("test:model:entity#end-point").expect("identity grammar");
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge").expect("identity grammar");
         let mut brep = super::Brep {
             surfaces: vec![Surface {
                 id: surface_id.clone(),
@@ -6472,47 +6531,46 @@ mod tests {
             }],
             curves: vec![Curve {
                 id: curve_id.clone(),
-                geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(NurbsCurve {
-                    degree: 2,
-                    knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                    control_points: vec![
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(test_nurbs_curve(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 1000.0),
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
                     ],
-                    weights: None,
-                    periodic: false,
-                }),
+                    None,
+                )),
                 source_object: None,
             }],
             faces: vec![Face {
-                id: FaceId("face".into()),
-                shell: cadmpeg_ir::ids::ShellId("shell".into()),
+                id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell")
+                    .expect("identity grammar"),
                 surface: surface_id,
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()],
+                loops: vec![loop_id.clone()].into(),
                 name: None,
                 color: None,
                 tolerance: None,
             }],
             loops: vec![Loop {
                 id: loop_id.clone(),
-                face: FaceId("face".into()),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::default(),
-                coedges: vec![coedge_id.clone()],
-                vertex_uses: Vec::new(),
+                face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             }],
             coedges: vec![Coedge {
                 id: coedge_id,
                 owner_loop: loop_id,
                 edge: edge_id.clone(),
-                next: cadmpeg_ir::ids::CoedgeId("coedge".into()),
-                previous: cadmpeg_ir::ids::CoedgeId("coedge".into()),
-                radial_next: cadmpeg_ir::ids::CoedgeId("coedge".into()),
+                radial_next: cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge")
+                    .expect("identity grammar"),
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             }],
             edges: vec![Edge {
                 id: edge_id,

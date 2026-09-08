@@ -5,7 +5,7 @@ It provides the `CadIr` data model, codec interfaces, validation, structural
 diffing, JSON serialization, and explicit representations of source fidelity
 and decode loss.
 
-Schema detail lives in [CAD IR version 5][ir-spec].
+Schema detail lives in [CAD IR version 6][ir-spec].
 
 ## Install
 
@@ -44,7 +44,7 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` accepts exactly `ir_version: "5"`.
+canonical arena order. `CadIr::from_json` accepts exactly `ir_version: "7"`.
 The `model.subds` arena is required, including when empty. `diff` compares
 units, tolerances, annotations, and entity arenas by stable identity.
 
@@ -75,7 +75,7 @@ byte offsets.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 5][ir-spec]
+- [CAD IR version 6][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

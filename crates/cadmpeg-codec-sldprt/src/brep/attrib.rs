@@ -41,19 +41,17 @@ const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
 #[derive(Debug, Clone)]
-pub struct FaceAtom {
+pub struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
     pub face_attr: u16,
-    /// Native source id of the history feature that produced the face.
-    pub feature_source_id: u32,
-    /// Feature-local face identity within that producer.
-    pub local_face_id: u32,
-    /// Optional persistent path fields following the feature-local identity.
-    pub persistent_tail: Vec<u32>,
-    /// Byte offset of the attribute-instance record.
-    pub offset: usize,
-    /// Emitted face identity, resolved once the graph retains its faces.
-    pub target: Option<String>,
+    pub identity: super::PersistentFaceIdentity,
+}
+
+/// A persistent identity bound to an emitted face.
+#[derive(Debug, Clone)]
+pub struct FaceAtom {
+    pub face: cadmpeg_ir::ids::FaceId,
+    pub identity: super::PersistentFaceIdentity,
 }
 
 /// One body's last modifying history ordinal.
@@ -63,8 +61,6 @@ pub struct BodyModifier {
     pub body_attr: u16,
     /// One-based ordinal in the ordered Keywords modeling-feature records.
     pub history_ordinal: u32,
-    /// Byte offset of the attribute-instance record.
-    pub offset: usize,
     /// Emitted body identity, resolved once the graph retains its bodies.
     pub target: Option<String>,
 }
@@ -287,13 +283,13 @@ fn atom_payload<'a>(
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
-pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
+pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == ATOM_ID) {
         return Vec::new();
     }
     let lists = integer_lists(buf);
-    let mut found = HashMap::<u16, Option<FaceAtom>>::new();
+    let mut found = HashMap::<u16, Option<RawFaceAtom>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
@@ -316,24 +312,24 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
         let Some(values) = atom_payload(buf, p + attr_inst::LEN, &lists) else {
             continue;
         };
-        let atom = FaceAtom {
+        let atom = RawFaceAtom {
             face_attr,
-            feature_source_id: values[ATOM_FEATURE],
-            local_face_id: values[ATOM_LOCAL],
-            persistent_tail: values[ATOM_LOCAL + 1..].to_vec(),
-            offset: off,
-            target: None,
+            identity: super::PersistentFaceIdentity {
+                feature_source_id: values[ATOM_FEATURE],
+                local_id: values[ATOM_LOCAL],
+                trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
+            },
         };
         match found.entry(face_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(atom));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get().as_ref().is_some_and(|previous| {
-                    previous.feature_source_id != atom.feature_source_id
-                        || previous.local_face_id != atom.local_face_id
-                        || previous.persistent_tail != atom.persistent_tail
-                }) {
+                if entry
+                    .get()
+                    .as_ref()
+                    .is_some_and(|previous| previous.identity != atom.identity)
+                {
                     *entry.get_mut() = None;
                 }
             }
@@ -379,7 +375,6 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         let modifier = BodyModifier {
             body_attr,
             history_ordinal: values[0],
-            offset: off,
             target: None,
         };
         match found.get_mut(&body_attr) {
@@ -471,15 +466,15 @@ mod tests {
         let atoms = scan(&stream(&[74, 75, 1_390_698_820, 0, 3], 333));
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 333);
-        assert_eq!(atoms[0].feature_source_id, 75);
-        assert_eq!(atoms[0].local_face_id, 3);
+        assert_eq!(atoms[0].identity.feature_source_id, 75);
+        assert_eq!(atoms[0].identity.local_id, 3);
     }
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
         let atoms = scan(&stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333));
         assert_eq!(atoms.len(), 1);
-        assert_eq!(atoms[0].persistent_tail, vec![10, 8]);
+        assert_eq!(atoms[0].identity.trailing_fields, vec![10, 8]);
     }
 
     #[test]

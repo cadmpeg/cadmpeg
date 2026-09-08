@@ -11,12 +11,17 @@ Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may u
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
 
-The write envelope targets exactly schema 4/file 1. A retained document write regenerates the ZIP
-container deterministically, writes `Document.xml` first, preserves every unedited XML record and
-every named side entry, and serializes checked leaf-value edits with XML escaping. An edit to a
-nested value without a typed serializer is refused rather than flattening or discarding children.
-Schema/file targets outside the declared band and retained-document transcoding across bands are
-explicitly refused.
+The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
+retained document write regenerates the ZIP container deterministically, writes `Document.xml`
+first, preserves every unedited XML record and every named side entry, and serializes checked
+leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
+declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
+without a typed serializer is refused rather than flattening or discarding children.
+Retained-document transcoding across bands is explicitly refused: the writer regenerates no
+`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
+by name rather than emitted. A preserving write of a source whose retained document graph is
+unusable is refused with the source's own dialect and the catalog, never silently rewritten to
+schema 4.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. It materializes the same native graph
@@ -571,14 +576,14 @@ A present zero `ElementCount` requires every array-valued field to be empty. The
 single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
 nonzero count from the populated array-valued fields.
 
-Native namespace version 5 extends occurrences with ordered link-array element placements and
+The native namespace extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
 single-precision or all double-precision components; exact entry length selects the precision.
 Placement records carry position plus quaternion, while scale records carry three components.
 Zero quaternions, non-finite values, malformed lengths, and non-empty list counts that disagree with
 `ElementCount` are invalid.
 
-Native namespace version 6 adds ordered assembly-joint records. Grounded constraints retain their
+The native namespace holds ordered assembly-joint records. Grounded constraints retain their
 object and grounding frame. Other joints retain the persisted enumeration family, two connector
 targets with each target's ordered subelement path, and both connector-local frames. Angular,
 linear, limit-enable, detach, and suppression values remain independently named parameters. Nested
@@ -620,7 +625,7 @@ operand/frame cardinality, component references, finite values, and ordered inte
 
 ## 10. Drawing graph
 
-Native namespace version 7 adds a `drawings` arena for every TechDraw page, template, view,
+The native namespace holds a `drawings` arena for every TechDraw page, template, view,
 dimension, and annotation subtype. Pages retain ordered view membership and template identity.
 Views and dimensions retain ordered local or external source objects with their subelement paths.
 Position, scale, projection, direction, rotation, caption, format, measurement, and lock fields keep
@@ -827,7 +832,7 @@ orders, and numeric invariants are validated independently of the FCStd native n
 GUI records retain view-provider identity separately from application-object identity. Visibility,
 display modes, materials, colors, line and point styles, cameras, view state, tree state, clipping,
 thumbnail references, and display assets remain presentation records linked to their owners.
-Native namespace version 3 adds ordered `gui_view_providers` and `gui_properties` arenas. A provider
+The native namespace holds ordered `gui_view_providers` and `gui_properties` arenas. A provider
 retains its name, optional application-object link, expansion state, order, and exact XML. Each GUI
 property retains its owner, runtime type, status, ordered value elements, referenced side entries,
 exact XML, and byte range. GUI-only providers remain valid named records rather than being attached
@@ -1153,15 +1158,15 @@ Neutral points are transformed once into model space and retain the owning appli
 property identity. Missing transforms mean identity; malformed transforms, non-finite
 coordinates, excessive counts, truncation, and trailing bytes are rejected.
 
-Native namespace version 8 adds an ordered `applications` census covering every declared object
+The native namespace holds an ordered `applications` census covering every declared object
 exactly once. Each record retains the exact runtime type, its application-domain prefix, ordered
 owned properties, ordered dependencies, and referenced side entries. A record is marked as carrying
 an inert payload when it owns a Python-object property. Decoding never imports, instantiates, or
 executes serialized application code. Validation derives the census again from the authoritative
 object/property graph and rejects missing, duplicate, reordered, or cross-owned records.
 
-Native namespace version 18 makes application preservation independently auditable. Every
-application record now retains its object-data order, exact `Document.xml` span and bytes, length,
+Application preservation is independently auditable. Every
+application record retains its object-data order, exact `Document.xml` span and bytes, length,
 and SHA-256. Every owned property has a nested preservation record containing owner and property
 identity, runtime type, typed persistence family, order, links, exact span and bytes, length,
 SHA-256, inert-code classification, and complete referenced payload records. Each payload retains
@@ -1169,7 +1174,7 @@ its global entry identity, exact name, complete logical bytes, length, and SHA-2
 reconstructs the complete preservation graph from authoritative object, property, and entry arenas
 and rejects any byte, digest, ownership, ordering, link, or payload mismatch.
 
-Native namespace version 9 separates semantic annotation records from their drawing presentation.
+The native namespace separates semantic annotation records from their drawing presentation.
 Annotation, dimension, balloon, leader, and symbol objects retain ordered visible text, all model
 and subelement references grouped by source property, exact parameter records, and referenced
 assets. Drawing records independently retain every link-valued relationship, including projection
@@ -1277,7 +1282,7 @@ from an absent target and from an unresolved nonempty reference. Local referenti
 therefore accepts only explicitly null empty targets and continues to reject every nonempty
 missing object identity.
 
-Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
+The native namespace holds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records
 cover the camera, unrecognized active-view data, clipping or section state, and future GUI state
@@ -1293,7 +1298,7 @@ property, or GUI state that references the bytes. Uninterpreted embedded assets 
 opaque. These claims are sorted and rejected on overlap before the ledger is emitted; validation
 then requires every logical entry to close without gaps.
 
-Native namespace version 19 adds a deterministic `byte_coverage` report. It records physical
+The native namespace holds a deterministic `byte_coverage` report. It records physical
 archive length and span count, logical entry length and span count, byte totals by the closed
 `structural`, `typed`, and `named_opaque` classes, and the sorted entries containing opaque bytes.
 Its `exact` flag is true only when the physical archive and every nonempty logical entry partition
@@ -1302,17 +1307,17 @@ re-derives the report, rejects missing or unknown logical entries, validates eve
 span owner, requires structural spans to be ownerless, and rechecks retained entry lengths and
 SHA-256 digests. Zero-length entries are represented by an empty partition and still counted.
 
-Native namespace version 20 gives a zero-byte exact-shape side entry the typed `empty` payload
+A zero-byte exact-shape side entry has the typed `empty` payload
 form. This is FreeCAD's persisted representation of a null or suppressed `PropertyPartShape`, not
 a malformed text B-rep. Only the side entry named by the direct `Part` carrier is parsed as a
 shape; element-map, placement-list, scale-list, and other side entries owned by the same property
 remain in their own typed or named-opaque carrier.
 
-Native namespace version 22 separates side-entry byte ownership from semantic references. A
+The native namespace separates side-entry byte ownership from semantic references. A
 logical side-entry span has its `EntryRecord` as its single owner. `EntryRecord.referenced_by` is
 the ordered many-reference relation and can contain more than one property or GUI record.
 
-Native namespace version 11 adds attachment records. Support links retain ordered object and
+The native namespace holds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
 `AttachmentOffset` remain distinct matrices. Neutral geometry composes them as
 `Placement × AttachmentOffset` when both are present, and uses the sole present matrix otherwise.
@@ -1341,7 +1346,7 @@ their Euclidean norm must be finite and positive, and the components are normali
 rotation matrix is formed. The non-selected representation is ignored. Duplicate carriers or
 values, a zero quaternion, or a non-finite quaternion norm are malformed.
 
-Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
+The native namespace holds one carrier-census record per exact-shape payload. Census records
 identify text versus binary framing, the declared topology version, recursive carrier-family
 counts, all eight topology families, and polygon and triangulation counts.
 

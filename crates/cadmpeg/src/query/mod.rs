@@ -2,7 +2,7 @@
 //! Named projections over cadmpeg JSON artifacts.
 //!
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
-//! produces — a decoded CADIR document, a versioned command report, or a
+//! produces — a decoded CADIR document, a CLI command report, or a
 //! `<stem>.fidelity.json` decode sidecar — detects which one it was given, and prints one
 //! named view. Aggregate views print tab-separated rows; `item`, `graph`, and
 //! `join` print pretty-printed JSON records (or a TSV projection with `--fields`). It
@@ -23,11 +23,13 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
+use cadmpeg_ir::SourceMeta;
 use clap::{Args, Subcommand};
 use serde::de::{IgnoredAny, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
-
-use crate::commands::CLI_SCHEMA_VERSION;
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 
 pub use fidelity::FidelityArgs;
 pub use graph::GraphArgs;
@@ -38,9 +40,90 @@ pub use schema::SchemaArgs;
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
 pub enum QueryView {
+    /// Aggregate artifact projections with common input and output arguments.
+    #[command(flatten)]
+    Aggregate(AggregateView),
+    /// One record by id.
+    ///
+    /// Arena names are the dotted keys from `query counts --json`
+    /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
+    /// `model.<arena>`). IDs match exactly, or as a unique suffix of the
+    /// JSON-string `id` field. With no IDs, prints the first record;
+    /// `--head N` prints the first N. Default output is pretty-printed JSON
+    /// (blank-line separated), not TSV — nested records do not fit the other
+    /// views' table convention. `--fields a,b.c` projects those paths as TSV
+    /// (null/absent → empty cell; arrays/objects → compact JSON; tab/newline
+    /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
+    #[command(visible_alias = "record", alias = "get")]
+    Item(ItemArgs),
+    /// Fields of an entity type.
+    ///
+    /// `query schema types ARENA` prints what this binary's IR types allow — every
+    /// field of an arena's element type, which fields are optional, and
+    /// every variant of a tagged union (`FaceSelection`'s `value` is
+    /// absent, a string, an array, or an object depending on `kind`; the
+    /// discriminator of a feature's `definition` is
+    /// `.definition.definition`). Bare `query schema` lists every model
+    /// arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape.
+    ///
+    /// Native arena records are per-document. `query schema file FILE ARENA`
+    /// infers each dotted path's presence, JSON type, an example, and a
+    /// `relation` column (`id` / `ref` / `refs`) from the records
+    /// (`layout_prefix  435/710  array`). Unknown arena names
+    /// list every addressable arena and its entry count. Which arenas a
+    /// given document actually has also comes from `query counts FILE`.
+    Schema(SchemaArgs),
+    /// Walk identity references from start records.
+    ///
+    /// Accepts a CADIR document. Arena names and ID selection match
+    /// `query item` (`model.<arena>` or `native.<codec>.<arena>`; suffix
+    /// IDs; `--head` when IDs are omitted). `--hops N` (default 1) is the
+    /// maximum edge length from a start; `0` emits only the starts.
+    /// Default walk follows every string that equals another record's `id`
+    /// in this document. The record's own `id` is not an outgoing edge.
+    /// Array members use the array's path (`links`), not `links.0`; an
+    /// array of objects uses the nested field path without indices
+    /// (`pcurves.pcurve`). `--follow PATH,...` keeps only those field
+    /// paths (exact match). `--reverse` walks incoming references.
+    /// Discover follow paths with `query schema file FILE ARENA` (`relation`
+    /// column). Arena names come from `query counts`. `--max-paths`
+    /// (default 10000) caps explosion: a truncated walk prints a note on
+    /// standard error and still exits 0. A record with no string `id`
+    /// uses `ARENA#<index>` as its locator and cannot be selected by id.
+    Graph(GraphArgs),
+    /// Join two arenas on named key paths.
+    ///
+    /// Accepts a CADIR document. `--left-key` and `--right-key` are
+    /// required dotted paths (no default). `--mode matched` (default) is
+    /// an inner join (one row per pair). `--mode unmatched` is a left
+    /// anti-join. `--mode all` keeps every left record with matching
+    /// rights as an array. `--right-file` joins two documents by key
+    /// value only. Arena names match `query item`. Discover key paths
+    /// with `query schema file FILE ARENA`. This is not SQL: no expressions,
+    /// no WHERE, no three-way join.
+    Join(JoinArgs),
+    /// Retained source bytes.
+    ///
+    /// Validates the sidecar before listing or extracting anything.
+    ///
+    /// The bare view lists `retained_records` as a table (stream, offset,
+    /// bytes, whether the bytes are retained, id) with annotation counts
+    /// on standard error. `--stream NAME` reassembles that stream's
+    /// retained bytes byte-exactly into `-o FILE` (or stdout with
+    /// `--binary-stdout`) — replacing the
+    /// `jq '.fidelity.retained_records[].data' | base64 -d` pipeline.
+    Fidelity(FidelityArgs),
+}
+
+/// Aggregate query views that share [`QueryArgs`].
+#[derive(Debug, Subcommand)]
+pub enum AggregateView {
     /// What this JSON file is.
     ///
-    /// Accepts every artifact kind.
+    /// Accepts every artifact kind. Each source, decode, inspect, or refusal
+    /// identity is one `*_dialects` JSON value; export identity is
+    /// `export_target`. Sidecar summaries state whether fidelity validation ran.
     Summary(QueryArgs),
     /// Decode coverage counts.
     ///
@@ -60,75 +143,6 @@ pub enum QueryView {
     /// arenas) or a command report (`entity_counts`).
     #[command(visible_alias = "arenas")]
     Counts(QueryArgs),
-    /// One record by id.
-    ///
-    /// Arena names are the dotted keys from `query counts --json`
-    /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
-    /// `model.<arena>`). IDs match exactly, or as a unique suffix of the
-    /// JSON-string `id` field. With no IDs, prints the first record;
-    /// `--head N` prints the first N. Default output is pretty-printed JSON
-    /// (blank-line separated), not TSV — nested records do not fit the other
-    /// views' table convention. `--fields a,b.c` projects those paths as TSV
-    /// (null/absent → empty cell; arrays/objects → compact JSON; tab/newline
-    /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
-    #[command(visible_alias = "record", alias = "get")]
-    Item(ItemArgs),
-    /// Fields of an entity type.
-    ///
-    /// With no FILE this prints what this binary's IR types allow — every
-    /// field of an arena's element type, which fields are optional, and
-    /// every variant of a tagged union (`FaceSelection`'s `value` is
-    /// absent, a string, an array, or an object depending on `kind`; the
-    /// discriminator of a feature's `definition` is
-    /// `.definition.definition`). Bare `query schema` lists every model
-    /// arena and its element type; `sidecar` prints the
-    /// `<stem>.fidelity.json` decode-sidecar shape.
-    ///
-    /// Native arena records are per-document. `query schema FILE ARENA`
-    /// infers each dotted path's presence, JSON type, an example, and a
-    /// `relation` column (`id` / `ref` / `refs`) from the records
-    /// (`layout_prefix  435/710  array`). Unknown arena names
-    /// list every addressable arena and its entry count. Which arenas a
-    /// given document actually has also comes from `query counts FILE`.
-    Schema(SchemaArgs),
-    /// Walk identity references from start records.
-    ///
-    /// Accepts a CADIR document. Arena names and ID selection match
-    /// `query item` (`model.<arena>` or `native.<codec>.<arena>`; suffix
-    /// IDs; `--head` when IDs are omitted). `--hops N` (default 1) is the
-    /// maximum edge length from a start; `0` emits only the starts.
-    /// Default walk follows every string that equals another record's `id`
-    /// in this document. The record's own `id` is not an outgoing edge.
-    /// Array members use the array's path (`links`), not `links.0`; an
-    /// array of objects uses the nested field path without indices
-    /// (`pcurves.pcurve`). `--follow PATH,...` keeps only those field
-    /// paths (exact match). `--reverse` walks incoming references.
-    /// Discover follow paths with `query schema FILE ARENA` (`relation`
-    /// column). Arena names come from `query counts`. `--max-paths`
-    /// (default 10000) caps explosion: a truncated walk prints a note on
-    /// standard error and still exits 0. A record with no string `id`
-    /// uses `ARENA#<index>` as its locator and cannot be selected by id.
-    Graph(GraphArgs),
-    /// Join two arenas on named key paths.
-    ///
-    /// Accepts a CADIR document. `--left-key` and `--right-key` are
-    /// required dotted paths (no default). `--mode matched` (default) is
-    /// an inner join (one row per pair). `--mode unmatched` is a left
-    /// anti-join. `--mode all` keeps every left record with matching
-    /// rights as an array. `--right-file` joins two documents by key
-    /// value only. Arena names match `query item`. Discover key paths
-    /// with `query schema FILE ARENA`. This is not SQL: no expressions,
-    /// no WHERE, no three-way join.
-    Join(JoinArgs),
-    /// Retained source bytes.
-    ///
-    /// The bare view lists `retained_records` as a table (stream, offset,
-    /// bytes, whether the bytes are retained, id) with annotation counts
-    /// on standard error. `--stream NAME` reassembles that stream's
-    /// retained bytes byte-exactly into `-o FILE` (or stdout with
-    /// `--binary-stdout`) — replacing the
-    /// `jq '.fidelity.retained_records[].data' | base64 -d` pipeline.
-    Fidelity(FidelityArgs),
 }
 
 /// Input selection and output format for one query view.
@@ -141,7 +155,7 @@ pub struct QueryArgs {
     pub json: bool,
 }
 
-impl QueryView {
+impl AggregateView {
     fn args(&self) -> &QueryArgs {
         match self {
             Self::Summary(args)
@@ -149,19 +163,14 @@ impl QueryView {
             | Self::Findings(args)
             | Self::Losses(args)
             | Self::Counts(args) => args,
-            Self::Item(_) => unreachable!("item uses ItemArgs"),
-            Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
-            Self::Graph(_) => unreachable!("graph uses GraphArgs"),
-            Self::Join(_) => unreachable!("join uses JoinArgs"),
-            Self::Fidelity(_) => unreachable!("fidelity uses FidelityArgs"),
         }
     }
 }
 
 /// Which artifact kind a JSON file turned out to be.
 enum Artifact {
-    /// A versioned CLI command report (`--report`/`-o`).
-    Report(ReportProbe),
+    /// A CLI command report (`--report`/`-o`).
+    Report(Box<ReportProbe>),
     /// A decoded CADIR document.
     Cadir(CadirProbe),
     /// A `<stem>.fidelity.json` decode sidecar.
@@ -181,10 +190,9 @@ impl Artifact {
 /// Top-level key sniff. Every field optional; unknown fields ignored.
 #[derive(Deserialize)]
 struct KindProbe {
-    schema_version: Option<u32>,
     command: Option<String>,
+    status: Option<String>,
     ir_version: Option<String>,
-    version: Option<String>,
     ir_sha256: Option<String>,
 }
 
@@ -192,21 +200,23 @@ struct KindProbe {
 /// are JSON `null`; sections this build does not know stay unparsed.
 #[derive(Deserialize)]
 struct ReportProbe {
-    schema_version: u32,
     command: String,
-    /// Binary that wrote the report; absent in reports from older builds.
+    /// Binary that wrote the report. Optional: not every report carries one.
     #[serde(default)]
     generator: Option<String>,
-    /// Present from `schema_version` 6 (`ok` | `refused`).
-    #[serde(default)]
-    status: Option<String>,
-    /// Present from `schema_version` 6; null on success.
+    /// `ok` | `refused`.
+    status: String,
+    /// Null on success.
     #[serde(default)]
     refusal: Option<RefusalProbe>,
+    #[serde(default)]
+    summary: Option<ContainerSummaryProbe>,
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
     check_report: Option<CheckReportProbe>,
+    #[serde(default)]
+    export: Option<ExportReportProbe>,
 }
 
 #[derive(Deserialize)]
@@ -217,6 +227,30 @@ struct RefusalProbe {
     code: Option<String>,
     #[serde(default)]
     message: Option<String>,
+    #[serde(default)]
+    dialects: Option<DialectLayers>,
+    /// Structured encoder request state and catalog on target refusals.
+    /// Keep this lenient so query can project future target-refusal variants.
+    #[serde(default)]
+    target: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct ContainerSummaryProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    dialects: Option<DialectLayers>,
+    #[serde(default)]
+    losses: Vec<LossProbe>,
+}
+
+#[derive(Deserialize)]
+struct ExportReportProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    target: Option<String>,
 }
 
 /// Lenient decode report: enum-valued fields read as strings so future
@@ -233,6 +267,8 @@ struct DecodeReportProbe {
     coverage: BTreeMap<String, u64>,
     #[serde(default)]
     losses: Vec<LossProbe>,
+    #[serde(default)]
+    dialects: Option<DialectLayers>,
 }
 
 #[derive(Deserialize)]
@@ -267,46 +303,86 @@ struct LossProbe {
     message: Option<String>,
 }
 
-/// Accepts v1 bare strings and v2 `{ namespace, code, kind }` objects.
+/// Wire loss code: `{ namespace, code, kind }`; `kind` is not projected.
 #[derive(Deserialize)]
-#[serde(untagged)]
-enum LossCodeProbe {
-    Legacy(String),
-    Namespaced { namespace: String, code: String },
+struct LossCodeProbe {
+    namespace: String,
+    code: String,
 }
 
 impl LossCodeProbe {
     fn display(&self) -> String {
-        match self {
-            Self::Legacy(code) => code.clone(),
-            Self::Namespaced { namespace, code } => format!("{namespace}/{code}"),
-        }
+        format!("{}/{}", self.namespace, self.code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{push_decode_dialect_summary, DecodeReportProbe};
+
+    #[test]
+    fn decode_summary_names_every_extra_dialect_layer() {
+        let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
+            "dialects": {
+                "primary": {
+                    "format": "f3d",
+                    "dialect": "f3d:archive-2",
+                    "declared": {"manifest_version": "2"},
+                    "admission": "admitted"
+                },
+                "extra": [{
+                    "format": "acis",
+                    "dialect": "acis:sab-22300",
+                    "declared": {"save_format": "22300"},
+                    "admission": {"unverified": {"using": "acis:sab-22200"}},
+                    "instance": "member:model.sab"
+                }]
+            }
+        }))
+        .unwrap();
+        let mut rows = Vec::new();
+
+        push_decode_dialect_summary(&mut rows, &decode);
+
+        assert_eq!(
+            rows,
+            [
+                ("decode_dialect_layers".to_owned(), "2".to_owned()),
+                (
+                    "decode_dialects".to_owned(),
+                    r#"{"primary":{"format":"f3d","dialect":"f3d:archive-2","declared":{"manifest_version":"2"},"admission":"admitted"},"extra":[{"format":"acis","dialect":"acis:sab-22300","declared":{"save_format":"22300"},"admission":{"unverified":{"using":"acis:sab-22200"}},"instance":"member:model.sab"}]}"#.to_owned()
+                ),
+                ("decode_dialect_format".to_owned(), "f3d".to_owned()),
+                ("decode_dialect".to_owned(), "f3d:archive-2".to_owned()),
+                ("decode_dialect_admission".to_owned(), "admitted".to_owned()),
+                (
+                    "decode_dialect_declared".to_owned(),
+                    r#"{"manifest_version":"2"}"#.to_owned()
+                ),
+            ]
+        );
     }
 }
 
 /// Lenient CADIR document probe: arena contents are counted, never
 /// materialized, so a large document costs one parse pass and no entity
-/// allocation.
+/// allocation. [`sniff_kind`] has already gated `ir_version` on this build's
+/// [`cadmpeg_ir::IR_VERSION`].
 #[derive(Deserialize)]
 struct CadirProbe {
     ir_version: String,
     #[serde(default)]
+    source: Option<SourceMeta>,
+    #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
     #[serde(default)]
-    native: BTreeMap<String, NativeNamespaceProbe>,
+    native: BTreeMap<String, BTreeMap<String, ArenaLen>>,
 }
 
-#[derive(Deserialize)]
-struct NativeNamespaceProbe {
-    #[serde(default)]
-    arenas: BTreeMap<String, ArenaLen>,
-}
-
-/// Lenient decode sidecar probe. Deliberately not `DecodeSidecar::from_json`,
-/// which rejects unknown sidecar versions; query projects whatever it can.
+/// Bounded decode-sidecar projection. Retained payload bytes are not
+/// materialized.
 #[derive(Deserialize)]
 struct SidecarProbe {
-    version: String,
     #[serde(default)]
     report: Option<DecodeReportProbe>,
 }
@@ -373,40 +449,29 @@ impl<'de> Deserialize<'de> for ArenaLen {
 
 /// Runs one query view against one artifact file.
 pub fn run(view: &QueryView) -> Result<()> {
-    if let QueryView::Item(args) = view {
-        return item::run(args);
+    match view {
+        QueryView::Aggregate(view) => run_aggregate(view),
+        QueryView::Item(args) => item::run(args, args.mode()),
+        QueryView::Schema(args) => schema::run(args),
+        QueryView::Graph(args) => graph::run(args, args.mode()),
+        QueryView::Join(args) => join::run(args, args.mode()),
+        QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
-    if let QueryView::Schema(args) = view {
-        return schema::run(args);
-    }
-    if let QueryView::Graph(args) = view {
-        return graph::run(args);
-    }
-    if let QueryView::Join(args) = view {
-        return join::run(args);
-    }
-    if let QueryView::Fidelity(args) = view {
-        return fidelity::run(args);
-    }
+}
+
+fn run_aggregate(view: &AggregateView) -> Result<()> {
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
     match view {
-        QueryView::Summary(args) => {
+        AggregateView::Summary(args) => {
             summary(&artifact, args);
             Ok(())
         }
-        QueryView::Coverage(args) => coverage(&artifact, args),
-        QueryView::Findings(args) => findings(&artifact, args),
-        QueryView::Losses(args) => losses(&artifact, args),
-        QueryView::Counts(args) => counts(&artifact, args),
-        QueryView::Item(_)
-        | QueryView::Schema(_)
-        | QueryView::Graph(_)
-        | QueryView::Join(_)
-        | QueryView::Fidelity(_) => {
-            unreachable!("handled above")
-        }
+        AggregateView::Coverage(args) => coverage(&artifact, args),
+        AggregateView::Findings(args) => findings(&artifact, args),
+        AggregateView::Losses(args) => losses(&artifact, args),
+        AggregateView::Counts(args) => counts(&artifact, args),
     }
 }
 
@@ -423,7 +488,20 @@ fn read_input(path: &Path) -> Result<Vec<u8>> {
     }
 }
 
-fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
+/// Artifact kind decided from top-level keys alone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArtifactKind {
+    Report,
+    Cadir,
+    Sidecar,
+}
+
+/// Decides the artifact kind from top-level keys and gates a CADIR document
+/// on this build's `IR_VERSION`.
+///
+/// The sniff skips every value it does not name, so a view that goes on to
+/// materialize the document pays for one body parse, not two.
+pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
@@ -431,28 +509,48 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
             path.display()
         )
     })?;
-    if sniff.schema_version.is_some() && sniff.command.is_some() {
-        let report: ReportProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the command report {}", path.display()))?;
-        return Ok(Artifact::Report(report));
+    if sniff.command.is_some() && sniff.status.is_some() {
+        return Ok(ArtifactKind::Report);
     }
-    if sniff.ir_version.is_some() {
-        let cadir: CadirProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
-        return Ok(Artifact::Cadir(cadir));
+    if let Some(found) = &sniff.ir_version {
+        if found != cadmpeg_ir::IR_VERSION {
+            bail!(
+                "{} has ir_version {found}; this build reads ir_version {}",
+                path.display(),
+                cadmpeg_ir::IR_VERSION
+            );
+        }
+        return Ok(ArtifactKind::Cadir);
     }
-    if sniff.version.is_some() && sniff.ir_sha256.is_some() {
-        let sidecar: SidecarProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
-        return Ok(Artifact::Sidecar(sidecar));
+    if sniff.ir_sha256.is_some() {
+        return Ok(ArtifactKind::Sidecar);
     }
     bail!(
         "{} is JSON but not a recognized artifact; query reads a command report \
-         (top-level `schema_version` and `command`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`version` and \
-         `ir_sha256`)",
+         (top-level `command` and `status`), a decoded CADIR document \
+         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
         path.display()
     )
+}
+
+fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
+    match sniff_kind(bytes, path)? {
+        ArtifactKind::Report => {
+            let report: ReportProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the command report {}", path.display()))?;
+            Ok(Artifact::Report(Box::new(report)))
+        }
+        ArtifactKind::Cadir => {
+            let cadir: CadirProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
+            Ok(Artifact::Cadir(cadir))
+        }
+        ArtifactKind::Sidecar => {
+            let sidecar: SidecarProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
+            Ok(Artifact::Sidecar(sidecar))
+        }
+    }
 }
 
 /// Replaces TSV structure characters in free-form text with spaces.
@@ -464,15 +562,20 @@ fn opt(text: Option<&String>) -> String {
     text.map(|value| cell(value)).unwrap_or_default()
 }
 
-fn print_json(view: &str, payload: &serde_json::Value) {
-    let envelope = serde_json::json!({
-        "schema_version": CLI_SCHEMA_VERSION,
-        "command": format!("query {view}"),
-        view: payload,
-    });
+/// Prints one view as the shared command-report envelope:
+/// `{"command": "query", "status": "ok", "view": <name>, "payload": <...>}`.
+/// The view name is a value, never a top-level key.
+fn print_json(view: &str, payload: serde_json::Value) {
+    let mut body = serde_json::Map::new();
+    body.insert(
+        "view".to_owned(),
+        serde_json::Value::String(view.to_owned()),
+    );
+    body.insert("payload".to_owned(), payload);
     println!(
         "{}",
-        serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+        crate::commands::reporting::command_report_json("query", serde_json::Value::Object(body))
+            .expect("query report serializes")
     );
 }
 
@@ -485,14 +588,8 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         vec![("kind".to_owned(), artifact.kind_name().to_owned())];
     match artifact {
         Artifact::Report(report) => {
-            rows.push((
-                "schema_version".to_owned(),
-                report.schema_version.to_string(),
-            ));
             rows.push(("command".to_owned(), cell(&report.command)));
-            if let Some(status) = &report.status {
-                rows.push(("status".to_owned(), cell(status)));
-            }
+            rows.push(("status".to_owned(), cell(&report.status)));
             if let Some(refusal) = &report.refusal {
                 if let Some(stage) = &refusal.stage {
                     rows.push(("refusal_stage".to_owned(), cell(stage)));
@@ -503,9 +600,19 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 if let Some(message) = &refusal.message {
                     rows.push(("refusal_message".to_owned(), cell(message)));
                 }
+                push_dialect_layers_summary(&mut rows, "refusal", refusal.dialects.as_ref());
+                if let Some(target) = &refusal.target {
+                    rows.push(("refusal_target".to_owned(), target.to_string()));
+                }
             }
             if let Some(generator) = &report.generator {
                 rows.push(("generator".to_owned(), cell(generator)));
+            }
+            if let Some(summary) = &report.summary {
+                if let Some(format) = &summary.format {
+                    rows.push(("inspect_format".to_owned(), cell(format)));
+                }
+                push_dialect_layers_summary(&mut rows, "inspect", summary.dialects.as_ref());
             }
             match &report.decode_report {
                 Some(decode) => {
@@ -523,6 +630,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         decode.coverage.len().to_string(),
                     ));
                     rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                    push_decode_dialect_summary(&mut rows, decode);
                 }
                 None => rows.push(("decode_report".to_owned(), "null".to_owned())),
             }
@@ -548,9 +656,28 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 }
                 None => rows.push(("check_report".to_owned(), "null".to_owned())),
             }
+            if let Some(export) = &report.export {
+                if let Some(format) = &export.format {
+                    rows.push(("export_format".to_owned(), cell(format)));
+                }
+                rows.push((
+                    "export_target".to_owned(),
+                    export
+                        .target
+                        .as_ref()
+                        .map_or_else(|| "null".to_owned(), |target| cell(target)),
+                ));
+            }
         }
         Artifact::Cadir(cadir) => {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
+            match &cadir.source {
+                Some(source) => {
+                    rows.push(("source_format".to_owned(), cell(source.format())));
+                    push_dialect_layers_summary(&mut rows, "source", source.dialects());
+                }
+                None => rows.push(("source".to_owned(), "null".to_owned())),
+            }
             rows.push(("model_arenas".to_owned(), cadir.model.len().to_string()));
             rows.push((
                 "model_entities".to_owned(),
@@ -561,24 +688,22 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     .sum::<u64>()
                     .to_string(),
             ));
-            for (namespace, probe) in &cadir.native {
+            for (namespace, arenas) in &cadir.native {
                 rows.push((
                     format!("native.{namespace}.arenas"),
-                    probe.arenas.len().to_string(),
+                    arenas.len().to_string(),
                 ));
                 rows.push((
                     format!("native.{namespace}.entities"),
-                    probe
-                        .arenas
-                        .values()
-                        .map(|len| len.0)
-                        .sum::<u64>()
-                        .to_string(),
+                    arenas.values().map(|len| len.0).sum::<u64>().to_string(),
                 ));
             }
         }
         Artifact::Sidecar(sidecar) => {
-            rows.push(("sidecar_version".to_owned(), cell(&sidecar.version)));
+            rows.push((
+                "sidecar_fidelity_validation".to_owned(),
+                "not_run".to_owned(),
+            ));
             match &sidecar.report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
@@ -589,6 +714,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         decode.coverage.len().to_string(),
                     ));
                     rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                    push_decode_dialect_summary(&mut rows, decode);
                 }
                 None => rows.push(("report".to_owned(), "null".to_owned())),
             }
@@ -597,14 +723,134 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
     if args.json {
         let map: serde_json::Map<String, serde_json::Value> = rows
             .into_iter()
-            .map(|(field, value)| (field, serde_json::Value::String(value)))
+            .map(|(field, value)| {
+                let value = if field.ends_with("_dialects")
+                    || field.ends_with("_dialect_declared")
+                    || field == "refusal_target"
+                {
+                    serde_json::from_str(&value)
+                        .expect("structured identity summary cells contain JSON")
+                } else {
+                    serde_json::Value::String(value)
+                };
+                (field, value)
+            })
             .collect();
-        print_json("summary", &serde_json::Value::Object(map));
+        print_json("summary", serde_json::Value::Object(map));
     } else {
         println!("field\tvalue");
         for (field, value) in rows {
             println!("{field}\t{value}");
         }
+    }
+}
+
+fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &DecodeReportProbe) {
+    push_dialect_layers_summary(rows, "decode", decode.dialects.as_ref());
+}
+
+struct DialectLayersOutput<'a>(&'a DialectLayers);
+
+impl Serialize for DialectLayersOutput<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DialectLayers", 2)?;
+        state.serialize_field("primary", &DialectMatchOutput(self.0.primary()))?;
+        let extra = self
+            .0
+            .iter()
+            .skip(1)
+            .map(DialectMatchOutput)
+            .collect::<Vec<_>>();
+        state.serialize_field("extra", &extra)?;
+        state.end()
+    }
+}
+
+struct DialectMatchOutput<'a>(&'a DialectMatch);
+
+impl Serialize for DialectMatchOutput<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let matched = self.0;
+        let mut state = serializer.serialize_struct("DialectMatch", 5)?;
+        state.serialize_field("format", matched.format())?;
+        state.serialize_field("dialect", matched.dialect())?;
+        if !matched.declared().is_empty() {
+            state.serialize_field("declared", matched.declared())?;
+        }
+        let admission = admission_value(matched);
+        state.serialize_field("admission", &admission)?;
+        if let Some(instance) = matched.instance() {
+            state.serialize_field("instance", instance)?;
+        }
+        state.end()
+    }
+}
+
+fn admission_value(matched: &DialectMatch) -> Value {
+    match matched.admission() {
+        Admission::Admitted => serde_json::json!("admitted"),
+        Admission::Unverified { .. } => serde_json::json!({
+            "unverified": {
+                "using": matched
+                    .using()
+                    .expect("unverified admission always names its grammar")
+            }
+        }),
+        Admission::Residual => serde_json::json!("residual"),
+        Admission::Refused => serde_json::json!("refused"),
+    }
+}
+
+fn push_dialect_layers_summary(
+    rows: &mut Vec<(String, String)>,
+    prefix: &str,
+    layers: Option<&DialectLayers>,
+) {
+    let Some(layers) = layers else {
+        rows.push((format!("{prefix}_dialects"), "null".to_owned()));
+        push_dialect_summary(rows, prefix, None);
+        return;
+    };
+    rows.push((
+        format!("{prefix}_dialect_layers"),
+        layers.iter().count().to_string(),
+    ));
+    rows.push((
+        format!("{prefix}_dialects"),
+        serde_json::to_string(&DialectLayersOutput(layers))
+            .expect("dialect-layer projections always serialize"),
+    ));
+    push_dialect_summary(rows, prefix, Some(layers.primary()));
+}
+
+fn push_dialect_summary(
+    rows: &mut Vec<(String, String)>,
+    prefix: &str,
+    matched: Option<&DialectMatch>,
+) {
+    let Some(matched) = matched else {
+        rows.push((format!("{prefix}_dialect"), "null".to_owned()));
+        return;
+    };
+    rows.push((format!("{prefix}_dialect_format"), cell(matched.format())));
+    rows.push((
+        format!("{prefix}_dialect"),
+        cell(matched.dialect().as_str()),
+    ));
+    let admission = admission_value(matched);
+    let admission = admission
+        .as_str()
+        .map_or_else(|| admission.to_string(), cell);
+    rows.push((format!("{prefix}_dialect_admission"), admission));
+    if let Some(instance) = matched.instance() {
+        rows.push((format!("{prefix}_dialect_instance"), cell(instance)));
+    }
+    if !matched.declared().is_empty() {
+        rows.push((
+            format!("{prefix}_dialect_declared"),
+            serde_json::to_string(matched.declared())
+                .expect("dialect declarations always serialize"),
+        ));
     }
 }
 
@@ -621,6 +867,7 @@ fn count_severity(findings: &[FindingProbe], severities: &[&str]) -> usize {
 }
 
 fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    note_unvalidated_sidecar_fidelity(artifact);
     let decode = match artifact {
         Artifact::Report(report) => report.decode_report.as_ref(),
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
@@ -643,7 +890,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
     };
     if args.json {
-        print_json("coverage", &counts_json(coverage));
+        print_json("coverage", counts_json(coverage));
     } else {
         println!("measure\tcount");
         for (measure, count) in coverage {
@@ -685,7 +932,7 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("findings", &serde_json::Value::Array(payload));
+        print_json("findings", serde_json::Value::Array(payload));
     } else {
         println!("severity\tcheck\tentity\tmessage");
         for finding in rows {
@@ -705,12 +952,19 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
 }
 
 fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    note_unvalidated_sidecar_fidelity(artifact);
     let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
-        Artifact::Report(report) => match (&report.check_report, &report.decode_report) {
-            (Some(validation), _) => (&validation.losses, None),
-            (None, Some(decode)) => (&decode.losses, None),
-            (None, None) => (&[], Some("(this report has no decode or check stage)")),
-        },
+        Artifact::Report(report) => {
+            match (&report.check_report, &report.decode_report, &report.summary) {
+                (Some(validation), _, _) => (&validation.losses, None),
+                (None, Some(decode), _) => (&decode.losses, None),
+                (None, None, Some(summary)) => (&summary.losses, None),
+                (None, None, None) => (
+                    &[],
+                    Some("(this report has no inspect, decode, or check stage)"),
+                ),
+            }
+        }
         Artifact::Sidecar(sidecar) => match &sidecar.report {
             Some(decode) => (&decode.losses, None),
             None => (&[], Some("(this sidecar has no decode report)")),
@@ -731,7 +985,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("losses", &serde_json::Value::Array(payload));
+        print_json("losses", serde_json::Value::Array(payload));
     } else {
         println!("severity\tcode\tmessage");
         for loss in rows {
@@ -752,6 +1006,14 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     Ok(())
 }
 
+fn note_unvalidated_sidecar_fidelity(artifact: &Artifact) {
+    if matches!(artifact, Artifact::Sidecar(_)) {
+        eprintln!(
+            "(sidecar fidelity validation: not run; `cadmpeg query fidelity FILE` validates it)"
+        );
+    }
+}
+
 fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     match artifact {
         Artifact::Cadir(cadir) => {
@@ -760,8 +1022,8 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 .iter()
                 .map(|(arena, len)| ("model".to_owned(), arena.clone(), len.0))
                 .collect();
-            for (namespace, probe) in &cadir.native {
-                for (arena, len) in &probe.arenas {
+            for (namespace, arenas) in &cadir.native {
+                for (arena, len) in arenas {
                     rows.push((format!("native.{namespace}"), arena.clone(), len.0));
                 }
             }
@@ -770,7 +1032,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 for (namespace, arena, entries) in &rows {
                     map.insert(format!("{namespace}.{arena}"), serde_json::json!(entries));
                 }
-                print_json("counts", &serde_json::Value::Object(map));
+                print_json("counts", serde_json::Value::Object(map));
             } else {
                 println!("namespace\tarena\tentries");
                 for (namespace, arena, entries) in rows {
@@ -792,7 +1054,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     }
                 };
             if args.json {
-                print_json("counts", &counts_json(entity_counts));
+                print_json("counts", counts_json(entity_counts));
             } else {
                 println!("namespace\tarena\tentries");
                 for (arena, entries) in entity_counts {

@@ -11,9 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
@@ -21,23 +24,16 @@ use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
-use super::{
-    merge_definition_catalog_record, DefinitionCatalogRecord, RECORD_MARKER, STREAM_HEADER_LEN,
-};
+use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};
 
 fn raw_body_map_pair(
     asm_key_offset: usize,
     entity_suffix: u64,
 ) -> crate::design::decode::body::BodyBinding {
     crate::design::decode::body::BodyBinding {
-        blob_name: "BREP.synthetic.smbh".into(),
-        blob_name_offset: asm_key_offset + 32,
-        pair_count: 2,
-        pair_ordinal: 0,
         asm_key: 7,
         asm_key_offset,
         entity_suffix,
-        entity_suffix_offset: asm_key_offset + 8,
     }
 }
 
@@ -59,7 +55,7 @@ fn resolved_body_binding(
         entity_suffix_offset: asm_key_offset + 8,
         blob_name: blob_name.into(),
         blob_name_offset: asm_key_offset + 32,
-        body: Some(cadmpeg_ir::ids::BodyId(body.into())),
+        body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
     }
 }
 
@@ -121,8 +117,6 @@ fn definition_catalog_version_one_omits_category() {
     assert_eq!(decoded.schema, "PrismOpaqueSchema");
     assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
     assert_eq!(decoded.category, None);
-    assert_eq!(decoded.group.as_deref(), Some("Default"));
-    assert_eq!(decoded.tags, ["materials", "opaque"]);
 }
 
 #[test]
@@ -148,8 +142,8 @@ fn definition_catalog_version_zero_omits_category_and_group() {
     let decoded = super::decode_definition_catalog_record(&logical)
         .expect("decode version-zero definition record");
     assert_eq!(decoded.category, None);
-    assert_eq!(decoded.group, None);
-    assert_eq!(decoded.description, "Unified Bitmap.");
+    assert_eq!(decoded.schema, "UnifiedBitmapSchema");
+    assert_eq!(decoded.asset_id, "Metal-045_metal_pattern_shader");
 }
 
 #[test]
@@ -174,24 +168,17 @@ fn definition_catalog_version_three_adds_subgroup() {
     let decoded = super::decode_definition_catalog_record(&logical)
         .expect("decode version-three definition record");
     assert_eq!(decoded.category.as_deref(), Some("Metal"));
-    assert_eq!(decoded.group.as_deref(), Some("Default"));
-    assert_eq!(decoded.subgroup.as_deref(), Some("Miscellaneous"));
-    assert_eq!(decoded.description, "Generic material.");
+    assert_eq!(decoded.schema, "GenericSchema");
+    assert_eq!(decoded.asset_id, "InvGen-063");
 }
 
 #[test]
 fn definition_catalog_uses_asset_and_schema_identity() {
-    fn definition(asset: &str, category: &str) -> DefinitionCatalogRecord {
-        DefinitionCatalogRecord {
+    fn definition(asset: &str, category: &str) -> DefinitionCatalog {
+        DefinitionCatalog {
             schema: "PrismMetalSchema".into(),
             asset_id: asset.into(),
-            base_asset_id: asset.into(),
             category: Some(category.into()),
-            group: Some("Default".into()),
-            subgroup: None,
-            description: "Steel - satin".into(),
-            tags: vec!["Metal".into(), "Steel".into()],
-            preview_paths: vec!["Mats/PrismMetal/Presets/t_Prism-256.png".into()],
         }
     }
 
@@ -200,10 +187,6 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
     assert_eq!(definitions.len(), 1);
 
-    let mut alternate_description = definition("Prism-256", "Metal/Steel");
-    alternate_description.description = "CCAF1000-E7D9-2CF1-9BA1-B9224CFEBAF6".into();
-    merge_definition_catalog_record(&mut definitions, alternate_description);
-
     merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
     let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
     assert_eq!(definitions[&key].category, None);
@@ -211,11 +194,6 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     let mut second_schema = definition("Prism-256", "Metal/Steel");
     second_schema.schema = "GenericSchema".into();
     merge_definition_catalog_record(&mut definitions, second_schema);
-    assert_eq!(definitions.len(), 2);
-
-    let mut alternate_base = definition("Prism-256", "Metal/Steel");
-    alternate_base.base_asset_id = "another-base".into();
-    merge_definition_catalog_record(&mut definitions, alternate_base);
     assert_eq!(definitions.len(), 2);
 }
 
@@ -240,12 +218,14 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         "BREP.first.smbh",
         "f3d:brep/first/brep:entity#1",
     );
-    let second_body = cadmpeg_ir::ids::BodyId("f3d:brep/second/brep:entity#1".into());
-    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
+    let second_body =
+        cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
+    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#second".into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
+            .expect("identity grammar"),
         name: None,
         asset_guid: Some(visual_guid.into()),
         library_id: None,
@@ -261,16 +241,15 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         id: owner,
         asm_body_key: 7,
         asm_body_key_offset: 125,
-        entity_suffix: 200,
+
         entity_suffix_offset: 133,
-        entity_id: "0_200".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: visual_guid.into(),
         visual_guid_offset: 600,
         physical_token: None,
-        physical_token_offset: None,
         visual_preset: None,
-        visual_preset_offset: None,
     };
     let projected = super::bind_bodies(
         &[appearance],
@@ -293,7 +272,8 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
 fn presetless_assignment_matches_only_its_visual_guid() {
     let appearance_guid = "11111111-2222-3333-4444-555555555555";
     let mut appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#catalog".into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#catalog")
+            .expect("identity grammar"),
         name: None,
         asset_guid: Some(appearance_guid.into()),
         library_id: None,
@@ -309,16 +289,15 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         id: "f3d:design:material-assignment#1".into(),
         asm_body_key: 7,
         asm_body_key_offset: 25,
-        entity_suffix: 100,
+
         entity_suffix_offset: 33,
-        entity_id: "0_100".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
         visual_guid_offset: 600,
         physical_token: None,
-        physical_token_offset: None,
         visual_preset: None,
-        visual_preset_offset: None,
     };
 
     assert!(
@@ -335,7 +314,10 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     );
 
     assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
-    assignment.visual_preset = Some("Prism-017".into());
+    assignment.visual_preset = Some(crate::records::RecordedValue {
+        value: "Prism-017".into(),
+        offset: None,
+    });
     appearance.name = Some("Prism-017".into());
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
@@ -349,7 +331,7 @@ fn complete_visual_token_selects_one_revision_record() {
     let base_token = "11111111-2222-3333-4444-555555555555";
     let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
     let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: None,
         asset_guid: Some(token.into()),
         library_id: None,
@@ -362,18 +344,18 @@ fn complete_visual_token_selects_one_revision_record() {
         textures: Vec::new(),
     };
     let appearances = [
-        appearance("f3d:appearance#base", base_token),
-        appearance("f3d:appearance#revised", revised_token),
+        appearance("f3d:test:appearance#base", base_token),
+        appearance("f3d:test:appearance#revised", revised_token),
     ];
 
     let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
         .expect("unique complete visual token")
         .expect("revised appearance exists");
-    assert_eq!(selected.id.as_str(), "f3d:appearance#revised");
+    assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
 
     let duplicates = [
-        appearance("f3d:appearance#first", revised_token),
-        appearance("f3d:appearance#second", revised_token),
+        appearance("f3d:test:appearance#first", revised_token),
+        appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
         super::appearance_for_visual_token(&duplicates, revised_token, None),
@@ -384,7 +366,7 @@ fn complete_visual_token_selects_one_revision_record() {
 #[test]
 fn visual_preset_fallback_requires_one_record() {
     let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: Some("Prism-017".into()),
         asset_guid: None,
         library_id: None,
@@ -397,8 +379,8 @@ fn visual_preset_fallback_requires_one_record() {
         textures: Vec::new(),
     };
     let appearances = [
-        appearance("f3d:appearance#first"),
-        appearance("f3d:appearance#second"),
+        appearance("f3d:test:appearance#first"),
+        appearance("f3d:test:appearance#second"),
     ];
 
     assert!(matches!(
@@ -433,10 +415,12 @@ fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
         asset_lib_id: String::new(),
         properties: std::collections::BTreeMap::from([(
             "test_Depth".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Distance { unit, value },
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Distance { unit, value },
+                    connections: Vec::new(),
+                },
             },
         )]),
     }
@@ -481,19 +465,25 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
             color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
             (
                 "common_Tint_toggle".to_owned(),
-                cadmpeg_protein::DecodedProperty {
+                cadmpeg_protein::property::DecodedProperty {
                     value_offset: 0,
-                    value: cadmpeg_protein::PropertyValue::Boolean(false),
-                    connections: Vec::new(),
+                    content: cadmpeg_protein::property::PropertyContent::Value {
+                        value: cadmpeg_protein::property::PropertyValue::Boolean(false),
+                        connections: Vec::new(),
+                    },
                 },
             ),
         ]);
         properties.insert(
             primary_id.to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Color([
+                        0.125, 0.25, 0.375, 1.0,
+                    ]),
+                    connections: Vec::new(),
+                },
             },
         );
         let record = appearance_record(schema, properties);
@@ -514,10 +504,12 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     ]);
     properties.insert(
         "common_Tint_toggle".to_owned(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Boolean(true),
-            connections: Vec::new(),
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Boolean(true),
+                connections: Vec::new(),
+            },
         },
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
@@ -527,20 +519,25 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
 }
 
-fn color_property(id: &str, color: [f64; 4]) -> (String, cadmpeg_protein::DecodedProperty) {
+fn color_property(
+    id: &str,
+    color: [f64; 4],
+) -> (String, cadmpeg_protein::property::DecodedProperty) {
     (
         id.to_owned(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Color(color),
-            connections: Vec::new(),
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Color(color),
+                connections: Vec::new(),
+            },
         },
     )
 }
 
 fn appearance_record(
     schema: &str,
-    properties: std::collections::BTreeMap<String, cadmpeg_protein::DecodedProperty>,
+    properties: std::collections::BTreeMap<String, cadmpeg_protein::property::DecodedProperty>,
 ) -> cadmpeg_protein::DecodedRecord {
     cadmpeg_protein::DecodedRecord {
         ordinal: 0,
@@ -563,10 +560,14 @@ fn texture_record(guid: &str, path: &str) -> cadmpeg_protein::DecodedRecord {
         asset_lib_id: String::new(),
         properties: std::collections::BTreeMap::from([(
             "unifiedbitmap_Bitmap".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::TextureUri(vec![path.to_owned()]),
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::TextureUri(vec![
+                        path.to_owned()
+                    ]),
+                    connections: Vec::new(),
+                },
             },
         )]),
     }
@@ -577,10 +578,12 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
         "GenericSchema",
         std::collections::BTreeMap::from([(
             "generic_diffuse".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
-                connections: vec![texture_guid.to_owned()],
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
+                    connections: vec![texture_guid.to_owned()],
+                },
             },
         )]),
     )
@@ -634,13 +637,15 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
     let mut texture = texture_record(guid, "textures/albedo.png");
     texture.properties.insert(
         "unifiedbitmap_RealWorldScaleX".into(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Distance {
-                unit: 0x0002_1008,
-                value: 3.0,
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Distance {
+                    unit: 0x0002_1008,
+                    value: 3.0,
+                },
+                connections: Vec::new(),
             },
-            connections: Vec::new(),
         },
     );
 
@@ -656,7 +661,6 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
 fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-    use cadmpeg_ir::units::Units;
 
     // One appearance attribute GUID reaches every face carrying it, so the
     // assignment pair repeats across those faces. The face id has to enter the
@@ -665,11 +669,17 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let visual_family = "11111111-2222-3333-4444-555555555555";
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
-    let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
-    for face in ["face:1", "face:2", "face:3"] {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for face in [
+        "test:model:face#1",
+        "test:model:face#2",
+        "test:model:face#3",
+    ] {
         ir.model.attributes.push(SourceAttribute {
-            id: format!("attr:{face}").into(),
-            target: AttributeTarget::Face(face.into()),
+            id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
+                .try_into()
+                .expect("valid identity"),
+            target: AttributeTarget::Face(face.try_into().expect("valid identity")),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -678,7 +688,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
-        id: id.into(),
+        id: id.try_into().expect("valid identity"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -692,8 +702,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     };
     // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
-        appearance("appearance:base", visual_family),
-        appearance("appearance:revision", visual_guid),
+        appearance("test:model:appearance#base", visual_family),
+        appearance("test:model:appearance#revision", visual_guid),
     ]);
 
     crate::decode::resolve_face_appearance_bindings(
@@ -718,7 +728,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .model
         .appearance_bindings
         .iter()
-        .all(|binding| binding.appearance.as_str() == "appearance:revision"));
+        .all(|binding| binding.appearance.as_str() == "test:model:appearance#revision"));
     let targets = ir
         .model
         .appearance_bindings
@@ -728,9 +738,9 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     assert_eq!(
         targets,
         vec![
-            AppearanceTarget::Face("face:1".into()),
-            AppearanceTarget::Face("face:2".into()),
-            AppearanceTarget::Face("face:3".into()),
+            AppearanceTarget::Face("test:model:face#1".try_into().expect("valid identity")),
+            AppearanceTarget::Face("test:model:face#2".try_into().expect("valid identity")),
+            AppearanceTarget::Face("test:model:face#3".try_into().expect("valid identity")),
         ]
     );
 
@@ -784,7 +794,9 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube();
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
-            id: "f3d:test:face-material".into(),
+            id: "f3d:test:attribute#face-material"
+                .try_into()
+                .expect("valid identity"),
             target: AttributeTarget::Face(face),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
@@ -793,7 +805,9 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             ],
         });
         ir.model.appearances.push(Appearance {
-            id: "appearance:face".into(),
+            id: "test:model:appearance#face"
+                .try_into()
+                .expect("valid identity"),
             name: None,
             asset_guid: None,
             library_id: None,
@@ -901,7 +915,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id, "0_985");
     assert_eq!(f3d_native(result.ir()).act_guids.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_guids[0].guid,
+        f3d_native(result.ir()).act_guids[0].guid.as_str(),
         "eeeeeeee-1111-2222-3333-ffffffffffff"
     );
     assert_eq!(f3d_native(result.ir()).act_registry_channels.len(), 2);
@@ -911,21 +925,25 @@ fn decode_transfers_generated_protein_appearance() {
         9
     );
     assert_eq!(
-        f3d_native(result.ir()).act_registry_channels[0].name,
+        f3d_native(result.ir()).act_registry_channels[0].name(),
         "Appearance"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_registry_channels[1].name,
+        f3d_native(result.ir()).act_registry_channels[1].name(),
         "PhysicalMaterial"
     );
-    assert!(f3d_native(result.ir()).act_entities[0].in_table);
+    assert!(f3d_native(result.ir()).act_entities[0].in_table());
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].entity_id,
+        f3d_native(result.ir()).act_root_components[0]
+            .layout
+            .entity_id(),
         "0_3"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].display_name,
+        f3d_native(result.ir()).act_root_components[0]
+            .layout
+            .display_name(),
         "(Unsaved)"
     );
     assert_eq!(
@@ -933,7 +951,8 @@ fn decode_transfers_generated_protein_appearance() {
         12
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].tracked_entity_record,
+        serde_json::to_value(&f3d_native(result.ir()).act_root_components[0]).unwrap()
+            ["tracked_entity_record"],
         3
     );
     assert_eq!(
@@ -942,12 +961,10 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0].registry_flag,
-        1
+        crate::records::ActRegistryFlag::On
     );
     assert_eq!(
-        f3d_native(result.ir()).act_entities[0]
-            .channel_class_tag
-            .as_deref(),
+        f3d_native(result.ir()).act_entities[0].channel_class_tag(),
         Some("261")
     );
     assert_eq!(
@@ -984,8 +1001,9 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0]
-            .design_id
-            .as_deref(),
+            .design
+            .as_ref()
+            .map(|design| design.id.value.as_str()),
         Some("322")
     );
     assert_eq!(
@@ -1006,7 +1024,9 @@ fn decode_transfers_generated_protein_appearance() {
         }));
     assert_eq!(f3d_native(result.ir()).lost_edge_references.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).lost_edge_references[0].class_tag,
+        f3d_native(result.ir()).lost_edge_references[0]
+            .class_tag
+            .as_str(),
         "419"
     );
     assert_eq!(
@@ -1024,28 +1044,47 @@ fn decode_transfers_generated_protein_appearance() {
     let sketch = f3d_native(result.ir())
         .design_types
         .iter()
-        .find(|design_type| design_type.entity_ids.contains(&277))
+        .find(|design_type| {
+            design_type
+                .entities
+                .values()
+                .any(|registered| *registered == 277)
+        })
         .cloned()
         .unwrap();
-    assert_eq!(sketch.entity_ids, vec![277]);
+    assert_eq!(
+        sketch.entities.values().copied().collect::<Vec<_>>(),
+        vec![277]
+    );
     assert_eq!(sketch.version, 4);
     assert_eq!(f3d_native(result.ir()).design_entity_headers.len(), 2);
     let sketch_header = f3d_native(result.ir())
         .design_entity_headers
         .iter()
-        .find(|header| header.entity_suffix == 277)
+        .find(|header| header.entity_id.suffix() == 277)
         .cloned()
         .expect("generated sketch entity header");
-    assert_eq!(sketch_header.entity_id, "0_277");
-    assert_eq!(sketch_header.class_tag, "257");
+    assert_eq!(sketch_header.entity_id.as_str(), "0_277");
+    assert_eq!(sketch_header.class_tag.as_str(), "257");
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
-        sketch_header.module.as_deref(),
+        sketch_header.module(),
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
-    assert_eq!(sketch_header.record_reference, Some(584));
-    assert_eq!(sketch_header.declared_reference_count, Some(2));
-    assert_eq!(sketch_header.reference_indices, [33, 44]);
+    assert_eq!(
+        sketch_header
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(584)
+    );
+    assert_eq!(sketch_header.declared_reference_count(), Some(2));
+    assert_eq!(
+        sketch_header
+            .reference_values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [33, 44]
+    );
     assert_eq!(f3d_native(result.ir()).design_record_headers.len(), 6);
     let record_33 = f3d_native(result.ir())
         .design_record_headers
@@ -1053,26 +1092,26 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
-    assert_eq!(record_33.class_tag, "259");
+    assert_eq!(record_33.class_tag.as_str(), "259");
     assert_eq!(f3d_native(result.ir()).sketch_relations.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].members,
-        [100, 200]
+        f3d_native(result.ir()).sketch_relations[0].member_indices(),
+        vec![100, 200]
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].return_members,
-        [200, 100]
+        f3d_native(result.ir()).sketch_relations[0].return_member_indices(),
+        vec![200, 100]
     );
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].owner_reference,
         277
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].constraint_kinds,
+        f3d_native(result.ir()).sketch_relations[0].constraint_kinds(),
         [crate::records::SketchConstraintKind::Parallel]
     );
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits,
+        f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits(),
         0
     );
     assert!(f3d_native(result.ir()).sketch_relations[1]
@@ -1086,7 +1125,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_500 = f3d_native(result.ir())
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == Some(500))
+        .find(|point| point.persistent_id() == Some(500))
         .cloned()
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
@@ -1094,11 +1133,11 @@ fn decode_transfers_generated_protein_appearance() {
     let point_600 = f3d_native(result.ir())
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == Some(600))
+        .find(|point| point.persistent_id() == Some(600))
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
-    assert_eq!(point_600.entity_genesis, Some(9));
+    assert_eq!(point_600.entity_genesis(), Some(9));
     assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(
         f3d_native(result.ir()).sketch_curve_identities[0].primary_id,
@@ -1121,10 +1160,9 @@ fn decode_transfers_generated_protein_appearance() {
         Some(crate::records::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
             degree: 2,
-            weights,
-            control_points,
+            poles,
             ..
-        }) if weights.is_empty() && control_points.len() == 3
+        }) if poles.weights().next().is_none() && poles.point_count() == 3
     ));
     assert_eq!(f3d_native(result.ir()).design_body_members.len(), 2);
     assert_eq!(
@@ -1152,7 +1190,10 @@ fn decode_rejects_invalid_instance_property_page_framing() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .expect_err("invalid Protein page framing must reject material decode");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -1162,34 +1203,11 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated ACT decode");
 
-    let mut wrong_root = decoded.ir().clone();
-    update_f3d_native(&mut wrong_root, |native| {
-        native.act_root_components[0].tracked_entity_record = 4;
-    });
-    assert!(crate::validate::validate_native(&wrong_root)
-        .iter()
-        .any(|finding| finding.message.contains("ACT root component")));
-
     let mut table_only = decoded.ir().clone();
     update_f3d_native(&mut table_only, |native| {
-        let entity = &mut native.act_entities[0];
-        entity.channel_class_tag = None;
-        entity.channel_record_index_offset = None;
-        entity.channel_entity_id_offset = None;
-        entity.channels.clear();
-        entity.channel_guid_offsets.clear();
+        native.act_entities[0].strip_channel_group();
     });
     assert!(crate::validate::validate_native(&table_only)
-        .iter()
-        .any(|finding| finding.message.contains("ACT entity")));
-
-    let mut shifted_table_row = decoded.ir().clone();
-    update_f3d_native(&mut shifted_table_row, |native| {
-        native.act_entities[0].table_entity_id_offset = native.act_entities[0]
-            .table_entity_id_offset
-            .and_then(|offset| offset.checked_add(1));
-    });
-    assert!(crate::validate::validate_native(&shifted_table_row)
         .iter()
         .any(|finding| finding.message.contains("ACT entity")));
 
@@ -1208,14 +1226,6 @@ fn generated_act_native_validation_rejects_structural_drift() {
     assert!(crate::validate::validate_native(&wrong_registry)
         .iter()
         .any(|finding| finding.message.contains("ACT channel-registry entry")));
-
-    let mut wrong_table_reference = wrong_registry;
-    update_f3d_native(&mut wrong_table_reference, |native| {
-        native.act_table_references[0].target_record_offset += 1;
-    });
-    assert!(crate::validate::validate_native(&wrong_table_reference)
-        .iter()
-        .any(|finding| finding.message.contains("ACT table reference")));
 }
 
 #[test]
@@ -1311,10 +1321,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1362,8 +1369,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("timestamp regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -1390,9 +1396,9 @@ fn decode_transfers_generated_sketch_curve_link() {
         .unwrap();
     assert_eq!(
         link.target,
-        cadmpeg_ir::attributes::AttributeTarget::Coedge(cadmpeg_ir::ids::CoedgeId(
-            "f3d:brep:entity#7".into()
-        ))
+        cadmpeg_ir::attributes::AttributeTarget::Coedge(
+            cadmpeg_ir::ids::CoedgeId::mint("f3d:brep:entity#7").expect("identity grammar")
+        )
     );
     assert_eq!(link.sketch_curve_id, 113);
     assert_eq!(link.sense, Some(1));
@@ -1466,7 +1472,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let coedge = source_less.model.coedges[0].id.clone();
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
-        id: "generated:sketch-curve-link#0".into(),
+        id: "f3d:generated:sketch-curve-link#0".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
         sketch_curve_id: 113,
         ref_b: 0,
@@ -1502,7 +1508,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     // Two faces (one plane, one spline), sharing one edge; five edges total.
     assert_eq!(result.ir().model.faces.len(), 2);
     assert_eq!(result.ir().model.edges.len(), 5);
@@ -1900,24 +1906,23 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// A report carrying the unconditional appearance loss that
 /// `build_container_report` and `build_geometry_report` state before appearance
 /// decoding runs.
-fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport {
-        format: "f3d".to_owned(),
-        container_only: false,
+fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
+    cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \
              transferred.",
         )],
         notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(format!("f3d:design:appearance#{guid}")),
+        id: cadmpeg_ir::ids::AppearanceId::mint(format!("f3d:design:appearance#{guid}"))
+            .expect("identity grammar"),
         name: Some("Prism-Opaque".to_owned()),
         asset_guid: Some(guid.to_owned()),
         library_id: None,
@@ -1936,7 +1941,7 @@ fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     }
 }
 
-fn material_losses(report: &cadmpeg_ir::report::DecodeReport) -> Vec<&str> {
+fn material_losses(report: &cadmpeg_ir::codec::DecodeBody) -> Vec<&str> {
     report
         .losses
         .iter()
@@ -1945,54 +1950,4 @@ fn material_losses(report: &cadmpeg_ir::report::DecodeReport) -> Vec<&str> {
         .collect()
 }
 
-#[test]
-fn appearance_loss_stands_when_no_asset_decodes() {
-    let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let mut report = appearance_loss_report();
-    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
-    assert_eq!(material_losses(&report).len(), 1);
-}
-
-#[test]
-fn appearance_loss_clears_when_an_unassigned_catalog_transfers() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.appearances = vec![opaque_appearance("2F0E19C1-0000-4000-8000-000000000001")];
-    let mut report = appearance_loss_report();
-    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
-    assert!(material_losses(&report).is_empty());
-}
-
-#[test]
-fn appearance_loss_counts_assets_whose_assignment_is_unresolved() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.appearances = vec![
-        opaque_appearance("2F0E19C1-0000-4000-8000-000000000001"),
-        opaque_appearance("2F0E19C1-0000-4000-8000-000000000002"),
-    ];
-    let mut report = appearance_loss_report();
-    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
-    let messages = material_losses(&report);
-    assert_eq!(messages.len(), 1);
-    assert!(messages[0].contains("2 Protein appearance asset(s)"));
-}
-
-#[test]
-fn appearance_loss_clears_when_an_assignment_resolves() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
-    ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
-        id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".to_owned(),
-        target: cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId(
-            "f3d:brep/a.smbh/brep:entity#1".to_owned(),
-        )),
-        appearance: appearance.id.clone(),
-        source_entity_id: None,
-        object_type: None,
-        visible: None,
-        channels: std::collections::BTreeMap::new(),
-    }];
-    ir.model.appearances = vec![appearance];
-    let mut report = appearance_loss_report();
-    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
-    assert!(material_losses(&report).is_empty());
-}
+mod assignment_losses;

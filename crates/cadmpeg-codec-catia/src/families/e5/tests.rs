@@ -181,13 +181,23 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     let topology = crate::families::e5::graph::parse_topology(&bytes).expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
-    assert_eq!(topology.faces[0].loops[0].edge_uses, vec![100, 101, 102]);
     assert_eq!(
-        topology.faces[0].loops[0].reversed,
+        topology.faces[0].loops[0]
+            .members
+            .iter()
+            .map(|member| member.edge_use)
+            .collect::<Vec<_>>(),
+        vec![100, 101, 102]
+    );
+    assert_eq!(
+        topology.faces[0].loops[0]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
         vec![false, false, false]
     );
     assert_eq!(topology.faces[0].loops[0].outer, Some(true));
-    assert_eq!(topology.faces[0].loops[0].orientation_signs, vec![1; 13]);
     assert_eq!(
         topology.faces[0].loops[0]
             .resolved_members()
@@ -206,13 +216,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![(0, true), (1, true), (2, true)]
     );
-    assert_eq!(
-        topology.faces[1].loops[0].orientation_signs,
-        [vec![1; 12], vec![0]].concat()
-    );
     assert_eq!(topology.bodies[0].faces, vec![600, 601]);
-    assert_eq!(topology.bodies[0].face_orientation_signs, vec![1, 1]);
-    assert_eq!(topology.bodies[0].extra_orientation_signs, [1, 1]);
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],
@@ -223,11 +227,12 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     ));
     assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
     assert_eq!(topology.bounds[&900].entries[1].representation, 200);
-    assert_eq!(topology.curve_supports[&200].pcurves, vec![400, 410]);
+    assert_eq!(topology.curve_supports[&200].pcurves(), &[400, 410]);
     assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
     assert!(matches!(
         topology.pcurves[&403],
-        crate::families::e5::graph::E5Pcurve::Jet { degree: 5, ref knots, .. } if knots == &[0.0, 1.0]
+        crate::families::e5::graph::E5Pcurve::Jet { ref sites, .. }
+            if sites.iter().map(|site| site.knot).collect::<Vec<_>>() == [0.0, 1.0]
     ));
 
     let mut missing_support = bytes.clone();
@@ -426,20 +431,23 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
         panic!("one standalone rolling-ball construction");
     };
-    assert_eq!(procedural.surface, result.ir().model.surfaces[0].id);
+    assert_eq!(
+        result.ir().model.procedural_surface_owner(&procedural.id),
+        Some(&result.ir().model.surfaces[0].id)
+    );
     let surface = &result.ir().model.surfaces[0];
     assert!(matches!(
         &surface.geometry,
-        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+        SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
     assert!(matches!(
-        procedural.definition,
+        procedural.definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
             degree: 5,
-            ref knots,
-            ref multiplicities,
-            ref sites,
-        } if knots == &[2.0, 5.0] && multiplicities == &[6, 6] && sites.len() == 2
+            ref stations,
+        } if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
+            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
+            && stations.len() == 2
     ));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
@@ -475,7 +483,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(
-        result.ir().model.loops[0].boundary_role,
+        result.ir().model.loops[0].boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(result.ir().model.coedges.len(), 4);
@@ -485,10 +493,9 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().model.curves.len(), 4);
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(matches!(
-        result.ir().model.procedural_curves[0].definition,
+        result.ir().model.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
-            ..
+            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { .. },
         }
     ));
     assert!(result

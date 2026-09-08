@@ -6,6 +6,17 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    let facts =
+        crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
+            cadmpeg_core::CodecError::WrongFormat(message) => {
+                cadmpeg_core::CodecError::Malformed(message)
+            }
+            error => error,
+        })?;
+    super::parse_with_context(document.as_bytes(), &facts, None)
+}
+
 #[test]
 pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
     let document = r#"<Document SchemaVersion="3">
@@ -36,7 +47,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
     assert_eq!(objects[0].type_name, "App::FeaturePython");
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object.as_deref(),
+        properties[1].links()[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -71,7 +82,7 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
     );
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[1].links[0].object.as_deref(),
+        properties[1].links()[0].object(),
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
@@ -90,7 +101,10 @@ fn rejects_duplicate_root_property_containers() {
             &DecodeOptions::default(),
         )
         .expect_err("duplicate root Properties containers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -109,7 +123,7 @@ fn rejects_duplicate_property_names_for_one_owner() {
         .expect_err("duplicate object property names");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("duplicate property name Label")
     ));
 }
@@ -144,7 +158,9 @@ fn rejects_nested_xlink_value_children() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -163,7 +179,9 @@ pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_co
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default()
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -226,54 +244,54 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("support");
     assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
-        support.links[0].object.as_deref(),
+        support.links()[0].object(),
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
-    assert_eq!(support.links[0].subelements, vec!["Face1"]);
-    assert_eq!(
-        support.dynamic.as_ref().and_then(|meta| meta.read_only),
-        Some(true)
-    );
+    assert_eq!(support.links()[0].subelements, vec!["Face1"]);
+    let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
+        panic!("support property is not persisted");
+    };
+    assert_eq!(dynamic.as_ref().and_then(|meta| meta.read_only), Some(true));
     let members = properties
         .iter()
         .find(|property| property.name == "Members")
         .expect("members");
-    assert_eq!(members.links.len(), 2);
+    assert_eq!(members.links().len(), 2);
     assert_eq!(
-        members.links[0].object.as_deref(),
+        members.links()[0].object(),
         Some("fcstd:native:object#Sketch")
     );
-    assert_eq!(members.links[1].object.as_deref(), Some(""));
+    assert_eq!(members.links()[1].object(), None);
     let transient = properties
         .iter()
         .find(|property| property.name == "TransientState")
         .expect("transient");
-    assert!(transient.transient);
+    assert!(transient.is_transient());
     assert_eq!(transient.status, Some(8));
     let payload = properties
         .iter()
         .find(|property| property.name == "Payload")
         .expect("payload");
-    assert_eq!(payload.side_entries, vec!["Payload.bin"]);
+    assert_eq!(payload.side_entries(), vec!["Payload.bin"]);
     let shape = properties
         .iter()
         .find(|property| property.name == "Shape")
         .expect("shape");
     assert_eq!(shape.family, crate::native::PropertyFamily::Geometry);
-    assert_eq!(shape.side_entries, vec!["Shape.brp"]);
+    assert_eq!(shape.side_entries(), vec!["Shape.brp"]);
     let shape_payloads = namespace
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .expect("shape payloads");
     assert_eq!(shape_payloads.len(), 1);
     assert_eq!(
         shape_payloads[0]
-            .text
-            .as_ref()
+            .payload
+            .shape_set()
             .map(|facts| facts.topology_version),
         Some(1)
     );
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
@@ -284,28 +302,31 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     match &result.ir().model.curves[1].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
-            assert_eq!(nurbs.degree, 2);
-            assert_eq!(nurbs.control_points.len(), 3);
-            assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-            assert!(nurbs.weights.is_none());
+            assert_eq!(nurbs.degree(), 2);
+            assert_eq!(nurbs.control_points().len(), 3);
+            assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected curve {other:?}"),
     }
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
-    match &result.ir().model.procedural_curves[0].definition {
+    match result.ir().model.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
             parameter_range, ..
         } => assert_eq!(*parameter_range, [0.0, 5.0]),
         other => panic!("unexpected trimmed construction {other:?}"),
     }
-    match &result.ir().model.procedural_curves[1].definition {
+    match result.ir().model.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
             distance,
-            direction,
+            side:
+                cadmpeg_ir::geometry::OffsetSide::Direction {
+                    direction,
+                    support: None,
+                },
             ..
         } => {
             assert_eq!(*distance, 2.0);
-            let direction = direction.expect("offset direction");
             assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
         }
         other => panic!("unexpected offset construction {other:?}"),
@@ -325,18 +346,18 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(matches!(
-        result.ir().model.procedural_surfaces[0].definition,
+        result.ir().model.procedural_surfaces[0].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[1].definition,
+        result.ir().model.procedural_surfaces[1].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             parameter_interval: None,
             ..
         }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[2].definition,
+        result.ir().model.procedural_surfaces[2].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
             u_sense: None,
             v_sense: None,
@@ -344,23 +365,23 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
     ));
     assert!(matches!(
-        result.ir().model.procedural_surfaces[3].definition,
+        result.ir().model.procedural_surfaces[3].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
     ));
     match &result.ir().model.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
-            assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
-            assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
-            assert_eq!(nurbs.control_points.len(), 4);
-            assert_eq!(nurbs.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
-            assert!(nurbs.weights.is_none());
+            assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+            assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
+            assert_eq!(nurbs.control_points().len(), 4);
+            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected surface {other:?}"),
     }
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert_eq!(result.ir().model.tessellations[0].vertices().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
     assert!(result.ir().model.tessellations[0].body.is_none());
     assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(
@@ -386,23 +407,23 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .collect::<Vec<_>>();
         spans.sort_by_key(|span| span.start);
         assert_eq!(spans.first().map(|span| span.start), Some(0));
-        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
+        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
     }
     assert!(ledger
         .iter()
         .filter(|span| span.entry == "Shape.brp")
-        .all(|span| span.classification == "typed"));
+        .all(|span| span.classification.as_str() == "typed"));
     assert!(ledger
         .iter()
         .filter(|span| span.entry == "Payload.bin")
-        .all(|span| span.classification == "named_opaque"));
+        .all(|span| span.classification.as_str() == "named_opaque"));
     assert!(ledger
         .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification == "typed"));
-    assert!(ledger
-        .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification == "structural"));
+        .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed"));
+    assert!(ledger.iter().any(|span| {
+        span.entry == "Document.xml" && span.classification.as_str() == "structural"
+    }));
     let coverage = namespace
         .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
         .expect("byte coverage");
@@ -411,7 +432,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(coverage[0].logical_entry_count, entries.len());
     assert_eq!(
         coverage[0].logical_byte_len,
-        entries.iter().map(|entry| entry.byte_len).sum::<u64>()
+        entries
+            .iter()
+            .map(super::super::native::EntryRecord::byte_len)
+            .sum::<u64>()
     );
     assert_eq!(
         coverage[0].classification_bytes.values().sum::<u64>(),
@@ -434,27 +458,11 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .namespace_mut("fcstd")
         .set_arena("logical_ledger", &missing_payload)
         .expect("replace logical ledger");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding
+    assert!(crate::validate_native(&corrupted).iter().any(|finding| {
+        finding
             .message
-            .contains("logical ledger omits nonempty entry Payload.bin")));
-
-    let mut corrupted = result.ir().clone();
-    let mut invalid_owner = ledger.clone();
-    invalid_owner
-        .iter_mut()
-        .find(|span| span.classification == "typed")
-        .expect("typed span")
-        .owner = None;
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena("logical_ledger", &invalid_owner)
-        .expect("replace logical ledger");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding.message.contains("invalid logical entry or owner")));
+            .contains("logical ledger omits nonempty entry Payload.bin")
+    }));
 
     let mut corrupted = result.ir().clone();
     let mut invalid_objects = objects.clone();
@@ -481,7 +489,7 @@ fn rejects_inconsistent_object_dependency_envelopes() {
 
     for document in cases {
         assert!(matches!(
-            crate::persistence::parse(document.as_bytes()),
+            parse_document_graph(document),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -509,7 +517,9 @@ fn rejects_ambiguous_persistence_carriers() {
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default()
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -522,7 +532,7 @@ fn binds_nested_extension_properties_to_their_enclosing_record() {
 <Extension type="Vendor::First" name="First"><Properties Count="1"><Property name="FirstValue" type="App::PropertyString"><String value="first"/></Property></Properties></Extension>
 <Extension type="Vendor::Second" name="Second"><Properties Count="1"><Property name="SecondValue" type="App::PropertyString"><String value="second"/></Property></Properties></Extension>
 </Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let graph = crate::persistence::parse(document.as_bytes()).expect("extension graph");
+    let graph = parse_document_graph(document).expect("extension graph");
     let first = graph
         .extensions
         .iter()
@@ -605,5 +615,18 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
         .find(|property| property.name == "Custom")
         .expect("custom property");
     assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
-    assert!(property.links.is_empty());
+    assert!(property.links().is_empty());
+}
+
+#[test]
+fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
+    let link = |markup: &str| {
+        let parsed = roxmltree::Document::parse(markup).expect("parse XLink markup");
+        super::xlink(parsed.root_element()).expect("decode XLink")
+    };
+    let empty = link(r#"<XLink file="" name="Body"/>"#);
+    let absent = link(r#"<XLink name="Body"/>"#);
+    assert_eq!(empty, absent);
+    assert_eq!(empty.document, None);
+    assert_eq!(empty.document_attribute(), None);
 }

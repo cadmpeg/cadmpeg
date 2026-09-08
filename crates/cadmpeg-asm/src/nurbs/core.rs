@@ -7,10 +7,11 @@
 //! edits the original binary stream in place and is therefore byte-addressed
 //! by nature.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions,
-    owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
-    INT_WIDTHS, LEN_TO_MM,
+    owned_marker_positions, read_control_points, read_knots, take_tagged_int, BsplineMarker,
+    KnotLayout, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
@@ -22,18 +23,18 @@ use cadmpeg_ir::math::Point3;
 use crate::nurbs::toks::take_knot_table as knots;
 use cadmpeg_core::decode::alloc_filled;
 
-/// Read `count` control points of `cp_dims` doubles each, scaling positions to
+/// Read `count` control points in the marker-selected form, scaling positions to
 /// millimetres. Token-space counterpart of [`read_control_points`].
 fn control_points(
     cur: &mut Cur<'_>,
     count: usize,
-    cp_dims: usize,
+    marker: BsplineMarker,
 ) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
     let mut points = Vec::new();
-    let mut weights = (cp_dims == 4).then(Vec::new);
+    let mut weights = marker.rational().then(Vec::new);
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
-        for comp in comps.iter_mut().take(cp_dims) {
+        for comp in comps.iter_mut().take(marker.cp_dims()) {
             *comp = cur.take_f64()?;
         }
         points.push(Point3::new(
@@ -52,7 +53,7 @@ fn control_points(
 /// surface and the token index just past the block. Token-space counterpart of
 /// [`decode_surface_block`].
 pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsSurface, usize)> {
-    let cp_dims = toks::marker_at(toks, marker_pos)?.cp_dims();
+    let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
     let degree_u = cur.take_long()?;
@@ -83,7 +84,7 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let (flat, flat_w) = control_points(&mut cur, n_poles_u * n_poles_v, cp_dims)?;
+    let (flat, flat_w) = control_points(&mut cur, n_poles_u * n_poles_v, marker)?;
     let pole_count = n_poles_u * n_poles_v;
     let mut grid = alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
     let mut weights = match &flat_w {
@@ -101,29 +102,28 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
         }
     }
 
-    Some((
-        NurbsSurface {
-            u_degree: degree_u as u32,
-            v_degree: degree_v as u32,
-            u_knots,
-            v_knots,
-            u_count: n_poles_u as u32,
-            v_count: n_poles_v as u32,
-            control_points: grid,
-            weights,
-            normal_reversed: false,
-            u_periodic: is_periodic(enums[0]),
-            v_periodic: is_periodic(enums[1]),
-        },
-        cur.pos(),
-    ))
+    let surface = NurbsSurface::new(
+        degree_u as u32,
+        degree_v as u32,
+        u_knots,
+        v_knots,
+        n_poles_u as u32,
+        n_poles_v as u32,
+        grid,
+        weights,
+        false,
+        is_periodic(enums[0]),
+        is_periodic(enums[1]),
+    )
+    .ok()?;
+    Some((surface, cur.pos()))
 }
 
 /// Decode a curve `nubs`/`nurbs` block at token `marker_pos`, returning the
 /// curve and the token index just past the block. Token-space counterpart of
 /// [`decode_curve_block`].
 pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCurve, usize)> {
-    let cp_dims = toks::marker_at(toks, marker_pos)?.cp_dims();
+    let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
     let degree = cur.take_long()?;
@@ -136,18 +136,17 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
         return None;
     }
     let (knot_vector, n_poles) = knots(&mut cur, n_uniq as usize, degree)?;
-    let (points, weights) = control_points(&mut cur, n_poles, cp_dims)?;
+    let (points, weights) = control_points(&mut cur, n_poles, marker)?;
 
-    Some((
-        NurbsCurve {
-            degree: degree as u32,
-            knots: knot_vector,
-            control_points: points,
-            weights,
-            periodic: is_periodic(closure),
-        },
-        cur.pos(),
-    ))
+    let curve = NurbsCurve::new(
+        degree as u32,
+        knot_vector,
+        points,
+        weights,
+        is_periodic(closure),
+    )
+    .ok()?;
+    Some((curve, cur.pos()))
 }
 
 /// Decode the face-surface cache of a spline surface record from its payload
@@ -254,25 +253,47 @@ pub(crate) fn owned_curve_cache_resolving_refs(
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
 /// there are not a well-formed surface block.
-pub(crate) struct DecodedSurfaceBlock {
-    pub(crate) surface: NurbsSurface,
-    pub(crate) end: usize,
-    control_value_offsets: Vec<usize>,
-    rational: bool,
-    u_knot_layout: KnotLayout,
-    v_knot_layout: KnotLayout,
-    periodic_value_offsets: [usize; 2],
-    degree_value_offsets: [usize; 2],
-    int_width: usize,
+pub struct SurfacePatchLayout {
+    /// Decoded surface cache.
+    pub surface: NurbsSurface,
+    control_start: usize,
+    /// Native payload offsets for U knots.
+    pub u_knots: KnotLayout,
+    /// Native payload offsets for V knots.
+    pub v_knots: KnotLayout,
+    /// Payload offsets for the U/V closure enums.
+    pub periodic_value_offsets: [usize; 2],
+    /// Payload offsets for the U/V degree integers.
+    pub degree_value_offsets: [usize; 2],
+    /// Payload width of integer and enum fields.
+    pub int_width: RefWidth,
+}
+
+impl SurfacePatchLayout {
+    /// Offset immediately after the final control component.
+    pub fn end(&self) -> usize {
+        self.control_start + self.control_value_offsets().len() * 9
+    }
+
+    /// Native v-major tagged-double payload offsets, excluding each tag byte.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        let components = if self.surface.weights().is_some() {
+            4
+        } else {
+            3
+        };
+        (0..self.surface.control_points().len() * components)
+            .map(|ordinal| self.control_start + ordinal * 9 + 1)
+    }
 }
 
 pub(crate) fn decode_surface_block(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
-) -> Option<DecodedSurfaceBlock> {
-    let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
-    let mut pos = marker_pos + marker_len;
+    int_width: RefWidth,
+) -> Option<SurfacePatchLayout> {
+    let marker = marker_at(b, marker_pos)?;
+    let mut pos = marker_pos + marker.byte_len();
 
     let degree_u_offset = pos + 1;
     let degree_u = take_tagged_int(b, &mut pos, 0x04, int_width)?;
@@ -310,10 +331,7 @@ pub(crate) fn decode_surface_block(
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
     let control_start = pos;
-    let (flat, flat_w) = read_control_points(b, &mut pos, n_poles_u * n_poles_v, cp_dims)?;
-    let control_value_offsets = (0..n_poles_u * n_poles_v * cp_dims)
-        .map(|ordinal| control_start + ordinal * 9 + 1)
-        .collect();
+    let (flat, flat_w) = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
     let pole_count = n_poles_u * n_poles_v;
     let mut control_points =
         alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
@@ -332,95 +350,41 @@ pub(crate) fn decode_surface_block(
         }
     }
 
-    Some(DecodedSurfaceBlock {
-        surface: NurbsSurface {
-            u_degree: degree_u as u32,
-            v_degree: degree_v as u32,
-            u_knots,
-            v_knots,
-            u_count: n_poles_u as u32,
-            v_count: n_poles_v as u32,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: is_periodic(enums[0]),
-            v_periodic: is_periodic(enums[1]),
-        },
-        end: pos,
-        control_value_offsets,
-        rational,
-        u_knot_layout,
-        v_knot_layout,
+    let surface = NurbsSurface::new(
+        degree_u as u32,
+        degree_v as u32,
+        u_knots,
+        v_knots,
+        n_poles_u as u32,
+        n_poles_v as u32,
+        control_points,
+        weights,
+        false,
+        is_periodic(enums[0]),
+        is_periodic(enums[1]),
+    )
+    .ok()?;
+    Some(SurfacePatchLayout {
+        surface,
+        control_start,
+        u_knots: u_knot_layout,
+        v_knots: v_knot_layout,
         periodic_value_offsets: [enum_value_offsets[0], enum_value_offsets[1]],
         degree_value_offsets: [degree_u_offset, degree_v_offset],
         int_width,
     })
 }
 
-/// Writable value offsets for the final valid surface cache in one carrier record.
-pub struct SurfacePatchLayout {
-    /// Payload width of integer and enum fields.
-    pub int_width: usize,
-    /// Native v-major tagged-double payload offsets, excluding each tag byte.
-    pub control_value_offsets: Vec<usize>,
-    /// Whether every pole includes a fourth rational weight component.
-    pub rational: bool,
-    /// Pole count in the u direction.
-    pub u_count: usize,
-    /// Pole count in the v direction.
-    pub v_count: usize,
-    /// Native payload offsets and expanded run lengths for U knots.
-    pub u_knots: KnotPatchLayout,
-    /// Native payload offsets and expanded run lengths for V knots.
-    pub v_knots: KnotPatchLayout,
-    /// Offset immediately after the final control component.
-    pub end: usize,
-    /// Payload offsets for the U/V closure enums.
-    pub periodic_value_offsets: [usize; 2],
-    /// Payload offsets for the U/V degree integers.
-    pub degree_value_offsets: [usize; 2],
-}
-
-/// Unique native knot payload offsets.
-pub struct KnotPatchLayout {
-    /// Payload offsets for unique knot values.
-    pub value_offsets: Vec<usize>,
-    /// Payload offsets for stored multiplicities.
-    pub multiplicity_offsets: Vec<usize>,
-    /// Repetition count of each unique value in the expanded IR vector.
-    #[expect(dead_code)]
-    pub(crate) expanded_run_lengths: Vec<usize>,
-}
-
-impl From<KnotLayout> for KnotPatchLayout {
-    fn from(value: KnotLayout) -> Self {
-        Self {
-            value_offsets: value.value_offsets,
-            multiplicity_offsets: value.multiplicity_offsets,
-            expanded_run_lengths: value.expanded_run_lengths,
-        }
-    }
-}
-
 /// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
 /// integer width.
-pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<SurfacePatchLayout> {
-    let decoded = construction_marker_positions(record, int_width)
+pub fn final_surface_patch_layout(
+    record: &[u8],
+    int_width: RefWidth,
+) -> Option<SurfacePatchLayout> {
+    construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
-        .next_back()?;
-    Some(SurfacePatchLayout {
-        int_width: decoded.int_width,
-        control_value_offsets: decoded.control_value_offsets,
-        rational: decoded.rational,
-        u_count: decoded.surface.u_count as usize,
-        v_count: decoded.surface.v_count as usize,
-        u_knots: decoded.u_knot_layout.into(),
-        v_knots: decoded.v_knot_layout.into(),
-        end: decoded.end,
-        periodic_value_offsets: decoded.periodic_value_offsets,
-        degree_value_offsets: decoded.degree_value_offsets,
-    })
+        .next_back()
 }
 
 /// Locate the surface block at `ordinal` among valid surface caches at the
@@ -428,46 +392,51 @@ pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<Sur
 pub fn surface_patch_layout_at(
     record: &[u8],
     ordinal: usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
-    let decoded = construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
-        .nth(ordinal)?;
-    Some(SurfacePatchLayout {
-        int_width: decoded.int_width,
-        control_value_offsets: decoded.control_value_offsets,
-        rational: decoded.rational,
-        u_count: decoded.surface.u_count as usize,
-        v_count: decoded.surface.v_count as usize,
-        u_knots: decoded.u_knot_layout.into(),
-        v_knots: decoded.v_knot_layout.into(),
-        end: decoded.end,
-        periodic_value_offsets: decoded.periodic_value_offsets,
-        degree_value_offsets: decoded.degree_value_offsets,
-    })
+        .nth(ordinal)
 }
 
 /// Decode a curve `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
 /// there are not a well-formed 3D curve block.
-pub(crate) struct DecodedCurveBlock {
-    pub(crate) curve: NurbsCurve,
-    pub(crate) end: usize,
-    control_value_offsets: Vec<usize>,
-    rational: bool,
-    knot_layout: KnotLayout,
-    periodic_value_offset: usize,
-    degree_value_offset: usize,
-    int_width: usize,
+pub struct CurvePatchLayout {
+    /// Decoded curve cache.
+    pub curve: NurbsCurve,
+    control_start: usize,
+    /// Native unique-knot payloads.
+    pub knots: KnotLayout,
+    /// Payload offset for the closure enum.
+    pub periodic_value_offset: usize,
+    /// Payload offset for the degree integer.
+    pub degree_value_offset: usize,
+    /// Payload width of integer and enum fields.
+    pub int_width: RefWidth,
+}
+
+impl CurvePatchLayout {
+    /// Offset immediately after the final control component.
+    pub fn end(&self) -> usize {
+        self.control_start + self.control_value_offsets().len() * 9
+    }
+
+    /// Tagged-double payload offsets in pole/component order.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        let components = if self.curve.weights().is_some() { 4 } else { 3 };
+        (0..self.curve.control_points().len() * components)
+            .map(|ordinal| self.control_start + ordinal * 9 + 1)
+    }
 }
 
 pub(crate) fn decode_curve_block(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
-) -> Option<DecodedCurveBlock> {
-    let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
-    let mut pos = marker_pos + marker_len;
+    int_width: RefWidth,
+) -> Option<CurvePatchLayout> {
+    let marker = marker_at(b, marker_pos)?;
+    let mut pos = marker_pos + marker.byte_len();
 
     let degree_value_offset = pos + 1;
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
@@ -483,82 +452,39 @@ pub(crate) fn decode_curve_block(
     let (knots, n_poles, knot_layout) =
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let control_start = pos;
-    let (control_points, weights) = read_control_points(b, &mut pos, n_poles, cp_dims)?;
-    let control_value_offsets = (0..n_poles * cp_dims)
-        .map(|ordinal| control_start + ordinal * 9 + 1)
-        .collect();
+    let (control_points, weights) = read_control_points(b, &mut pos, n_poles, marker)?;
 
-    Some(DecodedCurveBlock {
-        curve: NurbsCurve {
-            degree: degree as u32,
-            knots,
-            control_points,
-            weights,
-            periodic: is_periodic(closure),
-        },
-        end: pos,
-        control_value_offsets,
-        rational,
-        knot_layout,
+    let curve = NurbsCurve::new(
+        degree as u32,
+        knots,
+        control_points,
+        weights,
+        is_periodic(closure),
+    )
+    .ok()?;
+    Some(CurvePatchLayout {
+        curve,
+        control_start,
+        knots: knot_layout,
         periodic_value_offset,
         degree_value_offset,
         int_width,
     })
 }
 
-/// Writable value offsets for a 3D curve cache in one carrier record.
-pub struct CurvePatchLayout {
-    /// Payload width of integer and enum fields.
-    pub int_width: usize,
-    /// Tagged-double payload offsets in pole/component order.
-    pub control_value_offsets: Vec<usize>,
-    /// Whether every pole includes a fourth rational weight component.
-    pub rational: bool,
-    /// Number of control points.
-    pub control_count: usize,
-    /// Native unique-knot payloads and expanded run lengths.
-    pub knots: KnotPatchLayout,
-    /// Offset immediately after the final control component.
-    pub end: usize,
-    /// Payload offset for the closure enum.
-    pub periodic_value_offset: usize,
-    /// Payload offset for the degree integer.
-    pub degree_value_offset: usize,
-}
-
 /// Locate the first valid 3D curve cache at the stream's known integer width.
-pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
-    let decoded = construction_marker_positions(record, int_width)
+pub fn first_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
+    construction_marker_positions(record, int_width)
         .into_iter()
-        .find_map(|position| decode_curve_block(record, position, int_width))?;
-    Some(CurvePatchLayout {
-        int_width: decoded.int_width,
-        control_count: decoded.curve.control_points.len(),
-        control_value_offsets: decoded.control_value_offsets,
-        rational: decoded.rational,
-        knots: decoded.knot_layout.into(),
-        end: decoded.end,
-        periodic_value_offset: decoded.periodic_value_offset,
-        degree_value_offset: decoded.degree_value_offset,
-    })
+        .find_map(|position| decode_curve_block(record, position, int_width))
 }
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
-pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
-    let decoded = construction_marker_positions(record, int_width)
+pub fn final_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
+    construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_curve_block(record, position, int_width))
-        .next_back()?;
-    Some(CurvePatchLayout {
-        int_width: decoded.int_width,
-        control_count: decoded.curve.control_points.len(),
-        control_value_offsets: decoded.control_value_offsets,
-        rational: decoded.rational,
-        knots: decoded.knot_layout.into(),
-        end: decoded.end,
-        periodic_value_offset: decoded.periodic_value_offset,
-        degree_value_offset: decoded.degree_value_offset,
-    })
+        .next_back()
 }
 
 /// Decode the unique well-formed surface cache across both integer widths.
@@ -586,7 +512,7 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 /// nested constructions carries their caches too, and those are not its own.
 pub(crate) fn decode_owned_surface_cache_at(
     scope: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsSurface> {
     owned_marker_positions(scope, int_width)
         .into_iter()
@@ -602,7 +528,7 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsSurface> {
     decode_cache_resolving_refs(
         scope,
@@ -635,7 +561,7 @@ pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
-pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
+pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
     owned_marker_positions(scope, int_width)
         .into_iter()
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
@@ -647,7 +573,7 @@ pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsCurve> {
     decode_cache_resolving_refs(
         scope,

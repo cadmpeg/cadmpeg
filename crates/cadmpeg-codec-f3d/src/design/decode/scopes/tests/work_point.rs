@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -59,11 +58,17 @@ fn work_point_direct_record_carries_model_space_position() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "427".into(),
+        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("WorkPoint scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
     let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -144,11 +149,18 @@ fn work_point_input_count_frames_the_rule_inputs() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "427".into(),
+        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let records = IndexedRecordOffsets::build(&bytes);
-    let scope = parse_parameter_scope(&bytes, &records, &header).expect("WorkPoint scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(frame.rule.reference_type(), 18);
@@ -172,7 +184,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }
 
-fn work_point_input_indices(rule: &crate::records::DesignWorkPointRule) -> Vec<u32> {
+fn work_point_input_indices(rule: &crate::records::feature::DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
         .map(|input| input.record_index)

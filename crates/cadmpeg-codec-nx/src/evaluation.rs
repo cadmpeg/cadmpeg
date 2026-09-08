@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral evaluation of Siemens NX feature-history effects.
 
+use crate::decode::feature_completeness;
+
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length, PatternSeed,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::ids::BodyId;
 
-use crate::decode::{output_free_local_body_construction, output_free_native_snapshot};
+use crate::decode::feature_completeness::{
+    output_free_local_body_construction, output_free_native_snapshot,
+};
+use serde::{Deserialize, Serialize};
 
 /// Why a saved-body census cannot yet be evaluated exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum UnsupportedBodyCensusReason {
     /// A feature's active or suppressed state is unresolved.
@@ -25,13 +32,40 @@ pub enum UnsupportedBodyCensusReason {
     InvalidOutputLineage,
     /// Feature ordinals or dependency directions do not form a replay order.
     InvalidHistoryOrder,
-    /// The active configuration requires configuration-local evaluation.
-    ConfigurationEvaluation,
+}
+
+impl UnsupportedBodyCensusReason {
+    /// Stable snake-case code for this boundary.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnresolvedSuppression => "unresolved_suppression",
+            Self::UnsupportedFeatureDefinition => "unsupported_feature_definition",
+            Self::IncompleteFeatureDefinition => "incomplete_feature_definition",
+            Self::InvalidOutputLineage => "invalid_output_lineage",
+            Self::InvalidHistoryOrder => "invalid_history_order",
+        }
+    }
+}
+
+/// Feature at an unsupported saved-body census boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBoundary {
+    /// Feature identity at the boundary.
+    pub id: FeatureId,
+    /// Feature display name, if any.
+    pub name: Option<String>,
+    /// Feature definition family, if any.
+    pub family: Option<String>,
+    /// Feature history ordinal.
+    pub ordinal: u64,
 }
 
 /// Result of evaluating neutral history against the saved current-body census.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "BodyCensusEvaluationWire",
+    into = "BodyCensusEvaluationWire"
+)]
 pub enum BodyCensusEvaluation {
     /// Neutral evaluation produced exactly the saved body identities.
     Verified {
@@ -40,11 +74,13 @@ pub enum BodyCensusEvaluation {
     },
     /// Exact evaluation stopped at an unsupported semantic boundary.
     Unsupported {
-        /// Feature at the boundary, or `None` for configuration-level state.
-        feature: Option<FeatureId>,
+        /// Feature at the boundary.
+        feature: FeatureBoundary,
         /// Semantic boundary that prevented exact evaluation.
         reason: UnsupportedBodyCensusReason,
     },
+    /// Active configuration requires configuration-local evaluation.
+    ConfigurationEvaluation,
     /// Evaluation completed, but its body identities differ from the saved model.
     Mismatch {
         /// Re-derived body identities in canonical order.
@@ -52,6 +88,75 @@ pub enum BodyCensusEvaluation {
         /// Saved body identities in canonical order.
         saved: Vec<BodyId>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum BodyCensusEvaluationWire {
+    Verified {
+        bodies: Vec<BodyId>,
+    },
+    Unsupported {
+        feature: Option<FeatureBoundary>,
+        reason: String,
+    },
+    Mismatch {
+        rederived: Vec<BodyId>,
+        saved: Vec<BodyId>,
+    },
+}
+
+impl TryFrom<BodyCensusEvaluationWire> for BodyCensusEvaluation {
+    type Error = String;
+
+    fn try_from(wire: BodyCensusEvaluationWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            BodyCensusEvaluationWire::Verified { bodies } => Self::Verified { bodies },
+            BodyCensusEvaluationWire::Mismatch { rederived, saved } => {
+                Self::Mismatch { rederived, saved }
+            }
+            BodyCensusEvaluationWire::Unsupported { feature, reason } => {
+                if reason == "configuration_evaluation" {
+                    if feature.is_some() {
+                        return Err(
+                            "feature: configuration evaluation cannot name a feature".into()
+                        );
+                    }
+                    Self::ConfigurationEvaluation
+                } else {
+                    let reason = UnsupportedBodyCensusReason::deserialize(
+                        serde::de::value::StringDeserializer::<serde::de::value::Error>::new(
+                            reason,
+                        ),
+                    )
+                    .map_err(|error| format!("reason: {error}"))?;
+                    Self::Unsupported {
+                        feature: feature.ok_or("feature: required for feature evaluation")?,
+                        reason,
+                    }
+                }
+            }
+        })
+    }
+}
+
+impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
+    fn from(value: BodyCensusEvaluation) -> Self {
+        match value {
+            BodyCensusEvaluation::Verified { bodies } => Self::Verified { bodies },
+            BodyCensusEvaluation::Mismatch { rederived, saved } => {
+                Self::Mismatch { rederived, saved }
+            }
+            BodyCensusEvaluation::Unsupported { feature, reason } => Self::Unsupported {
+                feature: Some(feature),
+                reason: reason.as_str().into(),
+            },
+            BodyCensusEvaluation::ConfigurationEvaluation => Self::Unsupported {
+                feature: None,
+                reason: "configuration_evaluation".into(),
+            },
+        }
+    }
 }
 
 impl BodyCensusEvaluation {
@@ -71,10 +176,7 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     let rederived = match rederived_body_census(ir) {
         Ok(bodies) => bodies,
         Err((feature, reason)) => {
-            return BodyCensusEvaluation::Unsupported {
-                feature: Some(feature),
-                reason,
-            };
+            return BodyCensusEvaluation::Unsupported { feature, reason };
         }
     };
     let saved = ir
@@ -91,93 +193,28 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     }
 
     if !active_configuration_is_admitted(ir, &saved) {
-        return BodyCensusEvaluation::Unsupported {
-            feature: None,
-            reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
-        };
+        return BodyCensusEvaluation::ConfigurationEvaluation;
     }
     BodyCensusEvaluation::Verified {
         bodies: rederived.into_iter().collect(),
     }
 }
 
-/// Saved-body census evidence for the profile harness.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyCensusEvidence {
-    /// Whether neutral evaluation exactly reproduced the saved body census.
-    pub verified: bool,
-    /// Semantic boundary or mismatch code; absent when verified.
-    pub reason: Option<String>,
-    /// Feature identity at the boundary, if any.
-    pub feature: Option<String>,
-    /// Feature display name at the boundary, if any.
-    pub feature_name: Option<String>,
-    /// Feature definition family at the boundary, if any.
-    pub feature_family: Option<String>,
-    /// Feature history ordinal at the boundary, if any.
-    pub feature_ordinal: Option<u64>,
+fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary {
+    FeatureBoundary {
+        id: feature.id.clone(),
+        name: feature.name.clone(),
+        family: serde_json::to_value(&feature.definition)
+            .ok()
+            .and_then(|definition| definition.get("definition")?.as_str().map(str::to_string)),
+        ordinal: feature.ordinal,
+    }
 }
 
 /// Saved-body census evidence for the profile harness.
 #[doc(hidden)]
-pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvidence {
-    let evaluation = evaluate_saved_body_census(ir);
-    let verified = evaluation.is_verified();
-    match evaluation {
-        BodyCensusEvaluation::Verified { .. } => BodyCensusEvidence {
-            verified,
-            reason: None,
-            feature: None,
-            feature_name: None,
-            feature_family: None,
-            feature_ordinal: None,
-        },
-        BodyCensusEvaluation::Mismatch { .. } => BodyCensusEvidence {
-            verified,
-            reason: Some("saved_body_census_mismatch".to_string()),
-            feature: None,
-            feature_name: None,
-            feature_family: None,
-            feature_ordinal: None,
-        },
-        BodyCensusEvaluation::Unsupported { feature, reason } => {
-            let boundary_feature = feature.as_ref().and_then(|id| {
-                ir.model
-                    .features
-                    .iter()
-                    .find(|candidate| candidate.id == *id)
-            });
-            let feature_name = boundary_feature.and_then(|feature| feature.name.clone());
-            let feature_family = boundary_feature.and_then(|feature| {
-                serde_json::to_value(&feature.definition)
-                    .ok()?
-                    .get("definition")?
-                    .as_str()
-                    .map(str::to_string)
-            });
-            let feature_ordinal = boundary_feature.map(|feature| feature.ordinal);
-            let reason = match reason {
-                UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
-                UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
-                    "unsupported_feature_definition"
-                }
-                UnsupportedBodyCensusReason::IncompleteFeatureDefinition => {
-                    "incomplete_feature_definition"
-                }
-                UnsupportedBodyCensusReason::InvalidOutputLineage => "invalid_output_lineage",
-                UnsupportedBodyCensusReason::InvalidHistoryOrder => "invalid_history_order",
-                UnsupportedBodyCensusReason::ConfigurationEvaluation => "configuration_evaluation",
-            };
-            BodyCensusEvidence {
-                verified,
-                reason: Some(reason.to_string()),
-                feature: feature.map(|id| id.0),
-                feature_name,
-                feature_family,
-                feature_ordinal,
-            }
-        }
-    }
+pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvaluation {
+    evaluate_saved_body_census(ir)
 }
 
 fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> bool {
@@ -190,7 +227,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active.is_active());
+        .filter(|configuration| configuration.active);
     let Some(configuration) = active.next() else {
         return false;
     };
@@ -202,12 +239,12 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         && configuration_bodies.iter().collect::<BTreeSet<_>>()
             == saved.iter().collect::<BTreeSet<_>>()
         && (ir.model.features.iter().all(is_body_neutral_feature)
-            || !crate::decode::active_configuration_state_is_incomplete(ir, configuration))
+            || !feature_completeness::active_configuration_state_is_incomplete(ir, configuration))
 }
 
 fn rederived_body_census(
     ir: &CadIr,
-) -> Result<BTreeSet<BodyId>, (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<BTreeSet<BodyId>, (FeatureBoundary, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
     let saved_bodies = ir
         .model
@@ -228,7 +265,7 @@ fn rederived_body_census(
                 .any(|dependency| !seen_features.contains(dependency))
         {
             return Err((
-                feature.id.clone(),
+                feature_boundary(feature),
                 UnsupportedBodyCensusReason::InvalidHistoryOrder,
             ));
         }
@@ -239,7 +276,7 @@ fn rederived_body_census(
                 && !suppression_is_body_census_invariant(feature, &bodies) =>
             {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::UnresolvedSuppression,
                 ));
             }
@@ -251,32 +288,35 @@ fn rederived_body_census(
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::Unresolved {
+                family:
+                    UnresolvedFamily::DatumPlane
+                    | UnresolvedFamily::DatumAxis
+                    | UnresolvedFamily::DatumPoint
+                    | UnresolvedFamily::DatumCoordinateSystem
+                    | UnresolvedFamily::BridgeCurve,
+            }
             | FeatureDefinition::DatumOffsetPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumAxisUnresolved
             | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::Sketch { .. }
             | FeatureDefinition::ProjectedCurve { .. }
             | FeatureDefinition::SectionShape { .. } => {
                 if !feature.outputs.is_empty() {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
             }
             FeatureDefinition::Native { kind, .. }
-                if kind == "DELETE"
+                if kind.as_str() == "DELETE"
                     && !feature
                         .source_properties
                         .contains_key("primary_body_object_index") => {}
             FeatureDefinition::Native { kind, .. }
-                if kind == "FSET" && feature.outputs.is_empty() => {}
+                if kind.as_str() == "FSET" && feature.outputs.is_empty() => {}
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
                 placement: Some(placement),
@@ -284,13 +324,13 @@ fn rederived_body_census(
             } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
                 let [output] = feature.outputs.as_slice() else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 };
                 if !bodies.insert(output.clone()) {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -314,7 +354,7 @@ fn rederived_body_census(
             }
             FeatureDefinition::Block { .. } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -323,37 +363,58 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::sphere_definition_is_incomplete(feature),
+                    feature_completeness::sphere_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::LoftUnresolved | FeatureDefinition::FreeformSurfaceUnresolved
-                if feature.outputs.is_empty() => {}
-            FeatureDefinition::BrepUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::BrepUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep,
+            } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::DeleteFaceUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::DeleteFaceUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DeleteFace,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DeleteFace,
+            } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::MirrorFaceUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::MirrorFaceUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::MirrorFace,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::MirrorFace,
+            } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::SubdivisionBodyUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::SubdivisionBodyUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::SubdivisionBody,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::SubdivisionBody,
+            } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::TopologyOptimizationUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::TopologyOptimizationUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::TopologyOptimization,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::TopologyOptimization,
+            } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -362,7 +423,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::loft_definition_is_incomplete(feature),
+                    feature_completeness::loft_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Extrude {
@@ -377,7 +438,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::extrude_definition_is_incomplete(feature),
+                    feature_completeness::extrude_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Revolve { .. } if output_free_local_body_construction(feature) => {}
@@ -386,7 +447,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::revolve_definition_is_incomplete(feature),
+                    feature_completeness::revolve_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Rib { .. } if output_free_local_body_construction(feature) => {}
@@ -395,13 +456,14 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::rib_definition_is_incomplete(feature),
+                    feature_completeness::rib_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Sweep { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Sweep { mode, .. } => {
                 let op = match mode {
-                    cadmpeg_ir::features::SweepMode::Solid { op } => *op,
+                    cadmpeg_ir::features::SweepMode::Solid { op } => (*op).into(),
+                    cadmpeg_ir::features::SweepMode::NewBody => BooleanOp::NewBody,
                     cadmpeg_ir::features::SweepMode::Surface => BooleanOp::NewBody,
                     cadmpeg_ir::features::SweepMode::Unresolved => BooleanOp::Unresolved,
                 };
@@ -409,7 +471,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     op,
-                    crate::decode::sweep_definition_is_incomplete(feature),
+                    feature_completeness::sweep_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::BaseFeature { .. } if output_free_native_snapshot(feature) => {}
@@ -420,7 +482,7 @@ fn rederived_body_census(
             | FeatureDefinition::InsertBodies { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                     ));
                 };
@@ -428,7 +490,7 @@ fn rederived_body_census(
                     || selected.iter().any(|body| bodies.contains(body))
                 {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -440,7 +502,7 @@ fn rederived_body_census(
                 }
                 let Some(sources) = explicit_body_selection(source) else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                     ));
                 };
@@ -451,7 +513,7 @@ fn rederived_body_census(
                         != feature.outputs.len()
                 {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -484,7 +546,9 @@ fn rederived_body_census(
             FeatureDefinition::Draft { .. } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::DraftUnresolved if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft,
+            } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::ReplaceFace { .. } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
@@ -506,7 +570,7 @@ fn rederived_body_census(
                     target,
                     tools,
                     *keep_tools,
-                    crate::decode::combine_definition_is_incomplete(feature),
+                    feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::SewBodies {
@@ -519,7 +583,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     selection,
-                    crate::decode::sew_bodies_definition_is_incomplete(feature),
+                    feature_completeness::sew_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::TrimBodies { targets, tools, .. } => {
@@ -531,7 +595,7 @@ fn rederived_body_census(
                     &bodies,
                     targets,
                     tools,
-                    crate::decode::trim_bodies_definition_is_incomplete(feature),
+                    feature_completeness::trim_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::DeleteBody {
@@ -543,7 +607,7 @@ fn rederived_body_census(
                     &mut bodies,
                     selection,
                     *mode,
-                    crate::decode::delete_body_definition_is_incomplete(feature),
+                    feature_completeness::delete_body_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
@@ -554,8 +618,8 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     seeds,
-                    crate::decode::pattern_occurrence_count(pattern),
-                    crate::decode::pattern_feature_is_incomplete(
+                    feature_completeness::operands::pattern_occurrence_count(pattern),
+                    feature_completeness::operands::pattern_feature_is_incomplete(
                         seeds,
                         pattern,
                         &feature.dependencies,
@@ -564,7 +628,7 @@ fn rederived_body_census(
             }
             _ => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
                 ));
             }
@@ -580,24 +644,26 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
             FeatureDefinition::TreeNode { .. }
                 | FeatureDefinition::DatumPrincipalPlane { .. }
                 | FeatureDefinition::DatumPlane { .. }
-                | FeatureDefinition::DatumPlaneUnresolved
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane
+                        | UnresolvedFamily::DatumAxis
+                        | UnresolvedFamily::DatumPoint
+                        | UnresolvedFamily::DatumCoordinateSystem
+                        | UnresolvedFamily::BridgeCurve,
+                }
                 | FeatureDefinition::DatumOffsetPlane { .. }
                 | FeatureDefinition::DatumAxis { .. }
-                | FeatureDefinition::DatumAxisUnresolved
                 | FeatureDefinition::DatumPoint { .. }
-                | FeatureDefinition::DatumPointUnresolved
                 | FeatureDefinition::DatumCoordinateSystem { .. }
-                | FeatureDefinition::DatumCoordinateSystemUnresolved
-                | FeatureDefinition::BridgeCurveUnresolved
                 | FeatureDefinition::Sketch { .. }
                 | FeatureDefinition::ProjectedCurve { .. }
                 | FeatureDefinition::SectionShape { .. }
         ) || matches!(
             &feature.definition,
             FeatureDefinition::Native { kind, .. }
-                if (kind == "DELETE"
+                if (kind.as_str() == "DELETE"
                     && !feature.source_properties.contains_key("primary_body_object_index"))
-                    || kind == "FSET"
+                    || kind.as_str() == "FSET"
         ))
 }
 
@@ -629,8 +695,8 @@ fn suppression_is_body_census_invariant(
     let output_free_trim = feature.outputs.is_empty()
         && matches!(&feature.definition, FeatureDefinition::TrimBodies { .. });
     let output_free_pattern = matches!(&feature.definition, FeatureDefinition::Pattern { .. })
-        && (crate::decode::output_free_pattern_construction(feature)
-            || crate::decode::output_free_local_body_construction(feature));
+        && (feature_completeness::output_free_pattern_construction(feature)
+            || feature_completeness::output_free_local_body_construction(feature));
     let output_free_combine = feature.outputs.is_empty()
         && matches!(
             &feature.definition,
@@ -661,10 +727,20 @@ fn suppression_is_body_census_invariant(
             }
         );
     let output_free_local_in_place = output_free_local_body_construction(feature)
-        && matches!(&feature.definition, FeatureDefinition::DraftUnresolved);
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft
+            }
+        );
     let output_free_snapshot = output_free_native_snapshot(feature);
     let output_free_brep = feature.outputs.is_empty()
-        && matches!(feature.definition, FeatureDefinition::BrepUnresolved);
+        && matches!(
+            feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep
+            }
+        );
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
@@ -682,8 +758,14 @@ fn suppression_is_body_census_invariant(
             && matches!(
                 feature.definition,
                 FeatureDefinition::TrimSurface { .. }
-                    | FeatureDefinition::LoftUnresolved
-                    | FeatureDefinition::FreeformSurfaceUnresolved
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Loft
+                            | UnresolvedFamily::FreeformSurface
+                            | UnresolvedFamily::DeleteFace
+                            | UnresolvedFamily::MirrorFace
+                            | UnresolvedFamily::SubdivisionBody
+                            | UnresolvedFamily::TopologyOptimization,
+                    }
                     | FeatureDefinition::ExtendSurface { .. }
                     | FeatureDefinition::Hole { .. }
                     | FeatureDefinition::Chamfer { .. }
@@ -692,10 +774,6 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::OffsetSurface { .. }
                     | FeatureDefinition::Thicken { .. }
                     | FeatureDefinition::Draft { .. }
-                    | FeatureDefinition::DeleteFaceUnresolved
-                    | FeatureDefinition::MirrorFaceUnresolved
-                    | FeatureDefinition::SubdivisionBodyUnresolved
-                    | FeatureDefinition::TopologyOptimizationUnresolved
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }
@@ -719,7 +797,10 @@ fn local_tool_combine_is_census_invariant(
     tools: &BodySelection,
     bodies: &BTreeSet<BodyId>,
 ) -> bool {
-    let Some([target]) = explicit_body_selection(target) else {
+    let Some(selected_target) = explicit_body_selection(target) else {
+        return false;
+    };
+    let [target] = selected_target.as_slice() else {
         return false;
     };
     let BodySelection::Local {
@@ -743,11 +824,11 @@ fn preserve_in_place_single_output(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
     saved_bodies: &BTreeSet<BodyId>,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     preserve_in_place_outputs(feature, bodies, saved_bodies)?;
     if feature.outputs.len() > 1 {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -758,7 +839,7 @@ fn preserve_in_place_outputs(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
     saved_bodies: &BTreeSet<BodyId>,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     // A retained body image can be the final saved output of an in-place edit
     // even when no replay writer has established it yet. In-place operations
     // never create a body, so accept that terminal identity without inserting
@@ -771,7 +852,7 @@ fn preserve_in_place_outputs(
             .any(|output| !bodies.contains(output) && !saved_bodies.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -783,10 +864,10 @@ fn apply_complete_boolean_outputs(
     bodies: &mut BTreeSet<BodyId>,
     op: BooleanOp,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete || matches!(op, BooleanOp::Unresolved) {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -794,7 +875,7 @@ fn apply_complete_boolean_outputs(
         || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -811,7 +892,7 @@ fn apply_complete_boolean_outputs(
             if feature.outputs.iter().all(|output| bodies.contains(output)) => {}
         _ => {
             return Err((
-                feature.id.clone(),
+                feature_boundary(feature),
                 UnsupportedBodyCensusReason::InvalidOutputLineage,
             ));
         }
@@ -826,20 +907,26 @@ fn apply_complete_body_combine(
     tools: &BodySelection,
     keep_tools: bool,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
-    let (Some([target]), Some(tools)) = (
+    let (Some(targets), Some(tools)) = (
         explicit_body_selection(target),
         explicit_body_selection(tools),
     ) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    let [target] = targets.as_slice() else {
+        return Err((
+            feature_boundary(feature),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     };
     if feature.outputs.as_slice() != std::slice::from_ref(target)
@@ -847,13 +934,13 @@ fn apply_complete_body_combine(
         || tools.iter().any(|tool| !bodies.contains(tool))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
     if !keep_tools {
         for tool in tools {
-            bodies.remove(tool);
+            bodies.remove(&tool);
         }
     }
     Ok(())
@@ -864,16 +951,16 @@ fn apply_complete_body_replacement(
     bodies: &mut BTreeSet<BodyId>,
     inputs: &BodySelection,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
     let Some(inputs) = explicit_body_selection(inputs) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -887,12 +974,12 @@ fn apply_complete_body_replacement(
             .any(|output| bodies.contains(output) && !input_set.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
     for input in inputs {
-        bodies.remove(input);
+        bodies.remove(&input);
     }
     bodies.extend(feature.outputs.iter().cloned());
     Ok(())
@@ -904,10 +991,10 @@ fn apply_complete_body_retention(
     selection: &BodySelection,
     mode: BodyRetentionMode,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -919,20 +1006,20 @@ fn apply_complete_body_retention(
     }
     let Some(selected) = explicit_body_selection(selection) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
     if !feature.outputs.is_empty() || selected.iter().any(|body| !bodies.contains(body)) {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
     match mode {
         BodyRetentionMode::DeleteSelected => {
             for body in selected {
-                bodies.remove(body);
+                bodies.remove(&body);
             }
         }
         BodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
@@ -947,10 +1034,10 @@ fn preserve_complete_body_targets(
     targets: &BodySelection,
     tools: &BodySelection,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -959,7 +1046,7 @@ fn preserve_complete_body_targets(
         explicit_body_selection(tools),
     ) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -968,7 +1055,7 @@ fn preserve_complete_body_targets(
         || tools.iter().any(|tool| !bodies.contains(tool))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -981,16 +1068,16 @@ fn apply_complete_body_pattern(
     seeds: &[PatternSeed],
     occurrence_count: Option<usize>,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
     let Some(occurrence_count) = occurrence_count else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -999,7 +1086,7 @@ fn apply_complete_body_pattern(
         .any(|seed| !matches!(seed, PatternSeed::Bodies(_)))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
         ));
     }
@@ -1012,7 +1099,7 @@ fn apply_complete_body_pattern(
         .collect::<Option<Vec<_>>>()
     else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -1022,12 +1109,12 @@ fn apply_complete_body_pattern(
         .checked_mul(occurrence_count.saturating_sub(1));
     if expected_outputs != Some(feature.outputs.len())
         || seed_bodies.iter().collect::<BTreeSet<_>>().len() != seed_bodies.len()
-        || seed_bodies.iter().any(|body| !bodies.contains(*body))
+        || seed_bodies.iter().any(|body| !bodies.contains(body))
         || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
         || feature.outputs.iter().any(|output| bodies.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -1035,11 +1122,10 @@ fn apply_complete_body_pattern(
     Ok(())
 }
 
-fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
+fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
     let bodies = match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => bodies,
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.clone(),
+        BodySelection::ResolvedSet { members } => members.bodies().cloned().collect(),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
@@ -1081,6 +1167,8 @@ fn positive_length(length: Length) -> bool {
 
 #[cfg(test)]
 mod tests {
+    mod patterns;
+
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
@@ -1088,9 +1176,9 @@ mod tests {
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-        HolePlacement, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
-        RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode, SweepSection,
-        Termination, ThickenSide, TrimRegion,
+        HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
+        RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection,
+        ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1100,7 +1188,7 @@ mod tests {
 
     fn model_body(id: &str) -> Body {
         Body {
-            id: BodyId(id.to_string()),
+            id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1111,15 +1199,14 @@ mod tests {
     }
 
     fn complete_block_ir() -> CadIr {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let body = BodyId("body".to_string());
-        ir.model.bodies.push(model_body(&body.0));
+        let mut ir = CadIr::empty();
+        let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId("block".to_string()),
+            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1145,24 +1232,24 @@ mod tests {
                 (
                     feature.id.clone(),
                     ConfigurationFeatureState {
-                        suppressed: false,
+                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: feature.outputs.clone(),
+                        },
                         dependencies: feature.dependencies.clone(),
-                        outputs: feature.outputs.clone(),
                         definition: feature.definition.clone(),
                     },
                 )
             })
             .collect();
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId("active".to_string()),
+            id: ConfigurationId::mint("active".to_string()).expect("identity grammar"),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: Some(0),
             name: "Model".into(),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: ConfigurationBodies::Resolved(
                 ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
             ),
@@ -1174,11 +1261,10 @@ mod tests {
 
     fn complete_hole(body: BodyId) -> Feature {
         Feature {
-            id: FeatureId("hole".to_string()),
+            id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1189,19 +1275,17 @@ mod tests {
                 profile: None,
                 profile_filter: None,
                 face: None,
-                position: None,
                 direction: None,
-                placements: vec![HolePlacement::Directed {
+                placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 0.0, 1.0),
-                }],
-                kind: HoleKind::Simple,
+                }]),
+                construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                 exit_kind: None,
                 diameter: Some(Length(0.5)),
-                extent: Some(Termination::ThroughAll),
+                extent: Some(LinearTermination::ThroughAll),
                 bottom: None,
                 taper_angle: None,
-                specification: None,
                 allow_multi_profile_faces: None,
             },
             native_ref: None,
@@ -1215,11 +1299,10 @@ mod tests {
         definition: FeatureDefinition,
     ) -> Feature {
         Feature {
-            id: FeatureId(id.to_string()),
+            id: FeatureId::mint(id.to_string()).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1233,11 +1316,10 @@ mod tests {
 
     fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId(id.to_string()),
+            id: FeatureId::mint(id.to_string()).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1265,15 +1347,13 @@ mod tests {
                 start: ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(1.0),
                         },
                         draft: None,
-                        offset: None,
                     },
                 },
                 op,
-                direction_source: None,
                 solid: Some(true),
                 face_maker: None,
                 inner_wire_taper: None,
@@ -1300,15 +1380,14 @@ mod tests {
 
     #[test]
     fn complete_sphere_rederives_a_new_body() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let body = BodyId("sphere".to_string());
-        ir.model.bodies.push(model_body(&body.0));
+        let mut ir = CadIr::empty();
+        let body = BodyId::mint("test:model:entity#sphere".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId("sphere-feature".to_string()),
+            id: FeatureId::mint("sphere-feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1336,11 +1415,10 @@ mod tests {
         ir.model.features.insert(
             0,
             Feature {
-                id: FeatureId("initial-bodies".to_string()),
+                id: FeatureId::mint("initial-bodies".to_string()).expect("identity grammar"),
                 ordinal: 0,
                 name: Some("Retained history input".to_string()),
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -1360,7 +1438,9 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
-                bodies: vec![BodyId("body".to_string())],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],
             }
         );
     }
@@ -1432,7 +1512,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("section".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("section".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("section_shape".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1449,7 +1534,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("block".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("block".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -1501,15 +1591,15 @@ mod tests {
     fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
         let mut ir = complete_block_ir();
         let existing = ir.model.bodies[0].id.clone();
-        let created = BodyId("extruded".to_string());
-        ir.model.bodies.push(model_body(&created.0));
-        let profile = FeatureId("profile".to_string());
+        let created =
+            BodyId::mint("test:model:entity#extruded".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(created.as_str()));
+        let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            &profile.0,
+            profile.as_str(),
             1,
             FeatureDefinition::Sketch {
-                space: SketchSpace::Unresolved,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
             },
         ));
         ir.model.features.extend([
@@ -1541,13 +1631,12 @@ mod tests {
     fn new_body_operation_cannot_reuse_an_existing_body_identity() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let profile = FeatureId("profile".to_string());
+        let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            &profile.0,
+            profile.as_str(),
             1,
             FeatureDefinition::Sketch {
-                space: SketchSpace::Unresolved,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
             },
         ));
         ir.model.features.push(complete_extrude_feature(
@@ -1561,7 +1650,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("extrude".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("extrude".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("extrude".to_string()),
+                    ordinal: 2
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1574,7 +1668,7 @@ mod tests {
         let mut extrude = complete_extrude_feature(
             "extrude",
             1,
-            FeatureId("missing-profile".to_string()),
+            FeatureId::mint("missing-profile".to_string()).expect("identity grammar"),
             vec![body.clone()],
             BooleanOp::Unresolved,
         );
@@ -1593,8 +1687,7 @@ mod tests {
         let definitions = [
             FeatureDefinition::Loft {
                 sections: Vec::new(),
-                guides: Vec::new(),
-                centerline: None,
+                guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
                 op: BooleanOp::NewBody,
                 closed: false,
                 solid: true,
@@ -1606,22 +1699,13 @@ mod tests {
             complete_extrude_feature(
                 "fixture",
                 1,
-                FeatureId("profile".to_string()),
+                FeatureId::mint("profile".to_string()).expect("identity grammar"),
                 Vec::new(),
                 BooleanOp::NewBody,
             )
             .definition,
             FeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile: None,
-                    axis: None,
-                    extent: None,
-                    axis_reference: None,
-                    solid: None,
-                    face_maker_class: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                },
+                construction: RevolveConstruction::new(None, None, None, None, None, None, None),
                 op: BooleanOp::NewBody,
             },
             FeatureDefinition::Rib {
@@ -1662,7 +1746,14 @@ mod tests {
             assert_eq!(
                 evaluate_saved_body_census(&ir),
                 BodyCensusEvaluation::Unsupported {
-                    feature: Some(FeatureId(id)),
+                    feature: FeatureBoundary {
+                        id: FeatureId::mint(id).expect("identity grammar"),
+                        name: None,
+                        family: Some(
+                            ["loft", "extrude", "revolve", "rib", "sweep"][index].to_string()
+                        ),
+                        ordinal: 1
+                    },
                     reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 }
             );
@@ -1689,20 +1780,19 @@ mod tests {
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: None,
-                reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
-            }
+            BodyCensusEvaluation::ConfigurationEvaluation
         );
     }
 
     #[test]
     fn body_neutral_history_needs_only_exact_configuration_body_membership() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let mut datum = body_neutral_feature(
             "datum",
             0,
-            FeatureDefinition::DatumCoordinateSystemUnresolved,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
         );
         datum.suppressed = None;
         ir.model.features.push(datum);
@@ -1717,14 +1807,16 @@ mod tests {
 
     #[test]
     fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(body_neutral_feature(
             "datum",
             0,
-            FeatureDefinition::DatumCoordinateSystemUnresolved,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
         ));
         attach_complete_active_configuration(&mut ir);
-        ir.model.configurations[0].active = false.into();
+        ir.model.configurations[0].active = false;
         ir.model.configurations[0].bodies = ConfigurationBodies::Unresolved;
 
         assert_eq!(
@@ -1741,10 +1833,10 @@ mod tests {
         let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
             unreachable!("hole fixture")
         };
-        placements.clear();
+        *placements = None;
         ir.model.features.push(hole);
 
-        assert!(crate::decode::hole_definition_is_incomplete(
+        assert!(feature_completeness::hole_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(
@@ -1756,14 +1848,19 @@ mod tests {
     #[test]
     fn hole_cannot_modify_a_body_absent_from_prior_history() {
         let mut ir = complete_block_ir();
-        ir.model
-            .features
-            .push(complete_hole(BodyId("other".to_string())));
+        ir.model.features.push(complete_hole(
+            BodyId::mint("test:model:entity#other".to_string()).expect("identity grammar"),
+        ));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("hole".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("hole".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1774,12 +1871,17 @@ mod tests {
         let mut ir = complete_block_ir();
         ir.model.features[0]
             .dependencies
-            .push(FeatureId("later".to_string()));
+            .push(FeatureId::mint("later".to_string()).expect("identity grammar"));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("block".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("block".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
             }
         );
@@ -1809,7 +1911,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("hole".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("hole".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
             }
         );
@@ -1833,14 +1940,14 @@ mod tests {
     fn extract_body_copies_each_existing_source_to_one_new_output() {
         let mut ir = complete_block_ir();
         let source = ir.model.bodies[0].id.clone();
-        let extracted = BodyId("extracted".to_string());
-        ir.model.bodies.push(model_body(&extracted.0));
+        let extracted =
+            BodyId::mint("test:model:entity#extracted".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(extracted.as_str()));
         ir.model.features.push(Feature {
-            id: FeatureId("extract".to_string()),
+            id: FeatureId::mint("extract".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1856,7 +1963,10 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
-                bodies: vec![BodyId("body".to_string()), extracted],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+                    extracted
+                ],
             }
         );
     }
@@ -1865,11 +1975,10 @@ mod tests {
     fn output_free_local_extract_does_not_change_the_saved_body_census() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId("extract-local".to_string()),
+            id: FeatureId::mint("extract-local".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1888,7 +1997,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1897,11 +2006,10 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId("delete".to_string()),
+            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1926,11 +2034,10 @@ mod tests {
     fn delete_body_ignores_a_complete_feature_local_body() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId("delete-local".to_string()),
+            id: FeatureId::mint("delete-local".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1950,7 +2057,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1959,11 +2066,10 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId("delete".to_string()),
+            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1980,7 +2086,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("delete".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("delete_body".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
@@ -1990,7 +2101,8 @@ mod tests {
     fn keep_selected_removes_every_unselected_body() {
         let mut ir = complete_block_ir();
         let retained = ir.model.bodies[0].id.clone();
-        let removed = BodyId("removed".to_string());
+        let removed =
+            BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(removed.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
@@ -2016,7 +2128,7 @@ mod tests {
     fn combine_consumes_tools_and_preserves_the_target_identity() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2028,7 +2140,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![target.clone()]),
                 tools: BodySelection::Bodies(vec![tool]),
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
             },
         ));
@@ -2045,8 +2157,8 @@ mod tests {
     fn combine_preserves_tools_when_requested() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
-        ir.model.bodies.push(model_body(&tool.0));
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2058,7 +2170,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![target.clone()]),
                 tools: BodySelection::Bodies(vec![tool.clone()]),
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: true,
             },
         ));
@@ -2085,7 +2197,7 @@ mod tests {
                     bodies: vec!["local-tool".to_string()],
                     native: "native-tools".to_string(),
                 },
-                op: BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         );
@@ -2114,7 +2226,7 @@ mod tests {
                     bodies: vec![String::new()],
                     native: "native-tools".to_string(),
                 },
-                op: BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         ));
@@ -2122,7 +2234,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("combine".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("combine".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2138,7 +2255,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Native("native-target".to_string()),
                 tools: BodySelection::NativeSet(vec!["native-tool".to_string()]),
-                op: BooleanOp::Intersect,
+                op: cadmpeg_ir::features::BooleanKind::Intersect,
                 keep_tools: false,
             },
         );
@@ -2155,10 +2272,11 @@ mod tests {
     fn trim_bodies_preserves_all_targets_and_tools() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let tool = BodyId("tool".to_string());
-        ir.model.bodies.push(model_body(&second.0));
-        ir.model.bodies.push(model_body(&tool.0));
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(second.as_str()));
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), tool.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
@@ -2187,8 +2305,8 @@ mod tests {
     fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
-        ir.model.bodies.push(model_body(&tool.0));
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2207,7 +2325,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("trim".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("trim_bodies".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2223,7 +2346,10 @@ mod tests {
             target.clone(),
             FeatureDefinition::TrimBodies {
                 targets: BodySelection::Bodies(vec![target]),
-                tools: BodySelection::Bodies(vec![BodyId("tool".to_string())]),
+                tools: BodySelection::Bodies(vec![BodyId::mint(
+                    "test:model:entity#tool".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: BodyTrimSide::Unresolved,
             },
         ));
@@ -2231,7 +2357,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("trim".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("trim_bodies".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2241,11 +2372,10 @@ mod tests {
     fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId("trim-local".to_string()),
+            id: FeatureId::mint("trim-local".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -2263,7 +2393,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2271,9 +2401,10 @@ mod tests {
     fn sew_replaces_all_inputs_with_its_declared_outputs() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let sewn = BodyId("sewn".to_string());
-        ir.model.bodies[0] = model_body(&sewn.0);
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let sewn = BodyId::mint("test:model:entity#sewn".to_string()).expect("identity grammar");
+        ir.model.bodies[0] = model_body(sewn.as_str());
         ir.model.features[0].outputs = vec![first.clone(), second.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
@@ -2301,11 +2432,10 @@ mod tests {
         let mut ir = complete_block_ir();
         let output = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
-            id: FeatureId("sew-local".to_string()),
+            id: FeatureId::mint("sew-local".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -2340,8 +2470,11 @@ mod tests {
             body.clone(),
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![body]),
-                tools: BodySelection::Bodies(vec![BodyId("missing".to_string())]),
-                op: BooleanOp::Cut,
+                tools: BodySelection::Bodies(vec![BodyId::mint(
+                    "test:model:entity#missing".to_string(),
+                )
+                .expect("identity grammar")]),
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         ));
@@ -2349,7 +2482,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("combine".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("combine".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2359,9 +2497,11 @@ mod tests {
     fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let unrelated = BodyId("unrelated".to_string());
-        ir.model.bodies = vec![model_body(&unrelated.0)];
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let unrelated =
+            BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
+        ir.model.bodies = vec![model_body(unrelated.as_str())];
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), unrelated.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),
@@ -2379,7 +2519,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("sew".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("sew".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("sew_bodies".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2395,7 +2540,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("block".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("base_feature".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2409,7 +2559,9 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Mismatch {
-                rederived: vec![BodyId("body".to_string())],
+                rederived: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],
                 saved: Vec::new(),
             }
         );
@@ -2473,7 +2625,7 @@ mod tests {
             },
         ));
 
-        assert!(crate::decode::chamfer_definition_is_incomplete(
+        assert!(feature_completeness::chamfer_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(
@@ -2486,8 +2638,13 @@ mod tests {
     fn complete_single_body_dress_up_families_preserve_identity() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let first = FaceSelection::Faces(vec![FaceId("first".to_string())]);
-        let second = FaceSelection::Faces(vec![FaceId("second".to_string())]);
+        let first = FaceSelection::Faces(vec![
+            FaceId::mint("test:model:entity#first".to_string()).expect("identity grammar")
+        ]);
+        let second =
+            FaceSelection::Faces(vec![
+                FaceId::mint("test:model:entity#second".to_string()).expect("identity grammar")
+            ]);
         let definitions = [
             FeatureDefinition::FaceBlend {
                 first_faces: first.clone(),
@@ -2507,10 +2664,13 @@ mod tests {
             },
             FeatureDefinition::Draft {
                 faces: first.clone(),
-                neutral_plane: second.clone(),
-                parting_tool: None,
-                pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-                pull_plane: None,
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: second.clone(),
+                    pull: Some(cadmpeg_ir::features::DraftPull {
+                        direction: Vector3::new(0.0, 0.0, 1.0),
+                        plane: None,
+                    }),
+                },
                 angle: Some(Angle(0.1)),
                 outward: Some(false),
             },
@@ -2538,21 +2698,26 @@ mod tests {
     fn complete_surface_edits_preserve_every_declared_body_identity() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        ir.model.bodies.push(model_body(&second.0));
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(second.as_str()));
         ir.model.features[0].outputs.push(second.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
         };
-        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        let faces = FaceSelection::Faces(vec![
+            FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
+        ]);
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
                 faces: faces.clone(),
-                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                tool: PathRef::Curves(vec![CurveId::mint(
+                    "test:model:entity#trim-curve".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: TrimRegion::Inside,
-                cell_selection: None,
             },
         );
         trim.outputs = vec![first.clone(), second.clone()];
@@ -2583,7 +2748,6 @@ mod tests {
                 faces: FaceSelection::Unresolved,
                 tool: PathRef::Unresolved("trim".to_string()),
                 keep: TrimRegion::Unresolved,
-                cell_selection: None,
             },
             FeatureDefinition::ExtendSurface {
                 faces: FaceSelection::Unresolved,
@@ -2600,10 +2764,14 @@ mod tests {
             ));
             assert!(match &ir.model.features[1].definition {
                 FeatureDefinition::TrimSurface { .. } => {
-                    crate::decode::trim_surface_definition_is_incomplete(&ir.model.features[1])
+                    feature_completeness::trim_surface_definition_is_incomplete(
+                        &ir.model.features[1],
+                    )
                 }
                 FeatureDefinition::ExtendSurface { .. } => {
-                    crate::decode::extend_surface_definition_is_incomplete(&ir.model.features[1])
+                    feature_completeness::extend_surface_definition_is_incomplete(
+                        &ir.model.features[1],
+                    )
                 }
                 _ => unreachable!("surface edit fixture"),
             });
@@ -2620,25 +2788,26 @@ mod tests {
     fn output_free_unresolved_loft_is_body_census_neutral() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId("loft".to_string()),
+            id: FeatureId::mint("loft".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::LoftUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Loft,
+            },
             native_ref: None,
         });
 
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2646,40 +2815,47 @@ mod tests {
     fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
-            id: FeatureId("freeform".to_string()),
+            id: FeatureId::mint("freeform".to_string()).expect("identity grammar"),
             ordinal: 1,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::FreeformSurfaceUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::FreeformSurface,
+            },
             native_ref: None,
         });
 
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
     #[test]
     fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
         let mut ir = complete_block_ir();
-        let missing = BodyId("missing".to_string());
+        let missing =
+            BodyId::mint("test:model:entity#missing".to_string()).expect("identity grammar");
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
-                faces: FaceSelection::Faces(vec![FaceId("face".to_string())]),
-                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                faces: FaceSelection::Faces(vec![FaceId::mint(
+                    "test:model:entity#face".to_string(),
+                )
+                .expect("identity grammar")]),
+                tool: PathRef::Curves(vec![CurveId::mint(
+                    "test:model:entity#trim-curve".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: TrimRegion::Outside,
-                cell_selection: None,
             },
         );
         trim.outputs = vec![missing];
@@ -2688,91 +2864,34 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("trim-surface".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("trim-surface".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("trim_surface".to_string()),
+                    ordinal: 1
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
     }
 
     #[test]
-    fn body_pattern_adds_one_copy_per_non_original_occurrence() {
-        let mut ir = complete_block_ir();
-        let seed = ir.model.bodies[0].id.clone();
-        let first_copy = BodyId("copy-1".to_string());
-        let second_copy = BodyId("copy-2".to_string());
-        ir.model.bodies.push(model_body(&first_copy.0));
-        ir.model.bodies.push(model_body(&second_copy.0));
-        let mut pattern = body_neutral_feature(
-            "pattern",
-            1,
-            FeatureDefinition::Pattern {
-                seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![
-                    seed.clone()
-                ]))],
-                pattern: PatternKind::Linear {
-                    direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-                    spacing: Length(2.0),
-                    count: 3,
-                    second: None,
-                },
-            },
-        );
-        pattern.outputs = vec![first_copy.clone(), second_copy.clone()];
-        ir.model.features.push(pattern);
-
-        assert_eq!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Verified {
-                bodies: vec![seed, first_copy, second_copy]
-            }
-        );
-    }
-
-    #[test]
-    fn output_free_unresolved_pattern_is_body_census_neutral() {
-        let mut ir = complete_block_ir();
-        ir.model.features.push(Feature {
-            id: FeatureId("pattern".to_string()),
-            ordinal: 1,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Pattern {
-                seeds: Vec::new(),
-                pattern: PatternKind::Unresolved { form: None },
-            },
-            native_ref: None,
-        });
-
-        assert!(matches!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
-        ));
-    }
-
-    #[test]
     fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId("datum".to_string()),
+            id: FeatureId::mint("datum".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
             native_ref: None,
         });
 
@@ -2789,7 +2908,7 @@ mod tests {
         let mut extrude = complete_extrude_feature(
             "transient-extrude",
             1,
-            FeatureId("unresolved-profile".to_string()),
+            FeatureId::mint("unresolved-profile".to_string()).expect("identity grammar"),
             Vec::new(),
             BooleanOp::NewBody,
         );
@@ -2815,9 +2934,8 @@ mod tests {
             "fset",
             1,
             FeatureDefinition::Native {
-                kind: "FSET".to_string(),
+                kind: "FSET".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         );
         fset.suppressed = None;
@@ -2861,7 +2979,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("block".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("block".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
@@ -2888,7 +3011,7 @@ mod tests {
         let mut hole = complete_hole(body.clone());
         hole.suppressed = None;
         if let FeatureDefinition::Hole { placements, .. } = &mut hole.definition {
-            placements.clear();
+            *placements = None;
         }
         hole.outputs.clear();
         ir.model.features.push(hole);
@@ -2901,13 +3024,12 @@ mod tests {
 
     #[test]
     fn native_delete_without_a_primary_body_is_body_neutral() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let mut deletion = Feature {
-            id: FeatureId("delete".to_string()),
+            id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -2915,9 +3037,8 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "DELETE".to_string(),
+                kind: "DELETE".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
             native_ref: None,
         };
@@ -2935,63 +3056,13 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("delete".to_string())),
+                feature: FeatureBoundary {
+                    id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
+                    name: None,
+                    family: Some("native".to_string()),
+                    ordinal: 0
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
-            }
-        );
-    }
-
-    #[test]
-    fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
-        let mut ir = complete_block_ir();
-        let seed = ir.model.bodies[0].id.clone();
-        ir.model.features.push(body_preserving_feature(
-            "pattern",
-            1,
-            seed.clone(),
-            FeatureDefinition::Pattern {
-                seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
-                pattern: PatternKind::Mirror {
-                    plane_origin: Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-            },
-        ));
-
-        assert_eq!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("pattern".to_string())),
-                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
-            }
-        );
-    }
-
-    #[test]
-    fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
-        let mut ir = complete_block_ir();
-        let seed = ir.model.features[0].id.clone();
-        let body = ir.model.bodies[0].id.clone();
-        let mut pattern = body_preserving_feature(
-            "pattern",
-            1,
-            body,
-            FeatureDefinition::Pattern {
-                seeds: vec![PatternSeed::Feature(seed.clone())],
-                pattern: PatternKind::Mirror {
-                    plane_origin: Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-            },
-        );
-        pattern.dependencies.push(seed);
-        ir.model.features.push(pattern);
-
-        assert_eq!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("pattern".to_string())),
-                reason: UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
             }
         );
     }
@@ -3000,7 +3071,9 @@ mod tests {
     fn overlapping_replace_face_operands_do_not_change_the_body_identity_effect() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        let faces = FaceSelection::Faces(vec![
+            FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
+        ]);
         ir.model.features.push(body_preserving_feature(
             "replace-face",
             1,
@@ -3011,7 +3084,7 @@ mod tests {
             },
         ));
 
-        assert!(crate::decode::replace_face_definition_is_incomplete(
+        assert!(feature_completeness::replace_face_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(

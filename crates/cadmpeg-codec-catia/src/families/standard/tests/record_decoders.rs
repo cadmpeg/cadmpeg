@@ -1,3 +1,4 @@
+use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -24,7 +25,7 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
         &crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 0,
-            kind: 0x38,
+            kind: AnalyticSurfaceKind::Torus,
         },
     )
     .expect("signed torus carrier");
@@ -61,7 +62,8 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
             &crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target: 0,
-                kind,
+                kind: AnalyticSurfaceKind::from_marker(kind)
+                    .expect("fixture uses an analytic surface marker"),
             },
         )
         .expect("large analytic carrier");
@@ -83,7 +85,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
             &crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target: 0,
-                kind: 0x38,
+                kind: AnalyticSurfaceKind::Torus,
             },
         ),
         Some(SurfaceGeometry::Torus {
@@ -106,7 +108,7 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         &crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 0,
-            kind: 0x33,
+            kind: AnalyticSurfaceKind::Cylinder,
         },
     )
     .expect("near-unit cylinder carrier");
@@ -639,7 +641,7 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
     let layout = crate::families::standard::fbb::parse_trim_record_layout(&bytes, 0, 3)
         .expect("three-byte packet layout");
     assert_eq!(layout.handle_offset, 8);
-    assert_eq!(layout.stored_count, handles.len());
+    assert_eq!(layout.handle_count, handles.len());
     assert_eq!(layout.end, bytes.len());
 
     let record =
@@ -736,7 +738,9 @@ fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
 fn standard_circle_parser_rejects_non_support_marker() {
     let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
     bytes.extend_from_slice(&[0; 18]);
-    assert!(crate::families::standard::records::standard_circles(&bytes, 1, Some(1)).is_empty());
+    assert!(
+        crate::families::standard::records::standard_curve_supports(&bytes, 1, Some(1)).is_empty()
+    );
 }
 
 #[test]
@@ -746,10 +750,12 @@ fn standard_circle_parser_has_no_model_size_cutoff() {
         bytes.extend_from_slice(&value.to_be_bytes());
     }
     bytes.extend_from_slice(&[0, 1]);
-    assert_eq!(
-        crate::families::standard::records::standard_circles(&bytes, 2, Some(1))[0].radius,
-        2_000_000.0
-    );
+    let StandardCurveGeometry::Circle { radius, .. } =
+        crate::families::standard::records::standard_curve_supports(&bytes, 2, Some(1))[0].geometry
+    else {
+        panic!("circle row");
+    };
+    assert_eq!(radius, 2_000_000.0);
 }
 
 #[test]
@@ -788,7 +794,7 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     assert!(matches!(
         &records[1],
         StandardSurfaceRecord::Analytic(prefix)
-            if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
+            if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == AnalyticSurfaceKind::Cylinder
     ));
     assert_eq!(
         crate::families::standard::records::standard_surface_record_groups(&bytes).len(),
@@ -809,7 +815,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
                 StandardSurfaceRecord::Analytic(SurfacePrefix {
                     pos: seed + offset,
                     target: u32::try_from(seed + offset).expect("small test target"),
-                    kind: 0x33,
+                    kind: AnalyticSurfaceKind::Cylinder,
                 })
             })
             .collect(),
@@ -1067,7 +1073,8 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
             StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 5,
                 target: 1,
-                kind,
+                kind: AnalyticSurfaceKind::from_marker(kind)
+                    .expect("fixture uses an analytic surface marker"),
             });
         assert_eq!(
             crate::families::standard::records::standard_face_bounds(&bytes, &record),
@@ -1085,7 +1092,7 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
             &StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 5,
                 target: 1,
-                kind: 0x34,
+                kind: AnalyticSurfaceKind::Cone,
             },),
         ),
         None
@@ -1174,10 +1181,10 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
         assert!(matches!(
             evidence.surface_geometries.get(&tag),
             Some(SurfaceGeometry::Nurbs(surface))
-                if surface.u_degree == 2
-                    && surface.v_degree == 2
-                    && surface.u_count == 3
-                    && surface.v_count == 3
+                if surface.u_degree() == 2
+                    && surface.v_degree() == 2
+                    && surface.u_count() == 3
+                    && surface.v_count() == 3
         ));
     }
 }
@@ -1366,7 +1373,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target,
-                kind: 0x33,
+                kind: AnalyticSurfaceKind::Cylinder,
             })
         })
         .collect::<Vec<_>>();
@@ -1384,7 +1391,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
         crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 20,
-            kind: 0x33,
+            kind: AnalyticSurfaceKind::Cylinder,
         },
     ));
     crate::families::standard::decode::apply_standard_native_edge_faces(
@@ -1415,7 +1422,7 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
             StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target,
-                kind: 0x33,
+                kind: AnalyticSurfaceKind::Cylinder,
             })
         })
         .collect::<Vec<_>>();
@@ -1433,8 +1440,9 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
 #[test]
 fn standard_line_parser_reads_face_incidence() {
     let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
-    let lines = crate::families::standard::records::standard_lines(&bytes, 2, Some(1));
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].tag, 0x03_0201);
-    assert_eq!(lines[0].faces, [0, 1]);
+    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 2, Some(1));
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].tag, 0x03_0201);
+    assert_eq!(rows[0].faces, [0, 1]);
+    assert!(matches!(rows[0].geometry, StandardCurveGeometry::Line));
 }

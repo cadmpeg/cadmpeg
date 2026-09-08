@@ -1,30 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor compound-container classification.
 
+use cadmpeg_core::container::ContainerRole;
+
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
 use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
 use crate::protein::{parse as parse_protein, ProteinState};
+use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
-use crate::rse::{BulkReadMode, SegmentBulkState};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ContainerPurpose {
-    Inspect,
-    Decode,
-}
-
-impl ContainerPurpose {
-    const fn bulk_mode(self) -> BulkReadMode {
-        match self {
-            Self::Inspect => BulkReadMode::HeaderOnly,
-            Self::Decode => BulkReadMode::Expand,
-        }
-    }
-}
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
@@ -36,11 +24,7 @@ pub(crate) struct InventorContainer<'a> {
 }
 
 impl<'a> InventorContainer<'a> {
-    pub(crate) fn open(
-        ctx: &DecodeContext<'a>,
-        root: View<'a>,
-        purpose: ContainerPurpose,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
             snapshot.entry("RSeStorage"),
@@ -50,7 +34,7 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(ctx, &snapshot, purpose.bulk_mode())?;
+        let rse = RseInventory::build(ctx, &snapshot)?;
         let property_sets = property_set_inventory(ctx, &snapshot)?;
         let protein = parse_protein(ctx, &snapshot)?;
         let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
@@ -81,9 +65,12 @@ impl<'a> InventorContainer<'a> {
                     entry
                         .attributes
                         .insert("expanded_size".into(), meta.body.window().len().to_string());
+                    entry
+                        .attributes
+                        .insert("meta_marker".into(), meta.declared.marker.clone());
                     entry.attributes.insert(
                         "meta_stream_version".into(),
-                        meta.version.value().to_string(),
+                        meta.declared.version.to_string(),
                     );
                     entry
                         .attributes
@@ -92,18 +79,18 @@ impl<'a> InventorContainer<'a> {
                         .attributes
                         .insert("display_name".into(), meta.display_name.clone());
                 }
-                SegmentMetaState::Unsupported { marker, version } => {
+                SegmentMetaState::Malformed { declared, detail } => {
+                    if let Some(declared) = declared {
+                        entry
+                            .attributes
+                            .insert("meta_marker".into(), declared.marker.clone());
+                        entry
+                            .attributes
+                            .insert("meta_stream_version".into(), declared.version.to_string());
+                    }
                     entry
                         .attributes
-                        .insert("meta_marker".into(), marker.clone());
-                    entry
-                        .attributes
-                        .insert("meta_stream_version".into(), version.to_string());
-                }
-                SegmentMetaState::Malformed(error) => {
-                    entry
-                        .attributes
-                        .insert("framing_error".into(), error.clone());
+                        .insert("framing_error".into(), detail.clone());
                 }
             }
             let bulk_directory_id = segment.pair.bulk.directory_id().to_string();
@@ -121,11 +108,10 @@ impl<'a> InventorContainer<'a> {
                     bulk_entry
                         .attributes
                         .insert("bulk_form".into(), format!("0x{:04x}", bulk.form.value()));
-                    if let Some(expanded) = bulk.expanded {
-                        bulk_entry
-                            .attributes
-                            .insert("expanded_size".into(), expanded.window().len().to_string());
-                    }
+                    bulk_entry.attributes.insert(
+                        "expanded_size".into(),
+                        bulk.expanded.window().len().to_string(),
+                    );
                 }
                 SegmentBulkState::Malformed(error) => {
                     bulk_entry
@@ -134,17 +120,29 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        ContainerSummary {
-            format: "inventor".into(),
-            container_kind: "cfb".into(),
+        let recovery = crate::dialect::DialectRecovery::of(self);
+        let matched = recovery.classify();
+        let mut losses = Vec::new();
+        losses.extend(crate::dialect::dialect_loss(&matched, &recovery));
+        let dialects = crate::dialect::layers(matched, &self.rse.active_carrier);
+        losses.extend(
+            dialects
+                .iter()
+                .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+                .and_then(crate::dialect::kernel_dialect_loss),
+        );
+        ContainerSummary::classified(
+            dialects,
+            cadmpeg_ir::ContainerKind::Cfb,
             entries,
-            notes: vec![format!(
+            losses,
+            vec![format!(
                 "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
                 self.snapshot.major_version(),
                 self.rse.segments.len(),
                 self.rse.databases.len()
             )],
-        }
+        )
     }
 }
 
@@ -158,37 +156,37 @@ pub(crate) fn has_inventor_evidence(paths: &[String]) -> bool {
     has_storage && corroborated
 }
 
-fn classify(entry: &CompoundEntry) -> &'static str {
+fn classify(entry: &CompoundEntry) -> ContainerRole {
     let path = entry.path();
     if path.eq_ignore_ascii_case("RSeStorage") {
-        return "rse-storage";
+        return ContainerRole::RseStorage;
     }
     if database_band(path).is_some() {
-        return "rse-database";
+        return ContainerRole::RseDatabase;
     }
     if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") {
-        return "rse-segment-registry";
+        return ContainerRole::RseSegmentRegistry;
     }
     if path.eq_ignore_ascii_case("RSeStorage/RSeDbRevisionInfo") {
-        return "rse-revision-table";
+        return ContainerRole::RseRevisionTable;
     }
     if path.eq_ignore_ascii_case("Protein") {
-        return "protein";
+        return ContainerRole::Protein;
     }
     if path.eq_ignore_ascii_case("UFRxDoc") || is_reference_file(path) {
-        return "external-reference";
+        return ContainerRole::ExternalReference;
     }
     if let Some(name) = direct_rse_child(path) {
         if name.starts_with('M') {
-            return "rse-segment-metadata";
+            return ContainerRole::RseSegmentMetadata;
         }
         if name.starts_with('B') {
-            return "rse-segment-bulk";
+            return ContainerRole::RseSegmentBulk;
         }
     }
     match entry {
-        CompoundEntry::Storage(_) => "storage",
-        CompoundEntry::Stream(_) => "stream",
+        CompoundEntry::Storage(_) => ContainerRole::Storage,
+        CompoundEntry::Stream(_) => ContainerRole::Stream,
     }
 }
 

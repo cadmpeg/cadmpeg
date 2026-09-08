@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exhaustive transfer from an ASM graph into neutral and native IR arenas.
 
-use std::collections::HashMap;
-
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::unknown::UnknownRecord;
 
-use super::{AnnotationRecord, AsmBrep, Stats};
+use super::annotations::AnnotationRecord;
+use super::stats::Stats;
+use super::AsmBrep;
 
 const ASM_NATIVE_ARENAS: [&str; 12] = [
     "edge_continuities",
@@ -28,10 +27,6 @@ const ASM_NATIVE_ARENAS: [&str; 12] = [
 
 /// ASM facts that remain owned by the embedding codec after IR transfer.
 pub struct AsmTransferRemainder {
-    /// Native body join keys used by an embedding format's semantic tables.
-    pub body_keys: HashMap<BodyId, u64>,
-    /// Native face join keys used by an embedding format's semantic tables.
-    pub face_keys: HashMap<FaceId, u64>,
     /// Undecoded ASM records for source-fidelity retention.
     pub unknowns: Vec<UnknownRecord>,
     /// ASM loss statistics used to build the embedding format's report.
@@ -48,13 +43,12 @@ pub fn transfer_into_ir(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     native_format: &str,
-    native_version: u32,
     brep: AsmBrep,
 ) -> Result<AsmTransferRemainder, CodecError> {
     if ir.native.namespace(native_format).is_some_and(|namespace| {
         ASM_NATIVE_ARENAS.iter().any(|name| {
             namespace
-                .arenas
+                .arenas()
                 .get(*name)
                 .is_some_and(|records| !records.is_empty())
         })
@@ -83,14 +77,12 @@ pub fn transfer_into_ir(
         edge_ownerships,
         vertex_ownerships,
         face_sidedness,
-        face_keys,
         face_native_keys,
         tolerant_coedge_parameters,
         tolerant_edge_tails,
         tolerant_vertex_tails,
         mesh_surface_sentinels,
         transform_hints,
-        body_keys,
         body_native_keys,
         wire_topologies,
         attributes,
@@ -112,8 +104,16 @@ pub fn transfer_into_ir(
     ir.model.surfaces.extend(surfaces);
     ir.model.curves.extend(curves);
     ir.model.pcurves.extend(pcurves);
-    ir.model.procedural_surfaces.extend(procedural_surfaces);
-    ir.model.procedural_curves.extend(procedural_curves);
+    for (owner, procedural) in procedural_surfaces {
+        ir.model
+            .add_procedural_surface(owner, procedural)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    }
+    for (owner, procedural) in procedural_curves {
+        ir.model
+            .add_procedural_curve(owner, procedural)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    }
     ir.model.attributes.extend(attributes);
     ctx.charge_entities(
         ir.model.entity_count().saturating_sub(before) as u64,
@@ -121,7 +121,6 @@ pub fn transfer_into_ir(
     )?;
 
     let namespace = ir.native.namespace_mut(native_format);
-    namespace.version = native_version;
     namespace.set_arena("edge_continuities", &edge_continuities)?;
     namespace.set_arena("edge_ownerships", &edge_ownerships)?;
     namespace.set_arena("vertex_ownerships", &vertex_ownerships)?;
@@ -136,8 +135,6 @@ pub fn transfer_into_ir(
     namespace.set_arena("body_native_keys", &body_native_keys)?;
 
     Ok(AsmTransferRemainder {
-        body_keys,
-        face_keys,
         unknowns,
         stats,
         annotation_records,
@@ -147,7 +144,6 @@ pub fn transfer_into_ir(
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_ir::units::Units;
 
     use super::*;
 
@@ -157,16 +153,13 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
-        let mut ir = CadIr::empty(Units::default());
-        let remainder = transfer_into_ir(&ctx, &mut ir, "test", 7, AsmBrep::default())
+        let mut ir = CadIr::empty();
+        let remainder = transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default())
             .expect("empty ASM transfer succeeds");
-        assert!(remainder.body_keys.is_empty());
-        assert!(remainder.face_keys.is_empty());
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         let namespace = ir.native.namespace("test").expect("namespace exists");
-        assert_eq!(namespace.version, 7);
-        assert_eq!(namespace.arenas.len(), 12);
+        assert_eq!(namespace.arenas().len(), 12);
     }
 
     #[test]
@@ -180,12 +173,17 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("test")
-            .set_arena("body_native_keys", &[HeldRecord { id: "held".into() }])
+            .set_arena(
+                "body_native_keys",
+                &[HeldRecord {
+                    id: "sat:test:held#0".into(),
+                }],
+            )
             .expect("test native record serializes");
-        assert!(transfer_into_ir(&ctx, &mut ir, "test", 7, AsmBrep::default()).is_err());
+        assert!(transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default()).is_err());
         let held: Vec<HeldRecord> = ir
             .native
             .namespace("test")
@@ -193,6 +191,6 @@ mod tests {
             .arena_as("body_native_keys")
             .expect("held record remains readable");
         assert_eq!(held.len(), 1);
-        assert_eq!(held[0].id, "held");
+        assert_eq!(held[0].id, "sat:test:held#0");
     }
 }

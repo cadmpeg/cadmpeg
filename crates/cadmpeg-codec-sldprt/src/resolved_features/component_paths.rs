@@ -473,9 +473,7 @@ pub(crate) fn project_dissected_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -485,15 +483,7 @@ pub(crate) fn project_dissected_sketches(
         .collect::<HashMap<_, _>>();
     let planar_features = features
         .iter()
-        .filter(|feature| {
-            matches!(
-                feature.definition,
-                FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    ..
-                }
-            )
-        })
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .map(|feature| feature.id.clone())
         .collect::<HashSet<_>>();
     let aliases = features
@@ -501,7 +491,11 @@ pub(crate) fn project_dissected_sketches(
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None, .. }
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    ..
+                }
             ) && feature
                 .native_ref
                 .as_deref()
@@ -558,8 +552,7 @@ pub(crate) fn project_dissected_sketches(
                 .into_iter()
                 .collect(),
             FeatureDefinition::Revolve { construction, .. } => construction
-                .profile
-                .as_mut()
+                .profile_mut()
                 .and_then(replace)
                 .into_iter()
                 .collect(),

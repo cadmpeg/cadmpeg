@@ -2,22 +2,24 @@
 //! Outer-container detect, scan, inspect, and partition-selection tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::container::{self, role};
+use crate::container::{self};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
-use super::{looks_like_compound_file, looks_like_sldprt};
+use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
 
 #[test]
 fn generic_compound_prefix_is_a_weak_container_signal() {
     let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
 
-    assert!(looks_like_compound_file(&prefix));
+    assert!(prefix.starts_with(&COMPOUND_FILE_MAGIC));
     assert!(!looks_like_sldprt(&prefix));
 }
 
@@ -113,11 +115,11 @@ fn scan_classifies_blocks_cells_and_directory() {
 
     let png = &scan.blocks[0];
     assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
-    assert_eq!(png.family, "png-preview");
+    assert_eq!(png.family, container::PayloadFamily::PngPreview);
 
     let ps = &scan.blocks[1];
     assert_eq!(ps.section.as_deref(), Some("Contents/Config-0-Partition"));
-    assert_eq!(ps.family, "parasolid");
+    assert_eq!(ps.family, container::PayloadFamily::Parasolid);
 
     assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
     assert_eq!(scan.cache_cells[0].logical_len, 90);
@@ -132,7 +134,20 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
     let scan = container::scan_bytes(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+}
+
+#[test]
+fn parasolid_partition_selection_retains_a_compound_stream_site() {
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let stream =
+        container::compound_stream("Contents/Config-0-Partition".into(), 7, 11, payload, None);
+    let scan = container::completed_scan(&[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]);
+
+    let site = container::select_active_parasolid_site(&scan).expect("compound partition");
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
+    assert_eq!(site.site_key(), "compound@7");
+    assert!(matches!(site.section, container::Section::Compound(_)));
 }
 
 #[test]
@@ -150,13 +165,9 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
     ));
     let scan = container::scan_bytes(&source);
 
-    let (block, header) =
-        container::select_active_parasolid(&scan).expect("explicit active partition");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
-    assert!(header.description.contains("partition"));
+    let site = container::select_active_parasolid_site(&scan).expect("explicit active partition");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
+    assert!(site.header.description.contains("partition"));
 }
 
 #[test]
@@ -183,11 +194,8 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         Some("Second")
     );
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let (block, _) = container::select_active_parasolid(&scan).expect("manifest selects a site");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("manifest selects a site");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
 #[test]
@@ -202,11 +210,8 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     let scan = container::scan_bytes(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let (block, _) = container::select_active_parasolid(&scan).expect("UTF-16 manifest");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-1-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("UTF-16 manifest");
+    assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
 #[test]
@@ -225,11 +230,8 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     let scan = container::scan_bytes(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(0));
-    let (block, _) = container::select_active_parasolid(&scan).expect("explicit source index");
-    assert_eq!(
-        block.section.as_deref(),
-        Some("Contents/Config-0-Partition")
-    );
+    let site = container::select_active_parasolid_site(&scan).expect("explicit source index");
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
 
 #[test]
@@ -243,7 +245,7 @@ fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
         let scan = container::scan_bytes(&source);
         assert_eq!(container::manifest_active_configuration(&scan), None);
         assert_eq!(container::active_configuration_index(&scan), None);
-        assert!(container::select_active_parasolid(&scan).is_none());
+        assert!(container::select_active_parasolid_site(&scan).is_none());
     }
 }
 
@@ -259,7 +261,7 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
     assert_eq!(container::active_configuration_index(&scan), None);
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
 #[test]
@@ -273,7 +275,7 @@ fn parasolid_partition_selection_never_uses_a_deltas_section() {
     let scan = container::scan_bytes(&source);
 
     assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
 #[test]
@@ -283,21 +285,24 @@ fn inspect_enumerates_every_structure() {
     let summary = SldprtCodec
         .inspect(&mut cur, &InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.format, "sldprt");
+    assert_eq!(summary.format(), "sldprt");
     assert_eq!(summary.container_kind, "sldprt-blocks");
     assert_eq!(
         summary
             .entries
             .iter()
-            .filter(|e| e.role == role::BLOCK)
+            .filter(|e| e.role == ContainerRole::Block)
             .count(),
         2
     );
-    assert!(summary.entries.iter().any(|e| e.role == role::CACHE_CELL));
     assert!(summary
         .entries
         .iter()
-        .any(|e| e.role == role::DIRECTORY_ENTRY));
+        .any(|e| e.role == ContainerRole::CacheCell));
+    assert!(summary
+        .entries
+        .iter()
+        .any(|e| e.role == ContainerRole::DirectoryEntry));
     assert!(summary
         .notes
         .iter()

@@ -9,11 +9,13 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
+
 #[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
-        PathRef, ProfileRef, Termination,
+        LinearTermination, PathRef, ProfileRef,
     };
 
     // Two bodies so the combine has disjoint operands: a body cannot be both
@@ -30,10 +32,10 @@ fn decode_resolves_feature_topology_selections() {
         )
         .unwrap();
     assert_eq!(base.ir().model.bodies.len(), 2);
-    let body = &base.ir().model.bodies[0].id.0;
-    let tool_body = &base.ir().model.bodies[1].id.0;
-    let face = &base.ir().model.faces[0].id.0;
-    let edge = &base.ir().model.edges[0].id.0;
+    let body = &base.ir().model.bodies[0].id.as_str();
+    let tool_body = &base.ir().model.bodies[1].id.as_str();
+    let face = &base.ir().model.faces[0].id.as_str();
+    let edge = &base.ir().model.edges[0].id.as_str();
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
@@ -46,9 +48,10 @@ fn decode_resolves_feature_topology_selections() {
     );
     let mut source = sldprt_with_body(&body_bytes);
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     let body_id = decoded.ir().model.bodies[0].id.clone();
@@ -83,7 +86,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: ProfileRef::Faces(profile_faces),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace {
+                    termination: LinearTermination::ToFace {
                         face: FaceSelection::Resolved { faces, native },
                         ..
                     },
@@ -130,7 +133,7 @@ fn decode_resolves_feature_topology_selections() {
             ExtrudeExtent::OneSided {
                 side:
                     ExtrudeSide {
-                        termination: Termination::ToFace { face, .. },
+                        termination: LinearTermination::ToFace { face, .. },
                         ..
                     },
             },
@@ -144,22 +147,25 @@ fn decode_resolves_feature_topology_selections() {
         *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let records = &sldprt_native(regenerated.ir()).feature_histories[0].features;
-    assert_eq!(records[0].properties["Edges"], edge_id.0);
-    assert_eq!(records[1].properties["Faces"], face_id.0);
-    assert_eq!(records[2].properties["Target"], body_id.0);
-    assert_eq!(records[2].properties["Tools"], tool_body_id.0);
-    assert_eq!(records[3].properties["Face"], face_id.0);
-    assert_eq!(records[3].properties["Profile"], face_id.0);
-    assert_eq!(records[4].properties["Face"], face_id.0);
-    assert_eq!(records[5].properties["Profile"], face_id.0);
-    assert_eq!(records[5].properties["Path"], edge_id.0);
+    assert_eq!(records[0].properties["Edges"], edge_id.as_str());
+    assert_eq!(records[1].properties["Faces"], face_id.as_str());
+    assert_eq!(records[2].properties["Target"], body_id.as_str());
+    assert_eq!(records[2].properties["Tools"], tool_body_id.as_str());
+    assert_eq!(records[3].properties["Face"], face_id.as_str());
+    assert_eq!(records[3].properties["Profile"], face_id.as_str());
+    assert_eq!(records[4].properties["Face"], face_id.as_str());
+    assert_eq!(records[5].properties["Profile"], face_id.as_str());
+    assert_eq!(records[5].properties["Path"], edge_id.as_str());
 }
 
 #[test]
@@ -198,9 +204,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
             <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sketch { .. }
@@ -246,7 +253,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(4.0)),
             ..
         }
@@ -266,12 +276,16 @@ fn decode_dispatches_typed_features_by_xml_family() {
             .insert("Algorithm".into(), "FaceBlend".into());
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
-    let mut regenerated = SldprtCodec
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
@@ -288,13 +302,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
         ]
     );
     regenerated.ir_mut().model.features[2].dependencies.pop();
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            regenerated.ir(),
-            regenerated.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        regenerated.ir(),
+        regenerated.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -304,8 +317,8 @@ fn decode_dispatches_typed_features_by_xml_family() {
 }
 
 #[test]
-fn decode_projects_compact_combine_with_unresolved_semantics() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
+    use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -318,35 +331,29 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moCombineBodies_c", "Compact", 119)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            op: BooleanOp::Unresolved,
-            keep_tools: false,
-        }
+        FeatureDefinition::Native { .. }
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact combine".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            op: BooleanOp::Unresolved,
-            keep_tools: false,
-        }
+        FeatureDefinition::Native { .. }
     ));
 }
 
@@ -396,7 +403,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119" Operation="Join"/></Keywords>"#,
     ));
     source.extend(make_block(
         0x42,
@@ -412,14 +419,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            ..
-        }
-    ));
+    assert!(
+        matches!(
+            decoded.ir().model.features[0].definition,
+            FeatureDefinition::Combine {
+                target: BodySelection::Unresolved,
+                tools: BodySelection::Unresolved,
+                ..
+            }
+        ),
+        "feature: {:?}",
+        decoded.ir().model.features[0].definition
+    );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
@@ -448,7 +459,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119" Operation="Join"/></Keywords>"#,
     ));
     source.extend(make_block(
         0x43,
@@ -470,7 +481,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature_id = decoded.ir().model.features[0].id.clone();
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
@@ -493,7 +504,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
 
 #[test]
 fn decode_projects_generic_revolution_with_explicit_operation() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RevolveExtent, Termination};
+    use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -507,27 +518,24 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle },
-                }),
-                ..
-            },
+            construction,
             op: BooleanOp::Cut,
-        } if (angle.0 - std::f64::consts::PI).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle },
+                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
 #[test]
 fn decode_projects_compact_solid_sweep_join_operation() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     add_solidworks_version(&mut source, 17_000);
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
     ));
     let mut resolved = 15u32.to_le_bytes().to_vec();
     resolved.extend_from_slice(&[0; 8]);
@@ -549,7 +557,17 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
-                op: BooleanOp::Join
+                op: cadmpeg_ir::features::BooleanKind::Join
+            },
+            ..
+        }
+    ));
+    let feature_id = &decoded.ir().model.features[0].id;
+    assert!(matches!(
+        decoded.ir().model.configurations[0].feature_states[feature_id].definition,
+        FeatureDefinition::Sweep {
+            mode: SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanKind::Join
             },
             ..
         }
@@ -720,9 +738,10 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         &resolved,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let helix = decoded
         .ir()
         .model
@@ -758,13 +777,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         unreachable!("typed surface sweep");
     };
     *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native("other".into()));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            &changed_profile,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &changed_profile,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("changes a reference-curve sweep profile"));
@@ -778,9 +796,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .unwrap()
         .name = Some("Renamed surface sweep".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -908,7 +929,7 @@ fn decode_retains_e1_feature_input_operands() {
         .references
         .iter()
         .all(|reference| reference.kind == crate::records::FeatureInputOperandKind::E1));
-    assert!(scalar.entity_indices.is_empty());
+    assert!(scalar.entity_indices().is_empty());
     assert_eq!(
         scalar
             .operands
@@ -962,13 +983,12 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
     assert_eq!(scalar.operands[1].entity_index, 2);
     assert_eq!(scalar.operands[1].entity_ref, None);
 
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1003,11 +1023,10 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         extent,
         &cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(25.0),
                 },
                 draft: None,
-                offset: None,
             }
         }
     );

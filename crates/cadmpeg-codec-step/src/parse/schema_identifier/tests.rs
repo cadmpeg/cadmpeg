@@ -109,6 +109,16 @@ fn classifier_admits_in_range_object_identifiers() {
 }
 
 #[test]
+fn admitted_identifiers_keep_numeric_components_with_named_roots() {
+    let admitted = AdmittedSchemaIdentifier::admit("AP242 { iso 0 10303 442 4 1 4 }".to_owned())
+        .expect("named ISO root is admitted");
+    assert_eq!(
+        admitted.numeric_object_identifier().as_deref(),
+        Some([1, 0, 10303, 442, 4, 1, 4].as_slice())
+    );
+}
+
+#[test]
 fn classifier_rejects_identifiers_that_do_not_parse() {
     let cases = [
         // A negative number has no leading zero either, so `-01` is not a

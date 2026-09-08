@@ -18,17 +18,10 @@ fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
         offset: 40,
     });
 
-    let Some((
-        2,
-        SketchGeometry::Ellipse {
-            start_angle,
-            end_angle,
-            ..
-        },
-        40,
-    )) = saved_section_entity_geometry(&entity)
+    let Some((2, SketchGeometry::Ellipse { bounds, .. }, 40)) =
+        saved_section_entity_geometry(&entity)
     else {
         panic!("full ellipse");
     };
-    assert_eq!((start_angle, end_angle), (None, None));
+    assert_eq!(bounds, None);
 }

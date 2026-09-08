@@ -67,8 +67,6 @@ pub(crate) enum DecodedSurface {
         geometry: NurbsSurface,
         /// Native construction fields.
         definition: DecodedProceduralSurface,
-        /// Ordered embedded child curves.
-        children: Vec<DecodedCurve>,
     },
 }
 
@@ -91,11 +89,12 @@ impl PlaneParameterization {
     }
 }
 
-/// Native procedural fields before deterministic child IDs are assigned.
-#[derive(Debug, Clone, Copy)]
+/// Native procedural fields and their fixed-cardinality child curves.
+#[derive(Debug, Clone)]
 pub(crate) enum DecodedProceduralSurface {
     /// Revolution of the first child.
     Revolution {
+        children: Box<[DecodedCurve; 1]>,
         /// Scaled axis origin.
         axis_origin: Point3,
         /// Unit axis direction.
@@ -109,9 +108,54 @@ pub(crate) enum DecodedProceduralSurface {
     },
     /// Sum of the first and second children.
     Sum {
+        children: Box<[DecodedCurve; 2]>,
         /// Scaled basepoint vector.
         basepoint: Vector3,
     },
+}
+
+impl DecodedProceduralSurface {
+    pub(crate) fn into_definition(
+        self,
+        mut commit_child: impl FnMut(usize, &'static str, DecodedCurve) -> cadmpeg_ir::ids::CurveId,
+    ) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+        match self {
+            Self::Revolution {
+                children,
+                axis_origin,
+                axis_direction,
+                angular_interval,
+                parameter_interval,
+                transposed,
+            } => {
+                let [directrix] = *children;
+                ProceduralSurfaceDefinition::Revolution {
+                    directrix: commit_child(0, "directrix", directrix),
+                    axis_origin,
+                    axis_direction,
+                    angular_interval,
+                    angular_parameter_interval: None,
+                    parameter_interval: Some(parameter_interval),
+                    transposed,
+                    revision_form: None,
+                }
+            }
+            Self::Sum {
+                children,
+                basepoint,
+            } => {
+                let [first, second] = *children;
+                ProceduralSurfaceDefinition::Sum {
+                    first: commit_child(0, "first", first),
+                    second: commit_child(1, "second", second),
+                    basepoint,
+                    revision_form: None,
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn decode(
@@ -164,35 +208,36 @@ fn read_clipping_plane_surface(
 ) -> Result<DecodedSurface, GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let outer = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(error(
             reader.position(),
             "invalid clipping-plane outer chunk",
         ));
     }
-    let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut payload = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
-            outer.body.start,
+            outer.body().start,
             "unsupported clipping-plane surface version",
         ));
     }
     let plane_chunk = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-    if plane_chunk.typecode != ANONYMOUS || plane_chunk.short {
+    if plane_chunk.typecode != ANONYMOUS || plane_chunk.short() {
         return Err(error(
             plane_chunk.header_start,
             "invalid clipping-plane carrier chunk",
         ));
     }
-    let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
+    let mut plane_reader =
+        BoundedReader::new(data, plane_chunk.body().start, plane_chunk.body().end)?;
     let (geometry, plane_parameterization) =
         read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
     plane_reader.skip_remaining()?;
-    payload.skip(plane_chunk.next_offset - payload.position())?;
+    payload.skip(plane_chunk.next_offset() - payload.position())?;
     read_clipping_plane(data, &mut payload, archive)?;
     payload.skip_remaining()?;
-    reader.skip(outer.next_offset - reader.position())?;
+    reader.skip(outer.next_offset() - reader.position())?;
     Ok(DecodedSurface::Typed {
         geometry,
         derived: scale != 1.0,
@@ -207,20 +252,20 @@ fn read_clipping_plane(
 ) -> Result<(), GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(chunk.header_start, "invalid clipping-plane chunk"));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if payload.i32()? != 1 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping-plane major version",
         ));
     }
     let minor = payload.i32()?;
     if minor < 0 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping-plane minor version",
         ));
     }
@@ -247,7 +292,7 @@ fn read_clipping_plane(
         read_clipping_participation(&mut payload)?;
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -258,21 +303,21 @@ fn read_uuid_list(
 ) -> Result<(), GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(chunk.header_start, "invalid clipping viewport list"));
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported clipping viewport-list version",
         ));
     }
     let count = checked_count(&mut payload, 16)?;
     payload.skip(count * 16)?;
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -387,13 +432,13 @@ fn read_revolution(
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Revolution {
+            children: Box::new([child]),
             axis_origin: from,
             axis_direction,
             angular_interval,
             parameter_interval,
             transposed,
         },
-        children: vec![child],
     })
 }
 
@@ -429,8 +474,10 @@ fn read_sum(
     reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
-        definition: DecodedProceduralSurface::Sum { basepoint },
-        children: vec![first, second],
+        definition: DecodedProceduralSurface::Sum {
+            children: Box::new([first, second]),
+            basepoint,
+        },
     })
 }
 
@@ -443,20 +490,18 @@ fn revolution_nurbs(
     transposed: bool,
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
-    validate_curve_shape(profile, offset)?;
     let span_count = ((angle[1] - angle[0]) / FRAC_PI_2).ceil().max(1.0) as usize;
     let angular_count = span_count
         .checked_mul(2)
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "revolution control count overflow"))?;
-    let profile_count = profile.control_points.len();
+    let profile_count = profile.control_points().len();
     angular_count
         .checked_mul(profile_count)
         .ok_or_else(|| error(offset, "revolution control count overflow"))?;
     let angle_step = (angle[1] - angle[0]) / span_count as f64;
     let parameter_step = (parameter[1] - parameter[0]) / span_count as f64;
     let mut angular = Vec::with_capacity(angular_count);
-    let mut angular_weights = Vec::with_capacity(angular_count);
     let mut knots = Vec::with_capacity(angular_count + 3);
     for span in 0..span_count {
         let a0 = angle[0] + angle_step * span as f64;
@@ -465,12 +510,9 @@ fn revolution_nurbs(
         let middle_weight = ((a1 - a0) * 0.5).cos();
         if span == 0 {
             angular.push((a0, 1.0));
-            angular_weights.push(1.0);
         }
-        angular.push((middle, 1.0 / middle_weight));
-        angular_weights.push(middle_weight);
+        angular.push((middle, middle_weight));
         angular.push((a1, 1.0));
-        angular_weights.push(1.0);
         let t0 = parameter[0] + parameter_step * span as f64;
         let t1 = parameter[0] + parameter_step * (span + 1) as f64;
         if span == 0 {
@@ -482,8 +524,8 @@ fn revolution_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    let profile_weights = match profile.weights.clone() {
-        Some(weights) => weights,
+    let profile_weights = match profile.weights() {
+        Some(weights) => weights.to_vec(),
         None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights").map_err(
             |error| {
                 GeometryError::malformed(
@@ -495,9 +537,10 @@ fn revolution_nurbs(
     };
     let mut control_points = Vec::with_capacity(angular_count * profile_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
-    for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
+    for (theta, angular_weight) in angular {
+        let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in profile
-            .control_points
+            .control_points()
             .iter()
             .zip(profile_weights.iter().copied())
         {
@@ -520,23 +563,22 @@ fn revolution_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
-    let mut result = NurbsSurface {
-        u_degree: 2,
-        v_degree: profile.degree,
-        u_knots: knots,
-        v_knots: profile.knots.clone(),
-        u_count: u32::try_from(angular_count)
-            .map_err(|_| error(offset, "revolution U count overflow"))?,
-        v_count: u32::try_from(profile_count)
-            .map_err(|_| error(offset, "revolution V count overflow"))?,
+    let mut result = NurbsSurface::new(
+        2,
+        profile.degree(),
+        knots,
+        profile.knots().to_vec(),
+        u32::try_from(angular_count).map_err(|_| error(offset, "revolution U count overflow"))?,
+        u32::try_from(profile_count).map_err(|_| error(offset, "revolution V count overflow"))?,
         control_points,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: profile.periodic,
-    };
+        Some(weights),
+        false,
+        false,
+        profile.periodic(),
+    )
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        transpose_surface(&mut result, offset)?;
+        result.transpose_parameter_axes();
     }
     Ok(result)
 }
@@ -547,15 +589,13 @@ fn sum_nurbs(
     basepoint: Vector3,
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
-    validate_curve_shape(first, offset)?;
-    validate_curve_shape(second, offset)?;
-    let u_count = first.control_points.len();
-    let v_count = second.control_points.len();
+    let u_count = first.control_points().len();
+    let v_count = second.control_points().len();
     u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
-    let first_weights = match first.weights.clone() {
-        Some(weights) => weights,
+    let first_weights = match first.weights() {
+        Some(weights) => weights.to_vec(),
         None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights").map_err(|error| {
             GeometryError::malformed(
                 offset,
@@ -563,8 +603,8 @@ fn sum_nurbs(
             )
         })?,
     };
-    let second_weights = match second.weights.clone() {
-        Some(weights) => weights,
+    let second_weights = match second.weights() {
+        Some(weights) => weights.to_vec(),
         None => {
             alloc_filled(v_count, 1.0, "Rhino sum-surface second weights").map_err(|error| {
                 GeometryError::malformed(
@@ -574,16 +614,16 @@ fn sum_nurbs(
             })?
         }
     };
-    let rational = first.weights.is_some() || second.weights.is_some();
+    let rational = first.weights().is_some() || second.weights().is_some();
     let mut control_points = Vec::with_capacity(u_count * v_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));
     for (first_point, first_weight) in first
-        .control_points
+        .control_points()
         .iter()
         .zip(first_weights.iter().copied())
     {
         for (second_point, second_weight) in second
-            .control_points
+            .control_points()
             .iter()
             .zip(second_weights.iter().copied())
         {
@@ -601,19 +641,20 @@ fn sum_nurbs(
             }
         }
     }
-    Ok(NurbsSurface {
-        u_degree: first.degree,
-        v_degree: second.degree,
-        u_knots: first.knots.clone(),
-        v_knots: second.knots.clone(),
-        u_count: u32::try_from(u_count).map_err(|_| error(offset, "sum U count overflow"))?,
-        v_count: u32::try_from(v_count).map_err(|_| error(offset, "sum V count overflow"))?,
+    NurbsSurface::new(
+        first.degree(),
+        second.degree(),
+        first.knots().to_vec(),
+        second.knots().to_vec(),
+        u32::try_from(u_count).map_err(|_| error(offset, "sum U count overflow"))?,
+        u32::try_from(v_count).map_err(|_| error(offset, "sum V count overflow"))?,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: first.periodic,
-        v_periodic: second.periodic,
-    })
+        false,
+        first.periodic(),
+        second.periodic(),
+    )
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 /// Constructs the exact degree-one tensor interpolation between two profile curves.
@@ -624,103 +665,56 @@ pub(crate) fn extrusion_nurbs(
     transposed: bool,
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
-    validate_curve_shape(start, offset)?;
-    validate_curve_shape(end, offset)?;
-    if start.degree != end.degree
-        || start.knots != end.knots
-        || start.control_points.len() != end.control_points.len()
-        || start.weights != end.weights
-        || start.periodic != end.periodic
+    if start.degree() != end.degree()
+        || start.knots() != end.knots()
+        || start.control_points().len() != end.control_points().len()
+        || start.weights() != end.weights()
+        || start.periodic() != end.periodic()
         || !path_domain.iter().all(|value| value.is_finite())
         || path_domain[0] >= path_domain[1]
     {
         return Err(error(offset, "extrusion tensor inputs are incompatible"));
     }
-    let profile_count = start.control_points.len();
+    let profile_count = start.control_points().len();
     profile_count
         .checked_mul(2)
         .ok_or_else(|| error(offset, "extrusion surface control count overflow"))?;
     let mut control_points = Vec::with_capacity(profile_count * 2);
     let mut weights = start
-        .weights
-        .as_ref()
+        .weights()
         .map(|_| Vec::with_capacity(profile_count * 2));
     for index in 0..profile_count {
-        control_points.push(start.control_points[index]);
-        control_points.push(end.control_points[index]);
-        if let (Some(source), Some(target)) = (&start.weights, &mut weights) {
+        control_points.push(start.control_points()[index]);
+        control_points.push(end.control_points()[index]);
+        if let (Some(source), Some(target)) = (start.weights(), &mut weights) {
             target.push(source[index]);
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface {
-        u_degree: start.degree,
-        v_degree: 1,
-        u_knots: start.knots.clone(),
-        v_knots: vec![
+    let mut surface = NurbsSurface::new(
+        start.degree(),
+        1,
+        start.knots().to_vec(),
+        vec![
             path_domain[0],
             path_domain[0],
             path_domain[1],
             path_domain[1],
         ],
-        u_count: u32::try_from(profile_count)
+        u32::try_from(profile_count)
             .map_err(|_| error(offset, "extrusion profile count overflow"))?,
-        v_count: 2,
+        2,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: start.periodic,
-        v_periodic: false,
-    };
+        false,
+        start.periodic(),
+        false,
+    )
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        transpose_surface(&mut surface, offset)?;
+        surface.transpose_parameter_axes();
     }
     Ok(surface)
-}
-
-fn validate_curve_shape(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
-    let expected_knots = usize::try_from(curve.degree)
-        .ok()
-        .and_then(|degree| degree.checked_add(curve.control_points.len()))
-        .and_then(|value| value.checked_add(1));
-    if curve.control_points.is_empty()
-        || expected_knots != Some(curve.knots.len())
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
-    {
-        return Err(error(offset, "child NURBS shape is invalid"));
-    }
-    Ok(())
-}
-
-fn transpose_surface(surface: &mut NurbsSurface, offset: usize) -> Result<(), GeometryError> {
-    let old_u = usize::try_from(surface.u_count)
-        .map_err(|_| error(offset, "surface U count does not fit memory"))?;
-    let old_v = usize::try_from(surface.v_count)
-        .map_err(|_| error(offset, "surface V count does not fit memory"))?;
-    let mut points = Vec::with_capacity(surface.control_points.len());
-    let mut weights = surface
-        .weights
-        .as_ref()
-        .map(|_| Vec::with_capacity(surface.control_points.len()));
-    for new_u in 0..old_v {
-        for new_v in 0..old_u {
-            let old_index = new_v * old_v + new_u;
-            points.push(surface.control_points[old_index]);
-            if let (Some(source), Some(target)) = (&surface.weights, &mut weights) {
-                target.push(source[old_index]);
-            }
-        }
-    }
-    std::mem::swap(&mut surface.u_degree, &mut surface.v_degree);
-    std::mem::swap(&mut surface.u_knots, &mut surface.v_knots);
-    std::mem::swap(&mut surface.u_count, &mut surface.v_count);
-    std::mem::swap(&mut surface.u_periodic, &mut surface.v_periodic);
-    surface.control_points = points;
-    surface.weights = weights;
-    Ok(())
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -795,13 +789,14 @@ fn read_nurbs_curve_inner(
     let periodic = periodic_knots(&knots, order, cv_count);
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
-    Ok(NurbsCurve {
-        degree: u32::try_from(order - 1).expect("validated order fits u32"),
-        knots: full_knots,
+    NurbsCurve::new(
+        u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
+        full_knots,
         control_points,
         weights,
         periodic,
-    })
+    )
+    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_curve_poles(
@@ -817,15 +812,18 @@ fn read_curve_poles(
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
-        let weight = rational.then(|| reader.f64()).transpose()?;
+        let weight = weights
+            .as_mut()
+            .map(|target| reader.f64().map(|weight| (target, weight)))
+            .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));
         }
-        let point = if let Some(weight) = weight {
+        let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             }
-            weights.as_mut().expect("rational weights").push(weight);
+            target.push(weight);
             [x / weight, y / weight, z / weight]
         } else {
             [x, y, z]
@@ -913,19 +911,22 @@ pub(crate) fn read_nurbs_surface_prefix(
         read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
-    Ok(NurbsSurface {
-        u_degree: u32::try_from(u_order - 1).expect("validated order fits u32"),
-        v_degree: u32::try_from(v_order - 1).expect("validated order fits u32"),
-        u_knots: u_knots.clone(),
-        v_knots: v_knots.clone(),
-        u_count: u32::try_from(u_count).expect("validated count fits u32"),
-        v_count: u32::try_from(v_count).expect("validated count fits u32"),
+    NurbsSurface::new(
+        u32::try_from(u_order - 1)
+            .map_err(|_| error(reader.position(), "surface U order overflow"))?,
+        u32::try_from(v_order - 1)
+            .map_err(|_| error(reader.position(), "surface V order overflow"))?,
+        u_knots,
+        v_knots,
+        u32::try_from(u_count).map_err(|_| error(reader.position(), "surface U count overflow"))?,
+        u32::try_from(v_count).map_err(|_| error(reader.position(), "surface V count overflow"))?,
         control_points,
         weights,
-        normal_reversed: false,
+        false,
         u_periodic,
         v_periodic,
-    })
+    )
+    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_plane_surface_with_parameterization(
@@ -999,15 +1000,18 @@ fn read_poles(
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
-        let weight = if rational { Some(reader.f64()?) } else { None };
+        let weight = weights
+            .as_mut()
+            .map(|target| reader.f64().map(|weight| (target, weight)))
+            .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));
         }
-        let point = if let Some(weight) = weight {
+        let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             }
-            weights.as_mut().expect("rational weights").push(weight);
+            target.push(weight);
             [x / weight, y / weight, z / weight]
         } else {
             [x, y, z]

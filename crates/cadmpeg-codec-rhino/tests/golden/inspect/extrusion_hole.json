@@ -1,5 +1,16 @@
 {
   "container_kind": "3dm-chunks",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": "admitted",
+      "declared": {
+        "archive_version": "50"
+      },
+      "dialect": "rhino:archive-50",
+      "format": "rhino"
+    }
+  },
   "entries": [
     {
       "attributes": {

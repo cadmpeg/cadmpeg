@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writer unit tests.
 
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::units::Units;
 
 pub(crate) use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod encoding;
 mod free_geometry;
 mod nurbs;
 mod planar;
+mod targets;
 
 pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
     for version in [
@@ -25,8 +27,11 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+        RhinoCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -68,27 +73,49 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
-    let body: BodyId = "cadir:model:body#polygon".into();
-    let region: RegionId = "cadir:model:region#polygon".into();
-    let shell: ShellId = "cadir:model:shell#polygon".into();
-    let face: FaceId = "cadir:model:face#polygon".into();
-    let loop_id: LoopId = "cadir:model:loop#polygon".into();
-    let surface: SurfaceId = "cadir:model:surface#polygon".into();
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#polygon"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#polygon"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#polygon"
+        .try_into()
+        .expect("valid identity");
+    let face: FaceId = "cadir:model:face#polygon"
+        .try_into()
+        .expect("valid identity");
+    let loop_id: LoopId = "cadir:model:loop#polygon"
+        .try_into()
+        .expect("valid identity");
+    let surface: SurfaceId = "cadir:model:surface#polygon"
+        .try_into()
+        .expect("valid identity");
     let point_ids = (0..points.len())
-        .map(|index| PointId(format!("cadir:model:point#polygon.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..points.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#polygon.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..points.len())
-        .map(|index| EdgeId(format!("cadir:model:edge#polygon.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..points.len())
-        .map(|index| CurveId(format!("cadir:model:curve#polygon.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..points.len())
-        .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),
@@ -116,7 +143,7 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         shell,
         surface: surface.clone(),
         sense: Sense::Forward,
-        loops: vec![loop_id.clone()],
+        loops: vec![loop_id.clone()].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -124,9 +151,10 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face,
-        boundary_role: LoopBoundaryRole::default(),
-        coedges: coedge_ids.clone(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.surfaces.push(Surface {
         id: surface,
@@ -176,13 +204,10 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[(index + 1) % points.len()].clone(),
-            previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -197,29 +222,46 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
 
     let base = ir.model.edges.len();
     let face = ir.model.faces[0].id.clone();
-    let loop_id = LoopId(format!("cadir:model:loop#polygon.{}", ir.model.loops.len()));
+    let loop_id = LoopId::mint(format!("cadir:model:loop#polygon.{}", ir.model.loops.len()))
+        .expect("identity grammar");
     let point_ids = (0..points.len())
-        .map(|index| PointId(format!("cadir:model:point#polygon.{}", base + index)))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..points.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#polygon.{}", base + index)))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..points.len())
-        .map(|index| EdgeId(format!("cadir:model:edge#polygon.{}", base + index)))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..points.len())
-        .map(|index| CurveId(format!("cadir:model:curve#polygon.{}", base + index)))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..points.len())
-        .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{}", base + index)))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face,
-        boundary_role: LoopBoundaryRole::default(),
-        coedges: coedge_ids.clone(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     for index in 0..points.len() {
         let next_index = (index + 1) % points.len();
@@ -260,13 +302,10 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[next_index].clone(),
-            previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -278,21 +317,27 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
-    let body: BodyId = "cadir:model:body#adjacent".into();
-    let region: RegionId = "cadir:model:region#adjacent".into();
-    let shell: ShellId = "cadir:model:shell#adjacent".into();
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#adjacent"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#adjacent"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#adjacent"
+        .try_into()
+        .expect("valid identity");
     let face_ids = [
-        FaceId("cadir:model:face#adjacent.0".into()),
-        FaceId("cadir:model:face#adjacent.1".into()),
+        FaceId::mint("cadir:model:face#adjacent.0").expect("identity grammar"),
+        FaceId::mint("cadir:model:face#adjacent.1").expect("identity grammar"),
     ];
     let loop_ids = [
-        LoopId("cadir:model:loop#adjacent.0".into()),
-        LoopId("cadir:model:loop#adjacent.1".into()),
+        LoopId::mint("cadir:model:loop#adjacent.0").expect("identity grammar"),
+        LoopId::mint("cadir:model:loop#adjacent.1").expect("identity grammar"),
     ];
     let surface_ids = [
-        SurfaceId("cadir:model:surface#adjacent.0".into()),
-        SurfaceId("cadir:model:surface#adjacent.1".into()),
+        SurfaceId::mint("cadir:model:surface#adjacent.0").expect("identity grammar"),
+        SurfaceId::mint("cadir:model:surface#adjacent.1").expect("identity grammar"),
     ];
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
@@ -303,19 +348,31 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         Point3::new(2.0, 1.0, 0.0),
     ];
     let point_ids = (0..positions.len())
-        .map(|index| PointId(format!("cadir:model:point#adjacent.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..positions.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#adjacent.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#adjacent.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..7)
-        .map(|index| EdgeId(format!("cadir:model:edge#adjacent.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..7)
-        .map(|index| CurveId(format!("cadir:model:curve#adjacent.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..8)
-        .map(|index| CoedgeId(format!("cadir:model:coedge#adjacent.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#adjacent.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),
@@ -344,7 +401,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
             shell: shell.clone(),
             surface: surface_ids[index].clone(),
             sense: Sense::Forward,
-            loops: vec![loop_ids[index].clone()],
+            loops: vec![loop_ids[index].clone()].into(),
             name: None,
             color: None,
             tolerance: None,
@@ -362,16 +419,18 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     ir.model.loops.push(Loop {
         id: loop_ids[0].clone(),
         face: face_ids[0].clone(),
-        boundary_role: LoopBoundaryRole::default(),
-        coedges: coedge_ids[0..4].to_vec(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[0..4].to_vec(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     ir.model.loops.push(Loop {
         id: loop_ids[1].clone(),
         face: face_ids[1].clone(),
-        boundary_role: LoopBoundaryRole::default(),
-        coedges: coedge_ids[4..8].to_vec(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids[4..8].to_vec(), Vec::new())
+                .expect("valid loop ring"),
+        ),
     });
     for index in 0..positions.len() {
         ir.model.points.push(Point {
@@ -424,8 +483,6 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         (1, Sense::Reversed),
     ];
     for (index, (edge, sense)) in uses.into_iter().enumerate() {
-        let loop_start = if index < 4 { 0 } else { 4 };
-        let offset = index - loop_start;
         let radial_next = if index == 1 {
             7
         } else if index == 7 {
@@ -437,13 +494,10 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
             id: coedge_ids[index].clone(),
             owner_loop: loop_ids[usize::from(index >= 4)].clone(),
             edge: edge_ids[edge].clone(),
-            next: coedge_ids[loop_start + (offset + 1) % 4].clone(),
-            previous: coedge_ids[loop_start + (offset + 3) % 4].clone(),
             radial_next: coedge_ids[radial_next].clone(),
             sense,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     ir.finalize();
@@ -456,10 +510,16 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::*;
 
-    let mut ir = CadIr::empty(Units::default());
-    let body: BodyId = "cadir:model:body#tetrahedron".into();
-    let region: RegionId = "cadir:model:region#tetrahedron".into();
-    let shell: ShellId = "cadir:model:shell#tetrahedron".into();
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#tetrahedron"
+        .try_into()
+        .expect("valid identity");
+    let region: RegionId = "cadir:model:region#tetrahedron"
+        .try_into()
+        .expect("valid identity");
+    let shell: ShellId = "cadir:model:shell#tetrahedron"
+        .try_into()
+        .expect("valid identity");
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -467,28 +527,49 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         Point3::new(0.0, 0.0, 1.0),
     ];
     let point_ids = (0..4)
-        .map(|index| PointId(format!("cadir:model:point#tetrahedron.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..4)
-        .map(|index| VertexId(format!("cadir:model:vertex#tetrahedron.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..6)
-        .map(|index| EdgeId(format!("cadir:model:edge#tetrahedron.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..6)
-        .map(|index| CurveId(format!("cadir:model:curve#tetrahedron.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let face_ids = (0..4)
-        .map(|index| FaceId(format!("cadir:model:face#tetrahedron.{index}")))
+        .map(|index| {
+            FaceId::mint(format!("cadir:model:face#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let loop_ids = (0..4)
-        .map(|index| LoopId(format!("cadir:model:loop#tetrahedron.{index}")))
+        .map(|index| {
+            LoopId::mint(format!("cadir:model:loop#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let surface_ids = (0..4)
-        .map(|index| SurfaceId(format!("cadir:model:surface#tetrahedron.{index}")))
+        .map(|index| {
+            SurfaceId::mint(format!("cadir:model:surface#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..12)
-        .map(|index| CoedgeId(format!("cadir:model:coedge#tetrahedron.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),
@@ -593,7 +674,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
             shell: shell.clone(),
             surface: surface_ids[face].clone(),
             sense: Sense::Forward,
-            loops: vec![loop_ids[face].clone()],
+            loops: vec![loop_ids[face].clone()].into(),
             name: None,
             color: None,
             tolerance: None,
@@ -601,9 +682,13 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         ir.model.loops.push(Loop {
             id: loop_ids[face].clone(),
             face: face_ids[face].clone(),
-            boundary_role: LoopBoundaryRole::default(),
-            coedges: coedge_ids[start..start + 3].to_vec(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    coedge_ids[start..start + 3].to_vec(),
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         });
         ir.model.surfaces.push(Surface {
             id: surface_ids[face].clone(),
@@ -620,13 +705,10 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
                 id: coedge_ids[index].clone(),
                 owner_loop: loop_ids[face].clone(),
                 edge: edge_ids[face_uses[face][offset].0].clone(),
-                next: coedge_ids[start + (offset + 1) % 3].clone(),
-                previous: coedge_ids[start + (offset + 2) % 3].clone(),
                 radial_next: coedge_ids[index].clone(),
                 sense: face_uses[face][offset].1,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
         }
     }
@@ -658,19 +740,22 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         Point3::new(0.0, 2.0, 0.0),
     ];
     let mut ir = polygon_sheet(&points);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![2.0, 2.0, 5.0, 5.0],
-        v_knots: vec![7.0, 7.0, 11.0, 11.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![points[0], points[3], points[1], points[2]],
-        weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![7.0, 7.0, 11.0, 11.0],
+            2,
+            2,
+            vec![points[0], points[3], points[1], points[2]],
+            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            false,
+            false,
+            false,
+        )
+        .expect("valid patch surface"),
+    );
     let edge_data = [
         (
             [20.0, 23.0],
@@ -705,21 +790,27 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].param_range = Some(domain);
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![domain[0], domain[0], domain[1], domain[1]],
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        });
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}").into();
+        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                Some(weights),
+                false,
+            )
+            .expect("valid patch edge"),
+        );
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -743,19 +834,22 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         Point3::new(1.0, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
     ];
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![2.0, 2.0, 5.0, 5.0],
-        v_knots: vec![7.0, 7.0, 11.0, 11.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![points[0], points[3], points[1], points[2]],
-        weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![7.0, 7.0, 11.0, 11.0],
+            2,
+            2,
+            vec![points[0], points[3], points[1], points[2]],
+            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            false,
+            false,
+            false,
+        )
+        .expect("valid mixed surface"),
+    );
     let edge_data = [
         (
             [20.0, 23.0],
@@ -790,21 +884,27 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].param_range = Some(domain);
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![domain[0], domain[0], domain[1], domain[1]],
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        });
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}").into();
+        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                Some(weights),
+                false,
+            )
+            .expect("valid mixed edge"),
+        );
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -819,24 +919,27 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
 pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry};
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 4.0, 4.0],
-        v_knots: vec![0.0, 0.0, 4.0, 4.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 4.0, 0.0),
-            Point3::new(4.0, 0.0, 0.0),
-            Point3::new(4.0, 4.0, 0.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 4.0, 4.0],
+            vec![0.0, 0.0, 4.0, 4.0],
+            2,
+            2,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 4.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+                Point3::new(4.0, 4.0, 0.0),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid planar patch"),
+    );
     for index in 0..ir.model.coedges.len() {
         let coedge = &ir.model.coedges[index];
         let edge = ir
@@ -860,14 +963,17 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             start.x - direction.u * domain[0],
             start.y - direction.v * domain[0],
         );
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#general.{index}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#general.{index}")
+            .try_into()
+            .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.0001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.0001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,

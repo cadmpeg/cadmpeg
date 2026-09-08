@@ -12,11 +12,10 @@ use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BodySelection, EdgeSelection, FaceSelection, FeatureId, Length, PathRef,
-    RuledSurfaceCorner, RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity,
-    SurfaceExtension, ThickenSide, TrimCellSelection, TrimRegion,
+    Angle, BodySelection, EdgeSelection, FaceSelection, Length, PathRef, RuledSurfaceCorner,
+    RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide,
+    TrimRegion,
 };
-use cadmpeg_ir::math::Vector3;
 
 #[allow(
     clippy::too_many_arguments,
@@ -41,18 +40,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         tool: &PathRef,
         keep: &TrimRegion,
-        cell_selection: &Option<TrimCellSelection>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
-        if cell_selection.is_some() {
+        let Some(keep_token) = crate::feature_schema::trim_region_token(keep) else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} carries a cell-selected trim not representable by its schema",
                 feature.id
             )));
-        }
+        };
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -70,10 +68,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), faces);
             properties.insert("Tool".into(), tool);
-            properties.insert(
-                "Keep".into(),
-                crate::feature_schema::trim_region_token(*keep).into(),
-            );
+            properties.insert("Keep".into(), keep_token.into());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "TrimSurface".into(), |record| record.kind.clone()),
                 parameters: existing
@@ -473,8 +468,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         boundary: &SurfaceBoundary,
         support_faces: &FaceSelection,
-        continuity: &Option<SurfaceContinuity>,
-        boundary_continuities: &Vec<SurfaceContinuity>,
+        continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
         merge_result: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -498,18 +492,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            let continuity = continuity.ok_or_else(|| {
+            let continuity = continuity.resolved().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface continuity",
                     feature.id
                 ))
             })?;
-            if !boundary_continuities.is_empty() {
+            let cadmpeg_ir::features::FilledSurfaceContinuity::Uniform(continuity) = continuity
+            else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has per-boundary filled-surface continuity",
                     feature.id
                 )));
-            }
+            };
             let merge_result = merge_result.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface merge state",
@@ -522,7 +517,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("SupportFaces".into(), support_faces);
             properties.insert(
                 "Continuity".into(),
-                crate::feature_schema::surface_continuity_token(continuity).into(),
+                crate::feature_schema::surface_continuity_token(*continuity).into(),
             );
             properties.insert("MergeResult".into(), merge_result.to_string());
             NeutralFeatureEncoding {
@@ -538,16 +533,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_draft(
         &self,
         face_selection: &FaceSelection,
-        plane_selection: &FaceSelection,
-        parting_tool: &Option<FaceSelection>,
-        pull_plane: &Option<FeatureId>,
-        pull_direction: &Option<Vector3>,
+        anchor: &cadmpeg_ir::features::DraftAnchor,
         angle: &Option<Angle>,
         outward: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
+            let (plane_selection, pull) = match anchor {
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
+                    (plane, pull.as_ref())
+                }
+                cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported draft semantics",
+                        feature.id
+                    )));
+                }
+            };
+            let pull_direction = pull.map(|pull| &pull.direction);
+            let pull_plane = pull.and_then(|pull| pull.plane.as_ref());
             let faces = face_selection_value(face_selection);
             let neutral_plane = face_selection_value(plane_selection);
             let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
@@ -555,7 +560,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
-                || parting_tool.is_some()
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())

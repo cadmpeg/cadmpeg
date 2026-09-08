@@ -10,6 +10,10 @@ pub(crate) struct RseSchema(u32);
 impl RseSchema {
     pub(crate) const SCHEMA_31: Self = Self(31);
 
+    pub(crate) const fn from_declared(value: u32) -> Self {
+        Self(value)
+    }
+
     pub(crate) const fn value(self) -> u32 {
         self.0
     }
@@ -78,8 +82,8 @@ pub(crate) struct SegmentRegistry {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RevisionPayload {
     None,
-    Short { enabled: bool, value: [u8; 8] },
-    Long { enabled: bool, value: [u8; 16] },
+    Short([u8; 8]),
+    Long([u8; 16]),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,19 +100,72 @@ pub(crate) struct RevisionTable {
     pub(crate) entries: Vec<RevisionEntry>,
 }
 
+/// The outcome of reading an `RSeDb` stream far enough to know its schema.
+///
+/// The schema is a version declaration, so it survives its own rejection: a
+/// stream whose body the schema-31 grammar could not frame still tells the
+/// dialect classifier what it declared. Folding that case into an error would
+/// leave the declaration readable only by re-parsing the bytes at the report
+/// boundary, which is exactly the drift this split exists to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DatabaseHeader {
+    /// The body parsed under the schema-31 grammar. `schema` is what the stream
+    /// declared, which is not always 31: a foreign schema whose body obeys the
+    /// grammar is read, and the declaration it carries is what makes the
+    /// document dialect-unverified.
+    Supported(RseDatabase),
+    /// A body the schema-31 grammar did not frame.
+    Unframed {
+        /// The schema the stream declared.
+        schema: RseSchema,
+        /// Where the substituted grammar stopped.
+        detail: String,
+    },
+}
+
+impl DatabaseHeader {
+    /// The detail an unframed schema reports as a database issue.
+    pub(crate) fn unframed_detail(schema: RseSchema, detail: &str) -> String {
+        format!(
+            "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
+             {detail}",
+            schema.value(),
+            RseSchema::SCHEMA_31.value()
+        )
+    }
+}
+
 pub(crate) fn parse_database(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<RseDatabase, CodecError> {
+) -> Result<DatabaseHeader, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe database");
     let id = cursor.array("database id")?;
-    let schema = RseSchema(cursor.u32("schema")?);
-    if schema != RseSchema::SCHEMA_31 {
-        return Err(CodecError::NotImplemented(format!(
-            "RSe database schema {} is not implemented",
-            schema.value()
-        )));
+    let schema = RseSchema::from_declared(cursor.u32("schema")?);
+    // The schema is a declaration, never a gate (`docs/architecture.md`:
+    // "Refusal is structural, never a version allowlist"). A foreign schema is
+    // read with the schema-31 grammar, and only that attempt failing
+    // structurally leaves the stream unavailable. The declaration still decides
+    // the admission: `DialectRecovery` keys the unverified state and its charge
+    // on what the stream said, not on what the parse managed.
+    match schema_31_body(ctx, cursor, id, schema) {
+        Ok(database) => Ok(DatabaseHeader::Supported(database)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => Ok(DatabaseHeader::Unframed {
+            schema,
+            detail: error.to_string(),
+        }),
     }
+}
+
+/// The `RSeDb` body as schema 31 declares it, from a cursor positioned after
+/// the id and schema words.
+fn schema_31_body(
+    ctx: &DecodeContext<'_>,
+    mut cursor: Cursor<'_>,
+    id: [u8; 16],
+    schema: RseSchema,
+) -> Result<RseDatabase, CodecError> {
     let database = RseDatabase {
         id,
         schema,
@@ -123,17 +180,19 @@ pub(crate) fn parse_database(
     Ok(database)
 }
 
+/// Reads the segment registry with the schema-31 grammar.
+///
+/// The grammar is applied to every stream, whatever schema the `RSeDb` streams
+/// declared: the registry is read, or it fails structurally and the caller
+/// degrades it to [`ParsedState::Unavailable`]. Declining to try on a foreign
+/// schema was a version allowlist, and it also made the document's
+/// dialect-unverified message claim a grammar that had never been applied.
+///
+/// [`ParsedState::Unavailable`]: crate::rse::ParsedState::Unavailable
 pub(crate) fn parse_registry(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    schema: RseSchema,
 ) -> Result<SegmentRegistry, CodecError> {
-    if schema != RseSchema::SCHEMA_31 {
-        return Err(CodecError::NotImplemented(format!(
-            "RSe segment registry schema {} is not implemented",
-            schema.value()
-        )));
-    }
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
     ctx.charge_collection_items(count as u64, "admit Inventor segment registry entries")?;
@@ -223,12 +282,10 @@ pub(crate) fn parse_revisions(
     bytes: &[u8],
 ) -> Result<RevisionTable, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe revision table");
+    // The version word is evidence, kept on the table, and not a gate: the
+    // version-3 grammar is attempted at any declared version, and a table that
+    // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
-    if version != 3 {
-        return Err(CodecError::NotImplemented(format!(
-            "RSe revision-table version {version} is not implemented"
-        )));
-    }
     let count = cursor.count("revision count", 1_000_000)?;
     ctx.charge_collection_items(count as u64, "admit Inventor revision entries")?;
     let mut entries = Vec::with_capacity(count);
@@ -239,15 +296,9 @@ pub(crate) fn parse_revisions(
         let payload = if kind == u16::MAX {
             let enabled = cursor.u8("revision payload selector")? != 0;
             if enabled {
-                RevisionPayload::Short {
-                    enabled,
-                    value: cursor.array("short revision payload")?,
-                }
+                RevisionPayload::Short(cursor.array("short revision payload")?)
             } else {
-                RevisionPayload::Long {
-                    enabled,
-                    value: cursor.array("long revision payload")?,
-                }
+                RevisionPayload::Long(cursor.array("long revision payload")?)
             }
         } else {
             RevisionPayload::None
@@ -274,14 +325,6 @@ impl<'a> Cursor<'a> {
             source: View::over_retained(bytes),
             scope,
         }
-    }
-
-    #[allow(dead_code)] // Retained for framed RSe walks that still use the helper.
-    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        Ok(self
-            .source
-            .req_take(len)
-            .map_err(|error| error.during(field))?)
     }
 
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
@@ -404,25 +447,89 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_31_database_requires_exact_exhaustion() {
+    fn schema_31_database_reports_failed_exact_exhaustion_as_unframed() {
         let mut bytes = database_fixture();
         with_context(&bytes, |ctx| {
-            let database = parse_database(ctx, &bytes).expect("schema 31 database parses");
+            let DatabaseHeader::Supported(database) =
+                parse_database(ctx, &bytes).expect("schema 31 database parses")
+            else {
+                panic!("the fixture declares schema 31");
+            };
             assert_eq!(database.schema.value(), 31);
             assert_eq!(database.created_by.major, 24);
             assert_eq!(database.saved_by.major, 25);
             assert_eq!(database.note, "synthetic database");
         });
         bytes.push(0);
-        with_context(&bytes, |ctx| assert!(parse_database(ctx, &bytes).is_err()));
+        with_context(&bytes, |ctx| {
+            let DatabaseHeader::Unframed { schema, detail } =
+                parse_database(ctx, &bytes).expect("schema declaration survives trailing bytes")
+            else {
+                panic!("trailing bytes cannot frame");
+            };
+            assert_eq!(schema, RseSchema::SCHEMA_31);
+            assert!(detail.contains("trailing bytes"), "{detail}");
+        });
+    }
+
+    /// A foreign schema is read with the schema-31 grammar, and the declaration
+    /// survives so the dialect classifier reads what the stream said.
+    #[test]
+    fn a_foreign_schema_is_read_with_the_schema_31_grammar() {
+        let mut bytes = database_fixture();
+        bytes[16..20].copy_from_slice(&12_u32.to_le_bytes());
+        with_context(&bytes, |ctx| {
+            let DatabaseHeader::Supported(database) =
+                parse_database(ctx, &bytes).expect("a foreign schema is not an error")
+            else {
+                panic!("the schema-31 grammar frames this body");
+            };
+            // Read, and still labelled: the declaration is what the dialect
+            // classifier keys the unverified admission on.
+            assert_eq!(database.schema, RseSchema(12));
+            assert_eq!(database.note, "synthetic database");
+        });
+    }
+
+    /// A foreign schema whose body the substituted grammar cannot frame keeps
+    /// its declaration and reports where the attempt stopped.
+    #[test]
+    fn a_foreign_schema_that_does_not_frame_reports_the_attempt() {
+        let mut bytes = database_fixture();
+        bytes[16..20].copy_from_slice(&12_u32.to_le_bytes());
+        bytes.truncate(28);
+        with_context(&bytes, |ctx| {
+            let header = parse_database(ctx, &bytes).expect("a foreign schema is not an error");
+            let DatabaseHeader::Unframed { schema, detail } = header else {
+                panic!("a truncated body cannot frame");
+            };
+            assert_eq!(schema, RseSchema(12));
+            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            assert!(reported.contains("schema 12"), "{reported}");
+            assert!(reported.contains("schema 31 grammar"), "{reported}");
+        });
+    }
+
+    #[test]
+    fn schema_31_that_does_not_frame_keeps_its_declaration() {
+        let mut bytes = database_fixture();
+        bytes.truncate(28);
+        with_context(&bytes, |ctx| {
+            let header = parse_database(ctx, &bytes).expect("schema 31 degrades after declaration");
+            let DatabaseHeader::Unframed { schema, detail } = header else {
+                panic!("a truncated body cannot frame");
+            };
+            assert_eq!(schema, RseSchema::SCHEMA_31);
+            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            assert!(reported.contains("schema 31"), "{reported}");
+        });
     }
 
     #[test]
     fn schema_31_registry_uses_declared_object_and_node_counts() {
         let bytes = registry_fixture();
         with_context(&bytes, |ctx| {
-            let registry = parse_registry(ctx, &bytes, RseSchema::SCHEMA_31)
-                .expect("schema 31 registry parses");
+            let registry = parse_registry(ctx, &bytes).expect("schema 31 registry parses");
             assert_eq!(registry.entries.len(), 1);
             assert_eq!(registry.entries[0].display_name, "PmBRepSegment");
             assert_eq!(registry.entries[0].objects.len(), 1);
@@ -449,7 +556,7 @@ mod tests {
             assert_eq!(table.entries.len(), 2);
             assert!(matches!(
                 table.entries[1].payload,
-                RevisionPayload::Short { .. }
+                RevisionPayload::Short(..)
             ));
         });
     }

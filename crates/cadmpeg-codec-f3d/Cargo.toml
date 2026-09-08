@@ -19,12 +19,6 @@ documentation = "https://docs.rs/cadmpeg-codec-f3d"
 keywords = ["cad", "fusion-360", "f3d", "brep", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
-[features]
-# `schema` builds the `JsonSchema` derives. It is off by default: the
-# derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
-# generating them costs 22% of this crate tree's compile time.
-schema = ["dep:schemars", "cadmpeg-asm/schema", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
-
 [dependencies]
 cadmpeg-asm.workspace = true
 cadmpeg-container.workspace = true
@@ -35,12 +29,10 @@ zip.workspace = true
 roxmltree.workspace = true
 lzma-rs.workspace = true
 sha2.workspace = true
-thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 serde-value.workspace = true
-schemars = { workspace = true, optional = true }
 memchr.workspace = true
 
 [dev-dependencies]

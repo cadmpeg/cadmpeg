@@ -1,26 +1,27 @@
-use crate::decode::analytic::{
-    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints, meridian_circle_pcurve,
-    nonperiodic_nurbs_endpoint_points, oriented_native_pcurve_endpoints, planar_curve_pcurve,
-    ruled_generator_line_pcurve, solve_pcurve_vertex_domains,
-    solve_pcurve_vertex_domains_with_authoritative_points, surface_of_revolution_parallel_pcurve,
-    unique_oriented_native_pcurve,
+use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
+use crate::decode::analytic::pcurve_geometry::{
+    meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
+};
+use crate::decode::analytic::pcurves::{
+    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
+    oriented_native_pcurve_endpoints, planar_curve_pcurve, solve_pcurve_vertex_domains,
+    solve_pcurve_vertex_domains_with_authoritative_points, unique_oriented_native_pcurve,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, normal, u_axis) in [
         (1, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -218,17 +219,20 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
 
 #[test]
 fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
-    let geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-        ],
-        weights: Some(vec![1.0, 2.0, 1.0]),
-        periodic: false,
-    });
+    let geometry = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0, 1.0]),
+            false,
+        )
+        .expect("valid boundary NURBS"),
+    );
     assert_eq!(
         nonperiodic_nurbs_endpoint_points(&geometry),
         Some([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
@@ -237,7 +241,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     let CurveGeometry::Nurbs(mut periodic) = geometry else {
         unreachable!("test geometry is NURBS");
     };
-    periodic.periodic = true;
+    periodic.set_periodic(true);
     assert!(nonperiodic_nurbs_endpoint_points(&CurveGeometry::Nurbs(periodic)).is_none());
 }
 
@@ -377,19 +381,25 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
                 && radius == 2.0
     ));
 
-    let nurbs = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![2.0, 2.0, 5.0, 5.0],
-        control_points: vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
-        weights: Some(vec![2.0, 1.0]),
-        periodic: false,
-    });
+    let nurbs = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("valid planar NURBS"),
+    );
     assert!(matches!(
         planar_curve_pcurve(&plane(), &nurbs),
-        Some(PcurveGeometry::Nurbs { degree: 1, knots, control_points, weights: Some(weights), periodic: false })
-            if knots == [2.0, 2.0, 5.0, 5.0]
-                && control_points == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
-                && weights == [2.0, 1.0]
+        Some(PcurveGeometry::Nurbs { nurbs })
+            if nurbs.degree() == 1
+                && nurbs.knots() == [2.0, 2.0, 5.0, 5.0]
+                && nurbs.control_points()
+                    == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
+                && nurbs.weights() == Some(&[2.0, 1.0][..])
+                && !nurbs.periodic()
     ));
 
     let off_plane = CurveGeometry::Line {
@@ -397,15 +407,6 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         direction: Vector3::new(1.0, 0.0, 0.0),
     };
     assert!(planar_curve_pcurve(&plane(), &off_plane).is_none());
-
-    let malformed_nurbs = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 3.0), Point3::new(1.0, 0.0, 3.0)],
-        weights: None,
-        periodic: false,
-    });
-    assert!(planar_curve_pcurve(&plane(), &malformed_nurbs).is_none());
 }
 
 #[test]

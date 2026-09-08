@@ -13,7 +13,7 @@ use clap::Args;
 use serde_json::{json, Value};
 
 use super::document::{select_records, CadirDocument};
-use super::item::{emit_values, ArenaTarget};
+use super::item::{emit_values, ArenaTarget, Output};
 
 /// Default cap on emitted walks. Truncation notes on stderr and exits 0.
 const DEFAULT_MAX_PATHS: usize = 10_000;
@@ -59,9 +59,22 @@ pub struct GraphArgs {
     /// Conflicts with `--json`.
     #[arg(long, value_delimiter = ',', conflicts_with = "json")]
     pub fields: Option<Vec<String>>,
-    /// Wrap matched walks in the versioned JSON envelope.
+    /// Wrap matched walks in the JSON envelope.
     #[arg(long)]
     pub json: bool,
+}
+
+impl GraphArgs {
+    /// Resolves the flat clap output fields into one output mode.
+    pub(crate) fn mode(&self) -> Output<'_> {
+        if self.json {
+            Output::Json
+        } else if let Some(paths) = self.fields.as_deref() {
+            Output::Tsv(paths)
+        } else {
+            Output::Pretty
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -82,11 +95,11 @@ struct WalkOutcome {
 }
 
 /// Runs `query graph` against one CADIR document.
-pub fn run(args: &GraphArgs) -> Result<()> {
+pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
     let arena_idx = doc.arena_index(&target)?;
-    let arena = &doc.arenas[arena_idx];
+    let arena = &doc.arenas()[arena_idx];
     let (starts, errors) = select_records(arena, &args.ids, args.head);
     let start_nodes: Vec<NodeRef> = starts
         .into_iter()
@@ -105,7 +118,7 @@ pub fn run(args: &GraphArgs) -> Result<()> {
         args.reverse,
         args.max_paths,
     );
-    let emit_result = emit_values("graph", args.json, args.fields.as_deref(), &outcome.results);
+    let emit_result = emit_values("graph", output, &outcome.results);
     if outcome.truncated {
         eprintln!(
             "graph truncated at {} paths (--max-paths {}); raise --max-paths to continue",
@@ -137,42 +150,33 @@ fn walk(
             truncated = true;
             break;
         }
-        results.push(result_value(doc, start, &[], *start));
+        results.push(result_value(doc, *start, &[]));
         if hops == 0 {
             continue;
         }
 
-        let mut queue: VecDeque<(NodeRef, Vec<Value>, Vec<NodeRef>, usize)> = VecDeque::new();
-        queue.push_back((*start, Vec::new(), vec![*start], 0));
+        let mut queue: VecDeque<Vec<AdjEdge>> = VecDeque::new();
+        queue.push_back(Vec::new());
 
-        while let Some((node, path, visited, depth)) = queue.pop_front() {
-            if depth >= hops {
-                continue;
-            }
+        while let Some(path) = queue.pop_front() {
+            let node = path.last().map_or(*start, |edge| edge.to);
             let neighbors = match adj.get(node.arena).and_then(|row| row.get(node.rec)) {
                 Some(edges) => edges.as_slice(),
                 None => &[],
             };
             for edge in neighbors {
-                if visited.contains(&edge.to) {
+                if edge.to == *start || path.iter().any(|step| step.to == edge.to) {
                     continue;
                 }
                 if results.len() >= max_paths {
                     truncated = true;
                     break;
                 }
-                let step = json!({
-                    "from": doc.locator(node.arena, node.rec),
-                    "field": edge.field,
-                    "to": doc.locator(edge.to.arena, edge.to.rec),
-                });
                 let mut next_path = path.clone();
-                next_path.push(step);
-                results.push(result_value(doc, start, &next_path, edge.to));
-                if depth + 1 < hops {
-                    let mut next_visited = visited.clone();
-                    next_visited.push(edge.to);
-                    queue.push_back((edge.to, next_path, next_visited, depth + 1));
+                next_path.push(edge.clone());
+                results.push(result_value(doc, *start, &next_path));
+                if next_path.len() < hops {
+                    queue.push_back(next_path);
                 }
             }
             if truncated {
@@ -187,16 +191,29 @@ fn walk(
     WalkOutcome { results, truncated }
 }
 
-fn result_value(doc: &CadirDocument, start: &NodeRef, path: &[Value], node: NodeRef) -> Value {
+fn result_value(doc: &CadirDocument, start: NodeRef, path: &[AdjEdge]) -> Value {
+    let mut node = start;
+    let steps: Vec<Value> = path
+        .iter()
+        .map(|edge| {
+            let step = json!({
+                "from": doc.locator(node.arena, node.rec),
+                "field": edge.field,
+                "to": doc.locator(edge.to.arena, edge.to.rec),
+            });
+            node = edge.to;
+            step
+        })
+        .collect();
     json!({
         "start": doc.locator(start.arena, start.rec),
-        "path": path,
-        "record": doc.arenas[node.arena].records[node.rec],
+        "path": steps,
+        "record": doc.arenas()[node.arena].records[node.rec],
     })
 }
 
 fn empty_adj(doc: &CadirDocument) -> Vec<Vec<Vec<AdjEdge>>> {
-    doc.arenas
+    doc.arenas()
         .iter()
         .map(|arena| {
             let mut row = Vec::with_capacity(arena.records.len());
@@ -217,7 +234,7 @@ fn build_adj(
         follow.map(|paths| paths.iter().map(String::as_str).collect());
     let mut fwd = empty_adj(doc);
 
-    for (ai, arena) in doc.arenas.iter().enumerate() {
+    for (ai, arena) in doc.arenas().iter().enumerate() {
         for (ri, rec) in arena.records.iter().enumerate() {
             let from = NodeRef { arena: ai, rec: ri };
             let mut edges = Vec::new();
@@ -285,7 +302,7 @@ fn collect_edges(
             if path.is_empty() {
                 return;
             }
-            let Some(hits) = doc.by_id.get(s) else {
+            let Some(hits) = doc.id_locations(s) else {
                 return;
             };
             for &(arena, rec) in hits {
@@ -309,7 +326,7 @@ mod tests {
         let target = ArenaTarget::parse(arena).unwrap();
         let arena_idx = document.arena_index(&target).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = select_records(&document.arenas[arena_idx], &ids, None);
+        let (recs, errors) = select_records(&document.arenas()[arena_idx], &ids, None);
         assert!(errors.is_empty(), "{errors:?}");
         recs.into_iter()
             .map(|rec| NodeRef {
@@ -363,7 +380,7 @@ mod tests {
     fn graph_follows_links_across_arenas() {
         let document = doc(&json!({
             "model": {"features": [{"id": "f1", "links": ["n1"]}]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1", "kind": "curve"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1", "kind": "curve"}]}}
         }));
         let results = walk_ids(&document, "features", &["f1"], 1, None, false);
         assert_eq!(reached_ids(&results), vec!["f1", "n1"]);
@@ -377,7 +394,7 @@ mod tests {
                 "id": "f1",
                 "definition": {"parameters": {"segment_0_object": "n1"}}
             }]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1"}]}}
         }));
         let results = walk_ids(&document, "features", &["f1"], 1, None, false);
         assert_eq!(
@@ -447,7 +464,7 @@ mod tests {
     fn graph_reverse_finds_incoming() {
         let document = doc(&json!({
             "model": {"features": [{"id": "f1", "links": ["n1"]}]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1"}]}}
         }));
         let results = walk_ids(&document, "native.rhino.unknowns", &["n1"], 1, None, true);
         assert_eq!(reached_ids(&results), vec!["n1", "f1"]);
@@ -472,10 +489,10 @@ mod tests {
                 "links": ["n1"],
                 "native_ref": "n2"
             }]},
-            "native": {"rhino": {"arenas": {"unknowns": [
+            "native": {"rhino": {"unknowns": [
                 {"id": "n1"},
                 {"id": "n2"}
-            ]}}}
+            ]}}
         }));
         let follow = vec!["links".to_owned()];
         let results = walk_ids(&document, "features", &["f1"], 1, Some(&follow), false);

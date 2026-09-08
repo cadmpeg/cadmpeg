@@ -6,15 +6,14 @@
 use super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::units::Units;
 use std::io::Cursor;
 
+use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
 use crate::native::{
     CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation,
     CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
-    CatiaEntityRecord, CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
-    CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
-    CatiaObjectRecordReferenceSource,
+    CatiaEntitySchemaValue, CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReferenceSource,
 };
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
@@ -46,11 +45,10 @@ fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObje
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
-        id: FeatureId::from(id),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -113,8 +111,10 @@ fn object_record(
         id: id.to_string(),
         parent: "graph".to_string(),
         design_object: design_object.map(str::to_string),
-        entity_record: None,
-        entity_id,
+        entity: entity_id.map(|id| crate::native::CatiaObjectEntity {
+            record: String::new(),
+            id,
+        }),
         ordinal: 0,
         byte_offset: 0,
         byte_len: 0,
@@ -122,19 +122,20 @@ fn object_record(
         head: Vec::new(),
         inline_body: None,
         owner: owner.map(CatiaObjectOwner::Entity),
-        class_ref: None,
-        class_name: class_name.map(str::to_string),
-        class_entry: class_entry.map(str::to_string),
-        storage_ref: None,
-        storage_record: None,
-        storage_design_object: None,
+        class: match (class_name, class_entry) {
+            (None, None) => None,
+            (class_name, class_entry) => Some(crate::native::CatiaObjectClass {
+                class_ref: 0,
+                class_name: class_name.map(str::to_string),
+                class_entry: class_entry.map(str::to_string),
+            }),
+        },
+        storage: None,
         payload: ObjectPayload {
             size: 1,
             fields: vec![PayloadField::Terminator],
         },
-        repeated_reference_suffix: None,
         repeated_reference_schema_selection: None,
-        subtype: PayloadSubtype::Empty,
         references: Vec::new(),
     }
 }
@@ -151,34 +152,17 @@ fn entity_record(
         object_record: object_record.to_string(),
         ordinal: 0,
         byte_offset,
-        byte_len: 0,
         lead: 0,
-        inline_body: None,
-        definition_len: 0,
-        definition_prefix: Vec::new(),
+        body: CatiaEntityRecordBody::empty_nested(),
         definition_schema_selections: Vec::new(),
         entity_id,
-        definition_suffix: Vec::new(),
-        value_len: 0,
-        value_payload: Vec::new(),
-        value_fields: Vec::new(),
         value_schema_selections: Vec::new(),
-        relation_expression: None,
-        parameter_value: None,
         range_interval: None,
-        constraint_range: None,
-        definition_value: None,
-        definition_chain_value: None,
-        relation_program_instance: None,
-        schema_configuration_record: None,
-        schema_configuration_row_link: None,
-        formula_relation: None,
-        value_packets: Vec::new(),
-        numeric_pair: None,
+        object_production: None,
+        value_production: None,
+
         reference_signature: None,
-        record_suffix: Vec::new(),
-        suffix_value: None,
-        suffix_framing: None,
+        suffix: None,
         suffix_schema_selection: None,
     }
 }
@@ -205,7 +189,15 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         HeadToken::NullHandle,
         HeadToken::Reference(1),
     ];
-    record.class_ref = Some(7);
+    if let Some(class) = &mut record.class {
+        class.class_ref = 7;
+    } else {
+        record.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 7,
+            class_name: None,
+            class_entry: None,
+        });
+    }
 
     let native = CatiaNative {
         design_objects: vec![object],
@@ -221,7 +213,7 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -252,7 +244,15 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         HeadToken::Reference(1),
         HeadToken::Literal(0),
     ];
-    record.class_ref = Some(7);
+    if let Some(class) = &mut record.class {
+        class.class_ref = 7;
+    } else {
+        record.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 7,
+            class_name: None,
+            class_entry: None,
+        });
+    }
 
     let native = CatiaNative {
         design_objects: vec![object],
@@ -268,7 +268,7 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -278,7 +278,7 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
-        id: ParameterId(id.to_string()),
+        id: ParameterId::mint(id.to_string()).expect("identity grammar"),
         owner: None,
         ordinal: 99,
         name: id.to_string(),
@@ -292,168 +292,6 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
         pmi: None,
         native_ref: Some(native_ref.to_string()),
     }
-}
-
-#[test]
-fn assigns_parent_from_an_exact_transferred_owner_chain() {
-    let native = CatiaNative {
-        design_objects: vec![
-            design_object("parent-object", None),
-            design_object("child-object", Some("parent-object")),
-        ],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty(Units::default());
-    let mut parent_feature = feature("parent-feature", "parent-object");
-    parent_feature.ordinal = 10;
-    let mut child_feature = feature("child-feature", "child-object");
-    child_feature.ordinal = 20;
-    ir.model.features.push(parent_feature);
-    ir.model.features.push(child_feature);
-    let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([
-            (
-                "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
-            ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
-        ]),
-        ..DesignFeatureTransfer::default()
-    };
-
-    transfer.assign_feature_parents(&mut ir, &native);
-
-    assert_eq!(ir.model.features[0].parent, None);
-    assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-feature"))
-    );
-}
-
-#[test]
-fn assigns_parent_from_the_nearest_transferred_ancestor() {
-    let native = CatiaNative {
-        design_objects: vec![
-            design_object("parent-object", None),
-            design_object("group-object", Some("parent-object")),
-            design_object("child-object", Some("group-object")),
-        ],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty(Units::default());
-    let mut parent_feature = feature("parent-feature", "parent-object");
-    parent_feature.ordinal = 10;
-    let mut child_feature = feature("child-feature", "child-object");
-    child_feature.ordinal = 20;
-    ir.model.features.push(parent_feature);
-    ir.model.features.push(child_feature);
-    let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([
-            (
-                "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
-            ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
-        ]),
-        ..DesignFeatureTransfer::default()
-    };
-
-    transfer.assign_feature_parents(&mut ir, &native);
-
-    assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-feature"))
-    );
-}
-
-#[test]
-fn rejects_a_parent_that_does_not_precede_its_child() {
-    let native = CatiaNative {
-        design_objects: vec![
-            design_object("parent-object", None),
-            design_object("child-object", Some("parent-object")),
-        ],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty(Units::default());
-    let mut parent_feature = feature("parent-feature", "parent-object");
-    parent_feature.ordinal = 20;
-    let mut child_feature = feature("child-feature", "child-object");
-    child_feature.ordinal = 10;
-    ir.model.features.push(parent_feature);
-    ir.model.features.push(child_feature);
-    let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([
-            (
-                "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
-            ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
-        ]),
-        ..DesignFeatureTransfer::default()
-    };
-
-    transfer.assign_feature_parents(&mut ir, &native);
-
-    assert!(ir
-        .model
-        .features
-        .iter()
-        .all(|feature| feature.parent.is_none()));
-}
-
-#[test]
-fn does_not_assign_a_self_parent() {
-    let native = CatiaNative {
-        design_objects: vec![design_object("feature-object", Some("feature-object"))],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.features.push(feature("feature", "feature-object"));
-    let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([("feature-object".to_string(), FeatureId::from("feature"))]),
-        ..DesignFeatureTransfer::default()
-    };
-
-    transfer.assign_feature_parents(&mut ir, &native);
-
-    assert_eq!(ir.model.features[0].parent, None);
-}
-
-#[test]
-fn omits_all_parents_in_an_owner_cycle() {
-    let native = CatiaNative {
-        design_objects: vec![
-            design_object("first-object", Some("second-object")),
-            design_object("second-object", Some("first-object")),
-        ],
-        ..CatiaNative::default()
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model
-        .features
-        .push(feature("first-feature", "first-object"));
-    ir.model
-        .features
-        .push(feature("second-feature", "second-object"));
-    let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([
-            ("first-object".to_string(), FeatureId::from("first-feature")),
-            (
-                "second-object".to_string(),
-                FeatureId::from("second-feature"),
-            ),
-        ]),
-        ..DesignFeatureTransfer::default()
-    };
-
-    transfer.assign_feature_parents(&mut ir, &native);
-
-    assert!(ir
-        .model
-        .features
-        .iter()
-        .all(|feature| feature.parent.is_none()));
 }
 
 #[test]
@@ -489,7 +327,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, native_ref, ordinal) in [
         ("first-feature", "first-object", 10),
         ("second-feature", "second-object", 15),
@@ -503,22 +341,25 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     }
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
-            ("first-object".to_string(), FeatureId::from("first-feature")),
+            (
+                "first-object".to_string(),
+                FeatureId::mint("first-feature").expect("identity grammar"),
+            ),
             (
                 "second-object".to_string(),
-                FeatureId::from("second-feature"),
+                FeatureId::mint("second-feature").expect("identity grammar"),
             ),
             (
                 "source-object".to_string(),
-                FeatureId::from("source-feature"),
+                FeatureId::mint("source-feature").expect("identity grammar"),
             ),
             (
                 "forward-object".to_string(),
-                FeatureId::from("forward-feature"),
+                FeatureId::mint("forward-feature").expect("identity grammar"),
             ),
             (
                 "storage-object".to_string(),
-                FeatureId::from("storage-feature"),
+                FeatureId::mint("storage-feature").expect("identity grammar"),
             ),
         ]),
         ..DesignFeatureTransfer::default()
@@ -530,21 +371,23 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id == FeatureId::from("source-feature"))
+        .find(|feature| feature.id == FeatureId::mint("source-feature").expect("identity grammar"))
         .unwrap();
     assert_eq!(
         source.dependencies,
         [
-            FeatureId::from("first-feature"),
-            FeatureId::from("second-feature")
+            FeatureId::mint("first-feature").expect("identity grammar"),
+            FeatureId::mint("second-feature").expect("identity grammar")
         ]
     );
-    assert!(ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature.id != FeatureId::from("source-feature"))
-        .all(|feature| feature.dependencies.is_empty()));
+    assert!(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| feature.id
+                != FeatureId::mint("source-feature").expect("identity grammar"))
+            .all(|feature| feature.dependencies.is_empty())
+    );
 }
 
 #[test]
@@ -598,7 +441,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -606,16 +449,20 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     assert_eq!(ir.model.features[0].ordinal, 10);
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-object:feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::mint("parent-object:feature").expect("identity grammar"))
     );
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert!(matches!(
         ir.model.features[1].definition,
-        FeatureDefinition::FilletUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Fillet
+        }
     ));
     assert!(ir
         .model
@@ -696,7 +543,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     transfer_design_features(&mut ir, &native, None);
 
@@ -706,13 +553,17 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::ExtrudeUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Extrude
+                    }
                 ));
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::RevolveUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Revolve
+                    }
                 ));
             }
             Some("Sweep_ThickThin1") => {
@@ -738,7 +589,9 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("EdgeFillet") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::FilletUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Fillet
+                    }
                 ));
             }
             Some("CircPattern_RadialNumber") => {
@@ -748,9 +601,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 assert!(seeds.is_empty());
                 assert!(matches!(
                     pattern,
-                    cadmpeg_ir::features::PatternKind::Unresolved {
-                        form: Some(cadmpeg_ir::features::PatternForm::Circular)
-                    }
+                    cadmpeg_ir::features::PatternKind::UnresolvedCircular
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -773,22 +624,26 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         .push("definition-entity".to_string());
     operation.fields.push("definition-record".to_string());
     let mut definition_entity = entity_record("definition-entity", "definition-record", 20, 1);
-    definition_entity.definition_value = Some(CatiaDefinitionValue {
-        definition: CatiaEntitySchemaValue {
-            offset: 4,
-            ordinal: 2,
-            entry: "definition-entry".to_string(),
-            value: "Mirror".to_string(),
-        },
-        payload: CatiaEntitySuffixPayload::Evaluation {
-            opcode_offset: 8,
-            evaluation: CatiaEntityEvaluation::Scalar {
-                bits: 12.5_f64.to_bits(),
+    definition_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionValue(
+            CatiaDefinitionValue {
+                definition: CatiaEntitySchemaValue {
+                    offset: 4,
+                    ordinal: 2,
+                    entry: "definition-entry".to_string(),
+                    value: "Mirror".to_string(),
+                },
+                payload: CatiaEntitySuffixPayload::Evaluation {
+                    opcode_offset: 8,
+                    evaluation: CatiaEntityEvaluation::Scalar {
+                        bits: 12.5_f64.to_bits(),
+                    },
+                    encoding: CatiaEntityEvaluationEncoding::Direct,
+                },
+                schema_selection: None,
             },
-            encoding: CatiaEntityEvaluationEncoding::Direct,
-        },
-        schema_selection: None,
-    });
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -821,13 +676,15 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         entity_records: vec![definition_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -904,26 +761,30 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     operation.fields.push("definition-chain-record".to_string());
     let mut chain_entity =
         entity_record("definition-chain-entity", "definition-chain-record", 20, 1);
-    chain_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
-        selector: CatiaEntitySchemaValue {
-            offset: 4,
-            ordinal: 2,
-            entry: "selector-entry".to_string(),
-            value: "Length".to_string(),
-        },
-        role: CatiaEntitySchemaValue {
-            offset: 8,
-            ordinal: 3,
-            entry: "role-entry".to_string(),
-            value: "UnsupportedRole".to_string(),
-        },
-        value: CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset: 12,
-            evaluation: CatiaEntityEvaluation::Scalar {
-                bits: 12.5_f64.to_bits(),
+    chain_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
+            CatiaDefinitionChainValue {
+                selector: CatiaEntitySchemaValue {
+                    offset: 4,
+                    ordinal: 2,
+                    entry: "selector-entry".to_string(),
+                    value: "Length".to_string(),
+                },
+                role: CatiaEntitySchemaValue {
+                    offset: 8,
+                    ordinal: 3,
+                    entry: "role-entry".to_string(),
+                    value: "UnsupportedRole".to_string(),
+                },
+                value: CatiaEntitySuffixSchemaValue::Evaluation {
+                    opcode_offset: 12,
+                    evaluation: CatiaEntityEvaluation::Scalar {
+                        bits: 12.5_f64.to_bits(),
+                    },
+                },
             },
-        },
-    });
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -956,13 +817,15 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         entity_records: vec![chain_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -1053,21 +916,25 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         .push("descendant-chain-entity".to_string());
     let mut descendant_entity =
         entity_record("descendant-chain-entity", "descendant-record", 30, 2);
-    descendant_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
-        selector: CatiaEntitySchemaValue {
-            offset: 2,
-            ordinal: 4,
-            entry: "selector-entry".to_string(),
-            value: "Length".to_string(),
-        },
-        role: CatiaEntitySchemaValue {
-            offset: 7,
-            ordinal: 5,
-            entry: "role-entry".to_string(),
-            value: "UnsupportedRole".to_string(),
-        },
-        value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
-    });
+    descendant_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
+            CatiaDefinitionChainValue {
+                selector: CatiaEntitySchemaValue {
+                    offset: 2,
+                    ordinal: 4,
+                    entry: "selector-entry".to_string(),
+                    value: "Length".to_string(),
+                },
+                role: CatiaEntitySchemaValue {
+                    offset: 7,
+                    ordinal: 5,
+                    entry: "role-entry".to_string(),
+                    value: "UnsupportedRole".to_string(),
+                },
+                value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
+            },
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation, descendant],
         object_graphs: vec![CatiaObjectGraph {
@@ -1090,13 +957,15 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         entity_records: vec![descendant_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -1177,7 +1046,9 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         None,
     );
     late_parameter_record.byte_offset = 30;
-    late_parameter_record.entity_record = Some("late-parameter-entity".to_string());
+    if let Some(entity) = &mut late_parameter_record.entity {
+        entity.record = "late-parameter-entity".to_string();
+    }
     let mut early_parameter_record = object_record(
         "early-parameter-record",
         Some("operation-object"),
@@ -1187,7 +1058,9 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         None,
     );
     early_parameter_record.byte_offset = 20;
-    early_parameter_record.entity_record = Some("early-parameter-entity".to_string());
+    if let Some(entity) = &mut early_parameter_record.entity {
+        entity.record = "early-parameter-entity".to_string();
+    }
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -1210,7 +1083,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         ],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .parameters
         .push(parameter("late-parameter", "late-parameter-entity"));
@@ -1236,16 +1109,20 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
             .collect::<Vec<_>>(),
         vec![
             (
-                ParameterId("late-parameter".to_string()),
-                Some(FeatureId::from("operation-object:feature")),
+                ParameterId::mint("late-parameter".to_string()).expect("identity grammar"),
+                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
                 1,
             ),
             (
-                ParameterId("early-parameter".to_string()),
-                Some(FeatureId::from("operation-object:feature")),
+                ParameterId::mint("early-parameter".to_string()).expect("identity grammar"),
+                Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
                 0,
             ),
-            (ParameterId("document-parameter".to_string()), None, 0,),
+            (
+                ParameterId::mint("document-parameter".to_string()).expect("identity grammar"),
+                None,
+                0,
+            ),
         ]
     );
     assert_eq!(
@@ -1307,7 +1184,9 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         None,
         None,
     );
-    parameter_record.entity_record = Some("parameter-entity".to_string());
+    if let Some(entity) = &mut parameter_record.entity {
+        entity.record = "parameter-entity".to_string();
+    }
     let native = CatiaNative {
         design_objects: vec![parent, child],
         object_graphs: vec![CatiaObjectGraph {
@@ -1323,7 +1202,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         entity_records: vec![entity_record("parameter-entity", "parameter-record", 30, 3)],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .parameters
         .push(parameter("parameter", "parameter-entity"));
@@ -1331,11 +1210,11 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let transfer = transfer_design_features(&mut ir, &native, None);
     transfer.assign_parameter_owners(&mut ir, &native);
 
-    let child_feature = FeatureId::from("child-operation:feature");
+    let child_feature = FeatureId::mint("child-operation:feature").expect("identity grammar");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-operation:feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::mint("parent-operation:feature").expect("identity grammar"))
     );
     assert_eq!(
         ir.model.features[1]
@@ -1348,13 +1227,12 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
 
 #[test]
 fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::from("feature"),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
@@ -1362,9 +1240,8 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
-            kind: "Prism_ThickThin1".to_string(),
+            kind: "Prism_ThickThin1".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: Some("native-feature".to_string()),
     });
@@ -1378,10 +1255,13 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     assign_native_operation_parameter_values(
         &mut ir,
         &HashMap::from([
-            (ParameterId("first".to_string()), FeatureId::from("feature")),
             (
-                ParameterId("second".to_string()),
-                FeatureId::from("feature"),
+                ParameterId::mint("first".to_string()).expect("identity grammar"),
+                FeatureId::mint("feature").expect("identity grammar"),
+            ),
+            (
+                ParameterId::mint("second".to_string()).expect("identity grammar"),
+                FeatureId::mint("feature").expect("identity grammar"),
             ),
         ]),
     );
@@ -1400,13 +1280,12 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
 
 #[test]
 fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::from("pattern-feature"),
+        id: FeatureId::mint("pattern-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),
@@ -1415,9 +1294,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::Unresolved {
-                form: Some(cadmpeg_ir::features::PatternForm::Circular),
-            },
+            pattern: cadmpeg_ir::features::PatternKind::UnresolvedCircular,
         },
         native_ref: Some("pattern-feature".to_string()),
     });
@@ -1430,8 +1307,8 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     assign_native_operation_parameter_values(
         &mut ir,
         &HashMap::from([(
-            ParameterId("pattern-parameter".to_string()),
-            FeatureId::from("pattern-feature"),
+            ParameterId::mint("pattern-parameter".to_string()).expect("identity grammar"),
+            FeatureId::mint("pattern-feature").expect("identity grammar"),
         )]),
     );
 
@@ -1446,8 +1323,8 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
 
 #[test]
 fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
-    let owner = FeatureId::from("feature");
-    let mut ir = CadIr::empty(Units::default());
+    let owner = FeatureId::mint("feature").expect("identity grammar");
+    let mut ir = CadIr::empty();
     let mut first = parameter("first", "first-native");
     first.owner = Some(owner.clone());
     first.name = "Angle".to_string();
@@ -1511,7 +1388,7 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
         }],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
@@ -1528,14 +1405,21 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
     ));
     native.entity_records[0]
-        .definition_value
-        .as_mut()
+        .definition_value_mut()
         .expect("definition value")
         .definition
         .value = "CircPattern".to_string();
-    native.object_graphs[0].records[0].class_name = Some("Element1".to_string());
+    if let Some(class) = &mut native.object_graphs[0].records[0].class {
+        class.class_name = Some("Element1".to_string());
+    } else {
+        native.object_graphs[0].records[0].class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Element1".to_string()),
+            class_entry: None,
+        });
+    }
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
@@ -1557,11 +1441,11 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        native.object_graphs[0].records[1].class_name.as_deref(),
+        native.object_graphs[0].records[1].class_name(),
         Some("PRTSketch")
     );
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     assert!(ir.model.features.is_empty());
@@ -1592,8 +1476,16 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         .flat_map(|graph| graph.records.iter_mut())
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
-    owner_record_mut.class_name = Some("Sketch".to_string());
-    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+    if let Some(class) = &mut owner_record_mut.class {
+        class.class_name = Some("Sketch".to_string());
+        class.class_entry = Some(owner_class_entry.clone());
+    } else {
+        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Sketch".to_string()),
+            class_entry: Some(owner_class_entry.clone()),
+        });
+    }
 
     let object = native
         .design_objects
@@ -1606,7 +1498,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         name: "Sketch".to_string(),
     });
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     let parameter_entity = native
@@ -1625,7 +1517,8 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId("synthetic:parameter".to_string()),
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string())
+                .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
@@ -1643,8 +1536,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     assert!(matches!(
         ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Unresolved,
-            sketch: Some(_),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
     ));
     assert!(ir.model.sketches[0].profiles.is_empty());
@@ -1654,9 +1546,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(
-            crate::design_feature::neutral_history_id(&native.design_objects[0].id, "feature"),
-        ))
+        Some(
+            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+                &native.design_objects[0].id,
+                "feature"
+            ),)
+            .expect("identity grammar")
+        )
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -1701,7 +1597,7 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
         Some(native.design_objects[1].id.clone())
     );
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
     assert!(ir.model.features.is_empty());
@@ -1733,8 +1629,16 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         .flat_map(|graph| graph.records.iter_mut())
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
-    owner_record_mut.class_name = Some("Sketch".to_string());
-    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+    if let Some(class) = &mut owner_record_mut.class {
+        class.class_name = Some("Sketch".to_string());
+        class.class_entry = Some(owner_class_entry.clone());
+    } else {
+        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Sketch".to_string()),
+            class_entry: Some(owner_class_entry.clone()),
+        });
+    }
 
     let feature_object = native
         .design_objects
@@ -1752,8 +1656,10 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     let child_entity_id = "synthetic-child-entity".to_string();
     let mut child_record = owner_record.clone();
     child_record.id.clone_from(&child_record_id);
-    child_record.entity_record = Some(child_entity_id.clone());
-    child_record.entity_id = Some(2);
+    child_record.entity = Some(crate::native::CatiaObjectEntity {
+        record: child_entity_id.clone(),
+        id: 2,
+    });
     child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
     child_record.design_object = Some("synthetic-child-object".to_string());
     native.object_graphs[0].records.push(child_record);
@@ -1782,12 +1688,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     child_object.parallel_reference_table = None;
     native.design_objects.push(child_object);
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId("synthetic:child-parameter".to_string()),
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string())
+                .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
@@ -1805,9 +1712,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(
-            crate::design_feature::neutral_history_id(&feature_id, "feature"),
-        ))
+        Some(
+            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+                &feature_id,
+                "feature"
+            ),)
+            .expect("identity grammar")
+        )
     );
 }
 
@@ -1833,7 +1744,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             class,
         ]));
         let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
 
         let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
@@ -1853,7 +1764,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             native.design_objects[0].fields.iter().cloned().collect()
         );
 
-        let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut excluded_ir = CadIr::empty();
         let excluded = crate::design_feature::transfer_design_features(
             &mut excluded_ir,
             &native,
@@ -1898,7 +1809,7 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
         let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
         bytes.extend(catalog_stream(&catalog));
         let native = crate::native::CatiaNative::decode(&bytes);
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
 
         let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
@@ -1990,3 +1901,5 @@ fn decode_does_not_promote_field_class_names_to_features() {
         }));
     }
 }
+
+mod parentage;

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "source": {
       "format": "f3d",
       "attributes": {
@@ -13,6 +13,29 @@
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "1702",
         "zip_entry_count": "3"
+      },
+      "dialects": {
+        "primary": {
+          "format": "f3d",
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "format": "acis",
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
       }
     },
     "units": {
@@ -277,169 +300,166 @@
     },
     "native": {
       "f3d": {
-        "version": 13,
-        "arenas": {
-          "act_entities": [],
-          "act_guids": [],
-          "act_registry_channels": [],
-          "act_root_components": [],
-          "act_table_references": [],
-          "asm_bulletin_boards": [],
-          "asm_delta_states": [],
-          "asm_entity_changes": [],
-          "asm_histories": [],
-          "asm_history_records": [],
-          "body_native_keys": [
-            {
-              "id": "f3d:asm:body-native-key#1",
-              "asm_body_key": 42,
-              "body": "f3d:brep:entity#1",
-              "body_ordinal": 0,
-              "record_index": 1,
-              "source_brep": "Body1.smbh"
-            }
-          ],
-          "body_visibilities": [],
-          "construction_recipes": [],
-          "creation_timestamps": [],
-          "design_body_bindings": [],
-          "design_body_bounds": [],
-          "design_body_members": [],
-          "design_body_recipe_operands": [],
-          "design_canvas_images": [],
-          "design_component_naming_spaces": [],
-          "design_component_occurrences": [],
-          "design_configurations": [],
-          "design_construction_operand_groups": [],
-          "design_construction_operand_identities": [],
-          "design_decal_images": [],
-          "design_dimension_annotation_frames": [],
-          "design_dimension_locus_groups": [],
-          "design_dimension_locus_pairs": [],
-          "design_dimension_null_locus_pairs": [],
-          "design_dimension_presentation_frames": [],
-          "design_dimension_recipe_records": [],
-          "design_edge_identity_operands": [],
-          "design_edge_operands": [],
-          "design_edge_treatment_vertex_operands": [],
-          "design_entity_headers": [],
-          "design_entity_selection_operands": [],
-          "design_extrude_selection_groups": [],
-          "design_extrude_selection_members": [],
-          "design_face_operands": [],
-          "design_face_source_groups": [],
-          "design_feature_timelines": [],
-          "design_fillet_radius_groups": [],
-          "design_loft_legacy_body_carriers": [],
-          "design_material_assignments": [],
-          "design_mesh_features": [],
-          "design_parameter_companions": [],
-          "design_parameter_owners": [],
-          "design_parameter_scopes": [],
-          "design_parameters": [],
-          "design_record_headers": [],
-          "design_sketch_placements": [],
-          "design_surface_trim_operations": [],
-          "design_types": [],
-          "edge_continuities": [
-            {
-              "id": "f3d:asm:edge-continuity#10",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#10",
-              "record_index": 10,
-              "sense": "forward"
-            },
-            {
-              "id": "f3d:asm:edge-continuity#11",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#11",
-              "record_index": 11,
-              "sense": "forward"
-            },
-            {
-              "id": "f3d:asm:edge-continuity#12",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#12",
-              "record_index": 12,
-              "sense": "forward"
-            }
-          ],
-          "edge_ownerships": [
-            {
-              "id": "f3d:asm:edge-ownership#10",
-              "edge": "f3d:brep:entity#10",
-              "record_index": 10
-            },
-            {
-              "id": "f3d:asm:edge-ownership#11",
-              "edge": "f3d:brep:entity#11",
-              "record_index": 11
-            },
-            {
-              "id": "f3d:asm:edge-ownership#12",
-              "edge": "f3d:brep:entity#12",
-              "record_index": 12
-            }
-          ],
-          "face_native_keys": [
-            {
-              "id": "f3d:asm:face-native-key#4",
-              "face": "f3d:brep:entity#4",
-              "record_index": 4
-            }
-          ],
-          "face_sidedness": [
-            {
-              "id": "f3d:asm:face-sidedness#4",
-              "face": "f3d:brep:entity#4",
-              "native_sense": "forward",
-              "normalized_sense": "forward",
-              "record_index": 4
-            }
-          ],
-          "lost_edge_references": [],
-          "mesh_surface_sentinels": [],
-          "persistent_design_links": [],
-          "persistent_references": [],
-          "persistent_subentity_tags": [],
-          "sketch_curve_identities": [],
-          "sketch_curve_links": [],
-          "sketch_points": [],
-          "sketch_relations": [],
-          "sketch_surfaces": [],
-          "sketch_texts": [],
-          "tolerant_coedge_parameters": [],
-          "tolerant_edge_tails": [],
-          "tolerant_vertex_tails": [],
-          "transform_hints": [],
-          "unknowns": [],
-          "vertex_ownerships": [
-            {
-              "id": "f3d:asm:vertex-ownership#13",
-              "endpoint_index": 0,
-              "owning_edge": "f3d:brep:entity#10",
-              "record_index": 13,
-              "vertex": "f3d:brep:entity#13"
-            },
-            {
-              "id": "f3d:asm:vertex-ownership#14",
-              "endpoint_index": 1,
-              "owning_edge": "f3d:brep:entity#10",
-              "record_index": 14,
-              "vertex": "f3d:brep:entity#14"
-            },
-            {
-              "id": "f3d:asm:vertex-ownership#15",
-              "endpoint_index": 0,
-              "owning_edge": "f3d:brep:entity#12",
-              "record_index": 15,
-              "vertex": "f3d:brep:entity#15"
-            }
-          ],
-          "wire_topologies": [],
-          "xref_designs": [],
-          "xref_references": []
-        }
+        "act_entities": [],
+        "act_guids": [],
+        "act_registry_channels": [],
+        "act_root_components": [],
+        "act_table_references": [],
+        "asm_bulletin_boards": [],
+        "asm_delta_states": [],
+        "asm_entity_changes": [],
+        "asm_histories": [],
+        "asm_history_records": [],
+        "body_native_keys": [
+          {
+            "id": "f3d:asm:body-native-key#1",
+            "asm_body_key": 42,
+            "body": "f3d:brep:entity#1",
+            "body_ordinal": 0,
+            "record_index": 1,
+            "source_brep": "Body1.smbh"
+          }
+        ],
+        "body_visibilities": [],
+        "construction_recipes": [],
+        "creation_timestamps": [],
+        "design_body_bindings": [],
+        "design_body_bounds": [],
+        "design_body_members": [],
+        "design_body_recipe_operands": [],
+        "design_canvas_images": [],
+        "design_component_naming_spaces": [],
+        "design_component_occurrences": [],
+        "design_configurations": [],
+        "design_construction_operand_groups": [],
+        "design_construction_operand_identities": [],
+        "design_decal_images": [],
+        "design_dimension_annotation_frames": [],
+        "design_dimension_locus_groups": [],
+        "design_dimension_locus_pairs": [],
+        "design_dimension_null_locus_pairs": [],
+        "design_dimension_presentation_frames": [],
+        "design_dimension_recipe_records": [],
+        "design_edge_identity_operands": [],
+        "design_edge_operands": [],
+        "design_edge_treatment_vertex_operands": [],
+        "design_entity_headers": [],
+        "design_entity_selection_operands": [],
+        "design_extrude_selection_groups": [],
+        "design_extrude_selection_members": [],
+        "design_face_operands": [],
+        "design_face_source_groups": [],
+        "design_feature_timelines": [],
+        "design_fillet_radius_groups": [],
+        "design_loft_legacy_body_carriers": [],
+        "design_material_assignments": [],
+        "design_mesh_features": [],
+        "design_parameter_companions": [],
+        "design_parameter_owners": [],
+        "design_parameter_scopes": [],
+        "design_parameters": [],
+        "design_record_headers": [],
+        "design_sketch_placements": [],
+        "design_surface_trim_operations": [],
+        "design_types": [],
+        "edge_continuities": [
+          {
+            "id": "f3d:asm:edge-continuity#10",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#10",
+            "record_index": 10,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#11",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#11",
+            "record_index": 11,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#12",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#12",
+            "record_index": 12,
+            "sense": "forward"
+          }
+        ],
+        "edge_ownerships": [
+          {
+            "id": "f3d:asm:edge-ownership#10",
+            "edge": "f3d:brep:entity#10",
+            "record_index": 10
+          },
+          {
+            "id": "f3d:asm:edge-ownership#11",
+            "edge": "f3d:brep:entity#11",
+            "record_index": 11
+          },
+          {
+            "id": "f3d:asm:edge-ownership#12",
+            "edge": "f3d:brep:entity#12",
+            "record_index": 12
+          }
+        ],
+        "face_native_keys": [
+          {
+            "id": "f3d:asm:face-native-key#4",
+            "face": "f3d:brep:entity#4",
+            "record_index": 4
+          }
+        ],
+        "face_sidedness": [
+          {
+            "id": "f3d:asm:face-sidedness#4",
+            "face": "f3d:brep:entity#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          }
+        ],
+        "lost_edge_references": [],
+        "mesh_surface_sentinels": [],
+        "persistent_design_links": [],
+        "persistent_references": [],
+        "persistent_subentity_tags": [],
+        "sketch_curve_identities": [],
+        "sketch_curve_links": [],
+        "sketch_points": [],
+        "sketch_relations": [],
+        "sketch_surfaces": [],
+        "sketch_texts": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "unknowns": [],
+        "vertex_ownerships": [
+          {
+            "id": "f3d:asm:vertex-ownership#13",
+            "endpoint_index": 0,
+            "owning_edge": "f3d:brep:entity#10",
+            "record_index": 13,
+            "vertex": "f3d:brep:entity#13"
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#14",
+            "endpoint_index": 1,
+            "owning_edge": "f3d:brep:entity#10",
+            "record_index": 14,
+            "vertex": "f3d:brep:entity#14"
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#15",
+            "endpoint_index": 0,
+            "owning_edge": "f3d:brep:entity#12",
+            "record_index": 15,
+            "vertex": "f3d:brep:entity#15"
+          }
+        ],
+        "wire_topologies": [],
+        "xref_designs": [],
+        "xref_references": []
       }
     }
   },
@@ -462,10 +482,32 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1715 bytes uncompressed)"
-    ]
+    ],
+    "dialects": {
+      "primary": {
+        "format": "f3d",
+        "dialect": "f3d:manifest-3-2-0-0",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "admission": "admitted"
+      },
+      "extra": [
+        {
+          "format": "acis",
+          "dialect": "acis:asm-binaryfile-8",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "admission": "admitted"
+        }
+      ]
+    }
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
       "streams": [
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

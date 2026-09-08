@@ -2,8 +2,8 @@
 //! Tests: saved line.
 
 use super::{
-    extruded_segment_surface, placed_section_curve_geometry, section_segment_intersection_carrier,
-    section_skamp_constraints, trimmed_section_segment_geometry,
+    declared_solver_rows, extruded_segment_surface, placed_section_curve_geometry,
+    section_segment_intersection_carrier, section_skamp_constraints,
 };
 use crate::decode::sketch::{
     is_full_circle_geometry, resolved_section_coordinates, resolved_section_points,
@@ -12,15 +12,23 @@ use crate::decode::sketch::{
     saved_section_circle_values, saved_section_entity_geometry, saved_section_line_geometry,
     saved_section_missing_line_geometry, saved_section_segment_point_coordinates, trim_segment_id,
 };
-use crate::decode::sketch_transfer::{
-    ambiguous_section_segment_external_ids, joined_relation_incidence_entities,
-    materialized_saved_section_external_ids, relation_incidence_entities,
-    saved_section_external_id, section_dimension_constraints, section_entity_external_ids,
-    section_skamp_constraints_for_geometry, section_skamp_incidence_locus,
-    section_skamp_point_locus, semantic_saved_section_entities, solver_only_section_entity_family,
-    unique_saved_section_internal_ids, unique_section_incidence_curve_family,
-    unresolved_saved_section_entity, SectionEntityIncidenceFamily,
+use crate::decode::sketch_transfer::constraints::{
+    joined_relation_incidence_entities, relation_incidence_entities, section_dimension_constraints,
 };
+use crate::decode::sketch_transfer::identity::{
+    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
+    saved_section_external_id, section_entity_external_ids, semantic_saved_section_entities,
+    unique_saved_section_internal_ids, unresolved_saved_section_entity,
+};
+use crate::decode::sketch_transfer::loci::{
+    section_skamp_incidence_locus, section_skamp_point_locus,
+};
+use crate::decode::sketch_transfer::profiles::{
+    solver_only_section_entity_family, unique_section_incidence_curve_family,
+    SectionEntityIncidenceFamily,
+};
+use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
+use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -30,9 +38,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[test]
 fn saved_line_joins_through_order_table() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -43,8 +50,10 @@ fn saved_line_joins_through_order_table() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -114,11 +123,14 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     let mut coordinate_definition = definition.clone();
-    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
+    coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
+        crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 30,
+        },
+        vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 7,
                 u: None,
@@ -130,20 +142,15 @@ fn saved_line_joins_through_order_table() {
                 v: None,
             },
         ],
-        offset: 30,
-    });
+    ));
     coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     assert_eq!(
@@ -154,8 +161,8 @@ fn saved_line_joins_through_order_table() {
         .variables
         .as_mut()
         .expect("variables")
-        .points[0]
-        .u = Some(7.0);
+        .rows[0]
+        .value = ScalarLane::Value(7.0);
     assert_eq!(
         resolved_section_coordinates(&coordinate_definition),
         BTreeMap::from([(7, [Some(7.0), Some(-0.85)]), (9, [Some(8.0), Some(-0.85)]),])
@@ -195,7 +202,7 @@ fn saved_line_joins_through_order_table() {
         &BTreeSet::new(),
     );
     assert_eq!(offset, 20);
-    assert_eq!(native_entity.id.0, "creo:featdefs:sketch_entity#5:42");
+    assert_eq!(native_entity.id().0, "creo:featdefs:sketch_entity#5:42");
     assert!(matches!(
         native_entity.geometry,
         SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"
@@ -247,14 +254,7 @@ fn saved_line_joins_through_order_table() {
         declared_count: 0,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: Vec::new(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: crate::feature::segment_rows::SegmentRows::default(),
         offset: 0,
     });
     constrained.dimensions = Some(crate::feature::FeatureDimensionTable {
@@ -262,10 +262,8 @@ fn saved_line_joins_through_order_table() {
         entity_ref: None,
         rows: vec![crate::feature::FeatureDimension {
             dimension_type: 1,
-            value: Some(2.0),
+            value: crate::feature::definitions::DimensionValue::Resolved(2.0),
             value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
             auxiliary_body: Vec::new(),
@@ -293,38 +291,42 @@ fn saved_line_joins_through_order_table() {
             body: Vec::new(),
             offset: 28,
         }],
-        skamps: vec![crate::feature::FeatureSkamp {
-            id: 5,
-            kind: 99,
-            flags: 0,
-            status: 1,
-            items: vec![
-                crate::feature::FeatureSkampItem {
-                    entity_id: 42,
-                    sense: 4,
-                },
-                crate::feature::FeatureSkampItem {
-                    entity_id: 99,
-                    sense: 0,
-                },
-            ],
-            offset: 30,
-        }],
-        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 1,
-            offset: 29,
+        skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 1,
+                offset: 29,
+            },
+            rows: vec![crate::feature::FeatureSkamp {
+                id: 5,
+                kind: 99,
+                flags: 0,
+                status: 1,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 42,
+                        sense: 4,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 0,
+                    },
+                ],
+                offset: 30,
+            }],
         }),
-        triples: vec![crate::feature::FeatureRelationTriple {
-            relation_id: Some(7),
-            equation_id: Some(11),
-            skamp_id: Some(5),
-            offset: 31,
-        }],
-        triples_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 1,
-            entity_ref: 2,
-            offset: 31,
+        triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            header: crate::feature::definitions::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 2,
+                offset: 31,
+            },
+            rows: vec![crate::feature::FeatureRelationTriple {
+                relation_id: Some(7),
+                equation_id: Some(11),
+                skamp_id: Some(5),
+                offset: 31,
+            }],
         }),
         offset: 28,
     });
@@ -342,8 +344,12 @@ fn saved_line_joins_through_order_table() {
     };
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "triples_ptr"
-            && operand.native_field.as_deref() == Some("equation_id")
-            && operand.native_role.is_none()
+            && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+            && operand
+                .field
+                .as_ref()
+                .and_then(|field| field.role)
+                .is_none()
             && operand.object_index == 11
     }));
     let mut equation_only_incidence = constrained.clone();
@@ -351,7 +357,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .triples[0]
+        .triples
+        .as_mut()
+        .expect("triples table")
+        .rows_mut()[0]
         .relation_id = None;
     let equation_only_constraints = section_skamp_constraints(
         &equation_only_incidence,
@@ -363,14 +372,18 @@ fn saved_line_joins_through_order_table() {
         unreachable!();
     };
     assert!(operands.iter().any(|operand| {
-        operand.native_field.as_deref() == Some("equation_id") && operand.object_index == 11
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+            && operand.object_index == 11
     }));
     let mut missing_equation = equation_only_incidence.clone();
     missing_equation
         .relations
         .as_mut()
         .expect("relations")
-        .triples[0]
+        .triples
+        .as_mut()
+        .expect("triples table")
+        .rows_mut()[0]
         .equation_id = None;
     let missing_equation_constraints = section_skamp_constraints(
         &missing_equation,
@@ -381,22 +394,24 @@ fn saved_line_joins_through_order_table() {
     else {
         unreachable!();
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     let mut duplicate_equation = equation_only_incidence.clone();
     let duplicate_equation_relations = duplicate_equation.relations.as_mut().expect("relations");
-    duplicate_equation_relations
-        .triples
-        .push(crate::feature::FeatureRelationTriple {
+    declared_solver_rows(&mut duplicate_equation_relations.triples).push(
+        crate::feature::FeatureRelationTriple {
             relation_id: None,
             equation_id: Some(11),
             skamp_id: Some(5),
             offset: 32,
-        });
+        },
+    );
     duplicate_equation_relations
-        .triples_header
+        .triples
         .as_mut()
+        .expect("triples table")
+        .header_mut()
         .expect("triples header")
         .declared_count = 2;
     let duplicate_equation_constraints = section_skamp_constraints(
@@ -408,9 +423,9 @@ fn saved_line_joins_through_order_table() {
     else {
         unreachable!();
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     assert_eq!(
         relation_incidence_entities(
             &constrained,
@@ -447,31 +462,31 @@ fn saved_line_joins_through_order_table() {
     };
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "skamp_ptr"
-            && operand.native_field.as_deref() == Some("triples_ptr.skamp_id")
+            && operand.field.as_ref().map(|field| field.name.as_str())
+                == Some("triples_ptr.skamp_id")
             && operand.object_index == 5
     }));
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "triples_ptr"
-            && operand.native_field.as_deref() == Some("equation_id")
+            && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
             && operand.object_index == 11
     }));
+    declared_solver_rows(&mut native_join.relations.as_mut().expect("relations").triples).push(
+        crate::feature::FeatureRelationTriple {
+            relation_id: Some(7),
+            equation_id: None,
+            skamp_id: Some(5),
+            offset: 32,
+        },
+    );
     native_join
         .relations
         .as_mut()
         .expect("relations")
         .triples
-        .push(crate::feature::FeatureRelationTriple {
-            relation_id: Some(7),
-            equation_id: None,
-            skamp_id: Some(5),
-            offset: 32,
-        });
-    native_join
-        .relations
         .as_mut()
-        .expect("relations")
-        .triples_header
-        .as_mut()
+        .expect("triples table")
+        .header_mut()
         .expect("triples header")
         .declared_count = 2;
     let ambiguous_join_constraints =
@@ -481,15 +496,15 @@ fn saved_line_joins_through_order_table() {
     else {
         panic!("untyped relation must remain native");
     };
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("triples_ptr.skamp_id")));
-    assert!(!operands
-        .iter()
-        .any(|operand| operand.native_field.as_deref() == Some("equation_id")));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("triples_ptr.skamp_id")
+    }));
+    assert!(!operands.iter().any(|operand| {
+        operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
+    }));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 0,
         flags: 0,
@@ -514,7 +529,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 99,
@@ -529,7 +547,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 0;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
@@ -539,7 +560,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items[0]
         .sense = 4;
     assert_eq!(
@@ -550,21 +574,27 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .items[0]
         .sense = 2;
     solver_families
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 1,
         flags: 0,
@@ -599,7 +629,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0];
     unary.kind = 2;
     unary.status = 1;
     assert!(matches!(
@@ -613,7 +646,7 @@ fn saved_line_joins_through_order_table() {
         SketchConstraintDefinition::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 0,
         flags: 0,
@@ -638,7 +671,10 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
         .status = 1;
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
@@ -667,13 +703,13 @@ fn saved_line_joins_through_order_table() {
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .items[0];
     let line_item = &solver_families
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .items[1];
     assert!(section_skamp_point_locus(
         &solver_families,
@@ -697,7 +733,7 @@ fn saved_line_joins_through_order_table() {
         solver_constraints[0].0.definition
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 6,
         kind: 6,
         flags: 0,
@@ -715,8 +751,10 @@ fn saved_line_joins_through_order_table() {
         offset: 33,
     }];
     family_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -725,7 +763,11 @@ fn saved_line_joins_through_order_table() {
     );
     let mut disabled_line_family = solver_families.clone();
     let disabled_line_relations = disabled_line_family.relations.as_mut().expect("relations");
-    disabled_line_relations.skamps[0] = crate::feature::FeatureSkamp {
+    disabled_line_relations
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0] = crate::feature::FeatureSkamp {
         id: 7,
         kind: 5,
         flags: 0,
@@ -756,38 +798,43 @@ fn saved_line_joins_through_order_table() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 25,
-            directions: [None; 3],
-            point_ids: [None; 2],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id: 101,
-            body: Vec::new(),
-            offset: 35,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            crate::feature::FeatureOpaqueSegment {
+                kind: 25,
+                directions: [None; 3],
+                point_ids: [None; 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 101,
+                body: Vec::new(),
+                offset: 35,
+            },
+        ));
     let disabled_circular_relations = disabled_circular_family
         .relations
         .as_mut()
         .expect("relations");
-    disabled_circular_relations.skamps = vec![crate::feature::FeatureSkamp {
-        id: 8,
-        kind: 99,
-        flags: 0,
-        status: 0,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 101,
-            sense: 4,
-        }],
-        offset: 35,
-    }];
+    *declared_solver_rows(&mut disabled_circular_relations.skamps) =
+        vec![crate::feature::FeatureSkamp {
+            id: 8,
+            kind: 99,
+            flags: 0,
+            status: 0,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 4,
+            }],
+            offset: 35,
+        }];
     disabled_circular_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -795,7 +842,7 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    family_relations.skamps.push(crate::feature::FeatureSkamp {
+    declared_solver_rows(&mut family_relations.skamps).push(crate::feature::FeatureSkamp {
         id: 7,
         kind: 5,
         flags: 0,
@@ -813,8 +860,10 @@ fn saved_line_joins_through_order_table() {
         offset: 34,
     });
     family_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
@@ -823,13 +872,15 @@ fn saved_line_joins_through_order_table() {
     );
     let mut duplicate_incidence = constrained.clone();
     let duplicate_relations = duplicate_incidence.relations.as_mut().expect("relations");
-    let mut duplicate = duplicate_relations.skamps[0].clone();
+    let mut duplicate = duplicate_relations.skamps()[0].clone();
     duplicate.status = 34;
     duplicate.offset = 32;
-    duplicate_relations.skamps.push(duplicate);
+    declared_solver_rows(&mut duplicate_relations.skamps).push(duplicate);
     duplicate_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 2;
     assert!(relation_incidence_entities(
@@ -838,7 +889,15 @@ fn saved_line_joins_through_order_table() {
         7,
     )
     .is_empty());
-    constrained.relations.as_mut().expect("relations").skamps[0].status = 34;
+    constrained
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("skamp table")
+        .rows_mut()[0]
+        .status = 34;
     assert!(relation_incidence_entities(
         &constrained,
         &SketchId("creo:model:sketch#5".to_string()),
@@ -889,14 +948,10 @@ fn saved_line_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 4,
     });
     completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -908,7 +963,6 @@ fn saved_line_joins_through_order_table() {
             external_id: 42,
             mode: Some(0),
             vertices: [1, 2],
-            center_vertex: None,
             kind: crate::feature::TrimEntityKind::Line,
             offset: 6,
         }],
@@ -989,7 +1043,7 @@ fn saved_line_joins_through_order_table() {
         });
     let mut omitted_segment = segment.clone();
     omitted_segment.external_id = 43;
-    omitted_segment.point_ids = [11, 12];
+    omitted_segment.kind = crate::feature::FeatureSegmentKind::Line([11, 12]);
     missing_line
         .segments
         .as_mut()
@@ -1000,7 +1054,9 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("segment table")
         .rows
-        .push(omitted_segment.clone());
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            omitted_segment.clone(),
+        ));
     missing_line
         .trim_entities
         .as_mut()
@@ -1010,7 +1066,6 @@ fn saved_line_joins_through_order_table() {
             external_id: 43,
             mode: Some(0),
             vertices: [3, 4],
-            center_vertex: None,
             kind: crate::feature::TrimEntityKind::Line,
             offset: 7,
         });
@@ -1027,7 +1082,12 @@ fn saved_line_joins_through_order_table() {
     );
 
     omitted_segment.vertical_horizontal = Some(1);
-    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment.clone();
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .edit_ordinary(|rows| rows[1] = omitted_segment.clone());
     assert_eq!(
         saved_section_missing_line_geometry(&missing_line),
         Some((
@@ -1047,12 +1107,24 @@ fn saved_line_joins_through_order_table() {
     );
 
     omitted_segment.vertical_horizontal = Some(0);
-    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment;
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .edit_ordinary(|rows| rows[1] = omitted_segment);
     assert!(saved_section_missing_line_geometry(&missing_line).is_none());
     assert!(resolved_section_segment_geometry(
         &missing_line,
         &BTreeMap::new(),
-        &missing_line.segments.as_ref().expect("segment table").rows[1],
+        &missing_line
+            .segments
+            .as_ref()
+            .expect("segment table")
+            .rows
+            .ordinary()
+            .cloned()
+            .collect::<Vec<_>>()[1],
     )
     .is_none());
 
@@ -1062,7 +1134,7 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("segment table")
         .rows
-        .push(segment);
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(segment));
     assert_eq!(trim_segment_id(&duplicate_segment, &trim), None);
     let mut duplicate_trim = completed;
     duplicate_trim
@@ -1105,34 +1177,34 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         offset: 20,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![crate::feature::FeatureSectionPoint {
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 30,
+            },
+            vec![crate::feature::FeatureSectionPoint {
                 point_id: 11,
                 u: None,
                 v: None,
             }],
-            offset: 30,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Vec::new(),
-            circle_rows: vec![circle.clone()],
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![circle.clone()])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Circle)
+                .collect(),
             offset: 31,
         }),
         trim_entities: None,
@@ -1172,38 +1244,33 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     );
     let mut conflicting_radius = definition.clone();
     let variables = conflicting_radius.variables.as_mut().expect("variables");
-    variables.declared_count = 1;
+    variables.declared_count += 1;
     variables.rows.push(crate::feature::FeatureVariableRow {
-        variable_type: 3,
+        variable_type: crate::feature::definitions::VariableType::Radius,
         key: 12,
-        value: Some(5.0),
+        value: crate::feature::definitions::ScalarLane::Value(5.0),
         value_body: Vec::new(),
-        guess: None,
+        guess: crate::feature::definitions::ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 33,
     });
     assert!(resolved_section_radii(&conflicting_radius).is_empty());
     let mut conflicting = definition;
-    conflicting.variables.as_mut().expect("variables").points[0].u = Some(3.0);
+    conflicting.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_coordinates(&conflicting),
         BTreeMap::from([(11, [Some(3.0), Some(-3.0)])])
     );
-    conflicting
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
-            point_id: 11,
-            u: Some(4.0),
-            v: None,
-        });
+    let variables = conflicting.variables.as_mut().expect("variables");
+    let mut duplicate = variables.rows[0].clone();
+    duplicate.value = ScalarLane::Value(4.0);
+    variables.rows.push(duplicate);
+    variables.declared_count += 1;
     assert!(resolved_section_coordinates(&conflicting).is_empty());
 }
 
@@ -1223,11 +1290,14 @@ fn generated_saved_geometry_forms_closed_profiles() {
         (
             10,
             SketchGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                weights: None,
-                periodic: false,
+                curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test pcurve"),
             },
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),
@@ -1268,9 +1338,8 @@ fn generated_saved_geometry_forms_closed_profiles() {
 #[test]
 fn saved_arc_joins_through_order_table() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: Some(8),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -1281,8 +1350,10 @@ fn saved_arc_joins_through_order_table() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1339,31 +1410,29 @@ fn saved_arc_joins_through_order_table() {
         Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
     );
     let mut coordinate_definition = definition.clone();
-    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: [7, 8, 9]
+    coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
+        crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 30,
+        },
+        [7, 8, 9]
             .map(|point_id| crate::feature::FeatureSectionPoint {
                 point_id,
                 u: None,
                 v: None,
             })
             .to_vec(),
-        offset: 30,
-    });
+    ));
     coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     assert_eq!(
@@ -1420,14 +1489,10 @@ fn saved_arc_joins_through_order_table() {
         declared_count: 2,
         has_elided_prototype: true,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     };
     let mut elided_prototype = definition.clone();
@@ -1507,14 +1572,10 @@ fn saved_arc_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -1526,8 +1587,7 @@ fn saved_arc_joins_through_order_table() {
             external_id: 42,
             mode: Some(0),
             vertices: [1, 2],
-            center_vertex: None,
-            kind: crate::feature::TrimEntityKind::Arc,
+            kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
             offset: 30,
         }],
         solved_external_ids: vec![42],
@@ -1576,7 +1636,10 @@ fn saved_arc_joins_through_order_table() {
         .segments
         .as_ref()
         .expect("test definition has a segment table")
-        .rows[0];
+        .rows
+        .ordinary()
+        .cloned()
+        .collect::<Vec<_>>()[0];
     assert_eq!(
         saved_section_arc_carrier(&trimmed, segment),
         Some(([0.0, 0.0], 2.0))
@@ -1616,7 +1679,10 @@ fn saved_arc_joins_through_order_table() {
         .segments
         .as_ref()
         .expect("test definition has a segment table")
-        .rows[0];
+        .rows
+        .ordinary()
+        .cloned()
+        .collect::<Vec<_>>()[0];
     assert!(saved_section_arc_geometry(&trimmed, segment).is_none());
     assert_eq!(
         section_segment_intersection_carrier(
@@ -1624,332 +1690,12 @@ fn saved_arc_joins_through_order_table() {
             &resolved_section_radii(&trimmed),
             &BTreeMap::new(),
             segment,
-        )
-        .map(|carrier| carrier.geometry),
+        ),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
-        })
-    );
-}
-
-#[test]
-fn trimmed_line_reconciles_carrier_and_solver_orientation() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
-        directions: [None; 3],
-        point_ids: [7, 9],
-        center_id: None,
-        arc_orientation: None,
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 42,
-        body: Vec::new(),
-        offset: 40,
-    };
-    let anchor = crate::feature::FeatureSegment {
-        point_ids: [5, 6],
-        external_id: 41,
-        body: Vec::new(),
-        offset: 39,
-        ..segment.clone()
-    };
-    let horizontal = crate::feature::FeatureSkamp {
-        id: 1,
-        kind: 1,
-        flags: 0,
-        status: 1,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 41,
-            sense: 0,
-        }],
-        offset: 50,
-    };
-    let parallel = crate::feature::FeatureSkamp {
-        id: 2,
-        kind: 7,
-        flags: 0,
-        status: 1,
-        items: vec![
-            crate::feature::FeatureSkampItem {
-                entity_id: 41,
-                sense: 0,
-            },
-            crate::feature::FeatureSkampItem {
-                entity_id: 42,
-                sense: 0,
-            },
-        ],
-        offset: 55,
-    };
-    let mut definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 2,
-            has_elided_prototype: false,
-            entity_ref: None,
-            rows: vec![anchor, segment.clone()],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
-            offset: 20,
-        }),
-        trim_entities: Some(crate::feature::FeatureTrimEntityTable {
-            declared_count: None,
-            entity_ref: None,
-            entry_ref: None,
-            buckets: Vec::new(),
-            rows: vec![crate::feature::FeatureTrimEntity {
-                external_id: 42,
-                mode: Some(0),
-                vertices: [1, 2],
-                center_vertex: None,
-                kind: crate::feature::TrimEntityKind::Line,
-                offset: 30,
-            }],
-            solved_external_ids: vec![42],
-            offset: 28,
-        }),
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: Some(crate::feature::FeatureRelationTable {
-            declared_count: 2,
-            entity_ref: None,
-            rows: Vec::new(),
-            skamps: vec![horizontal, parallel],
-            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                declared_count: 2,
-                entity_ref: 70,
-                offset: 45,
-            }),
-            triples: Vec::new(),
-            triples_header: None,
-            offset: 44,
-        }),
-        saved_section: None,
-        offset: 0,
-    };
-    let trim_vertices = BTreeMap::from([(1, [-2.0, 3.0]), (2, [4.0, 3.0])]);
-
-    assert_eq!(
-        trimmed_section_segment_geometry(&definition, &BTreeMap::new(), &trim_vertices, &segment,),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-2.0, 3.0),
-            end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
-        })
-    );
-    let mut disabled_parallel = definition.clone();
-    disabled_parallel
-        .relations
-        .as_mut()
-        .expect("solver relations")
-        .skamps[1]
-        .status = 34;
-    assert_eq!(
-        trimmed_section_segment_geometry(
-            &disabled_parallel,
-            &BTreeMap::new(),
-            &trim_vertices,
-            &segment,
-        ),
-        None
-    );
-
-    let carrier_points = BTreeMap::from([(7, [0.0, 3.0]), (9, [2.0, 3.0])]);
-    assert!(trimmed_section_segment_geometry(
-        &definition,
-        &carrier_points,
-        &trim_vertices,
-        &segment,
-    )
-    .is_some());
-    let off_carrier_vertices = BTreeMap::from([(1, [-2.0, 3.0]), (2, [4.0, 4.0])]);
-    assert!(trimmed_section_segment_geometry(
-        &definition,
-        &carrier_points,
-        &off_carrier_vertices,
-        &segment,
-    )
-    .is_none());
-
-    let relations = definition.relations.as_mut().expect("solver relations");
-    relations.skamps.push(crate::feature::FeatureSkamp {
-        id: 3,
-        kind: 2,
-        flags: 0,
-        status: 1,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 41,
-            sense: 0,
-        }],
-        offset: 60,
-    });
-    relations
-        .skamp_header
-        .as_mut()
-        .expect("solver header")
-        .declared_count = 3;
-    assert!(trimmed_section_segment_geometry(
-        &definition,
-        &BTreeMap::new(),
-        &trim_vertices,
-        &segment,
-    )
-    .is_none());
-}
-
-#[test]
-fn arc_carriers_use_trim_vertices() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
-        directions: [None; 3],
-        point_ids: [7, 9],
-        center_id: Some(8),
-        arc_orientation: Some(0),
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 42,
-        body: Vec::new(),
-        offset: 40,
-    };
-    let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: Some(crate::feature::FeatureTrimEntityTable {
-            declared_count: None,
-            entity_ref: None,
-            entry_ref: None,
-            buckets: Vec::new(),
-            rows: vec![crate::feature::FeatureTrimEntity {
-                external_id: 42,
-                mode: Some(0),
-                vertices: [1, 2],
-                center_vertex: None,
-                kind: crate::feature::TrimEntityKind::Arc,
-                offset: 30,
-            }],
-            solved_external_ids: vec![42],
-            offset: 28,
-        }),
-        trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
-            declared_count: 1,
-            has_prototype: false,
-            entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
-                external_id: 42,
-                internal_id: 3,
-                bitmask: 0,
-                offset: 10,
-            }],
-            offset: 8,
-        }),
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Arc(
-                crate::feature::FeatureSavedArc {
-                    entity_id: 3,
-                    center: [Some(0.0), Some(0.0), Some(0.0)],
-                    radius: Some(2.0),
-                    endpoints: [[None; 3]; 2],
-                    parameters: [None; 2],
-                    body: Vec::new(),
-                    offset: 20,
-                },
-            )],
-            offset: 18,
-        }),
-        offset: 0,
-    };
-    let trim_vertices = BTreeMap::from([(1, [-2.0, 0.0]), (2, [0.0, -2.0])]);
-    let points = BTreeMap::from([(7, [2.0, 0.0]), (8, [0.0, 0.0]), (9, [0.0, 2.0])]);
-
-    assert_eq!(
-        trimmed_section_segment_geometry(&definition, &points, &trim_vertices, &segment),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
-        })
-    );
-
-    let mut var_segment = segment.clone();
-    var_segment.radius_ref = Some(10);
-    let mut var_arc = definition;
-    var_arc.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
-            crate::feature::FeatureSectionPoint {
-                point_id: 7,
-                u: Some(2.0),
-                v: Some(0.0),
-            },
-            crate::feature::FeatureSectionPoint {
-                point_id: 8,
-                u: Some(0.0),
-                v: Some(0.0),
-            },
-            crate::feature::FeatureSectionPoint {
-                point_id: 9,
-                u: Some(0.0),
-                v: Some(2.0),
-            },
-        ],
-        offset: 5,
-    });
-    var_arc.segments = Some(crate::feature::FeatureSegmentTable {
-        declared_count: 1,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: vec![var_segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
-        offset: 6,
-    });
-    var_arc.order_table = None;
-    var_arc.saved_section = None;
-    assert_eq!(
-        trimmed_section_segment_geometry(
-            &var_arc,
-            &resolved_section_points(&var_arc),
-            &trim_vertices,
-            &var_segment,
-        ),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
         })
     );
 }
@@ -1966,9 +1712,8 @@ fn placed_extrusion_line_defines_plane() {
         offset: 7,
     };
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,

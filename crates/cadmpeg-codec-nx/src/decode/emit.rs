@@ -2,6 +2,7 @@
 //! Topology emission, unresolved carriers, and source metadata.
 
 use super::geometry_work::GeometryWorkBudget;
+use super::jpeg::jpeg_dimensions;
 use super::offset::point_distance;
 use super::pcurves::{
     attach_tolerant_edge_intersections_with_budget,
@@ -12,11 +13,13 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use super::{offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
@@ -30,7 +33,9 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, Coedge, Edge, Face, Loop, LoopRing, Point, Region, Shell, Vertex,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -76,15 +81,20 @@ pub(super) fn emit_topology(
         .collect();
     let valid_edge_xmts: BTreeSet<u32> = valid_fin_xmts
         .iter()
-        .filter_map(|xmt| graph.get(17, *xmt)?.fin_fields().map(|fields| fields.edge))
+        .filter_map(|xmt| {
+            graph
+                .get(NodeKind::Fin, *xmt)?
+                .fin_fields()
+                .map(|fields| fields.edge)
+        })
         .collect();
     let valid_vertex_xmts: BTreeSet<u32> = valid_fin_xmts
         .iter()
         .flat_map(|xmt| {
-            let fields = graph.get(17, *xmt).and_then(Node::fin_fields);
+            let fields = graph.get(NodeKind::Fin, *xmt).and_then(Node::fin_fields);
             let partner_vertex = fields
                 .filter(|fields| fields.other > 1)
-                .and_then(|fields| graph.get(17, fields.other))
+                .and_then(|fields| graph.get(NodeKind::Fin, fields.other))
                 .and_then(Node::fin_fields)
                 .map(|fields| fields.vertex);
             [fields.map(|fields| fields.vertex), partner_vertex]
@@ -99,8 +109,8 @@ pub(super) fn emit_topology(
         .collect();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
-        let id = BodyId(format!("{prefix}:body#{body_xmt}"));
-        if let Some(node) = graph.get(12, body_xmt) {
+        let id = BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar");
+        if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, &id, source_stream, node, "BODY");
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
             shell
@@ -139,8 +149,9 @@ pub(super) fn emit_topology(
             }
             region.clone()
         } else {
-            let region = RegionId(format!("{prefix}:region#{}", fields.region));
-            if let Some(region_node) = graph.get(19, fields.region) {
+            let region = RegionId::mint(format!("{prefix}:region#{}", fields.region))
+                .expect("identity grammar");
+            if let Some(region_node) = graph.get(NodeKind::Region, fields.region) {
                 annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
                 annotations
@@ -165,7 +176,8 @@ pub(super) fn emit_topology(
             regions.insert(fields.region, (region.clone(), body.clone()));
             region
         };
-        let shell_id = ShellId(format!("{prefix}:shell#{}", node.xmt));
+        let shell_id =
+            ShellId::mint(format!("{prefix}:shell#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
         ir.model.shells.push(Shell {
             id: shell_id.clone(),
@@ -195,7 +207,7 @@ pub(super) fn emit_topology(
     let mut vertices = BTreeMap::new();
     let mut vertex_positions = BTreeMap::new();
     for node in graph
-        .of_kind(18)
+        .of_kind(NodeKind::Vertex)
         .filter(|node| valid_vertex_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.vertex_fields() else {
@@ -208,7 +220,8 @@ pub(super) fn emit_topology(
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance);
-        let vertex = VertexId(format!("{prefix}:vertex#{}", node.xmt));
+        let vertex =
+            VertexId::mint(format!("{prefix}:vertex#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
             annotations.derived(&vertex, "tolerance");
@@ -241,18 +254,18 @@ pub(super) fn emit_topology(
         .model
         .procedural_curves
         .iter()
-        .map(|procedural| procedural.curve.clone())
+        .filter_map(|procedural| ir.model.procedural_curve_owner(&procedural.id).cloned())
         .collect();
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges = BTreeMap::new();
     for node in graph
-        .of_kind(16)
+        .of_kind(NodeKind::Edge)
         .filter(|node| valid_edge_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.edge_fields() else {
             continue;
         };
-        let Some(fin) = graph.get(17, fields.fin) else {
+        let Some(fin) = graph.get(NodeKind::Fin, fields.fin) else {
             continue;
         };
         let Some(fin_fields) = fin.fin_fields() else {
@@ -271,7 +284,7 @@ pub(super) fn emit_topology(
                     let pcurve = ir.model.pcurves.get(*pcurve_index)?;
                     let surface = pcurve_supports.get(&curve_xmt?)?.clone();
                     let parameter_range = pcurve
-                        .parameter_range
+                        .parameter_range()
                         .or(param_range)
                         .or_else(|| pcurve_parameter_range(&pcurve.geometry))?;
                     let parameter_range = ordered_parameter_range(parameter_range)?;
@@ -279,15 +292,17 @@ pub(super) fn emit_topology(
                         surface,
                         pcurve.geometry.clone(),
                         parameter_range,
-                        pcurve.fit_tolerance,
+                        pcurve.fit_tolerance(),
                     ))
                 });
             if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
-                let carrier = CurveId(format!("{prefix}:edge-parametric-curve#{}", node.xmt));
-                let construction = ProceduralCurveId(format!(
+                let carrier = CurveId::mint(format!("{prefix}:edge-parametric-curve#{}", node.xmt))
+                    .expect("identity grammar");
+                let construction = ProceduralCurveId::mint(format!(
                     "{prefix}:edge-parametric-construction#{}",
                     node.xmt
-                ));
+                ))
+                .expect("identity grammar");
                 annotations
                     .note(&carrier, source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
@@ -296,36 +311,35 @@ pub(super) fn emit_topology(
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
                         construction: construction.clone(),
+                        cache: None,
                     },
                     source_object: None,
                 });
-                ir.model.procedural_curves.push(ProceduralCurve {
-                    id: construction,
-                    curve: carrier.clone(),
-                    definition: ProceduralCurveDefinition::SurfaceCurve {
-                        family: SurfaceCurveFamily::Parametric,
-                        context: IntcurveSupportContext {
-                            sides: [
-                                IntcurveSupportSide {
-                                    surface: Some(surface),
-                                    pcurve: Some(pcurve),
-                                    pcurve_parameter_range: None,
+                let _attached = ir.model.add_procedural_curve(
+                    carrier.clone(),
+                    ProceduralCurve::new(
+                        construction,
+                        ProceduralCurveDefinition::SurfaceCurve {
+                            family: SurfaceCurveFamily::Parametric {
+                                context: IntcurveSupportContext {
+                                    sides: [
+                                        IntcurveSupportSide {
+                                            surface: Some(surface),
+                                            pcurve: Some(pcurve.into()),
+                                        },
+                                        IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                        },
+                                    ],
+                                    parameter_range,
+                                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                                 },
-                                IntcurveSupportSide {
-                                    surface: None,
-                                    pcurve: None,
-                                    pcurve_parameter_range: None,
-                                },
-                            ],
-                            parameter_range,
-                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                                tail: None,
+                            },
                         },
-                        tail: None,
-                    },
-                    // The pcurve carries this fit contract; this construction has no
-                    // independent solved 3D cache to qualify.
-                    cache_fit_tolerance: None,
-                });
+                    ),
+                );
                 curve = Some(carrier);
                 param_range = None;
             }
@@ -362,7 +376,7 @@ pub(super) fn emit_topology(
         } else {
             fin_fields.forward
         };
-        let Some(end_fields) = graph.get(17, end_fin).and_then(Node::fin_fields) else {
+        let Some(end_fields) = graph.get(NodeKind::Fin, end_fin).and_then(Node::fin_fields) else {
             continue;
         };
         let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
@@ -379,7 +393,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let (mut start, mut end) = (start, end);
-        let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
+        let id = EdgeId::mint(format!("{prefix}:edge#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
@@ -432,7 +446,7 @@ pub(super) fn emit_topology(
         .collect();
     let mut faces = BTreeMap::new();
     for node in graph
-        .of_kind(14)
+        .of_kind(NodeKind::Face)
         .filter(|node| valid_face_xmts.contains(&node.xmt))
     {
         let Some(fields) = node.face_fields() else {
@@ -444,7 +458,7 @@ pub(super) fn emit_topology(
         let Some(surface) = surfaces.get(&fields.surface).cloned() else {
             continue;
         };
-        let id = FaceId(format!("{prefix}:face#{}", node.xmt));
+        let id = FaceId::mint(format!("{prefix}:face#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
@@ -453,8 +467,8 @@ pub(super) fn emit_topology(
             id: id.clone(),
             shell: shell.clone(),
             surface,
-            sense: sense(Some(fields.sense)),
-            loops: Vec::new(),
+            sense: fields.sense,
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: decoded_tolerance(fields.tolerance),
@@ -470,17 +484,19 @@ pub(super) fn emit_topology(
         faces.insert(node.xmt, id);
     }
     let mut loops = BTreeMap::new();
+    let mut loop_specs = BTreeMap::new();
+    let mut loop_coedges = BTreeMap::<u32, Vec<CoedgeId>>::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
             graph
-                .get(17, *fin_xmt)
+                .get(NodeKind::Fin, *fin_xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| edges.contains_key(&fields.edge))
         });
         if !ring_resolves {
             continue;
         }
-        let Some(node) = graph.get(15, loop_xmt) else {
+        let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
         };
         let Some(fields) = node.loop_fields() else {
@@ -489,34 +505,25 @@ pub(super) fn emit_topology(
         let Some(face) = faces.get(&fields.face).cloned() else {
             continue;
         };
-        let id = LoopId(format!("{prefix}:loop#{}", node.xmt));
+        let id = LoopId::mint(format!("{prefix}:loop#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "LOOP");
-        ir.model.loops.push(Loop {
-            id: id.clone(),
-            face: face.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
-        });
-        if let Some(parent) = ir
-            .model
-            .faces
-            .iter_mut()
-            .find(|candidate| candidate.id == face)
-        {
-            parent.loops.push(id.clone());
-        }
+        loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
     }
     let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
         .iter()
         .filter(|xmt| {
             graph
-                .get(17, **xmt)
+                .get(NodeKind::Fin, **xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
         })
-        .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
+        .map(|xmt| {
+            (
+                *xmt,
+                CoedgeId::mint(format!("{prefix}:fin#{xmt}")).expect("identity grammar"),
+            )
+        })
         .collect();
     // Preserve the endpoint proof only when the admitted carrier is the exact
     // intersection candidate consumed by the later attachment pass. A valid
@@ -527,17 +534,18 @@ pub(super) fn emit_topology(
         .procedural_curves
         .iter()
         .filter_map(|procedural| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 return None;
             };
+            let owner = ir.model.procedural_curve_owner(&procedural.id)?.clone();
             Some(context.sides.iter().filter_map(move |side| {
                 Some((
-                    (procedural.curve.clone(), side.surface.clone()?),
+                    (owner.clone(), side.surface.clone()?),
                     (
-                        side.pcurve.clone()?,
+                        side.pcurve.clone()?.geometry,
                         context.parameter_range,
-                        procedural.cache_fit_tolerance,
+                        procedural.cache_fit_tolerance(),
                     ),
                 ))
             }))
@@ -549,23 +557,23 @@ pub(super) fn emit_topology(
         let valid_pcurve_fins = fin_ids
             .keys()
             .filter_map(|fin_xmt| {
-                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
                 let edge = edges.get(&fields.edge)?;
                 let support = graph
-                    .get(15, fields.loop_xmt)
+                    .get(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
                     .and_then(|face| surfaces.get(&face.surface))?;
                 let carrier = pcurves
                     .get(&fields.curve_xmt)
-                    .and_then(|id| index.pcurves(id.0.as_str()))?;
+                    .and_then(|id| index.pcurves(id.as_str()))?;
                 let use_range = trim_ranges
                     .get(&fields.curve_xmt)
                     .copied()
                     .and_then(ordered_parameter_range);
                 let parameter_range = use_range
-                    .or(carrier.parameter_range)
+                    .or(carrier.parameter_range())
                     .or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let endpoints = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
@@ -573,10 +581,10 @@ pub(super) fn emit_topology(
                     support,
                     &carrier.geometry,
                     parameter_range,
-                    carrier.fit_tolerance,
+                    carrier.fit_tolerance(),
                     adaptive_geometry_budget,
                 )?;
-                let curve = index.edges(edge.0.as_str())?.curve.as_ref()?;
+                let curve = index.edges(edge.as_str())?.curve.as_ref()?;
                 let parameter_range = parameter_range?;
                 let Some((candidate_geometry, candidate_range, _)) =
                     intersection_pcurves.get(&(curve.clone(), support.clone()))
@@ -599,12 +607,12 @@ pub(super) fn emit_topology(
                 if valid_pcurve_fins.contains(fin_xmt) {
                     return None;
                 }
-                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
                 let edge = edges.get(&fields.edge)?;
                 let support = graph
-                    .get(15, fields.loop_xmt)
+                    .get(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
                     .and_then(|face| surfaces.get(&face.surface))
                     .cloned()?;
@@ -631,7 +639,7 @@ pub(super) fn emit_topology(
     };
     let mut serialized_branch_pcurves = BTreeSet::new();
     for &fin_xmt in fin_ids.keys() {
-        let Some(node) = graph.get(17, fin_xmt) else {
+        let Some(node) = graph.get(NodeKind::Fin, fin_xmt) else {
             continue;
         };
         let Some(fields) = node.fin_fields() else {
@@ -645,20 +653,20 @@ pub(super) fn emit_topology(
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
         annotate_node(annotations, &id, source_stream, node, "FIN");
-        let next = fin_ids
+        let _next = fin_ids
             .get(&fields.forward)
             .cloned()
             .expect("validated FIN ring resolves forward link");
-        let previous = fin_ids
+        let _previous = fin_ids
             .get(&fields.backward)
             .cloned()
             .expect("validated FIN ring resolves backward link");
         let partner = fin_ids.get(&fields.other).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
         let support = graph
-            .get(15, fields.loop_xmt)
+            .get(NodeKind::Loop, fields.loop_xmt)
             .and_then(Node::loop_fields)
-            .and_then(|loop_| graph.get(14, loop_.face))
+            .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
             .and_then(Node::face_fields)
             .and_then(|face| surfaces.get(&face.surface))
             .cloned();
@@ -689,7 +697,8 @@ pub(super) fn emit_topology(
             if let Some((_support, geometry, parameter_range, fit_tolerance)) =
                 fallback_pcurves.get(&fin_xmt).cloned()
             {
-                let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
+                let pcurve_id = PcurveId::mint(format!("{prefix}:intersection-pcurve#{fin_xmt}"))
+                    .expect("identity grammar");
                 annotations
                     .note(&pcurve_id, source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
@@ -701,10 +710,11 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some(parameter_range),
-                    fit_tolerance,
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        Some(parameter_range),
+                        fit_tolerance,
+                    ),
                 });
                 pcurve = Some(pcurve_id);
             }
@@ -713,10 +723,8 @@ pub(super) fn emit_topology(
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
-            next,
-            previous,
             radial_next,
-            sense: sense(Some(fields.sense)),
+            sense: fields.sense,
             pcurves: pcurve
                 .into_iter()
                 .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
@@ -726,15 +734,28 @@ pub(super) fn emit_topology(
                 })
                 .collect(),
             use_curve: None,
-            use_curve_parameter_range: None,
+        });
+        loop_coedges.entry(fields.loop_xmt).or_default().push(id);
+    }
+    for (loop_xmt, (id, face)) in loop_specs {
+        let Some(ring) = loop_coedges
+            .remove(&loop_xmt)
+            .and_then(|coedges| LoopRing::new(coedges, Vec::new()).ok())
+        else {
+            continue;
+        };
+        ir.model.loops.push(Loop {
+            id: id.clone(),
+            face: face.clone(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         if let Some(parent) = ir
             .model
-            .loops
+            .faces
             .iter_mut()
-            .find(|candidate| candidate.id == loop_id)
+            .find(|candidate| candidate.id == face)
         {
-            parent.coedges.push(id);
+            parent.loops.push(id);
         }
     }
     attach_tolerant_edge_intersections_with_budget(
@@ -787,7 +808,7 @@ pub(super) fn emit_topology(
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect();
     ir.model.vertices.retain(|vertex| {
-        !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
+        !vertex.id.as_str().starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
     endpoint_witnesses
 }
@@ -803,15 +824,17 @@ pub(crate) fn retain_unresolved_topology_carriers(
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let unknown = UnknownId(format!("nx:container:parasolid#{stream_index}"));
-    for face in graph.of_kind(14) {
+    let unknown = UnknownId::mint(format!("nx:container:parasolid#{stream_index}"))
+        .expect("identity grammar");
+    for face in graph.of_kind(NodeKind::Face) {
         let Some(surface_xmt) = face.face_fields().map(|fields| fields.surface) else {
             continue;
         };
         if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
             continue;
         }
-        let id = SurfaceId(format!("nx:s{stream_index}:surface#unknown-{surface_xmt}"));
+        let id = SurfaceId::mint(format!("nx:s{stream_index}:surface#unknown-{surface_xmt}"))
+            .expect("identity grammar");
         annotations
             .note(&id, source_stream, face.pos as u64)
             .tag("UNRESOLVED_SURFACE_REFERENCE");
@@ -826,14 +849,15 @@ pub(crate) fn retain_unresolved_topology_carriers(
         surfaces.insert(surface_xmt, id);
     }
 
-    for edge in graph.of_kind(16) {
+    for edge in graph.of_kind(NodeKind::Edge) {
         let Some(curve_xmt) = edge.edge_fields().map(|fields| fields.curve) else {
             continue;
         };
         if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
             continue;
         }
-        let id = CurveId(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"));
+        let id = CurveId::mint(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"))
+            .expect("identity grammar");
         annotations
             .note(&id, source_stream, edge.pos as u64)
             .tag("UNRESOLVED_CURVE_REFERENCE");
@@ -868,7 +892,7 @@ pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
-        SurfaceGeometry::Polygonal { .. } => "POLYGONAL_SURFACE",
+        SurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
         SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
@@ -885,7 +909,7 @@ pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
-        CurveGeometry::Polyline { .. } => "POLYLINE",
+        CurveGeometry::Polyline(_) => "POLYLINE",
         CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
@@ -919,7 +943,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
             || match geometry {
-                CurveGeometry::Nurbs(nurbs) => nurbs.knots.first().copied().unwrap_or(0.0),
+                CurveGeometry::Nurbs(nurbs) => nurbs.knots().first().copied().unwrap_or(0.0),
                 _ => 0.0,
             },
             |range| range[0],
@@ -929,8 +953,10 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
     };
-    let point = PointId(format!("{prefix}:point#closed-edge-{}", edge.xmt));
-    let vertex = VertexId(format!("{prefix}:vertex#closed-edge-{}", edge.xmt));
+    let point = PointId::mint(format!("{prefix}:point#closed-edge-{}", edge.xmt))
+        .expect("identity grammar");
+    let vertex = VertexId::mint(format!("{prefix}:vertex#closed-edge-{}", edge.xmt))
+        .expect("identity grammar");
     annotations
         .note(&point, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_POINT");
@@ -959,7 +985,7 @@ pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
             range.into_iter().all(f64::is_finite).then_some(range)
         }
         CurveGeometry::Nurbs(nurbs) => {
-            let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
+            let domain = [*nurbs.knots().first()?, *nurbs.knots().last()?];
             let epsilon =
                 EPS_EMIT_CANONICAL_TRIM_RANGE_E6 * (1.0 + domain[0].abs().max(domain[1].abs()));
             if raw
@@ -1034,7 +1060,7 @@ pub(crate) fn orient_edge_range_with_budget(
         .model
         .procedural_curves
         .iter()
-        .any(|procedural| procedural.curve == *curve);
+        .any(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(curve));
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
         geometry,
@@ -1135,14 +1161,6 @@ fn orient_edge_range_for_geometry_with_budget(
     }
 }
 
-pub(crate) fn sense(byte: Option<u8>) -> Sense {
-    if byte == Some(b'-') {
-        Sense::Reversed
-    } else {
-        Sense::Forward
-    }
-}
-
 pub(crate) fn unknown_stream(
     ctx: &DecodeContext<'_>,
     si: usize,
@@ -1161,27 +1179,34 @@ pub(crate) fn retain_unknown_stream_data(
     stream: &Stream,
     unknown: &mut UnknownRecord,
 ) -> Result<(), CodecError> {
-    if unknown.data.is_none() {
-        unknown.data =
-            Some(ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?);
+    if unknown.data().is_none() {
+        unknown.retain_data(ctx.copy_retained(
+            &stream.inflated,
+            "retain NX unknown stream",
+            None,
+        )?);
     }
     Ok(())
 }
 
 fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
-    UnknownRecord {
-        id: UnknownId(format!("nx:container:parasolid#{si}")),
-        offset: stream.file_offset as u64,
-        byte_len: stream.inflated.len() as u64,
-        sha256: sha256_hex(&stream.inflated),
-        data,
-        links: Vec::new(),
+    let id = UnknownId::mint(format!("nx:container:parasolid#{si}")).expect("identity grammar");
+    let offset = stream.file_offset as u64;
+    match data {
+        Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
+        None => UnknownRecord::unavailable(
+            id,
+            offset,
+            stream.inflated.len() as u64,
+            sha256_hex(&stream.inflated),
+            Vec::new(),
+        ),
     }
 }
 
-pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
+/// Builds source metadata from classified layers and the container scan.
+pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
         "file_size".to_string(),
         scan.container.physical_size.to_string(),
@@ -1192,26 +1217,29 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     );
     attributes.insert(
         "header_entry_count".to_string(),
-        scan.container.header_entry_count.to_string(),
+        match scan.container.layout {
+            crate::container::ContainerLayout::Modern {
+                header_entry_count, ..
+            } => header_entry_count,
+            crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => entry_count,
+        }
+        .to_string(),
     );
-    if legacy_cfb {
-        attributes.insert("container_kind".to_string(), "cfb".to_string());
-        attributes.insert(
-            "ugii_version".to_string(),
-            scan.container.version.to_string(),
-        );
-    } else {
-        attributes.insert(
-            "footer_offset".to_string(),
-            scan.container.footer_offset.to_string(),
-        );
+    if let crate::container::ContainerLayout::Modern {
+        footer_offset,
+        footer_entry_count,
+        footer_fingerprint,
+        ..
+    } = scan.container.layout
+    {
+        attributes.insert("footer_offset".to_string(), footer_offset.to_string());
         attributes.insert(
             "footer_entry_count".to_string(),
-            scan.container.footer_entry_count.to_string(),
+            footer_entry_count.to_string(),
         );
         attributes.insert(
             "footer_fingerprint".to_string(),
-            format!("{:08x}", assemble_u32_be(scan.container.footer_fingerprint)),
+            format!("{:08x}", assemble_u32_be(footer_fingerprint)),
         );
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
@@ -1241,9 +1269,6 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         "plain_streams".to_string(),
         scan.count(StreamKind::Plain).to_string(),
     );
-    if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
-        attributes.insert("parasolid_schema".to_string(), schema.to_string());
-    }
     for (index, path) in scan
         .container
         .external_reference_paths()
@@ -1255,7 +1280,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
         attributes.insert(
             "rmfastload_active_object_count".to_string(),
-            table.object_ids.len().to_string(),
+            table.object_ids.as_slice().len().to_string(),
         );
     }
     let mut preview_count = 0usize;
@@ -1290,7 +1315,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     for (index, stream) in scan
         .streams
         .iter()
-        .filter(|stream| stream.kind == StreamKind::Deltas)
+        .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
         let census = crate::deltas::walk(&stream.inflated);
@@ -1347,20 +1372,17 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
                 census.inline_schema_declarations.len().to_string(),
             );
         }
-        for (name, count) in census.full_counts {
+        for (name, count) in census.full_counts() {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
-        for (name, count) in census.tombstone_counts {
+        for (name, count) in census.tombstone_counts() {
             attributes.insert(
                 format!("deltas.{index}.tombstone.{name}"),
                 count.to_string(),
             );
         }
     }
-    SourceMeta {
-        format: "nx".to_string(),
-        attributes,
-    }
+    SourceMeta::classified(dialects.clone(), attributes)
 }
 
 #[cfg(test)]
@@ -1378,8 +1400,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: vec![1, 2, 3],
-            kind: StreamKind::Partition,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Partition,
+                schema: None,
+            },
         };
 
         assert!(matches!(
@@ -1392,14 +1416,17 @@ mod tests {
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
-        let curve = CurveId("synthetic:curve".into());
-        let geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
-            weights: None,
-            periodic: false,
-        });
+        let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
+        let geometry = CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
+                None,
+                false,
+            )
+            .expect("valid test curve"),
+        );
         let geometry_budget = GeometryWorkBudget::new(1024);
         let mut cache = CurvePointCache::default();
 

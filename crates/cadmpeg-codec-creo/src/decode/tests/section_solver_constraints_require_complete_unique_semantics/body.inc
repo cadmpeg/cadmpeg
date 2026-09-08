@@ -1,8 +1,9 @@
 {
+    use crate::feature::definitions::test_support::{with_points, append_points, replace_points};
+    use crate::feature::definitions::{VariableType, ScalarLane};
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -13,9 +14,8 @@
         offset: 40,
     };
     let arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
         directions: [None; 3],
-        point_ids: [2, 3],
         center_id: Some(4),
         arc_orientation: Some(1),
         vertical_horizontal: None,
@@ -26,9 +26,8 @@
         offset: 41,
     };
     let point = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+        kind: crate::feature::FeatureSegmentKind::Point(4),
         directions: [None; 3],
-        point_ids: [4, 4],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -39,9 +38,8 @@
         offset: 42,
     };
     let other_line = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([5, 6]),
         directions: [None; 3],
-        point_ids: [5, 6],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -52,9 +50,8 @@
         offset: 43,
     };
     let other_arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([5, 6]),
         directions: [None; 3],
-        point_ids: [5, 6],
         center_id: Some(7),
         arc_orientation: Some(1),
         vertical_horizontal: None,
@@ -78,7 +75,11 @@
             body: Vec::new(),
             offset: 80,
         }],
-        skamps: vec![
+        skamps: Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
+            declared_count: 15,
+            entity_ref: 1,
+            offset: 46,
+        }, rows: vec![
             crate::feature::FeatureSkamp {
                 id: 3,
                 kind: 1,
@@ -318,27 +319,21 @@
                 ],
                 offset: 82,
             },
-        ],
-        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-            declared_count: 15,
-            entity_ref: 1,
-            offset: 46,
-        }),
-        triples: Vec::new(),
-        triples_header: None,
+        ] }),
+        triples: None,
         offset: 45,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(917), owner_feature_id: Some(40) },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(with_points(crate::feature::FeatureVariableTable {
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
-            points: vec![
+            offset: 89,
+        }, vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -349,23 +344,14 @@
                     u: Some(3.0),
                     v: Some(2.0),
                 },
-            ],
-            offset: 89,
-        }),
+            ])),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 5,
-            has_elided_prototype: false,
-            entity_ref: None,
-            rows: vec![segment, arc, point, other_line, other_arc],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
-            offset: 30,
-        }),
+declared_count: 5,
+has_elided_prototype: false,
+entity_ref: None,
+rows: (vec![segment, arc, point, other_line, other_arc]).into_iter().map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
+offset: 30,
+}),
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
@@ -375,10 +361,8 @@
             entity_ref: None,
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 2,
-                value: Some(3.0),
+                value: crate::feature::definitions::DimensionValue::Resolved(3.0),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),
@@ -393,11 +377,12 @@
         offset: 0,
     };
     let mut point_row_symmetry = definition.clone();
-    point_row_symmetry.variables = Some(crate::feature::FeatureVariableTable {
+    point_row_symmetry.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 90,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 4,
                 u: Some(1.0),
@@ -413,11 +398,9 @@
                 u: None,
                 v: None,
             },
-        ],
-        offset: 90,
-    });
+        ]));
     let segments = point_row_symmetry.segments.as_mut().expect("segments");
-    segments.point_rows = vec![
+    segments.rows.edit_points(|rows| *rows =  vec![
         crate::feature::FeaturePointSegment {
             point_id: 4,
             external_id: 18,
@@ -433,10 +416,10 @@
             external_id: 20,
             offset: 93,
         },
-    ];
+    ]);
     segments.declared_count = 8;
     let relations = point_row_symmetry.relations.as_mut().expect("relations");
-    relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 94,
         kind: 14,
         flags: 0,
@@ -458,8 +441,10 @@
         offset: 94,
     }];
     relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -467,29 +452,24 @@
         Some(&[2.0, 2.0])
     );
     let mut circle_center_symmetry = point_row_symmetry.clone();
-    circle_center_symmetry
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(circle_center_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 8,
             u: Some(0.0),
             v: Some(0.0),
-        });
+        }]);
     let segments = circle_center_symmetry.segments.as_mut().expect("segments");
-    segments.circle_rows = vec![crate::feature::FeatureCircleSegment {
+    segments.rows.edit_circles(|rows| *rows =  vec![crate::feature::FeatureCircleSegment {
         center_id: 8,
         radius_ref: 101,
         external_id: 21,
         offset: 95,
-    }];
+    }]);
     segments.declared_count = 9;
     circle_center_symmetry
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1]
         .entity_id = 21;
     assert_eq!(
@@ -506,14 +486,13 @@
             external_id: 13,
             mode: Some(0),
             vertices: [2, 3],
-            center_vertex: None,
             kind: crate::feature::TrimEntityKind::Line,
             offset: 84,
         }],
         solved_external_ids: vec![13],
         offset: 83,
     });
-    projected_copy.relations.as_mut().expect("relations").skamps =
+    *declared_solver_rows(&mut projected_copy.relations.as_mut().expect("relations").skamps) =
         vec![crate::feature::FeatureSkamp {
             id: 19,
             kind: 37,
@@ -545,13 +524,13 @@
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: "line".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "arc".to_string(),
+                native_kind: "arc".into(),
             },
         ),
     ]);
@@ -565,7 +544,7 @@
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    projected_copy.relations.as_mut().expect("relations").skamps[0]
+    projected_copy.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items
         .swap(0, 1);
     assert!(matches!(
@@ -580,7 +559,7 @@
     ] {
         let mut fixed_arc = definition.clone();
         let relations = fixed_arc.relations.as_mut().expect("relations");
-        relations.skamps = vec![crate::feature::FeatureSkamp {
+        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
             id: 18,
             kind,
             flags: 0,
@@ -601,14 +580,14 @@
                 angle: Angle(angle),
             }
         );
-        fixed_arc.relations.as_mut().expect("relations").skamps[0].status = 34;
+        fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 34;
         assert!(matches!(
             section_skamp_constraints(&fixed_arc, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::ArcAngle { .. }
         ));
-        fixed_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+        fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
             crate::feature::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
@@ -619,7 +598,7 @@
                 .definition,
             SketchConstraintDefinition::Native { .. }
         ));
-        fixed_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+        fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
             crate::feature::FeatureSkampItem {
                 entity_id: 13,
                 sense: 2,
@@ -634,7 +613,7 @@
     for kind in [12, 13] {
         let mut oriented_arc = definition.clone();
         let relations = oriented_arc.relations.as_mut().expect("relations");
-        relations.skamps = vec![crate::feature::FeatureSkamp {
+        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
             id: 18,
             kind,
             flags: 0,
@@ -647,16 +626,15 @@
         }];
         synchronize_skamp_count(&mut oriented_arc);
         let expected_entity = SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string());
-        let expected = if kind == 12 {
-            SketchConstraintDefinition::HorizontalLoci {
-                first: SketchLocus::Start(expected_entity.clone()),
-                second: SketchLocus::End(expected_entity),
-            }
+        let axis = if kind == 12 {
+            SketchCoordinateAxis::V
         } else {
-            SketchConstraintDefinition::VerticalLoci {
-                first: SketchLocus::Start(expected_entity.clone()),
-                second: SketchLocus::End(expected_entity),
-            }
+            SketchCoordinateAxis::U
+        };
+        let expected = SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(expected_entity.clone()),
+            second: SketchLocus::End(expected_entity),
+            axis,
         };
         assert_eq!(
             section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
@@ -664,15 +642,14 @@
                 .definition,
             expected
         );
-        oriented_arc.relations.as_mut().expect("relations").skamps[0].status = 34;
+        oriented_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 34;
         assert!(matches!(
             section_skamp_constraints(&oriented_arc, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
-            SketchConstraintDefinition::HorizontalLoci { .. }
-                | SketchConstraintDefinition::VerticalLoci { .. }
+            SketchConstraintDefinition::SameCoordinate { .. }
         ));
-        oriented_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+        oriented_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
             crate::feature::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
@@ -683,7 +660,7 @@
                 .definition,
             SketchConstraintDefinition::Native { .. }
         ));
-        oriented_arc.relations.as_mut().expect("relations").skamps[0].items[0] =
+        oriented_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
             crate::feature::FeatureSkampItem {
                 entity_id: 13,
                 sense: 2,
@@ -700,7 +677,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+        .rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [1, 2],
         center_id: None,
@@ -710,17 +687,17 @@
         radius2_ref: None,
         external_id: 18,
         offset: 86,
-    }];
+    }]);
     type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
         .declared_count = 6;
-    type_33_bounded_curve
+    *declared_solver_rows(&mut type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 20,
         kind: 33,
         flags: 34,
@@ -748,7 +725,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 34;
     let inactive_type_33 = section_skamp_constraints(
         &type_33_bounded_curve,
@@ -763,7 +740,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .flags = 0;
     assert!(matches!(
         section_skamp_constraints(
@@ -781,13 +758,13 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .flags = 34;
     type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 0;
     assert!(matches!(
@@ -803,7 +780,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 10;
     let mut missing_bounded_curve = type_33_bounded_curve.clone();
@@ -811,8 +788,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .bounded_curve_rows
-        .clear();
+        .rows.edit_bounded_curves(Vec::clear);
     assert!(matches!(
         section_skamp_constraints(
             &missing_bounded_curve,
@@ -825,7 +801,7 @@
     let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
         SketchGeometry::Native {
-            native_kind: "bounded_curve".to_string(),
+            native_kind: "bounded_curve".into(),
         },
     )]);
     let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
@@ -842,7 +818,7 @@
     ));
 
     let mut type_33_line = definition.clone();
-    type_33_line.relations.as_mut().expect("relations").skamps =
+    *declared_solver_rows(&mut type_33_line.relations.as_mut().expect("relations").skamps) =
         vec![crate::feature::FeatureSkamp {
             id: 20,
             kind: 33,
@@ -865,7 +841,7 @@
         }
     ));
 
-    type_33_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
+    type_33_line.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].flags = 0;
     assert!(matches!(
         section_skamp_constraints(&type_33_line, &SketchId("creo:model:sketch#917".into()),)[0]
             .0
@@ -881,7 +857,7 @@
     };
     let mut mixed_tangent = definition.clone();
     let mixed_tangent_relations = mixed_tangent.relations.as_mut().expect("relations");
-    mixed_tangent_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut mixed_tangent_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 18,
         kind: 4,
         flags: 0,
@@ -899,8 +875,10 @@
         offset: 83,
     }];
     mixed_tangent_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .expect("skamp table")
+        .header_mut()
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -916,7 +894,7 @@
             )),
         }
     );
-    mixed_tangent.relations.as_mut().expect("relations").skamps[0]
+    mixed_tangent.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items
         .reverse();
     assert_eq!(
@@ -932,7 +910,7 @@
             )),
         }
     );
-    mixed_tangent.relations.as_mut().expect("relations").skamps[0].items[0] =
+    mixed_tangent.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
         crate::feature::FeatureSkampItem {
             entity_id: 15,
             sense: 2,
@@ -944,11 +922,11 @@
         SketchConstraintDefinition::Native { .. }
     ));
     let mut mixed_perpendicular = definition.clone();
-    mixed_perpendicular
+    *declared_solver_rows(&mut mixed_perpendicular
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 19,
         kind: 5,
         flags: 0,
@@ -982,7 +960,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 2;
     assert!(matches!(
@@ -994,11 +972,11 @@
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    mixed_perpendicular
+    *declared_solver_rows(&mut mixed_perpendicular
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![
+        .skamps) = vec![
         crate::feature::FeatureSkamp {
             id: 18,
             kind: 0,
@@ -1049,7 +1027,7 @@
     );
     let mut point_pair = definition.clone();
     let point_pair_relations = point_pair.relations.as_mut().expect("relations");
-    point_pair_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut point_pair_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 19,
         kind: 3,
         flags: 0,
@@ -1067,8 +1045,9 @@
         offset: 84,
     }];
     point_pair_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     let sketch = SketchId("creo:model:sketch#917".into());
@@ -1076,13 +1055,13 @@
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
     ]);
@@ -1104,7 +1083,7 @@
     let missing_point_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
         SketchGeometry::Native {
-            native_kind: "point".to_string(),
+            native_kind: "point".into(),
         },
     )]);
     assert!(matches!(
@@ -1119,7 +1098,7 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut point_coincidence_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 0,
         kind: 0,
         flags: 0,
@@ -1134,8 +1113,9 @@
         offset: 83,
     }];
     point_coincidence_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -1160,8 +1140,8 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].kind = 3;
-    point_coincidence_relations.skamps[0].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 12,
             sense: 0,
@@ -1186,7 +1166,7 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
@@ -1215,8 +1195,8 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].kind = 0;
-    point_coincidence_relations.skamps[0].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 0;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 12,
             sense: 3,
@@ -1237,7 +1217,7 @@
         (
             native_endpoint.clone(),
             SketchGeometry::Native {
-                native_kind: "solver_only_section_entity".to_string(),
+                native_kind: "solver_only_section_entity".into(),
             },
         ),
         (
@@ -1264,8 +1244,8 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].kind = 3;
-    point_coincidence_relations.skamps[0].items[0] = crate::feature::FeatureSkampItem {
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] = crate::feature::FeatureSkampItem {
         entity_id: 13,
         sense: 0,
     };
@@ -1283,7 +1263,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1]
         .sense = 4;
     assert!(matches!(
@@ -1300,10 +1280,10 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].kind = 17;
-    point_coincidence_relations.skamps[0].flags = 1;
-    point_coincidence_relations.skamps[0].status = 0;
-    point_coincidence_relations.skamps[0].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 17;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].flags = 1;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].status = 0;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
             sense: 2,
@@ -1317,7 +1297,7 @@
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
         SketchGeometry::Native {
-            native_kind: "arc".to_string(),
+            native_kind: "arc".into(),
         },
     );
     let inactive = section_skamp_constraints_for_geometry(
@@ -1342,7 +1322,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 99,
@@ -1356,7 +1336,7 @@
     unresolved_arc_geometry.insert(
         SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
         SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".to_string(),
+            native_kind: "solver_only_section_entity".into(),
         },
     );
     assert_eq!(
@@ -1381,7 +1361,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
@@ -1396,7 +1376,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .kind = 15;
     let inactive_type_fifteen = section_skamp_constraints_for_geometry(
         &point_coincidence_definition,
@@ -1411,7 +1391,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .flags = 3;
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -1427,7 +1407,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps.as_mut().expect("skamp table").rows_mut()[0];
     type_fifteen.kind = 17;
     type_fifteen.flags = 1;
     let mut inactive_tangent_definition = point_coincidence_definition.clone();
@@ -1435,7 +1415,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_tangent.kind = 4;
     inactive_tangent.items = vec![
         crate::feature::FeatureSkampItem {
@@ -1468,7 +1448,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -1485,7 +1465,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_point_on_curve.kind = 3;
     inactive_point_on_curve.items = vec![
         crate::feature::FeatureSkampItem {
@@ -1501,13 +1481,13 @@
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Native {
-                native_kind: "line".to_string(),
+                native_kind: "line".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
     ]);
@@ -1530,7 +1510,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -1550,7 +1530,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0];
+        .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_point_symmetry.kind = 14;
     inactive_point_symmetry.items = vec![
         crate::feature::FeatureSkampItem {
@@ -1570,19 +1550,19 @@
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:97".to_string()),
             SketchGeometry::Native {
-                native_kind: "point".to_string(),
+                native_kind: "point".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:98".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             SketchGeometry::Native {
-                native_kind: "circle".to_string(),
+                native_kind: "circle".into(),
             },
         ),
     ]);
@@ -1610,7 +1590,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
         section_skamp_constraints_for_geometry(
@@ -1626,7 +1606,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     let active_native_arc = section_skamp_constraints_for_geometry(
         &point_coincidence_definition,
@@ -1641,9 +1621,9 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[0].kind = 3;
-    point_coincidence_relations.skamps[0].flags = 0;
-    point_coincidence_relations.skamps[0].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].flags = 0;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
@@ -1653,7 +1633,7 @@
             sense: 2,
         },
     ];
-    point_coincidence_relations.skamps.insert(
+    declared_solver_rows(&mut point_coincidence_relations.skamps).insert(
         0,
         crate::feature::FeatureSkamp {
             id: 1,
@@ -1668,11 +1648,12 @@
         },
     );
     point_coincidence_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 2;
-    point_coincidence_relations.skamps[1].status = 0;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].status = 0;
     assert_eq!(
         section_skamp_constraints_for_geometry(
             &point_coincidence_definition,
@@ -1689,8 +1670,8 @@
         .relations
         .as_mut()
         .expect("relations");
-    point_coincidence_relations.skamps[1].kind = 35;
-    point_coincidence_relations.skamps[1].items = vec![
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].kind = 35;
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 99,
             sense: 0,
@@ -1724,7 +1705,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[1]
+        .skamps.as_mut().expect("skamp table").rows_mut()[1]
         .items[1]
         .sense = 0;
     assert!(matches!(
@@ -1739,7 +1720,7 @@
     ));
     let mut collinear_definition = definition.clone();
     let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
-    collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut collinear_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 9,
         kind: 9,
         flags: 0,
@@ -1757,8 +1738,9 @@
         offset: 83,
     }];
     collinear_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -1792,10 +1774,11 @@
         offset: 83,
     };
     let midpoint_relations = midpoint_definition.relations.as_mut().expect("relations");
-    midpoint_relations.skamps = vec![midpoint];
+    *declared_solver_rows(&mut midpoint_relations.skamps) = vec![midpoint];
     midpoint_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -1812,11 +1795,10 @@
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
         }
     );
-    midpoint_definition
+    replace_points(midpoint_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 1,
             u: Some(0.0),
@@ -1832,7 +1814,7 @@
             u: None,
             v: None,
         },
-    ];
+    ]);
     assert_eq!(
         resolved_section_points(&midpoint_definition),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
@@ -1870,7 +1852,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .entity_id = 99;
     synchronize_skamp_count(&mut saved_line_midpoint);
@@ -1879,11 +1861,10 @@
         Some(&[2.0, 1.0])
     );
     let mut arc_midpoint_definition = midpoint_definition.clone();
-    arc_midpoint_definition
+    replace_points(arc_midpoint_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 2,
             u: Some(1.0),
@@ -1904,30 +1885,30 @@
             u: None,
             v: None,
         },
-    ];
+    ]);
     arc_midpoint_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .iter_mut()
         .find(|segment| segment.external_id == 13)
         .expect("arc")
-        .arc_orientation = Some(0);
+        .arc_orientation = Some(0));
     arc_midpoint_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .iter_mut()
         .find(|segment| segment.external_id == 14)
         .expect("point")
-        .point_ids = [8, 8];
+        .kind = crate::feature::FeatureSegmentKind::Point(8));
     let midpoint_skamps = &mut arc_midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps;
+        .skamps.as_mut().expect("skamp table").rows_mut();
     midpoint_skamps[0].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
@@ -1946,11 +1927,10 @@
         }));
     for (kind, expected_coordinate) in [(12, 1), (13, 0)] {
         let mut arc_alignment_definition = midpoint_definition.clone();
-        arc_alignment_definition
+        replace_points(arc_alignment_definition
             .variables
             .as_mut()
-            .expect("variables")
-            .points = vec![
+            .expect("variables"), vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(1.0),
@@ -1969,13 +1949,13 @@
                     Some(3.0)
                 },
             },
-        ];
+        ]);
         {
             let alignment_skamps = &mut arc_alignment_definition
                 .relations
                 .as_mut()
                 .expect("relations")
-                .skamps;
+                .skamps.as_mut().expect("skamp table").rows_mut();
             alignment_skamps[0] = crate::feature::FeatureSkamp {
                 id: 12,
                 kind,
@@ -1999,7 +1979,7 @@
             .relations
             .as_mut()
             .expect("relations")
-            .skamps[0]
+            .skamps.as_mut().expect("skamp table").rows_mut()[0]
             .status = 0;
         let unresolved = resolved_section_points(&arc_alignment_definition);
         assert!(!unresolved.contains_key(&3));
@@ -2008,10 +1988,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
-        .last_mut()
+        .rows
+        .iter_mut()
+        .find(|row| row.key == 4 && row.variable_type == VariableType::U)
         .expect("midpoint point")
-        .u = Some(3.0);
+        .value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_coordinates(&midpoint_definition).get(&4),
         Some(&[Some(3.0), Some(1.0)])
@@ -2020,16 +2001,16 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1] = crate::feature::FeatureSkampItem {
         entity_id: 13,
         sense: 0,
     };
-    midpoint_definition
+    declared_solver_rows(&mut midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .push(crate::feature::FeatureSkamp {
             id: 36,
             kind: 3,
@@ -2054,7 +2035,7 @@
             .relations
             .as_ref()
             .expect("relations")
-            .skamps[0]
+            .skamps()[0]
             .items[1],
     ));
     assert_eq!(
@@ -2071,18 +2052,18 @@
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
         }
     );
-    midpoint_definition
+    declared_solver_rows(&mut midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .truncate(1);
     synchronize_skamp_count(&mut midpoint_definition);
     midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1] = crate::feature::FeatureSkampItem {
         entity_id: 14,
         sense: 0,
@@ -2133,7 +2114,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1] = crate::feature::FeatureSkampItem {
         entity_id: 13,
         sense: 2,
@@ -2153,18 +2134,16 @@
         }
     );
     let mut equal_radius_definition = definition.clone();
-    let equal_radius_segments = &mut equal_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows;
-    equal_radius_segments[1].radius_ref = Some(101);
-    equal_radius_segments[4].radius_ref = Some(102);
-    equal_radius_definition.variables = Some(crate::feature::FeatureVariableTable {
+    equal_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        rows[1].radius_ref = Some(101);
+        rows[4].radius_ref = Some(102);
+    });
+    equal_radius_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 89,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
@@ -2175,9 +2154,7 @@
                 u: Some(0.0),
                 v: Some(0.0),
             },
-        ],
-        offset: 89,
-    });
+        ]));
     assert_eq!(
         resolved_section_radii(&equal_radius_definition),
         BTreeMap::from([(101, 3.0), (102, 3.0)])
@@ -2187,7 +2164,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps.as_mut().expect("skamp table").rows_mut()
         .iter_mut()
         .find(|skamp| skamp.kind == 6)
         .expect("equal-radius incidence")
@@ -2202,32 +2179,32 @@
         .expect("variables")
         .rows
         .push(crate::feature::FeatureVariableRow {
-            variable_type: 3,
+            variable_type: crate::feature::definitions::VariableType::Radius,
             key: 102,
-            value: Some(4.0),
+            value: crate::feature::definitions::ScalarLane::Value(4.0),
             value_body: Vec::new(),
-            guess: None,
+            guess: crate::feature::definitions::ScalarLane::Undefined,
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
+
             known: None,
             homogeneity: None,
             uvar_id: None,
-            dimension_driven: false,
+
             offset: 91,
         });
     equal_radius_definition
         .variables
         .as_mut()
         .expect("variables")
-        .declared_count = 1;
+        .declared_count += 1;
     assert!(resolved_section_radii(&equal_radius_definition).is_empty());
     let mut saved_radius_definition = definition.clone();
     saved_radius_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows[1]
-        .radius_ref = Some(101);
+        .rows.edit_ordinary(|rows| rows[1]
+        .radius_ref =  Some(101));
     saved_radius_definition.order_table = Some(crate::feature::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
@@ -2252,11 +2229,11 @@
         )],
         offset: 93,
     });
-    saved_radius_definition
+    *declared_solver_rows(&mut saved_radius_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 18,
         kind: 6,
         flags: 0,
@@ -2277,8 +2254,9 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -2288,7 +2266,7 @@
     let constraints =
         section_skamp_constraints(&definition, &SketchId("creo:model:sketch#917".into()));
     let mut solver_only = definition.clone();
-    solver_only.relations.as_mut().expect("relations").skamps =
+    *declared_solver_rows(&mut solver_only.relations.as_mut().expect("relations").skamps) =
         vec![crate::feature::FeatureSkamp {
             id: 20,
             kind: 0,
@@ -2311,11 +2289,11 @@
         BTreeMap::from([(99, 95)])
     );
     let mut whole_entity_tangent = definition.clone();
-    whole_entity_tangent
+    *declared_solver_rows(&mut whole_entity_tangent
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 20,
         kind: 4,
         flags: 0,
@@ -2346,7 +2324,7 @@
         }
     );
     let mut point_symmetry = definition.clone();
-    point_symmetry.relations.as_mut().expect("relations").skamps =
+    *declared_solver_rows(&mut point_symmetry.relations.as_mut().expect("relations").skamps) =
         vec![crate::feature::FeatureSkamp {
             id: 20,
             kind: 14,
@@ -2368,16 +2346,11 @@
             ],
             offset: 96,
         }];
-    point_symmetry
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(point_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(2.0),
             v: Some(3.0),
-        });
+        }]);
     synchronize_skamp_count(&mut point_symmetry);
     assert_eq!(
         section_skamp_constraints(&point_symmetry, &SketchId("creo:model:sketch#917".into()))[0]
@@ -2396,12 +2369,12 @@
         }
     );
     assert_eq!(resolved_section_points(&point_symmetry)[&3], [4.0, 4.0]);
-    point_symmetry.relations.as_mut().expect("relations").skamps[0].items[1] =
+    point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[1] =
         crate::feature::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         };
-    point_symmetry.relations.as_mut().expect("relations").skamps[0].items[2] =
+    point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[2] =
         crate::feature::FeatureSkampItem {
             entity_id: 16,
             sense: 4,
@@ -2422,7 +2395,7 @@
             )),
         }
     );
-    point_symmetry.relations.as_mut().expect("relations").skamps[0].items[2].sense = 1;
+    point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[2].sense = 1;
     assert!(matches!(
         section_skamp_constraints(&point_symmetry, &SketchId("creo:model:sketch#917".into()))[0]
             .0
@@ -2461,7 +2434,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 2;
     assert!(matches!(
@@ -2474,14 +2447,13 @@
         } if native_kind == "creo:skamp:1"
     ));
     let mut duplicate_entity = definition.clone();
-    let mut duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows[0].clone();
+    let mut duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
     duplicate_line.offset = 500;
     duplicate_entity
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate_line);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_line));
     let unique_ids = unique_section_segment_external_ids(&duplicate_entity);
     assert!(!unique_ids.contains(&12));
     assert_eq!(
@@ -2491,7 +2463,7 @@
                 .segments
                 .as_ref()
                 .expect("segments")
-                .rows
+                .rows.ordinary().cloned().collect::<Vec<_>>()
                 .last()
                 .expect("duplicate segment")
         ),
@@ -2524,8 +2496,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(opaque_segment.clone());
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque_segment.clone()));
     assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
     assert!(section_entity_external_ids(&opaque_entity).contains(&99));
 
@@ -2539,12 +2510,11 @@
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 1,
             external_id: 99,
             offset: 601,
-        });
+        }));
     let opaque_point_item = crate::feature::FeatureSkampItem {
         entity_id: 99,
         sense: 0,
@@ -2552,7 +2522,7 @@
     assert_eq!(
         section_point_row_geometry(
             &resolved_section_points(&opaque_point),
-            &opaque_point.segments.as_ref().expect("segments").point_rows[0],
+            &opaque_point.segments.as_ref().expect("segments").rows.points().cloned().collect::<Vec<_>>()[0],
         ),
         Some(SketchGeometry::Point {
             position: Point2::new(0.0, 2.0),
@@ -2596,7 +2566,7 @@
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "point".to_string(),
+                    native_kind: "point".into(),
                 },
             )])),
         ),
@@ -2663,8 +2633,7 @@
         .expect("segment table");
     reference_segments.declared_count += 1;
     reference_segments
-        .reference_line_rows
-        .push(axis_reference_line.clone());
+        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(axis_reference_line.clone()));
     assert!(section_skamp_is_line(
         &reference_definition,
         &crate::feature::FeatureSkampItem {
@@ -2710,15 +2679,13 @@
         .expect("segment table");
     endpoint_segments.declared_count += 2;
     endpoint_segments
-        .reference_line_rows
-        .push(crate::feature::FeatureReferenceLineSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(crate::feature::FeatureReferenceLineSegment {
             point_ids: [Some(1), Some(5)],
             external_id: 101,
             ..reference_line.clone()
-        });
+        }));
     endpoint_segments
-        .bounded_curve_rows
-        .push(crate::feature::FeatureBoundedCurveSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(crate::feature::FeatureBoundedCurveSegment {
             point_ids: [1, 5],
             external_id: 102,
             directions: [None; 3],
@@ -2728,7 +2695,7 @@
             radius_ref: None,
             radius2_ref: None,
             offset: 604,
-        });
+        }));
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
@@ -2779,8 +2746,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .centered_line_rows
-        .push(centered_line);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::CenteredLine(centered_line));
     let opaque_line_item = crate::feature::FeatureSkampItem {
         entity_id: 100,
         sense: 0,
@@ -2802,7 +2768,7 @@
         .relations
         .as_mut()
         .expect("relations");
-    midpoint_relations.skamps = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut midpoint_relations.skamps) = vec![crate::feature::FeatureSkamp {
         id: 102,
         kind: 35,
         flags: 0,
@@ -2820,8 +2786,9 @@
         offset: 604,
     }];
     midpoint_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -2844,8 +2811,8 @@
     );
     let mut conflicting_midpoint = solver_only_point_midpoint.clone();
     let conflicting_relations = conflicting_midpoint.relations.as_mut().expect("relations");
-    conflicting_relations
-        .skamps
+    declared_solver_rows(&mut conflicting_relations
+        .skamps)
         .push(crate::feature::FeatureSkamp {
             id: 103,
             kind: 0,
@@ -2864,8 +2831,9 @@
             offset: 605,
         });
     conflicting_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
@@ -2890,10 +2858,11 @@
         offset: 83,
     };
     let centered_midpoint_relations = opaque_line.relations.as_mut().expect("relations");
-    centered_midpoint_relations.skamps = vec![centered_midpoint];
+    *declared_solver_rows(&mut centered_midpoint_relations.skamps) = vec![centered_midpoint];
     centered_midpoint_relations
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -2915,7 +2884,7 @@
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "point".to_string(),
+                        native_kind: "point".into(),
                     },
                 ),
             ])),
@@ -2929,11 +2898,11 @@
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:100".to_string()),
         }
     );
-    opaque_line
+    declared_solver_rows(&mut opaque_line
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .insert(
             0,
             crate::feature::FeatureSkamp {
@@ -2952,20 +2921,21 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
         solver_only_section_entity_family(&opaque_line, 101),
         Some(SectionEntityIncidenceFamily::Line)
     );
-    opaque_line.relations.as_mut().expect("relations").skamps[0].status = 0;
+    opaque_line.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 0;
     assert_eq!(
         solver_only_section_entity_family(&opaque_line, 101),
         Some(SectionEntityIncidenceFamily::Line)
     );
-    opaque_line.relations.as_mut().expect("relations").skamps[0].status = 1;
+    opaque_line.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 1;
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &opaque_line,
@@ -2973,7 +2943,7 @@
             Some(&BTreeMap::from([(
                 SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "line".to_string(),
+                    native_kind: "line".into(),
                 },
             )])),
         )[0]
@@ -2996,7 +2966,7 @@
                 (
                     SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "line".to_string(),
+                        native_kind: "line".into(),
                     },
                 ),
             ])),
@@ -3028,8 +2998,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(colliding_row);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(colliding_row));
     assert!(!section_skamp_is_point(
         &opaque_family_collision,
         &opaque_point_item,
@@ -3040,11 +3009,10 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(crate::feature::FeatureOpaqueSegment {
             external_id: 12,
             ..opaque_segment
-        });
+        }));
     assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
     assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
     assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
@@ -3053,15 +3021,15 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .clone();
     redundant.id = 100;
     redundant.offset = 500;
-    equivalent_skamp
+    declared_solver_rows(&mut equivalent_skamp
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .push(redundant);
     let equivalent_constraints =
         section_skamp_constraints(&equivalent_skamp, &SketchId("creo:model:sketch#917".into()));
@@ -3103,14 +3071,14 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .clone();
     duplicate.offset = 500;
-    duplicate_skamp_id
+    declared_solver_rows(&mut duplicate_skamp_id
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .push(duplicate);
     let duplicate_constraints = section_skamp_constraints(
         &duplicate_skamp_id,
@@ -3151,7 +3119,7 @@
     assert_eq!(
         constraints[2].0.definition,
         SketchConstraintDefinition::Native {
-            native_kind: "creo:skamp:7".to_string(),
+            native_kind: "creo:skamp:7".into(),
             native_state: Some(1),
             native_flags: Some(0),
             native_properties: std::collections::BTreeMap::new(),
@@ -3160,9 +3128,8 @@
             )],
             parameter: None,
             operands: vec![SketchNativeOperand {
-                native_kind: "skamp_ptr".to_string(),
-                native_field: Some("items.entity_id".to_string()),
-                native_role: Some(4),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
+                field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
                 object_index: 12,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -3173,7 +3140,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[2]
+        .skamps.as_mut().expect("skamp table").rows_mut()[2]
         .items[0]
         .entity_id = 999;
     let unavailable_skamp_constraints = section_skamp_constraints(
@@ -3188,9 +3155,8 @@
             ..
         } if entities.is_empty()
             && operands == &[SketchNativeOperand {
-                native_kind: "skamp_ptr".to_string(),
-                native_field: Some("items.entity_id".to_string()),
-                native_role: Some(4),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
+                field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
                 object_index: 999,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }]
@@ -3200,13 +3166,13 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[2]
+        .skamps.as_mut().expect("skamp table").rows_mut()[2]
         .status = 34;
     stored_skamp_state
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[2]
+        .skamps.as_mut().expect("skamp table").rows_mut()[2]
         .flags = 0x4000;
     let stored_skamp_state = section_skamp_constraints(
         &stored_skamp_state,
@@ -3250,7 +3216,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[4]
+        .skamps.as_mut().expect("skamp table").rows_mut()[4]
         .items = center_items;
     assert_eq!(
         section_skamp_constraints(
@@ -3275,8 +3241,7 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows
-        .iter()
+        .rows.ordinary()
         .find(|segment| segment.external_id == 13)
         .expect("arc")
         .clone();
@@ -3286,9 +3251,8 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(second_arc);
-    concentric.relations.as_mut().expect("relations").skamps[4].items = vec![
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(second_arc));
+    concentric.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[4].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
@@ -3311,27 +3275,23 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[4]
+        .skamps()[4]
         .clone();
-    center_coincidence
+    *declared_solver_rows(&mut center_coincidence
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![center_relation];
+        .skamps) = vec![center_relation];
     synchronize_skamp_count(&mut center_coincidence);
     let variables = center_coincidence.variables.as_mut().expect("variables");
-    let first_point = variables
-        .points
-        .iter_mut()
-        .find(|point| point.point_id == 1)
-        .expect("line start");
-    first_point.u = None;
-    first_point.v = None;
-    variables.points.push(crate::feature::FeatureSectionPoint {
+    for row in variables.rows.iter_mut().filter(|row| row.key == 1 && matches!(row.variable_type, VariableType::U | VariableType::V)) {
+        row.value = ScalarLane::Undefined;
+    }
+    append_points(variables, vec![crate::feature::FeatureSectionPoint {
         point_id: 4,
         u: Some(8.0),
         v: Some(9.0),
-    });
+    }]);
     assert_eq!(resolved_section_points(&center_coincidence)[&1], [8.0, 9.0]);
     assert_eq!(
         constraints[5].0.definition,
@@ -3395,7 +3355,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[9]
+        .skamps.as_mut().expect("skamp table").rows_mut()[9]
         .items
         .reverse();
     assert_eq!(
@@ -3412,7 +3372,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[8]
+        .skamps.as_mut().expect("skamp table").rows_mut()[8]
         .items[0]
         .entity_id = 12;
     assert_eq!(
@@ -3470,13 +3430,13 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .kind = 30;
     fixed_y_coordinate
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .flags = 99;
     assert_eq!(
         section_skamp_constraints(
@@ -3492,22 +3452,17 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::V)
         .expect("second same-coordinate point")
-        .v = None;
+        .value = ScalarLane::Undefined;
     assert_eq!(
         resolved_section_points(&propagated_same_coordinate).get(&5),
         Some(&[3.0, 2.0])
     );
     let mut unsolved_same_coordinate = definition.clone();
-    unsolved_same_coordinate
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .clear();
+    replace_points(unsolved_same_coordinate.variables.as_mut().expect("variables"), Vec::new());
     assert_eq!(
         section_skamp_constraints(
             &unsolved_same_coordinate,
@@ -3521,13 +3476,13 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .kind = 31;
     unsolved_same_coordinate
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .flags = 0;
     assert_eq!(
         section_skamp_constraints(
@@ -3550,13 +3505,13 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .kind = 17;
     unsolved_same_coordinate
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .flags = 0;
     assert!(matches!(
         section_skamp_constraints(
@@ -3572,7 +3527,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[14]
+        .skamps.as_mut().expect("skamp table").rows_mut()[14]
         .flags = 1;
     assert!(matches!(
         section_skamp_constraints(
@@ -3584,11 +3539,10 @@
         SketchConstraintDefinition::Native { .. }
     ));
     let mut point_coincidence_definition = definition.clone();
-    point_coincidence_definition
+    replace_points(point_coincidence_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(1.0),
@@ -3599,16 +3553,15 @@
             u: None,
             v: Some(2.0),
         },
-    ];
+    ]);
     let point_segment = point_coincidence_definition
         .segments
         .as_mut()
         .expect("segments");
     point_segment.declared_count = 6;
-    point_segment.rows.push(crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point,
+    point_segment.rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Point(6),
         directions: [None; 3],
-        point_ids: [6, 6],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -3617,12 +3570,12 @@
         external_id: 17,
         body: Vec::new(),
         offset: 45,
-    });
+    }));
     point_coincidence_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[8]
+        .skamps.as_mut().expect("skamp table").rows_mut()[8]
         .items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 14,
@@ -3638,12 +3591,9 @@
         Some(&[1.0, 2.0])
     );
     let mut distance_definition = definition.clone();
-    let distance_segment = &mut distance_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[0];
-    distance_segment.vertical_horizontal = Some(0);
+    distance_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        rows[0].vertical_horizontal = Some(0);
+    });
     let distance_relation = &mut distance_definition
         .relations
         .as_mut()
@@ -3662,11 +3612,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("point 5")
-        .u = None;
+        .value = ScalarLane::Undefined;
     unspanned_distance
         .relations
         .as_mut()
@@ -3683,7 +3633,13 @@
     );
     let mut disabled_distance = distance_definition.clone();
     let disabled_relations = disabled_distance.relations.as_mut().expect("relations");
-    disabled_relations.skamps = vec![crate::feature::FeatureSkamp {
+    disabled_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared {
+        header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 901,
+        offset: 900,
+    },
+        rows: vec![crate::feature::FeatureSkamp {
         id: 900,
         kind: 0,
         flags: 0,
@@ -3699,30 +3655,23 @@
             },
         ],
         offset: 900,
-    }];
-    disabled_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 901,
-        offset: 900,
+    }],
     });
-    disabled_relations.triples = vec![crate::feature::FeatureRelationTriple {
+    disabled_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 903,
+        offset: 902,
+    },
+        rows: vec![crate::feature::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(900),
         offset: 902,
-    }];
-    disabled_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 903,
-        offset: 902,
+    }],
     });
     assert!(!resolved_section_points(&disabled_distance).contains_key(&2));
-    distance_definition
-        .relations
-        .as_mut()
-        .expect("relations")
-        .skamps
-        .clear();
+    declared_solver_rows(&mut distance_definition.relations.as_mut().expect("relations").skamps).clear();
     assert_eq!(
         section_dimension_constraints(
             &distance_definition,
@@ -3737,20 +3686,15 @@
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut conflicting_spanning_distance = distance_definition.clone();
-    conflicting_spanning_distance
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(conflicting_spanning_distance.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 2,
             u: Some(4.0),
             v: Some(3.0),
-        });
+        }]);
     assert!(matches!(
         section_dimension_constraints(
             &conflicting_spanning_distance,
@@ -3825,11 +3769,17 @@
         .as_mut()
         .expect("dimensions")
         .rows[0];
-    schema_dimension.value_unit = crate::feature::DimensionUnit::SchemaDefined;
-    schema_dimension.value = Some(0.0);
+    schema_dimension.dimension_type = 0;
+    schema_dimension.value = crate::feature::definitions::DimensionValue::Resolved(0.0);
     let schema_relations = schema_orientation.relations.as_mut().expect("relations");
     let relation_id = schema_relations.rows[0].relation_id;
-    schema_relations.skamps = vec![crate::feature::FeatureSkamp {
+    schema_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared {
+        header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 902,
+        offset: 900,
+    },
+        rows: vec![crate::feature::FeatureSkamp {
         id: 900,
         kind: 2,
         flags: 0,
@@ -3839,22 +3789,20 @@
             sense: 0,
         }],
         offset: 901,
-    }];
-    schema_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 902,
-        offset: 900,
+    }],
     });
-    schema_relations.triples = vec![crate::feature::FeatureRelationTriple {
+    schema_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 903,
+        offset: 902,
+    },
+        rows: vec![crate::feature::FeatureRelationTriple {
         relation_id: Some(relation_id),
         equation_id: None,
         skamp_id: Some(900),
         offset: 902,
-    }];
-    schema_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 903,
-        offset: 902,
+    }],
     });
     assert_eq!(
         section_dimension_constraints(
@@ -3872,7 +3820,7 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(1.0);
     assert!(matches!(
         section_dimension_constraints(
             &schema_orientation,
@@ -3907,11 +3855,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("point 5")
-        .u = Some(0.0);
+        .value = ScalarLane::Value(0.0);
     assert!(matches!(
         section_dimension_constraints(
             &coincident_point_keys,
@@ -3925,8 +3873,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .retain(|segment| !segment.point_ids.contains(&5));
+        .rows.edit_ordinary(|rows| rows.retain(|segment| !segment.point_ids().contains(&5)));
     synchronize_segment_count(&mut separate_point_distance);
     assert!(matches!(
         section_dimension_constraints(
@@ -3942,13 +3889,13 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = None;
-    incidence_oriented_distance
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  None);
+    declared_solver_rows(&mut incidence_oriented_distance
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .push(crate::feature::FeatureSkamp {
             id: 18,
             kind: 1,
@@ -3964,8 +3911,9 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
@@ -3982,19 +3930,19 @@
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_skamps = incidence_oriented_distance.clone();
-    incomplete_skamps
+    *incomplete_skamps
         .relations
         .as_mut()
         .expect("relations")
-        .skamp_header = Some(crate::feature::FeatureSolverTableHeader {
+        .skamps.as_mut().and_then(|table| table.header_mut()).expect("skamp header") = crate::feature::definitions::FeatureSolverTableHeader {
         declared_count: 2,
         entity_ref: 1,
         offset: 82,
-    });
+    };
     assert!(matches!(
         section_dimension_constraints(
             &incomplete_skamps,
@@ -4009,23 +3957,24 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0]
+        .skamps()[0]
         .clone();
     vertical.id = 19;
     vertical.kind = 2;
     vertical.offset = 84;
-    conflicting_orientation
+    declared_solver_rows(&mut conflicting_orientation
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .push(vertical);
     conflicting_orientation
         .relations
         .as_mut()
         .expect("relations")
-        .skamp_header
+        .skamps
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 2;
     assert!(matches!(
@@ -4038,11 +3987,11 @@
         SketchConstraintDefinition::Native { .. }
     ));
     let mut solver_definition = distance_definition.clone();
-    solver_definition
+    declared_solver_rows(&mut solver_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps)
         .clear();
     assert_eq!(
         resolved_section_points(&solver_definition).get(&2),
@@ -4087,14 +4036,13 @@
     conflicting_relation.sign = 0xf6;
     assert!(!resolved_section_points(&equivalent_relation).contains_key(&2));
     let mut duplicate_identity = solver_definition.clone();
-    let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows[0].clone();
+    let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
     duplicate.offset = 500;
     duplicate_identity
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_identity);
     assert!(!resolved_section_points(&duplicate_identity).contains_key(&2));
     let mut duplicate_endpoint_segment = solver_definition;
@@ -4102,7 +4050,7 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[0]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[0]
         .clone();
     duplicate.external_id = 99;
     duplicate.offset = 501;
@@ -4110,8 +4058,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_endpoint_segment);
     assert!(!resolved_section_points(&duplicate_endpoint_segment).contains_key(&2));
     let mut shared_vertex_definition = distance_definition.clone();
@@ -4119,16 +4066,15 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[1]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[1]
         .clone();
     incident.external_id = 2;
-    incident.point_ids = [9, 1];
+    incident.kind = crate::feature::FeatureSegmentKind::Arc([9, 1]);
     shared_vertex_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(incident);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(incident));
     synchronize_segment_count(&mut shared_vertex_definition);
     assert_eq!(
         section_dimension_constraints(
@@ -4144,7 +4090,7 @@
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut duplicate_relation_id = distance_definition.clone();
@@ -4192,21 +4138,20 @@
         );
         assert!(operands
             .iter()
-            .all(|operand| operand.native_field.is_some()));
+            .all(|operand| operand.field.is_some()));
     }
     let mut duplicate_measured_segment = distance_definition.clone();
     let duplicate = duplicate_measured_segment
         .segments
         .as_ref()
         .expect("segments")
-        .rows[0]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[0]
         .clone();
     duplicate_measured_segment
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_measured_segment);
     assert!(matches!(
         section_dimension_constraints(
@@ -4224,10 +4169,10 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .last_mut()
         .expect("duplicate")
-        .point_ids = [8, 9];
+        .kind = crate::feature::FeatureSegmentKind::Line([8, 9]));
     assert!(matches!(
         section_dimension_constraints(
             &duplicate_measured_segment,
@@ -4246,7 +4191,7 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::Radians;
+        .dimension_type = 10;
     assert!(matches!(
         section_dimension_constraints(&angular_distance, &SketchId("creo:model:sketch#917".into()))[0]
             .0
@@ -4283,17 +4228,14 @@
             ..
         } if native_kind == "creo:relation:0"
             && operands.first().is_some_and(|operand| operand.object_index == 8)
-            && operands.iter().any(|operand| operand.native_field.as_deref() == Some("c[3]"))
+            && operands.iter().any(|operand| operand.field.as_ref().map(|field| field.name.as_str()) == Some("c[3]"))
     ));
     let mut legacy_radius_definition = definition.clone();
-    let legacy_arc = &mut legacy_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[1];
-    legacy_arc.radius_ref = Some(0);
-    let [first_point, second_point] = legacy_arc.point_ids;
-    let center = legacy_arc.center_id.expect("arc center");
+    let ([first_point, second_point], center) = legacy_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let legacy_arc = &mut rows[1];
+        legacy_arc.radius_ref = Some(0);
+        (legacy_arc.point_ids(), legacy_arc.center_id.expect("arc center"))
+    });
     let legacy_radius_relation = &mut legacy_radius_definition
         .relations
         .as_mut()
@@ -4322,7 +4264,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4344,7 +4286,7 @@
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4367,7 +4309,7 @@
             .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
             }
         );
         assert_eq!(
@@ -4399,14 +4341,11 @@
     ));
 
     let mut type6_radius_definition = definition.clone();
-    let type6_arc = &mut type6_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[1];
-    type6_arc.radius_ref = Some(0);
-    let [type6_first_point, type6_second_point] = type6_arc.point_ids;
-    let type6_center = type6_arc.center_id.expect("arc center");
+    let ([type6_first_point, type6_second_point], type6_center) = type6_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let type6_arc = &mut rows[1];
+        type6_arc.radius_ref = Some(0);
+        (type6_arc.point_ids(), type6_arc.center_id.expect("arc center"))
+    });
     let type6_relation = &mut type6_radius_definition
         .relations
         .as_mut()
@@ -4440,7 +4379,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4471,7 +4410,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     type6_radius_definition
@@ -4489,7 +4428,7 @@
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4529,15 +4468,14 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[1]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[1]
         .clone();
     duplicate_type6_arc.offset = 500;
     ambiguous_type6
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate_type6_arc);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_type6_arc));
     assert!(matches!(
         section_dimension_constraints(
             &ambiguous_type6,
@@ -4558,7 +4496,7 @@
         .expect("dimensions")
         .rows[0]
         .dimension_type = 3;
-    radius_definition.segments.as_mut().expect("segments").rows[1].radius_ref = Some(101);
+    radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| rows[1].radius_ref =  Some(101));
     let radius_relation = &mut radius_definition
         .relations
         .as_mut()
@@ -4581,7 +4519,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut noncircular_dimension = radius_definition.clone();
@@ -4601,7 +4539,7 @@
             .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
             }
         );
         assert_eq!(
@@ -4614,15 +4552,14 @@
         .segments
         .as_mut()
         .expect("segments");
-    let arc = segments.rows.remove(1);
+    let arc = segments.rows.edit_ordinary(|rows| rows.remove(1));
     segments
-        .circle_rows
-        .push(crate::feature::FeatureCircleSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Circle(crate::feature::FeatureCircleSegment {
             center_id: arc.center_id.expect("arc center"),
             radius_ref: arc.radius_ref.expect("arc radius"),
             external_id: arc.external_id,
             offset: arc.offset,
-        });
+        }));
     assert_eq!(
         section_dimension_constraints(
             &opaque_circle_definition,
@@ -4632,7 +4569,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_radius_segments = radius_definition.clone();
@@ -4650,7 +4587,7 @@
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut relation_orientation = definition.clone();
@@ -4659,13 +4596,13 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value = Some(0.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(0.0);
     relation_orientation
         .dimensions
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::SchemaDefined;
+        .dimension_type = 0;
     let relation = relation_orientation
         .relations
         .as_mut()
@@ -4680,19 +4617,19 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = Some(1);
-    relation.triples = vec![crate::feature::FeatureRelationTriple {
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  Some(1));
+    relation.triples = Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 2,
+        offset: 94,
+    }, rows: vec![crate::feature::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(3),
         offset: 94,
-    }];
-    relation.triples_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 2,
-        offset: 94,
-    });
+    }] });
+
     assert_eq!(
         section_dimension_constraints(
             &relation_orientation,
@@ -4736,7 +4673,7 @@
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     radius_definition
@@ -4745,13 +4682,12 @@
         .expect("dimensions")
         .rows[0]
         .dimension_type = 2;
-    let duplicate = radius_definition.segments.as_ref().expect("segments").rows[1].clone();
+    let duplicate = radius_definition.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[1].clone();
     radius_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut radius_definition);
     assert!(matches!(
         section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
@@ -4766,15 +4702,14 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .pop();
+        .rows.edit_ordinary(Vec::pop);
     synchronize_segment_count(&mut radius_definition);
     radius_definition
         .dimensions
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::Radians;
+        .dimension_type = 10;
     assert!(matches!(
         section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
             .0
@@ -4788,7 +4723,11 @@
     let mut incidence_distance = distance_definition.clone();
     let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
     incidence_relations.rows[0].operand_vectors = None;
-    incidence_relations.skamps = vec![crate::feature::FeatureSkamp {
+    incidence_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 1,
+        offset: 80,
+    }, rows: vec![crate::feature::FeatureSkamp {
         id: 81,
         kind: 0,
         flags: 0,
@@ -4804,23 +4743,19 @@
             },
         ],
         offset: 81,
-    }];
-    incidence_relations.triples = vec![crate::feature::FeatureRelationTriple {
+    }] });
+    incidence_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 2,
+        offset: 82,
+    }, rows: vec![crate::feature::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(81),
         offset: 82,
-    }];
-    incidence_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 1,
-        offset: 80,
-    });
-    incidence_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
-        declared_count: 1,
-        entity_ref: 2,
-        offset: 82,
-    });
+    }] });
+
+
     assert_eq!(
         section_dimension_constraints(
             &incidence_distance,
@@ -4835,7 +4770,7 @@
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:13".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4852,7 +4787,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 2;
     assert!(joined_relation_incidence(&inactive_incidence, 8).is_some());
     assert!(relation_incidence(&inactive_incidence, 8).is_none());
@@ -4878,7 +4813,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items
         .push(crate::feature::FeatureSkampItem {
             entity_id: 15,
@@ -4897,47 +4832,43 @@
                     SketchEntityId(format!("creo:featdefs:sketch_entity#917:{entity_id}"))
                 })
                 .to_vec(),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_triples = incidence_distance.clone();
-    incomplete_triples
+    *incomplete_triples
         .relations
         .as_mut()
         .expect("relations")
-        .triples_header = Some(crate::feature::FeatureSolverTableHeader {
+        .triples.as_mut().and_then(|table| table.header_mut()).expect("triples header") = crate::feature::definitions::FeatureSolverTableHeader {
         declared_count: 2,
         entity_ref: 2,
         offset: 82,
-    });
+    };
     assert!(relation_incidence(&incomplete_triples, 8).is_none());
     let mut duplicate_join = incidence_distance.clone();
     let duplicate_relations = duplicate_join.relations.as_mut().expect("relations");
+    let duplicate = crate::feature::FeatureRelationTriple { offset: 83, ..duplicate_relations.triples()[0].clone() };
+    declared_solver_rows(&mut duplicate_relations.triples).push(duplicate);
     duplicate_relations
         .triples
-        .push(crate::feature::FeatureRelationTriple {
-            offset: 83,
-            ..duplicate_relations.triples[0].clone()
-        });
-    duplicate_relations
-        .triples_header
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("triples header")
         .declared_count = 2;
     assert!(relation_incidence(&duplicate_join, 8).is_none());
     let mut null_join = incidence_distance.clone();
     let null_relations = null_join.relations.as_mut().expect("relations");
-    null_relations
-        .triples
-        .push(crate::feature::FeatureRelationTriple {
+    declared_solver_rows(&mut null_relations.triples).push(crate::feature::FeatureRelationTriple {
             relation_id: Some(8),
             equation_id: None,
             skamp_id: None,
             offset: 83,
         });
     null_relations
-        .triples_header
+        .triples
         .as_mut()
+        .and_then(|table| table.header_mut())
         .expect("triples header")
         .declared_count = 2;
     assert_eq!(
@@ -4948,7 +4879,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 2;
     assert_eq!(
@@ -4965,7 +4896,7 @@
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:13".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut solver_only_incidence = incidence_distance.clone();
@@ -4973,7 +4904,7 @@
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1]
         .entity_id = 999;
     assert_eq!(
@@ -4990,21 +4921,22 @@
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:999".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut angular_dimension = definition.clone();
-    let second_angular_line = &mut angular_dimension.segments.as_mut().expect("segments").rows[1];
-    second_angular_line.kind = crate::feature::FeatureSegmentKind::Line;
-    second_angular_line.center_id = None;
-    second_angular_line.radius_ref = None;
+    angular_dimension.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let second_angular_line = &mut rows[1];
+        second_angular_line.kind = crate::feature::FeatureSegmentKind::Line(second_angular_line.point_ids());
+        second_angular_line.center_id = None;
+        second_angular_line.radius_ref = None;
+    });
     let angle_dimension = &mut angular_dimension
         .dimensions
         .as_mut()
         .expect("dimensions")
         .rows[0];
     angle_dimension.dimension_type = 10;
-    angle_dimension.value_unit = crate::feature::DimensionUnit::Radians;
     let angle_relation = &mut angular_dimension
         .relations
         .as_mut()
@@ -5046,7 +4978,7 @@
         SketchConstraintDefinition::Angle {
             first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_angle_order = angular_dimension.clone();
@@ -5093,7 +5025,7 @@
     assert_eq!(
         relations[0].0.definition,
         SketchConstraintDefinition::Native {
-            native_kind: "creo:relation:99".to_string(),
+            native_kind: "creo:relation:99".into(),
             native_state: Some(1),
             native_flags: None,
             native_properties: std::collections::BTreeMap::from([
@@ -5101,11 +5033,10 @@
                 ("sign".to_string(), "1".to_string()),
             ]),
             entities: Vec::new(),
-            parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
+            parameter: Some(ParameterId::mint("creo:featdefs:parameter#917:42".to_string(),).expect("identity grammar")),
             operands: vec![SketchNativeOperand {
-                native_kind: "relat_ptr".to_string(),
-                native_field: None,
-                native_role: None,
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr").expect("source operand kind is nonempty"),
+                field: None,
                 object_index: 8,
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
@@ -5137,7 +5068,7 @@
     assert_eq!(
         operands
             .iter()
-            .map(|operand| (operand.native_field.as_deref(), operand.object_index))
+            .map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.object_index))
             .collect::<Vec<_>>(),
         vec![
             (None, 8),
@@ -5155,18 +5086,18 @@
         .segments
         .as_mut()
         .expect("segments");
-    special_segments.rows.clear();
-    special_segments.circle_rows.clear();
-    special_segments.point_rows.clear();
-    special_segments.centered_line_rows.clear();
-    special_segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
+    special_segments.rows.edit_ordinary(Vec::clear);
+    special_segments.rows.edit_circles(Vec::clear);
+    special_segments.rows.edit_points(Vec::clear);
+    special_segments.rows.edit_centered_lines(Vec::clear);
+    special_segments.rows.edit_reference_lines(|rows| *rows =  vec![crate::feature::FeatureReferenceLineSegment {
         directions: [None; 3],
         point_ids: [Some(1), Some(4)],
         vertical_horizontal: None,
         external_id: 101,
         offset: 91,
-    }];
-    special_segments.bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+    }]);
+    special_segments.rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [5, 6],
         center_id: None,
@@ -5176,9 +5107,9 @@
         radius2_ref: None,
         external_id: 102,
         offset: 92,
-    }];
-    special_segments.conic_rows.clear();
-    special_segments.opaque_rows.clear();
+    }]);
+    special_segments.rows.edit_conics(Vec::clear);
+    special_segments.rows.edit_opaque(Vec::clear);
     special_segments.declared_count = 2;
     let special_relation = &mut special_endpoint_dimension
         .relations
@@ -5205,7 +5136,7 @@
             second: SketchLocus::Start(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:102".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
@@ -5224,11 +5155,9 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line([7, 8]),
             directions: [None; 3],
-            point_ids: [7, 8],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -5237,13 +5166,14 @@
             external_id: 17,
             body: Vec::new(),
             offset: 87,
-        });
+        }));
     synchronize_segment_count(&mut coincident_definition);
-    coincident_definition.variables = Some(crate::feature::FeatureVariableTable {
+    coincident_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 0,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
@@ -5274,14 +5204,12 @@
                 u: None,
                 v: None,
             },
-        ],
-        offset: 0,
-    });
-    coincident_definition
+        ]));
+    *declared_solver_rows(&mut coincident_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![
+        .skamps) = vec![
         crate::feature::FeatureSkamp {
             id: 17,
             kind: 0,
@@ -5398,7 +5326,7 @@
     let related_line = unique_section_skamp_segment(&coincident_definition, 17).expect("line");
     assert_eq!(
         section_line_fixed_coordinate(&coincident_definition, related_line),
-        Some(0)
+        Some(crate::decode::sketch::axis::SectionAxis::U)
     );
     let coincident_points = resolved_section_points(&coincident_definition);
     assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
@@ -5406,11 +5334,11 @@
     assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
     assert_eq!(coincident_points.get(&8), Some(&[2.0, 2.0]));
     let mut disabled_incidences = coincident_definition.clone();
-    for skamp in &mut disabled_incidences
+    for skamp in disabled_incidences
         .relations
         .as_mut()
         .expect("relations")
-        .skamps
+        .skamps.as_mut().expect("skamp table").rows_mut()
     {
         skamp.status = 34;
     }
@@ -5422,15 +5350,9 @@
     let duplicate = ambiguous_definition
         .variables
         .as_ref()
-        .and_then(|table| table.points.iter().find(|point| point.point_id == 5))
-        .cloned()
+        .and_then(|table| table.points().into_iter().find(|point| point.point_id == 5))
         .expect("point 5");
-    ambiguous_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(duplicate);
+    append_points(ambiguous_definition.variables.as_mut().expect("variables"), vec![duplicate]);
     assert_eq!(
         resolved_section_points(&ambiguous_definition).get(&5),
         Some(&[3.0, 4.0])
@@ -5439,10 +5361,12 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
-        .last_mut()
+        .rows
+        .iter_mut()
+        .rev()
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("duplicate point");
-    complementary.u = Some(3.0);
+    complementary.value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_points(&ambiguous_definition).get(&5),
         Some(&[3.0, 4.0])
@@ -5451,16 +5375,10 @@
     let mut conflicting = conflicting_definition
         .variables
         .as_ref()
-        .and_then(|table| table.points.iter().find(|point| point.point_id == 2))
-        .cloned()
+        .and_then(|table| table.points().into_iter().find(|point| point.point_id == 2))
         .expect("point 2");
     conflicting.u = Some(30.0);
-    conflicting_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(conflicting);
+    append_points(conflicting_definition.variables.as_mut().expect("variables"), vec![conflicting]);
     assert!(!resolved_section_points(&conflicting_definition).contains_key(&2));
     let conflicting_record = sketch_section_point_records(&conflicting_definition)
         .into_iter()
@@ -5473,33 +5391,27 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = Some(1);
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  Some(1));
     point_row_type_nine
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 90,
-        });
-    point_row_type_nine
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+        }));
+    append_points(point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(4.0),
             v: None,
-        });
-    point_row_type_nine
+        }]);
+    *declared_solver_rows(&mut point_row_type_nine
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 90,
         kind: 9,
         flags: 0,
@@ -5527,10 +5439,10 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0];
+        .skamps()[0];
     assert_eq!(
         section_skamp_point_on_line(&point_row_type_nine, point_row_type_nine_skamp),
-        Some((1, 7, 1))
+        Some((1, 7, crate::decode::sketch::axis::SectionAxis::V))
     );
     assert_eq!(
         resolved_section_coordinates(&point_row_type_nine).get(&7),
@@ -5612,11 +5524,11 @@
                 offset: 84,
             },
         ));
-    saved_definition
+    *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 30,
         kind: 1,
         flags: 0,
@@ -5636,11 +5548,11 @@
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
         }
     );
-    saved_definition
+    *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 31,
         kind: 7,
         flags: 0,
@@ -5661,23 +5573,18 @@
     let segment = unique_section_skamp_segment(&saved_definition, 12).expect("segment line");
     assert_eq!(
         section_line_fixed_coordinate(&saved_definition, segment),
-        Some(1)
+        Some(crate::decode::sketch::axis::SectionAxis::V)
     );
-    saved_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(saved_definition.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(3.0),
             v: None,
-        });
-    saved_definition
+        }]);
+    *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 32,
         kind: 9,
         flags: 0,
@@ -5704,27 +5611,21 @@
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 94,
-        });
-    saved_point_row_type_nine
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+        }));
+    append_points(saved_point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(3.0),
             v: None,
-        });
+        }]);
     saved_point_row_type_nine
         .relations
         .as_mut()
         .expect("relations")
-        .skamps[0]
+        .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1]
         .entity_id = 17;
     synchronize_segment_count(&mut saved_point_row_type_nine);
@@ -5738,35 +5639,29 @@
         .relations
         .as_ref()
         .expect("relations")
-        .skamps[0];
+        .skamps()[0];
     assert_eq!(
         section_skamp_saved_point_on_line(
             &saved_point_row_type_nine,
             saved_point_row_type_nine_skamp,
         ),
-        Some((7, 1, 1.0))
+        Some((7, crate::decode::sketch::axis::SectionAxis::V, 1.0))
     );
     assert_eq!(
         resolved_section_coordinates(&saved_point_row_type_nine).get(&7),
         Some(&[Some(3.0), Some(1.0)])
     );
     let mut saved_coincident = saved_definition.clone();
-    for point in &mut saved_coincident
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-    {
-        if matches!(point.point_id, 4 | 5) {
-            point.u = None;
-            point.v = None;
+    for row in &mut saved_coincident.variables.as_mut().expect("variables").rows {
+        if matches!(row.key, 4 | 5) && matches!(row.variable_type, VariableType::U | VariableType::V) {
+            row.value = ScalarLane::Undefined;
         }
     }
-    saved_coincident
+    *declared_solver_rows(&mut saved_coincident
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![
+        .skamps) = vec![
         crate::feature::FeatureSkamp {
             id: 33,
             kind: 0,
@@ -5813,21 +5708,14 @@
         BTreeMap::from([(4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
     let mut saved_symmetric = saved_definition.clone();
-    let point = saved_symmetric
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .iter_mut()
-        .find(|point| point.point_id == 5)
-        .expect("point 5");
-    point.u = None;
-    point.v = None;
-    saved_symmetric
+    for row in saved_symmetric.variables.as_mut().expect("variables").rows.iter_mut().filter(|row| row.key == 5 && matches!(row.variable_type, VariableType::U | VariableType::V)) {
+        row.value = ScalarLane::Undefined;
+    }
+    *declared_solver_rows(&mut saved_symmetric
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 35,
         kind: 14,
         flags: 0,
@@ -5857,16 +5745,16 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::V)
         .expect("point 5")
-        .v = None;
-    saved_definition
+        .value = ScalarLane::Undefined;
+    *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 33,
         kind: 14,
         flags: 0,
@@ -5893,11 +5781,11 @@
         Some(&[3.0, 0.0])
     );
     let mut saved_same_coordinate = saved_definition.clone();
-    saved_same_coordinate
+    *declared_solver_rows(&mut saved_same_coordinate
         .relations
         .as_mut()
         .expect("relations")
-        .skamps = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::FeatureSkamp {
         id: 36,
         kind: 17,
         flags: 1,

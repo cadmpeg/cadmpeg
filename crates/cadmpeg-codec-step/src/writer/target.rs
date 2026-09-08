@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: Apache-2.0
+//! STEP target resolution and export reporting.
+
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+
+use crate::export::write_step_outcome;
+use crate::loss::StepLossCode;
+use crate::options::StepSchema;
+use crate::StepCodec;
+
+/// Why this writer cannot reproduce a source schema outside
+/// [`StepSchema::TARGETS`].
+///
+/// STEP has no retained-image path, and every schema this writer emits stamps
+/// object-identifier arcs, so an edition-unspecified or unrecognized
+/// declaration cannot be written back.
+const OFF_CATALOG_SOURCE_REASON: &str =
+    "the semantic writer cannot synthesize it, and writing another schema would change what the \
+     file declares; name a target to choose one";
+
+/// Resolve the request against the source and synthesize the selected schema.
+pub(crate) fn plan(
+    codec: &StepCodec,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
+    let Some(index) = resolved.index() else {
+        return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
+    };
+    let schema = StepSchema::ALL[index];
+    let mut bytes = Vec::new();
+    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
+        .map_err(CodecError::from)?;
+    let mut losses = outcome.losses;
+    if let Some(message) = resolved.displacement_message() {
+        losses.push(StepLossCode::SourceDialectDisplaced.note(message));
+    }
+    Ok(ExportBody {
+        bytes,
+        census: outcome.census,
+        write_path: WritePath::Synthesized {
+            // STEP has no retained image: a provided fidelity is never replayed.
+            consumption: Consumption::NotConsumed,
+        },
+        losses,
+        notes: outcome.notes,
+    })
+}

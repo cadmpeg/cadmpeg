@@ -3,21 +3,20 @@
 
 use crate::decode::sweep::generated_nurbs_translation_extent;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 fn translated_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        2,
+        1,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 0.0),
@@ -25,22 +24,22 @@ fn translated_surface() -> NurbsSurface {
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 2.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid translated surface")
 }
 
 fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
     (
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(2.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         [0.0, 0.0, 1.0],
@@ -51,16 +50,15 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
 fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
     let plane = |id, origin, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin,
             normal,
@@ -68,41 +66,50 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         },
         source_object: None,
     };
-    let local_plane = |surface_id, origin, normal| crate::surface::PlaneLocalSystem {
-        surface_id,
-        body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some(origin),
-        u_axis: Some([1.0, 0.0, 0.0]),
-        normal: Some(normal),
-        classification: crate::surface::LocalSystemClassification::Simple,
-        row_offset: 0,
-        offset: 0,
-    };
+    let local_plane =
+        |surface_id, origin: [f64; 3], normal: [f64; 3]| crate::surface::PlaneLocalSystem {
+            surface_id,
+            body: Vec::new(),
+            slots: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal[0], normal[1], normal[2], origin[0],
+                origin[1], origin[2],
+            ]
+            .map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+            classification: crate::surface::LocalSystemClassification::Simple,
+            row_offset: 0,
+            offset: 0,
+        };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
-        row(31, crate::surface::SurfaceKind::Extrusion),
+        row(
+            31,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(32, crate::surface::SurfaceKind::Plane),
         row(33, crate::surface::SurfaceKind::Plane),
-        row(34, crate::surface::SurfaceKind::Extrusion),
+        row(
+            34,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(35, crate::surface::SurfaceKind::Plane),
     ]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(translated_surface()),
             source_object: None,
         },
         plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
         plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
@@ -127,7 +134,11 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             .model
             .surfaces
             .iter_mut()
-            .find(|surface| surface.id == SurfaceId(format!("creo:visibgeom:surface#{surface_id}")))
+            .find(|surface| {
+                surface.id
+                    == SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                        .expect("identity grammar")
+            })
             .expect("plane surface")
             .geometry = SurfaceGeometry::Unknown { record: None };
     }
@@ -136,6 +147,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         Some(expected_extent())
     );
 
-    scan.planes.local_systems[1].origin = Some([0.0, 0.0, 3.0]);
+    scan.planes.local_systems[1].slots[9..12].copy_from_slice(&[Some(0.0), Some(0.0), Some(3.0)]);
     assert!(generated_nurbs_translation_extent(&scan, &ir, 7, None).is_none());
 }

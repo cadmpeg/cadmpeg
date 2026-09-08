@@ -2,7 +2,7 @@
 //! Product-structure transfer unit tests.
 
 use crate::native;
-use crate::product::{product_cycle_nodes, product_kind, product_record_index};
+use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -75,19 +75,19 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         .expect("assembly part");
     let occurrence = nodes
         .iter()
-        .find(|node| node.kind == "occurrence")
+        .find(|node| node.kind() == "occurrence")
         .expect("occurrence");
-    assert_eq!(assembly.members, vec![occurrence.object.clone()]);
+    assert_eq!(assembly.members(), vec![occurrence.object.clone()]);
     assert_eq!(
-        occurrence.prototype.as_deref(),
+        occurrence.prototype(),
         Some("fcstd:native:object#Prototype")
     );
-    assert_eq!(occurrence.local_transform.expect("placement")[0][3], 4.0);
-    assert_eq!(occurrence.element_count, Some(2));
-    assert_eq!(occurrence.link_transform, Some(true));
-    assert_eq!(occurrence.element_transforms.len(), 2);
-    assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
-    assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
+    assert_eq!(occurrence.local_transform().expect("placement")[0][3], 4.0);
+    assert_eq!(occurrence.element_count(), Some(2));
+    assert_eq!(occurrence.link_transform(), Some(true));
+    assert_eq!(occurrence.element_transforms().len(), 2);
+    assert_eq!(occurrence.element_transforms()[1][0][3], 4.0);
+    assert_eq!(occurrence.element_scales(), &[[1.0; 3], [2.0; 3]]);
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -120,45 +120,47 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
                 .is_some_and(|id| id.ends_with("Occurrence"))
         })
         .collect::<Vec<_>>();
-    assert_eq!(assembly_occurrence.transform.rows[0][3], 10.0);
+    assert_eq!(assembly_occurrence.transform.rows()[0][3], 10.0);
     assert_eq!(link_occurrences.len(), 2);
     assert_eq!(link_occurrences[0].ordinal, 0);
-    assert_eq!(link_occurrences[0].transform.rows[0][3], 5.0);
-    assert_eq!(link_occurrences[1].transform.rows[0][3], 8.0);
+    assert_eq!(link_occurrences[0].transform.rows()[0][3], 5.0);
+    assert_eq!(link_occurrences[1].transform.rows()[0][3], 8.0);
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
         graph
             .resolved_transform(&link_occurrences[0].id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         115.0
     );
     assert_eq!(
         graph
             .resolved_transform(&link_occurrences[1].id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         118.0
     );
     assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
     assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
-    assert_eq!(link_occurrences[0].linked_subelements, ["Face1"]);
+    let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
+    assert_eq!(first_link.linked_subelements, ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);
     assert_eq!(link_occurrences[1].visible, None);
-    assert!(link_occurrences[0].element_component.is_some());
-    assert_eq!(link_occurrences[0].claim_child, Some(true));
-    assert_eq!(
-        link_occurrences[0].copy_on_change,
-        Some(cadmpeg_ir::CopyOnChangePolicy::Owned)
-    );
-    assert!(link_occurrences[0].copy_on_change_source.is_some());
-    assert!(link_occurrences[0].copy_on_change_group.is_some());
-    assert_eq!(link_occurrences[0].copy_on_change_touched, Some(true));
+    assert!(first_link.element_component.is_some());
+    assert_eq!(first_link.claim_child, Some(true));
+    let copy_on_change = first_link
+        .copy_on_change
+        .as_ref()
+        .expect("copy-on-change state");
+    assert_eq!(copy_on_change.policy, cadmpeg_ir::CopyOnChangePolicy::Owned);
+    assert!(copy_on_change.source.is_some());
+    assert!(copy_on_change.group.is_some());
+    assert_eq!(copy_on_change.touched, Some(true));
     assert!(matches!(
         &link_occurrences[0].prototype,
         cadmpeg_ir::PrototypeReference::Local { definition }
-            if definition.0.contains("Prototype")
+            if definition.as_str().contains("Prototype")
     ));
     let prototype = result
         .ir()
@@ -177,7 +179,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
-        definition: cadmpeg_ir::ids::ProductDefinitionId("fcstd:model:component#missing".into()),
+        definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
+            .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -348,7 +351,7 @@ fn selects_the_active_link_placement_carrier() {
         nodes
             .iter()
             .find(|node| node.object.ends_with(name))
-            .and_then(|node| node.local_transform)
+            .and_then(native::ProductNodeRecord::local_transform)
             .map(|matrix| matrix[0][3])
             .expect("link placement")
     };
@@ -389,7 +392,7 @@ fn accepts_axis_angle_placement_values() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -432,7 +435,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -475,7 +478,7 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
@@ -515,7 +518,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
@@ -545,7 +548,10 @@ fn rejects_ambiguous_link_placement_without_policy() {
             &DecodeOptions::default(),
         )
         .expect_err("ambiguous placement carriers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -569,7 +575,10 @@ fn rejects_ambiguous_link_prototype_carriers() {
             &DecodeOptions::default(),
         )
         .expect_err("multiple linked-object carriers");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -622,7 +631,10 @@ fn rejects_duplicate_product_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("duplicate product carrier");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -648,7 +660,9 @@ fn rejects_invalid_product_placement_values() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -668,19 +682,22 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
             &DecodeOptions::default(),
         )
         .expect_err("overlapping product membership");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
 fn product_runtime_dispatch_requires_exact_registered_types() {
     for (runtime_type, expected) in [
-        ("Assembly::AssemblyObject", Some("part")),
-        ("Assembly::AssemblyLink", Some("part")),
-        ("App::Part", Some("part")),
-        ("App::DocumentObjectGroup", Some("group")),
-        ("App::LinkGroup", Some("link_group")),
-        ("App::Link", Some("occurrence")),
-        ("App::LinkElement", Some("occurrence")),
+        ("Assembly::AssemblyObject", Some(ProductKind::Part)),
+        ("Assembly::AssemblyLink", Some(ProductKind::Part)),
+        ("App::Part", Some(ProductKind::Part)),
+        ("App::DocumentObjectGroup", Some(ProductKind::Group)),
+        ("App::LinkGroup", Some(ProductKind::LinkGroup)),
+        ("App::Link", Some(ProductKind::Occurrence)),
+        ("App::LinkElement", Some(ProductKind::Occurrence)),
     ] {
         assert_eq!(product_kind(runtime_type), expected, "{runtime_type}");
     }
@@ -712,7 +729,10 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
             &DecodeOptions::default(),
         )
         .expect_err("wrong copy-on-change carrier type");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -739,8 +759,51 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
                 &DecodeOptions::default(),
             )
             .expect_err("wrong named product carrier type");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
+}
+
+#[test]
+fn link_group_retains_element_list_on_the_native_wire() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="App::LinkGroup" name="Group"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="2"><Object name="Group"><Properties Count="1">
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
+</Properties></Object><Object name="Member"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("link group");
+    let records = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let [group] = records.as_slice() else {
+        panic!("one link group")
+    };
+    assert_eq!(group.element_objects(), ["fcstd:native:object#Member"]);
+    assert!(matches!(group.node, native::ProductNode::LinkGroup { .. }));
+    let wire = serde_json::to_value(group).expect("link group wire");
+    assert_eq!(wire["kind"], "link_group");
+    assert_eq!(
+        wire["element_objects"],
+        serde_json::json!(["fcstd:native:object#Member"])
+    );
+    assert_eq!(
+        serde_json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
+        *group
+    );
+    let mut invalid = wire;
+    invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
+    assert!(serde_json::from_value::<native::ProductNodeRecord>(invalid).is_err());
 }
 
 #[test]
@@ -803,7 +866,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     for (array_property, entry) in cases {
         assert!(matches!(
             decode(array_property, entry),
-            Err(cadmpeg_core::CodecError::Malformed(message))
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
                 if message.contains("inconsistent link-array counts")
         ));
     }
@@ -863,34 +926,46 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
                     .native_ref
                     .as_deref()
                     .is_some_and(|id| id.ends_with(name))
-                    && !occurrence.id.0.ends_with(":container")
+                    && !occurrence.id.as_str().ends_with(":container")
             })
             .expect("named occurrence")
     };
-    assert_eq!(occurrence("Inner").prototype_transform.rows[0][3], 5.0);
-    assert_eq!(occurrence("Outer").prototype_transform.rows[0][3], 8.0);
-    assert_eq!(occurrence("Override").prototype_transform.rows[0][3], 0.0);
+    assert_eq!(
+        occurrence("Inner")
+            .linked_prototype
+            .expect("linked prototype placement")
+            .rows()[0][3],
+        5.0
+    );
+    assert_eq!(
+        occurrence("Outer")
+            .linked_prototype
+            .expect("linked prototype placement")
+            .rows()[0][3],
+        8.0
+    );
+    assert!(occurrence("Override").linked_prototype.is_none());
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Inner").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         8.0
     );
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Outer").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         20.0
     );
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Override").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         14.0
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -928,28 +1003,18 @@ fn transfers_external_product_paths_and_targets() {
     let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
-    assert_eq!(document.path.as_deref(), Some("parts/widget.FCStd"));
-    assert_eq!(document.document_id, None);
+    assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
+    assert_eq!(document.as_document_id(), None);
     assert_eq!(object.as_deref(), Some("Body"));
-    assert_eq!(
-        document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
-    );
+    assert!(!document.is_missing());
 
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-    let mut corrupted = result.ir().clone();
-    let cadmpeg_ir::PrototypeReference::External { document, .. } =
-        &mut corrupted.model.occurrences[0].prototype
-    else {
-        panic!("external prototype");
-    };
-    document.path = Some("also-a-path.FCStd".into());
-    document.document_id = Some("also-an-id".into());
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid occurrence reference")));
+    let mut wire = serde_json::to_value(result.ir()).expect("document wire");
+    let document = &mut wire["model"]["occurrences"][0]["prototype"]["document"];
+    document["path"] = serde_json::json!("also-a-path.FCStd");
+    document["document_id"] = serde_json::json!("also-an-id");
+    assert!(serde_json::from_value::<cadmpeg_ir::CadIr>(wire).is_err());
 }
 
 #[test]
@@ -967,7 +1032,7 @@ fn rejects_non_schema_link_carrier_aliases() {
         .expect_err("unsupported XLink document alias");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("unsupported link carrier document")
     ));
 }
@@ -996,7 +1061,7 @@ fn restores_shadowed_link_subelement_name() {
         .iter()
         .find(|property| property.name == "Support")
         .expect("support");
-    assert_eq!(support.links[0].subelements, ["Face7"]);
+    assert_eq!(support.links()[0].subelements, ["Face7"]);
 }
 
 #[test]
@@ -1014,7 +1079,7 @@ fn rejects_conflicting_xlink_subelement_carriers() {
         .expect_err("conflicting XLink subelement carriers");
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::Malformed(message)
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("both sub and count carriers")
     ));
 }
@@ -1023,26 +1088,11 @@ fn node(object: &str, members: &[&str]) -> native::ProductNodeRecord {
     native::ProductNodeRecord {
         id: format!("product:{object}"),
         object: object.into(),
-        kind: "group".into(),
-        members: members.iter().map(|member| (*member).into()).collect(),
-        prototype: None,
-        external_document: None,
-        external_document_attribute: None,
-        local_transform: None,
-        placement_property: None,
-        element_count: None,
-        link_transform: None,
-        element_transforms: Vec::new(),
-        element_scales: Vec::new(),
-        linked_subelements: Vec::new(),
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
-        scale: None,
-        element_visibility: Vec::new(),
-        element_objects: Vec::new(),
+        node: native::ProductNode::Group(native::ContainerNode {
+            members: members.iter().map(|member| (*member).into()).collect(),
+            local_transform: None,
+            placement_property: None,
+        }),
     }
 }
 

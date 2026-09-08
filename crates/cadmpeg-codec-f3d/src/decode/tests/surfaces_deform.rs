@@ -10,9 +10,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -32,15 +35,11 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        let mut duplicate = source_less.model.procedural_surfaces[0].clone();
-        duplicate.id = format!("generated:duplicate-{label}").into();
+        let duplicate = source_less.model.procedural_surfaces[0].clone();
         source_less.model.procedural_surfaces.push(duplicate);
 
         let error = F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .unwrap_err();
         assert!(
@@ -66,23 +65,30 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let surface_id = source_less.model.procedural_surfaces[0].surface.clone();
+    let surface_id = source_less
+        .model
+        .procedural_surface_owner(&source_less.model.procedural_surfaces[0].id)
+        .expect("procedural surface owner")
+        .clone();
     source_less
         .model
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == surface_id)
         .unwrap()
-        .geometry = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        .geometry = SurfaceGeometry::Procedural {
+        construction: source_less.model.procedural_surfaces[0].id.clone(),
+        cache: Some(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            })
+            .unwrap(),
+        ),
     };
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("analytic carrier must not discard its procedural surface");
     assert!(error
@@ -98,22 +104,29 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = source_less.model.procedural_curves[0].curve.clone();
+    let curve_id = source_less
+        .model
+        .procedural_curve_owner(&source_less.model.procedural_curves[0].id)
+        .expect("procedural curve owner")
+        .clone();
     source_less
         .model
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
+        .geometry = CurveGeometry::Procedural {
+        construction: source_less.model.procedural_curves[0].id.clone(),
+        cache: Some(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+            .unwrap(),
+        ),
     };
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("analytic carrier must not discard its procedural curve");
     assert!(error
@@ -131,7 +144,7 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
         )
         .expect("deformable surface decode");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected deformable surface")
     };
@@ -145,17 +158,14 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
 }
@@ -173,7 +183,7 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             )
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition
+            &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected deformable surface")
         };
@@ -207,17 +217,14 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Deformable { .. }
         ));
     }
@@ -233,7 +240,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
         )
         .expect("revision deformable surface decode");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected deformable surface")
     };
@@ -269,17 +276,14 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("revision deformable source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("revision deformable source-less round trip");
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &round_trip.ir().model.procedural_surfaces[0].definition
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip deformable surface")
     };
@@ -310,7 +314,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         )
         .unwrap();
     let ProceduralSurfaceDefinition::Deformable { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!()
     };
@@ -345,24 +349,21 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        round.ir().model.procedural_surfaces[0].definition,
+        round.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Deformable { .. }
     ));
     assert!(round.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
-            if curve.degree == 1
-                && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
     )));
 }
 
@@ -379,7 +380,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             )
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition
+            &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!()
         };
@@ -419,17 +420,14 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
         let ProceduralSurfaceDefinition::Deformable { construction } =
-            &round.ir().model.procedural_surfaces[0].definition
+            &round.ir().model.procedural_surfaces[0].definition()
         else {
             panic!()
         };
@@ -441,8 +439,8 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         assert!(round.ir().model.curves.iter().any(|curve| matches!(
             &curve.geometry,
             cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve)
-                if curve.degree == 1
-                    && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
         )));
     }
 }
@@ -458,7 +456,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         )
         .expect("referenced T-spline decode");
     let ProceduralSurfaceDefinition::TSpline { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected T-spline surface")
     };
@@ -474,12 +472,9 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         resolved.as_ref(),
         TSplineSubtransform::Inline { program, .. } if program.contains("v 1 0 0 0")
     ));
+    assert_eq!(construction.program_graph().unwrap().records.len(), 1);
     assert_eq!(
-        construction.program_graph.as_ref().unwrap().records.len(),
-        1
-    );
-    assert_eq!(
-        construction.values_graph.as_ref().unwrap().records[0].kind,
+        construction.values_graph().unwrap().records[0].kind,
         "100verts"
     );
 
@@ -488,17 +483,14 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less referenced T-spline encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less referenced T-spline round trip");
     let ProceduralSurfaceDefinition::TSpline { construction } =
-        &round_trip.ir().model.procedural_surfaces[0].definition
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip T-spline surface")
     };
@@ -523,7 +515,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -544,7 +536,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     assert_eq!(profile_frame.as_ref().unwrap().0.z, 30.0);
     assert_eq!(origin.z, 60.0);
     assert_eq!(*path_range, [-20.0, 30.0]);
-    assert_eq!(formula.name, "null_law");
+    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null));
     let profile = profile.clone();
     let spine = spine.clone();
 
@@ -565,10 +557,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit formula sweep encode");
     let round_trip = F3dCodec
@@ -579,7 +568,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip explicit formula sweep")
     };
@@ -600,7 +589,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
                 .find(|curve| curve.id == *curve_id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == knots
+            if curve.degree() == 1 && curve.knots() == knots
         ));
     }
 }
@@ -619,18 +608,15 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .0;
     decoded.source = None;
     decoded.set_native_unknowns("f3d", &[]).unwrap();
-    let ProceduralSurfaceDefinition::Sweep { native, .. } =
-        &mut decoded.model.procedural_surfaces[0].definition
-    else {
-        panic!("expected generated sweep")
-    };
-    *native = None;
+    decoded.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Sweep { native, .. } = definition else {
+            panic!("expected generated sweep")
+        };
+        *native = None;
+    });
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("a sweep without its native graph must not be guessed");
     assert!(matches!(
@@ -655,7 +641,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -703,17 +689,14 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit guide sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less explicit guide sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -729,8 +712,8 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }
@@ -750,7 +733,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -793,17 +776,14 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit surface sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less explicit surface sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -819,8 +799,8 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }
@@ -840,7 +820,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
         spine,
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -861,7 +841,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     assert_eq!((*mode, *first_mode, *formula_mode), (10, 21, 23));
     assert!(matches!(first_law.as_ref(), LawExpression::Double { value } if *value == 2.5));
     assert!(matches!(second_law.as_ref(), LawExpression::Vector { value } if value.z == 3.0));
-    assert_eq!(formula.name, "null_law");
+    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null));
     let bounded_curves = [
         (profile.clone(), *profile_range),
         (spine.clone(), *path_range),
@@ -884,17 +864,14 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law-driven sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less law-driven sweep round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
@@ -910,8 +887,8 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
                 .find(|curve| curve.id == curve_id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }
@@ -929,7 +906,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -955,10 +932,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("text-law sweep encode");
     let round_trip = F3dCodec
@@ -967,7 +941,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-tripped native sweep")
     };
@@ -1002,7 +976,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native revision sweep")
     };
@@ -1024,9 +998,9 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         second_law.as_ref(),
         LawExpression::Text { value } if value == "VEC(1,1,1)"
     ));
-    assert_eq!(formula.name, "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
+    assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
     assert!(matches!(
-        formula.variables.as_slice(),
+        formula.variables(),
         [LawExpression::TransformVec { .. }]
     ));
 
@@ -1035,10 +1009,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("revision text-law sweep encode");
     let round_trip = F3dCodec
@@ -1047,7 +1018,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    } = &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-tripped revision sweep")
     };
@@ -1076,19 +1047,19 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         )
         .expect("cacheless revision text-law sweep decode");
     let procedural = &decoded.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected cacheless native revision sweep")
     };
     let form = native.revision_form.as_ref().expect("revision form");
     assert_eq!(form.revision, 23100);
-    assert_eq!(form.tail_enum, 2);
+    assert_eq!(form.cache.selector(), 2);
     assert_eq!(
-        form.tail_parameterization.as_ref(),
+        form.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
     );
     let SweepSurfaceLayout::LawDriven {
@@ -1113,32 +1084,29 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("cacheless revision text-law sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("cacheless revision text-law sweep round trip");
     let procedural = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected round-tripped cacheless native revision sweep")
     };
-    assert_eq!(native.revision_form.as_ref().unwrap().tail_enum, 2);
+    assert_eq!(native.revision_form.as_ref().unwrap().cache.selector(), 2);
     assert_eq!(
         native
             .revision_form
             .as_ref()
             .unwrap()
-            .tail_parameterization
-            .as_ref(),
+            .cache
+            .parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
     );
 }
@@ -1188,7 +1156,7 @@ fn generated_legacy_surface_names_select_modern_layouts() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{expected} legacy decode: {error}"));
-        let definition = &decoded.ir().model.procedural_surfaces[0].definition;
+        let definition = &decoded.ir().model.procedural_surfaces[0].definition();
         assert!(
             matches!(
                 (expected, definition),
@@ -1211,26 +1179,8 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let required = [
-        (
-            synthetic_minimal_deformable_surface_smbh(),
-            "deformable surface",
-        ),
-        (synthetic_t_spl_sur_smbh(), "T-spline surface"),
-        (
-            synthetic_exact_spl_sur_smbh("exact_spl_sur"),
-            "exact spline surface",
-        ),
-        (
-            synthetic_variable_blend_smbh("var_blend_spl_sur"),
-            "variable blend",
-        ),
-        (
-            synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
-            "rolling-ball blend",
-        ),
         (synthetic_skin_spl_sur_smbh(0, false), "skin surface"),
         (synthetic_net_spl_sur_smbh(), "net surface"),
-        (synthetic_profile_first_sweep_smbh(), "sweep surface"),
     ];
     for (smbh, family) in required {
         let decoded = F3dCodec
@@ -1240,17 +1190,16 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             )
             .unwrap_or_else(|error| panic!("{family} decode: {error}"));
         assert!(decoded.ir().model.procedural_surfaces[0]
-            .cache_fit_tolerance
+            .cache_fit_tolerance()
             .is_some());
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        source_less.model.procedural_surfaces[0]
+            .set_cache_fit_tolerance(None)
+            .unwrap();
         let error = F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
             .unwrap_err();
         assert!(
@@ -1284,13 +1233,12 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        source_less.model.procedural_surfaces[0]
+            .set_cache_fit_tolerance(None)
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less surface without optional tolerance");
         let round_trip = F3dCodec
@@ -1302,7 +1250,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             "{family} procedural surface was not reconstructed"
         );
         assert_eq!(
-            round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
+            round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
             None
         );
     }
@@ -1316,24 +1264,23 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+    source_less.model.procedural_surfaces[0]
+        .set_cache_fit_tolerance(None)
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less loft without optional tolerance");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less loft round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Loft { .. }
     ));
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
+        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
         None
     );
 }

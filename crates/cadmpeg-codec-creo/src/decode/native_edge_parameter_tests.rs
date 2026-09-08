@@ -1,15 +1,16 @@
-use crate::decode::analytic::{
+use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
-    full_periodic_nurbs_edge_parameter_range, native_pcurve_midpoint,
-    nonperiodic_conic_edge_parameter_range, nonperiodic_conic_parameter,
-    nonperiodic_nurbs_edge_parameter_range, orient_nonperiodic_nurbs_edge_carrier,
-    pcurve_backed_periodic_conic_parameter_range, periodic_conic_edge_parameter_range,
-    NativePcurveCandidates,
+    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
+    nonperiodic_conic_parameter, nonperiodic_nurbs_edge_parameter_range,
+    orient_nonperiodic_nurbs_edge_carrier, periodic_conic_edge_parameter_range,
+};
+use crate::decode::analytic::pcurves::{
+    native_pcurve_midpoint, pcurve_backed_periodic_conic_parameter_range, NativePcurveCandidates,
 };
 use crate::decode::surfaces::{
     analytic_curve_branches, curve_contains_points, select_unique_curve_candidate,
 };
-use cadmpeg_ir::geometry::{CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -35,6 +36,19 @@ fn ellipse() -> CurveGeometry {
 fn evaluated(geometry: &CurveGeometry, parameter: f64) -> [f64; 3] {
     let point = cadmpeg_ir::eval::curve_point(geometry, parameter).expect("conic point");
     [point.x, point.y, point.z]
+}
+
+fn nurbs_curve(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+) -> CurveGeometry {
+    CurveGeometry::Nurbs(
+        NurbsCurve::new(degree, knots, control_points, weights, periodic)
+            .expect("cardinality-valid test curve"),
+    )
 }
 
 #[test]
@@ -63,17 +77,17 @@ fn withholds_parameters_for_points_off_the_line() {
 
 #[test]
 fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
-    let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 2,
-        knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-        control_points: vec![
+    let nurbs = nurbs_curve(
+        2,
+        vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+        vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(4.0, 7.0, 3.0),
             Point3::new(9.0, 8.0, 3.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    });
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],),
         Some([2.0, 5.0])
@@ -86,13 +100,13 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
 
 #[test]
 fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
-    let mut nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
-        weights: Some(vec![2.0, 3.0]),
-        periodic: false,
-    });
+    let mut nurbs = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
+        Some(vec![2.0, 3.0]),
+        false,
+    );
 
     assert_eq!(
         orient_nonperiodic_nurbs_edge_carrier(&mut nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
@@ -103,22 +117,22 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
     let CurveGeometry::Nurbs(nurbs) = nurbs else {
         panic!("NURBS carrier");
     };
-    assert_eq!(nurbs.weights, Some(vec![3.0, 2.0]));
+    assert_eq!(nurbs.weights(), Some(&[3.0, 2.0][..]));
 }
 
 #[test]
 fn degree_one_nurbs_recovers_unique_bounded_parameters() {
-    let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![2.0, 2.0, 5.0, 9.0, 9.0],
-        control_points: vec![
+    let nurbs = nurbs_curve(
+        1,
+        vec![2.0, 2.0, 5.0, 9.0, 9.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(3.0, 0.0, 0.0),
             Point3::new(3.0, 4.0, 0.0),
         ],
-        weights: Some(vec![2.0, 1.0, 3.0]),
-        periodic: false,
-    });
+        Some(vec![2.0, 1.0, 3.0]),
+        false,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(&nurbs, [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],),
         Some([3.5, 7.0])
@@ -128,16 +142,16 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         None
     );
 
-    let translated = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
+    let translated = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
             Point3::new(100_000_000.0, 0.0, 0.0),
             Point3::new(100_000_004.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+        false,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(
             &translated,
@@ -146,17 +160,17 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         None
     );
 
-    let self_intersecting = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let self_intersecting = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+        false,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(
             &self_intersecting,
@@ -165,18 +179,18 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
         None
     );
 
-    let constant_span = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
-        control_points: vec![
+    let constant_span = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+        false,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(&constant_span, [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],),
         None
@@ -185,30 +199,30 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
 
 #[test]
 fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
-    let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: true,
-    });
+    let nurbs = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        true,
+    );
     assert_eq!(
         nonperiodic_nurbs_edge_parameter_range(&nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
         None
     );
 
-    let closed = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![2.0, 2.0, 4.0, 7.0, 9.0, 9.0],
-        control_points: vec![
+    let closed = nurbs_curve(
+        1,
+        vec![2.0, 2.0, 4.0, 7.0, 9.0, 9.0],
+        vec![
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(-1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: true,
-    });
+        None,
+        true,
+    );
     assert_eq!(
         full_periodic_nurbs_edge_parameter_range(&closed, [1.0, 0.0, 0.0]),
         Some([2.0, 9.0])
@@ -379,7 +393,8 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     };
     let surfaces = [10, 11]
         .map(|face| Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{face}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
+                .expect("identity grammar"),
             geometry: surface_geometry.clone(),
             source_object: None,
         })

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -193,30 +193,27 @@
     },
     "native": {
       "sldprt": {
-        "arenas": {
-          "configurations": [],
-          "feature_histories": [],
-          "feature_input_body_selections": [],
-          "feature_input_classes": [],
-          "feature_input_edge_selections": [],
-          "feature_input_generated_surface_identities": [],
-          "feature_input_lanes": [],
-          "feature_input_names": [],
-          "feature_input_references": [],
-          "feature_input_relation_bindings": [],
-          "feature_input_relation_instances": [],
-          "feature_input_scalars": [],
-          "feature_input_surface_selections": [],
-          "features": [],
-          "pmi_dimensions": [],
-          "sketch_input_entities": [],
-          "unknowns": [
-            {
-              "id": "sldprt:file:block#8"
-            }
-          ]
-        },
-        "version": 13
+        "configurations": [],
+        "feature_histories": [],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [],
+        "feature_input_names": [],
+        "feature_input_references": [],
+        "feature_input_relation_bindings": [],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [],
+        "feature_input_surface_selections": [],
+        "features": [],
+        "pmi_dimensions": [],
+        "sketch_input_entities": [],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#8"
+          }
+        ]
       }
     },
     "source": {
@@ -244,6 +241,24 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown",
+          "format": "sldprt"
+        }
+      },
       "format": "sldprt"
     },
     "tolerances": {
@@ -256,6 +271,24 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      }
+    },
     "format": "sldprt",
     "geometry_transferred": true,
     "losses": [
@@ -266,6 +299,15 @@
           "namespace": "sldprt"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt"
+        },
+        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
       },
       {
@@ -400,7 +442,6 @@
         "sha256": "8165d1927071382e64e47e6e89368c29f4c3d93c509a834b090405e01dfd1e13",
         "stream": "sldprt"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

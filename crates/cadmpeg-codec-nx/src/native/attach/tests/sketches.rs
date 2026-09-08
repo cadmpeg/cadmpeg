@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
 use super::*;
 
@@ -10,26 +9,34 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         section_link: "section".to_string(),
         ordinal: 9,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
-    let pair = crate::native::features::FeatureSketchPayloadCoordinatePair {
+    let pair = crate::native::features::FeaturePayloadScalarPair {
         id: "nx:feature-history:sketch-payload-coordinate-pair#section-9-0000000000".to_string(),
         operation_label: label.id.clone(),
-        construction_payload: "payload".to_string(),
+        payload: crate::native::features::FeatureScalarPairPayload::Construction {
+            construction_payload: "payload".to_string(),
+            frame: crate::om::binary64_pair::Binary64Pair::new(
+                crate::om::binary64_pair::SketchBinary64PairForm::Object(
+                    crate::om::binary64_pair::ObjectPairForm::Short,
+                ),
+                12,
+                [12.5_f64, -3.0_f64].map(|value| {
+                    let mut raw = value.to_be_bytes();
+                    raw[0] -= 0x10;
+                    crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+                }),
+            )
+            .unwrap(),
+        },
         ordinal: 0,
-        values: [12.5, -3.0],
-        raw_values: [[0; 8]; 2],
-        payload_offset: 12,
-        value_payload_offsets: [20, 28],
-        source_offset: 51,
         value_source_offsets: [59, 67],
-        discriminator: vec![8, 2, 3, 1, 3, 1],
+        source_offset: 51,
     };
     let coordinate_pairs = [&pair];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::super::attach_sketch_graph(
@@ -55,11 +62,11 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id.0,
+        ir.model.sketch_entities[0].id().0,
         "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
     );
     assert!(cadmpeg_ir::ids::is_valid_identity(
-        &ir.model.sketch_entities[0].id.0
+        &ir.model.sketch_entities[0].id().0
     ));
     assert_eq!(
         ir.model.sketch_entities[0].native_ref.as_deref(),
@@ -78,8 +85,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         section_link: "section".to_string(),
         ordinal: 11,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 80,
     };
@@ -93,7 +99,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         source_offset: 91,
     };
     let fixed_points = [&point];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::super::attach_sketch_graph(
@@ -119,7 +125,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id.0,
+        ir.model.sketch_entities[0].id().0,
         "nx:feature-history:sketch-entity#fixed-point-section-11-0000000000"
     );
     assert_eq!(

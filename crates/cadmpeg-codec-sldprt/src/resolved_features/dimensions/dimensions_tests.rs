@@ -3,14 +3,13 @@
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::*;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue, SketchSpace,
+    ParameterValue,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -39,8 +38,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let wrong = marker("wrong", 5, Some(1), Some(1), Some([0.100, 0.100]));
     let center = marker("center", 10, Some(50), Some(49), Some([0.010, 0.020]));
@@ -55,7 +53,6 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -196,8 +193,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -209,7 +205,6 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -308,8 +303,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -321,7 +315,6 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -452,8 +445,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = |kind| FeatureInputLane {
         id: "lane".into(),
@@ -465,7 +457,6 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -683,8 +674,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             kind,
             state_value: Some(1.0),
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -697,7 +687,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 0,
                 offset: 100,
                 name: "sgEntHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
             FeatureInputClass {
                 id: "slot-class".into(),
@@ -705,7 +694,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 1,
                 offset: 180,
                 name: "sgSlotHandle".into(),
-                role: FeatureInputClassRole::Native,
             },
             FeatureInputClass {
                 id: "end-class".into(),
@@ -713,7 +701,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
                 ordinal: 2,
                 offset: 250,
                 name: "next".into(),
-                role: FeatureInputClassRole::Native,
             },
         ],
         names: Vec::new(),
@@ -754,7 +741,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             marker(
                 "slot",
                 slot_offset as u64,
-                SketchInputKind::Native(1),
+                SketchInputKind::from_handle_code(1),
                 Some(1),
                 Some(1),
                 None,
@@ -788,7 +775,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             ordinal: 2,
             offset: 240,
             name: "sgSlotHandle".into(),
-            role: FeatureInputClassRole::Native,
         },
     );
     let ambiguous_markers = ambiguous_lane
@@ -906,8 +892,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.01, 0.02]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -919,7 +904,6 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
             ordinal: 0,
             offset: 200,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -972,8 +956,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.03, 0.04]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let unrelated_markers = unrelated_lane
         .sketch_entities
@@ -1013,8 +996,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         kind: marker_kind,
         state_value: None,
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let lane = |circular_kind| FeatureInputLane {
         id: "lane".into(),
@@ -1026,7 +1008,6 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
             ordinal: 0,
             offset: 112,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1156,8 +1137,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         kind: marker_kind,
         state_value: None,
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -1170,7 +1150,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
                 ordinal: 0,
                 offset: 100,
                 name: "sgEntHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
             FeatureInputClass {
                 id: "arc-class".into(),
@@ -1178,7 +1157,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
                 ordinal: 1,
                 offset: 25,
                 name: "sgArcHandle".into(),
-                role: FeatureInputClassRole::SketchEntity,
             },
         ],
         names: Vec::new(),
@@ -1265,7 +1243,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         ordinal: 2,
         offset: 45,
         name: "sgLineHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     });
     let multiple_markers = multiple_declared
         .sketch_entities
@@ -1319,7 +1296,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         center: [0.0, 0.0],
         start: [0.001, 0.0],
         end: [0.0, -0.001],
-        endpoint_refs: vec!["start".into(), "end".into()],
+        endpoints: Some(["start".into(), "end".into()]),
     };
 
     let (geometry, endpoint_refs) =
@@ -1441,8 +1418,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = marker("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
     let radial = marker("radial", 20, SketchInputKind::Point, Some([0.005, 0.0]));
@@ -1493,8 +1469,8 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
-        id: ParameterId("radial".into()),
-        owner: Some(FeatureId("sketch".into())),
+        id: ParameterId::mint("radial").expect("identity grammar"),
+        owner: Some(FeatureId::mint("sketch").expect("identity grammar")),
         ordinal: 0,
         name: "radial".into(),
         expression: String::new(),
@@ -1523,7 +1499,7 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
 
 #[test]
 fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
-    let feature_id = FeatureId("feature".into());
+    let feature_id = FeatureId::mint("feature").expect("identity grammar");
     let feature_ref = "feature";
     let sketch_id = SketchId("sketch".into());
     let marker_id = "marker";
@@ -1535,9 +1511,12 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: feature_ref.into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
@@ -1571,8 +1550,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.001, 0.002]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
     let feature = Feature {
@@ -1580,7 +1558,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1588,13 +1565,12 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),
@@ -1606,17 +1582,15 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         pmi: None,
         native_ref: Some("scalar".into()),
     };
-    let center = SketchEntity {
-        id: SketchEntityId("center".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some(marker_id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let center = SketchEntity::new(
+        SketchEntityId("center".into()),
+        sketch_id,
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(marker_id.into()));
     let mut entities = vec![center];
 
     project_relation_point_dimensioned_circles(
@@ -1634,17 +1608,17 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     assert_eq!(entities[1].geometry_ref.as_deref(), Some("relation"));
 
     let mut ambiguous = entities[..1].to_vec();
-    ambiguous.push(SketchEntity {
-        id: SketchEntityId("second-center".into()),
-        sketch: entities[0].sketch.clone(),
-        construction: true,
-        native_ref: Some(marker_id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(1.0, 2.0),
-        },
-    });
+    ambiguous.push(
+        SketchEntity::new(
+            SketchEntityId("second-center".into()),
+            entities[0].sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 2.0),
+            },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(marker_id.into())),
+    );
     project_relation_point_dimensioned_circles(
         &mut ambiguous,
         std::slice::from_ref(&feature),
@@ -1678,8 +1652,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "implicit-relation".into(),
@@ -1692,17 +1665,19 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Relation(SketchRelationKind::Distance),
             state_value: Some(1.0),
             coordinates_m: None,
-            links: vec![
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "implicit-center".into(),
-                },
-                SketchInputLink {
-                    local_id: 0,
-                    entity_ref: "implicit-center".into(),
-                },
-            ],
-            link_selector: None,
+            links: crate::records::SketchInputLinks::new(
+                0,
+                vec![
+                    SketchInputLink {
+                        local_id: 0,
+                        entity_ref: "implicit-center".into(),
+                    },
+                    SketchInputLink {
+                        local_id: 0,
+                        entity_ref: "implicit-center".into(),
+                    },
+                ],
+            ),
         },
         SketchInputEntity {
             id: "implicit-radial".into(),
@@ -1715,21 +1690,18 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.002, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
     ]);
-    let mut implicit_entities = vec![SketchEntity {
-        id: SketchEntityId("implicit-center".into()),
-        sketch: entities[0].sketch.clone(),
-        construction: true,
-        native_ref: Some("implicit-center".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let mut implicit_entities = vec![SketchEntity::new(
+        SketchEntityId("implicit-center".into()),
+        entities[0].sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(3.0, 4.0),
         },
-    }];
+    )
+    .with_construction(true)
+    .with_native_ref(Some("implicit-center".into()))];
     project_relation_point_dimensioned_circles(
         &mut implicit_entities,
         std::slice::from_ref(&feature),
@@ -1756,8 +1728,7 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = marker("center", 10, SketchInputKind::Arc, Some([0.1, 0.2]));
     let radial = marker("radial", 20, SketchInputKind::Point, Some([0.103, 0.2]));
@@ -1812,8 +1783,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = SketchInputEntity {
         id: "center".into(),
@@ -1826,17 +1796,19 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         kind: SketchInputKind::Arc,
         state_value: Some(1.0),
         coordinates_m: Some([0.0, 0.0]),
-        links: vec![
-            SketchInputLink {
-                local_id: 0,
-                entity_ref: "start".into(),
-            },
-            SketchInputLink {
-                local_id: 0,
-                entity_ref: "end".into(),
-            },
-        ],
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "start".into(),
+                },
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "end".into(),
+                },
+            ],
+        ),
     };
     let start = marker("start", 20, [0.003, 0.0]);
     let end = marker("end", 30, [0.0, 0.003]);
@@ -1865,7 +1837,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     assert_eq!(arc.center, [0.0, 0.0]);
     assert_eq!(arc.start, [0.003, 0.0]);
     assert_eq!(arc.end, [0.0, 0.003]);
-    assert_eq!(arc.endpoint_refs, vec!["start", "end"]);
+    assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
 
     let mut invalid_end = lane.sketch_entities[2].clone();
     invalid_end.coordinates_m = Some([0.0, 0.004]);
@@ -1894,8 +1866,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker(0, 2, [0.0, 0.0]),

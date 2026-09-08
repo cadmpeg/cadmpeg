@@ -236,17 +236,18 @@ fn curve_array_elements<'a>(
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
-    let mut arrays = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(branch.id.as_str())
+    let mut arrays = objects.iter().filter_map(|object| {
+        let ObjectPayload::Array { elements, .. } = &object.payload else {
+            return None;
+        };
+        (object.parent.as_deref() == Some(branch.id.as_str())
             && object.name == "crv_array"
-            && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+            && object.payload.is_complete())
+        .then_some((object, elements))
     });
-    let array = arrays.next()?;
+    let (array, elements) = arrays.next()?;
     arrays.next().is_none().then_some(())?;
 
-    let ObjectPayload::Array { elements, .. } = &array.payload else {
-        unreachable!("the curve namespace array was filtered above");
-    };
     elements
         .iter()
         .map(|element_id| {
@@ -305,7 +306,7 @@ fn curve_topology_row(
         type_byte,
         feature_id,
         directions: [*first_direction, *second_direction],
-        faces,
+        faces: faces.map(std::num::NonZeroU32::new),
         next_edges,
         offset: integer_record(integers, &curve_object.id, "crv_id")?.offset,
     })
@@ -411,17 +412,18 @@ fn surface_array_elements<'a>(
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
-    let mut arrays = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(branch.id.as_str())
+    let mut arrays = objects.iter().filter_map(|object| {
+        let ObjectPayload::Array { elements, .. } = &object.payload else {
+            return None;
+        };
+        (object.parent.as_deref() == Some(branch.id.as_str())
             && object.name == "srf_array"
-            && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+            && object.payload.is_complete())
+        .then_some((object, elements))
     });
-    let array = arrays.next()?;
+    let (array, elements) = arrays.next()?;
     arrays.next().is_none().then_some(())?;
 
-    let ObjectPayload::Array { elements, .. } = &array.payload else {
-        unreachable!("the namespace array was filtered above");
-    };
     elements
         .iter()
         .map(|element_id| {
@@ -440,9 +442,7 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
     let id = u32::try_from(integer_field(integers, &row_object.id, "geom_id")?).ok()?;
     let boundary_type =
         u8::try_from(integer_field(integers, &row_object.id, "boundary_type")?).ok()?;
-    if !surface::is_surface_boundary_type(boundary_type) {
-        return None;
-    }
+    let boundary_type = surface::BoundaryType::from_byte(boundary_type)?;
     let orientation = integer_field(integers, &row_object.id, "orient")?;
     let reversed = match orientation {
         1 => false,
@@ -453,7 +453,6 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
         u32::try_from(integer_field(integers, &row_object.id, "next_geom_ptr")?).ok()?;
     Some(SurfaceRow {
         id,
-        type_byte,
         kind,
         feature_id,
         reversed,
@@ -933,7 +932,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1020,7 +1018,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1109,7 +1106,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1496,7 +1492,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![2],
                     elements: vec![first.to_string(), second.to_string()],
-                    complete: true,
                 },
             ),
             object(first, "crv_array", Some(array), ObjectPayload::Arrow),
@@ -1524,7 +1519,13 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(result.topology_rows.len(), 2);
         assert_eq!(result.topology_rows[0].id, 10);
         assert_eq!(result.topology_rows[0].directions, [0x01, 0xf6]);
-        assert_eq!(result.topology_rows[0].faces, [100, 200]);
+        assert_eq!(
+            result.topology_rows[0].faces,
+            [
+                std::num::NonZeroU32::new(100),
+                std::num::NonZeroU32::new(200)
+            ]
+        );
         assert_eq!(result.topology_rows[0].next_edges, [11, 11]);
         assert_eq!(result.pcurves.len(), 1);
         assert_eq!(result.pcurves[0].curve_id, 10);

@@ -14,7 +14,19 @@ pub(crate) enum Representation {
     FixedAscii,
     CompressedAscii,
     Binary,
-    Unknown,
+}
+
+impl Representation {
+    /// The discriminant value `docs/dialects.toml` states for this
+    /// representation, and the value the `representation` source attribute and
+    /// the non-Fixed-ASCII container kind carry.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::FixedAscii => "fixed-ascii",
+            Self::CompressedAscii => "compressed-ascii",
+            Self::Binary => "binary",
+        }
+    }
 }
 
 fn compressed_ascii(prefix: &[u8]) -> bool {
@@ -44,28 +56,26 @@ fn binary(prefix: &[u8]) -> bool {
         && flag[binary_flag::SEQUENCE] == b'1'
 }
 
-pub(crate) fn classify_prefix(prefix: &[u8]) -> Representation {
+pub(crate) fn classify_prefix(prefix: &[u8]) -> Option<Representation> {
     if compressed_ascii(prefix) {
-        Representation::CompressedAscii
+        Some(Representation::CompressedAscii)
     } else if binary(prefix) {
-        Representation::Binary
+        Some(Representation::Binary)
     } else if card::detect_fixed_ascii(prefix) == Confidence::High {
-        Representation::FixedAscii
+        Some(Representation::FixedAscii)
     } else {
-        Representation::Unknown
+        None
     }
 }
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
     match classify_prefix(prefix) {
-        Representation::FixedAscii | Representation::CompressedAscii | Representation::Binary => {
-            Confidence::High
-        }
-        Representation::Unknown => Confidence::No,
+        Some(_) => Confidence::High,
+        None => Confidence::No,
     }
 }
 
-pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
+pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Option<Representation>, CodecError> {
     let position = reader.stream_position()?;
     let mut prefix = [0; DETECTION_PREFIX_BYTES];
     let mut count = 0;

@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema projection for `cadmpeg query schema`.
 //!
-//! With no FILE this describes the IR types this binary was built with,
+//! The `types` subcommand describes the IR types this binary was built with,
 //! generated from the `cadmpeg-ir` derives: every field, which are
-//! optional, and every variant of a tagged union. With a CADIR FILE it
+//! optional, and every variant of a tagged union. The `file` subcommand
 //! infers native (and other) arena fields from the records themselves —
 //! presence, JSON type, an example, and a `relation` column per dotted path.
 
-use std::path::Path;
-
 use anyhow::{bail, Context, Result};
-use clap::Args;
+use clap::{Args, Subcommand};
 use serde_json::{Map, Value};
 
 use super::item::ArenaTarget;
@@ -19,52 +17,45 @@ use super::{cell, print_json};
 /// Target selection for `query schema`.
 #[derive(Debug, Args)]
 pub struct SchemaArgs {
-    /// CADIR document, or an IR arena / `sidecar` when describing
-    /// compile-time types. Omit both arguments to list every model arena.
-    #[arg(value_name = "FILE|ARENA")]
-    pub file_or_target: Option<String>,
-    /// Arena (`model.<arena>` or `native.<codec>.<arena>`) when the first
-    /// argument is a CADIR document.
-    #[arg(value_name = "ARENA")]
-    pub arena: Option<String>,
-    /// Print the projected schema subtree as JSON (with its `$defs`
-    /// closure) instead of the field table.
-    #[arg(long)]
+    /// Schema source; omit to list model arenas.
+    #[command(subcommand)]
+    pub target: Option<SchemaTarget>,
+    /// Print the schema as JSON.
+    #[arg(long, global = true)]
     pub json: bool,
+}
+
+/// Source of a schema projection.
+#[derive(Debug, Subcommand)]
+pub enum SchemaTarget {
+    /// Describe compiled IR types.
+    Types {
+        /// Model arena; omit to list all model arenas.
+        arena: Option<String>,
+    },
+    /// Infer arena fields from a CADIR document.
+    File {
+        /// CADIR document path or `-` for standard input.
+        file: String,
+        /// Arena to describe.
+        arena: Option<String>,
+    },
+    /// Describe the decode sidecar type.
+    Sidecar,
 }
 
 const SHAPE: &str = "the generated schema does not have the expected shape";
 
 /// Runs `query schema`.
 pub fn run(args: &SchemaArgs) -> Result<()> {
-    match (
-        args.file_or_target.as_deref(),
-        args.arena.as_deref(),
-        args.json,
-    ) {
-        (Some(file), arena, json) if looks_like_file(file) => {
-            super::schema_infer::run(file, arena, json)
+    match &args.target {
+        None => compile_run(None, args.json),
+        Some(SchemaTarget::Types { arena }) => compile_run(arena.as_deref(), args.json),
+        Some(SchemaTarget::File { file, arena }) => {
+            super::schema_infer::run(file, arena.as_deref(), args.json)
         }
-        (None, None, json) => compile_run(None, json),
-        (Some("sidecar"), None, json) => sidecar(json),
-        (Some(spec), None, json) => compile_run(Some(spec), json),
-        (Some(spec), Some(_), _) => bail!(
-            "`query schema {spec} …` is not a CADIR file plus an arena. Infer \
-             native fields with `cadmpeg query schema FILE native.<codec>.<arena>`; \
-             IR types take one argument: `cadmpeg query schema model.<arena>`"
-        ),
-        (None, Some(_), _) => unreachable!("clap fills the first positional first"),
+        Some(SchemaTarget::Sidecar) => sidecar(args.json),
     }
-}
-
-/// True when `spec` is a path (`-`, slash, `.json`, or an existing file)
-/// rather than an arena address.
-fn looks_like_file(spec: &str) -> bool {
-    spec == "-"
-        || spec.contains('/')
-        || spec.contains('\\')
-        || spec.to_ascii_lowercase().ends_with(".json")
-        || Path::new(spec).is_file()
 }
 
 fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
@@ -88,7 +79,7 @@ fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
             match &target {
                 ArenaTarget::Native { codec, arena } => bail!(
                     "native arena records are per-document. Infer their fields \
-                     from a decoded CADIR file: `cadmpeg query schema FILE \
+                     from a decoded CADIR file: `cadmpeg query schema file FILE \
                      native.{codec}.{arena}`"
                 ),
                 ArenaTarget::Model { arena } => arena_table(arena, model, defs, json),
@@ -111,7 +102,7 @@ fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) ->
                 Value::String(element_label(node, defs)),
             );
         }
-        print_json("schema", &Value::Object(payload));
+        print_json("schema", Value::Object(payload));
         return Ok(());
     }
     println!("arena\telement\trequired");
@@ -125,7 +116,7 @@ fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) ->
     }
     eprintln!(
         "note: native arena fields are per-document — \
-         `cadmpeg query schema FILE native.<codec>.<arena>` infers them; \
+         `cadmpeg query schema file FILE native.<codec>.<arena>` infers them; \
          the decode sidecar shape is `cadmpeg query schema sidecar`"
     );
     Ok(())
@@ -158,7 +149,7 @@ fn arena_table(
             "schema": element,
             "defs": defs_closure(element, defs),
         });
-        print_json("schema", &payload);
+        print_json("schema", payload);
         return Ok(());
     }
     print_type_table(element, defs);
@@ -178,7 +169,7 @@ fn sidecar(json: bool) -> Result<()> {
             "element": "DecodeSidecar",
             "schema": root,
         });
-        print_json("schema", &payload);
+        print_json("schema", payload);
         return Ok(());
     }
     print_type_table(&root, defs);

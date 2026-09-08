@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,17 +42,14 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:NovisGeom:section#143"
-            },
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "creo:NovisGeom:section#143"
+          },
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -61,7 +58,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "170",
-        "layout": "unknown",
         "principal_unit": "mmNs",
         "section.0.length": "67",
         "section.0.name": "VisibGeom",
@@ -81,6 +77,17 @@
         "section_count": "3",
         "srf_array_count": "5",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -457,9 +464,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -557,7 +584,6 @@
         "sha256": "82208f19bedbea1298f72b9d367b07a7bf806c1847da214c4427080271509620",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

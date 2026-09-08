@@ -18,19 +18,31 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].offset, 26);
-    assert_eq!(definitions[0].xmt, 0x12b);
-    assert_eq!(definitions[0].identifier_xmt, 0x12a);
+    assert_eq!(u32::from(definitions[0].xmt), 0x12b);
+    assert_eq!(u32::from(definitions[0].identifier_xmt), 0x12a);
     assert_eq!(definitions[0].identifier_offset, 1);
-    assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
-    assert_eq!(definitions[0].next_definition_xmt, 1);
-    assert_eq!(definitions[0].type_id, 9000);
-    assert_eq!(definitions[0].action_codes, [0, 1, 2, 3, 4, 5, 6, 0]);
-    assert_eq!(definitions[0].field_names_xmt, 0x30);
-    assert_eq!(definitions[0].legal_owner_flags[4], 1);
-    assert_eq!(definitions[0].legal_owner_flags[12], 1);
-    assert_eq!(definitions[0].legal_owner_flag_count, 16);
-    assert_eq!(definitions[0].field_count, 1);
-    assert_eq!(definitions[0].field_codes, [2]);
+    assert_eq!(definitions[0].name.as_str(), "SDL/TYSA_DENSITY");
+    assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
+    assert_eq!(definitions[0].type_id.get(), 9000);
+    assert_eq!(
+        definitions[0]
+            .action_codes
+            .map(crate::parasolid::attribute_action::AttributeAction::code),
+        [0, 1, 2, 3, 4, 5, 6, 0]
+    );
+    assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
+    assert_eq!(definitions[0].field_codes.len(), 1);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2]
+    );
 
     let truncated = &bytes[..bytes.len() - 1];
     assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
@@ -69,14 +81,21 @@ fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
 
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].xmt, 20);
-    assert_eq!(definitions[0].legal_owner_flag_count, 14);
+    assert_eq!(u32::from(definitions[0].xmt), 20);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 14);
     assert_eq!(
-        &definitions[0].legal_owner_flags[..14],
+        &definitions[0].legal_owner_flags.padded()[..14],
         [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
     );
-    assert_eq!(&definitions[0].legal_owner_flags[14..], [0, 0]);
-    assert_eq!(definitions[0].field_codes, [2, 3]);
+    assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2, 3]
+    );
 }
 
 #[test]
@@ -103,18 +122,28 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 distance,
                 u_sense,
                 v_sense,
-                extension_flags,
+                extension,
                 ..
-            } = &procedural.definition
+            } = procedural.definition()
             else {
                 panic!("offset definition");
             };
             assert_eq!(*distance, 2.5);
             assert_eq!(*u_sense, None);
             assert_eq!(*v_sense, None);
-            assert!(extension_flags.is_empty());
-            assert_ne!(procedural.surface, *support);
-            assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+            assert_eq!(
+                *extension,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                )
+            );
+            let owner = result
+                .ir()
+                .model
+                .procedural_surface_owner(&procedural.id)
+                .expect("offset carrier");
+            assert_ne!(owner, support);
+            assert_eq!(&result.ir().model.faces[0].surface, owner);
             let records = result
                 .ir()
                 .native
@@ -125,16 +154,16 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 )
                 .expect("required invariant");
             assert_eq!(records.len(), 1);
-            assert_eq!(records[0].discriminator, discriminator);
+            assert_eq!(char::from(records[0].discriminator), discriminator);
             assert_eq!(records[0].true_offset, true_offset);
-            assert_eq!(records[0].support_xmt, 6);
-            assert_eq!(records[0].distance, 2.5);
+            assert_eq!(records[0].state.support(), 6);
+            assert_eq!(records[0].state.distance(), 2.5);
             let carrier = result
                 .ir()
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == procedural.surface)
+                .find(|surface| &surface.id == owner)
                 .expect("offset carrier");
             assert_eq!(
                 carrier
@@ -145,7 +174,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             );
             assert!(matches!(
                 &carrier.geometry,
-                SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+                SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
             ));
             assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
         }
@@ -169,10 +198,10 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].surface_xmt, 6);
-    assert_eq!(records[0].pcurve_xmt, 9);
-    assert_eq!(records[0].original_curve_xmt, 9);
-    assert_eq!(records[0].tolerance_to_original, 0.000_01);
+    assert_eq!(records[0].state.surface(), 6);
+    assert_eq!(records[0].state.pcurve(), 9);
+    assert_eq!(records[0].state.original(), Some(9));
+    assert_eq!(records[0].state.tolerance(), 0.000_01);
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
         Some(&result.ir().model.curves[0].id)
@@ -200,7 +229,7 @@ fn decode_emits_rolling_ball_blend_surface() {
         cross_section,
         spine,
         native,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("blend definition");
     };
@@ -215,7 +244,12 @@ fn decode_emits_rolling_ball_blend_surface() {
     assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
     assert!(spine.is_none());
     assert!(native.is_none());
-    assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+    let owner = result
+        .ir()
+        .model
+        .procedural_surface_owner(&procedural.id)
+        .expect("blend carrier");
+    assert_eq!(&result.ir().model.faces[0].surface, owner);
     let records = result
         .ir()
         .native
@@ -224,16 +258,16 @@ fn decode_emits_rolling_ball_blend_surface() {
         .arena_as::<super::super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].support_xmts, [6, 6]);
-    assert_eq!(records[0].spine_xmt, 1);
-    assert_eq!(records[0].offsets, [-3.0, 3.0]);
-    assert_eq!(records[0].thumb_weights, [1.0, 1.0]);
+    assert_eq!(records[0].state.support_xmts(), [6, 6]);
+    assert_eq!(records[0].state.spine_xmt(), 1);
+    assert_eq!(records[0].state.offsets(), [-3.0, 3.0]);
+    assert_eq!(records[0].state.thumb_weights(), [1.0, 1.0]);
     let carrier = result
         .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| &surface.id == owner)
         .expect("required invariant");
     assert_eq!(
         carrier
@@ -264,7 +298,10 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .iter()
         .find(|curve| &curve.id == edge_curve)
         .expect("intersection carrier");
-    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert!(matches!(
+        curve.geometry.solved_cache(),
+        Some(CurveGeometry::Unknown { .. })
+    ));
     let records = result
         .ir()
         .native
@@ -281,7 +318,13 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         Some(&records[0].id)
     );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert_eq!(result.ir().model.procedural_curves[0].curve, curve.id);
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id),
+        Some(&curve.id)
+    );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Geometry
             && loss.message.starts_with("1 surface-intersection record(s)")
@@ -320,7 +363,10 @@ fn decode_preserves_deltas_intersection_data_curve() {
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
-        Some(&result.ir().model.procedural_curves[0].curve)
+        result
+            .ir()
+            .model
+            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -341,10 +387,10 @@ fn decode_emits_charted_surface_intersection_construction() {
         .arena_as::<super::super::ParasolidTermUseRecord>("parasolid_term_use_records")
         .expect("required invariant");
     assert_eq!(terms.len(), 2);
-    assert_eq!(terms[0].count, 1);
-    assert_eq!(terms[0].form, "L?");
-    assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
-    assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
+    assert_eq!(terms[0].form.count(), 1);
+    assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
+    assert_eq!(<[f64; 3]>::from(terms[0].point), [0.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(terms[1].point), [10.0, 0.0, 0.0]);
     assert!(terms
         .iter()
         .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
@@ -356,9 +402,9 @@ fn decode_emits_charted_surface_intersection_construction() {
         .arena_as::<super::super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
         .expect("required invariant");
     assert_eq!(support_uv.len(), 1);
-    assert_eq!(support_uv[0].count, 4);
-    assert_eq!(support_uv[0].marker, 2);
-    assert_eq!(support_uv[0].values, [0.0, 0.0, 0.01, 0.0]);
+    assert_eq!(support_uv[0].values.count(), 4);
+    assert_eq!(support_uv[0].values.marker(), 2);
+    assert_eq!(support_uv[0].values.values(), [0.0, 0.0, 0.01, 0.0]);
     assert!(matches!(
         support_uv[0].framing,
         crate::intersection::SupportUvFraming::Direct
@@ -371,15 +417,23 @@ fn decode_emits_charted_surface_intersection_construction() {
         .arena_as::<super::super::ParasolidChartRecord>("parasolid_chart_records")
         .expect("required invariant");
     assert_eq!(charts.len(), 1);
-    assert_eq!(charts[0].count, 2);
-    assert_eq!(charts[0].base_parameter, 0.0);
-    assert_eq!(charts[0].base_scale, 1.0);
-    assert_eq!(charts[0].chart_count, 2);
-    assert_eq!(charts[0].chordal_error, 0.000_01);
-    assert_eq!(charts[0].angular_error, 0.001);
-    assert_eq!(charts[0].points, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+    assert_eq!(charts[0].data.count(), 2);
+    assert_eq!(charts[0].preamble.base_parameter(), 0.0);
+    assert_eq!(charts[0].preamble.base_scale(), 1.0);
+    assert_eq!(serde_json::to_value(&charts[0]).unwrap()["chart_count"], 2);
+    assert_eq!(charts[0].preamble.chordal_error(), 0.000_01);
+    assert_eq!(charts[0].preamble.angular_error(), 0.001);
+    assert_eq!(
+        charts[0]
+            .data
+            .points()
+            .iter()
+            .map(|point| [point.x, point.y, point.z])
+            .collect::<Vec<_>>(),
+        [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]
+    );
     assert!(matches!(
-        charts[0].point_layout,
+        charts[0].data.point_layout(),
         crate::intersection::ChartPointLayout::Xyz3
     ));
 
@@ -394,17 +448,17 @@ fn decode_emits_charted_surface_intersection_construction() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == procedural.curve)
+        .find(|curve| result.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .expect("solved chart cache");
-    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");
     };
-    assert_eq!(nurbs.degree, 1);
-    assert_eq!(nurbs.control_points[0].x, 0.0);
-    assert_eq!(nurbs.control_points[1].x, 10.0);
-    assert_eq!(procedural.cache_fit_tolerance, Some(0.01));
+    assert_eq!(nurbs.degree(), 1);
+    assert_eq!(nurbs.control_points()[0].x, 0.0);
+    assert_eq!(nurbs.control_points()[1].x, 10.0);
+    assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("typed surface intersection");
     };
@@ -437,17 +491,17 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_references, [1; 5]);
-    assert!(records[0].sense);
-    assert_eq!(records[0].boundary_index, 0);
-    assert_eq!(records[0].blend_surface_xmt, 13);
+    assert_eq!(records[0].state.header_references(), [1; 5]);
+    assert!(records[0].state.sense());
+    assert_eq!(records[0].state.boundary_index(), 0);
+    assert_eq!(records[0].state.blend_surface(), 13);
     assert_eq!(
         records[0].framing,
         crate::intersection::BlendBoundFraming::PartitionDirect
     );
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -473,8 +527,17 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].basis_xmt, 9);
-    assert_eq!(records[0].points, [[0.0; 3]; 2]);
-    assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
+    assert_eq!(records[0].state.basis(), 9);
+    assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
+    assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn offset_surface_record_wire_retains_flags_and_checked_state() {
+    let wire = r#"{"id":"offset","stream_ordinal":0,"xmt":2,"discriminator":"V","true_offset":false,"support_xmt":6,"distance":-0.0,"inflated_offset":8}"#;
+    let record: ParasolidOffsetSurfaceRecord = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    let invalid = wire.replace("\"support_xmt\":6", "\"support_xmt\":1");
+    assert!(serde_json::from_str::<ParasolidOffsetSurfaceRecord>(&invalid).is_err());
 }

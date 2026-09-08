@@ -52,17 +52,17 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
         else {
             panic!("shared and standalone surface kinds differ");
         };
-        assert_eq!(actual.u_degree, expected.u_degree);
-        assert_eq!(actual.v_degree, expected.v_degree);
-        assert_eq!(actual.u_count, expected.u_count);
-        assert_eq!(actual.v_count, expected.v_count);
-        assert_eq!(actual.u_periodic, expected.u_periodic);
-        assert_eq!(actual.v_periodic, expected.v_periodic);
-        assert_eq!(actual.normal_reversed, expected.normal_reversed);
-        assert_same_f64s(&actual.u_knots, &expected.u_knots);
-        assert_same_f64s(&actual.v_knots, &expected.v_knots);
-        assert_same_points3(&actual.control_points, &expected.control_points);
-        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+        assert_eq!(actual.u_degree(), expected.u_degree());
+        assert_eq!(actual.v_degree(), expected.v_degree());
+        assert_eq!(actual.u_count(), expected.u_count());
+        assert_eq!(actual.v_count(), expected.v_count());
+        assert_eq!(actual.u_periodic(), expected.u_periodic());
+        assert_eq!(actual.v_periodic(), expected.v_periodic());
+        assert_eq!(actual.normal_reversed(), expected.normal_reversed());
+        assert_same_f64s(actual.u_knots(), expected.u_knots());
+        assert_same_f64s(actual.v_knots(), expected.v_knots());
+        assert_same_points3(actual.control_points(), expected.control_points());
+        assert_same_weights(actual.weights(), expected.weights());
     }
 }
 
@@ -75,11 +75,11 @@ fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
         else {
             panic!("shared and standalone curve kinds differ");
         };
-        assert_eq!(actual.degree, expected.degree);
-        assert_eq!(actual.periodic, expected.periodic);
-        assert_same_f64s(&actual.knots, &expected.knots);
-        assert_same_points3(&actual.control_points, &expected.control_points);
-        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+        assert_eq!(actual.degree(), expected.degree());
+        assert_eq!(actual.periodic(), expected.periodic());
+        assert_same_f64s(actual.knots(), expected.knots());
+        assert_same_points3(actual.control_points(), expected.control_points());
+        assert_same_weights(actual.weights(), expected.weights());
     }
 }
 
@@ -87,30 +87,16 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
     assert_eq!(actual.len(), expected.len());
     for (actual, expected) in actual.iter().zip(expected) {
         assert_eq!(actual.pos, expected.pos);
-        let (
-            PcurveGeometry::Nurbs {
-                degree: actual_degree,
-                knots: actual_knots,
-                control_points: actual_control_points,
-                weights: actual_weights,
-                periodic: actual_periodic,
-            },
-            PcurveGeometry::Nurbs {
-                degree: expected_degree,
-                knots: expected_knots,
-                control_points: expected_control_points,
-                weights: expected_weights,
-                periodic: expected_periodic,
-            },
-        ) = (&actual.geometry, &expected.geometry)
+        let (PcurveGeometry::Nurbs { nurbs: actual }, PcurveGeometry::Nurbs { nurbs: expected }) =
+            (&actual.geometry, &expected.geometry)
         else {
             panic!("shared and standalone pcurve kinds differ");
         };
-        assert_eq!(actual_degree, expected_degree);
-        assert_eq!(actual_periodic, expected_periodic);
-        assert_same_f64s(actual_knots, expected_knots);
-        assert_same_points2(actual_control_points, expected_control_points);
-        assert_same_weights(actual_weights.as_deref(), expected_weights.as_deref());
+        assert_eq!(actual.degree(), expected.degree());
+        assert_eq!(actual.periodic(), expected.periodic());
+        assert_same_f64s(actual.knots(), expected.knots());
+        assert_same_points2(actual.control_points(), expected.control_points());
+        assert_same_weights(actual.weights(), expected.weights());
     }
 }
 
@@ -187,8 +173,8 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
         panic!("expected NURBS surface");
     };
-    assert!(surface.u_periodic);
-    assert!(!surface.v_periodic);
+    assert!(surface.u_periodic());
+    assert!(!surface.v_periodic());
 
     let mut open_surface = bspline_partition_stream();
     let surface_descriptor = open_surface
@@ -203,7 +189,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let SurfaceGeometry::Nurbs(open_surface) = open_surface.geometry else {
         panic!("expected NURBS surface");
     };
-    assert!(!open_surface.u_periodic);
+    assert!(!open_surface.u_periodic());
 
     let mut curve = bspline_partition_stream();
     let curve_descriptor = curve
@@ -216,7 +202,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let CurveGeometry::Nurbs(curve) = curve.geometry else {
         panic!("expected NURBS curve");
     };
-    assert!(curve.periodic);
+    assert!(curve.periodic());
 
     let mut open_curve = bspline_partition_stream();
     let curve_descriptor = open_curve
@@ -231,7 +217,7 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let CurveGeometry::Nurbs(open_curve) = open_curve.geometry else {
         panic!("expected NURBS curve");
     };
-    assert!(!open_curve.periodic);
+    assert!(!open_curve.periodic());
 
     let mut pcurve = bspline_partition_stream();
     let pcurve_descriptor = pcurve
@@ -251,10 +237,10 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
     let [pcurve] = crate::nurbs::pcurves(&pcurve)
         .try_into()
         .expect("one pcurve");
-    let PcurveGeometry::Nurbs { periodic, .. } = pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve.geometry else {
         panic!("expected NURBS pcurve");
     };
-    assert!(!periodic);
+    assert!(!nurbs.periodic());
 }
 
 #[test]
@@ -273,7 +259,7 @@ fn nurbs_surface_retains_reversed_carrier_normal() {
         panic!("expected NURBS surface");
     };
 
-    assert!(surface.normal_reversed);
+    assert!(surface.normal_reversed());
 }
 
 #[test]
@@ -292,7 +278,7 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
         let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
             panic!("expected NURBS surface");
         };
-        assert!(!surface.u_periodic && !surface.v_periodic);
+        assert!(!surface.u_periodic() && !surface.v_periodic());
 
         let mut curve = bspline_partition_stream();
         let curve_descriptor = curve
@@ -304,8 +290,8 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
         let CurveGeometry::Nurbs(curve) = curve.geometry else {
             panic!("expected NURBS curve");
         };
-        assert!(!curve.periodic);
-        assert!(curve.weights.is_none());
+        assert!(!curve.periodic());
+        assert!(curve.weights().is_none());
 
         let mut pcurve = bspline_partition_stream();
         let pcurve_descriptor = pcurve
@@ -324,14 +310,11 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
         let [pcurve] = crate::nurbs::pcurves(&pcurve)
             .try_into()
             .expect("one pcurve");
-        let PcurveGeometry::Nurbs {
-            periodic, weights, ..
-        } = pcurve.geometry
-        else {
+        let PcurveGeometry::Nurbs { nurbs } = pcurve.geometry else {
             panic!("expected NURBS pcurve");
         };
-        assert!(!periodic);
-        assert_eq!(weights.as_deref(), Some([1.0, 1.0].as_slice()));
+        assert!(!nurbs.periodic());
+        assert_eq!(nurbs.weights(), Some([1.0, 1.0].as_slice()));
     }
 }
 
@@ -503,9 +486,9 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let CurveGeometry::Nurbs(high_degree) = high_degree.geometry else {
         panic!("expected high-degree NURBS curve");
     };
-    assert_eq!(high_degree.degree, 11);
-    assert_eq!(high_degree.control_points.len(), 12);
-    assert_eq!(high_degree.knots.len(), 24);
+    assert_eq!(high_degree.degree(), 11);
+    assert_eq!(high_degree.control_points().len(), 12);
+    assert_eq!(high_degree.knots().len(), 24);
 
     let [wide_curve] = crate::nurbs::curves(&curve_stream(1, 5000))
         .try_into()
@@ -513,8 +496,8 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let CurveGeometry::Nurbs(wide_curve) = wide_curve.geometry else {
         panic!("expected wide NURBS curve");
     };
-    assert_eq!(wide_curve.control_points.len(), 5000);
-    assert_eq!(wide_curve.knots.len(), 5002);
+    assert_eq!(wide_curve.control_points().len(), 5000);
+    assert_eq!(wide_curve.knots().len(), 5002);
 
     let [wide_surface] = crate::nurbs::surfaces(&surface_stream(1, 2001, 1, 2))
         .try_into()
@@ -522,9 +505,9 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let SurfaceGeometry::Nurbs(wide_surface) = wide_surface.geometry else {
         panic!("expected wide NURBS surface");
     };
-    assert_eq!(wide_surface.control_points.len(), 4002);
-    assert_eq!(wide_surface.u_knots.len(), 2003);
-    assert_eq!(wide_surface.v_knots.len(), 4);
+    assert_eq!(wide_surface.control_points().len(), 4002);
+    assert_eq!(wide_surface.u_knots().len(), 2003);
+    assert_eq!(wide_surface.v_knots().len(), 4);
 
     let mut wide_curve_pole_count = curve_stream(1, 12);
     let curve_descriptor = wide_curve_pole_count
@@ -661,10 +644,10 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points.len(), 4);
-    assert_eq!(surface.control_points[3].y, 20.0);
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points().len(), 4);
+    assert_eq!(surface.control_points()[3].y, 20.0);
 }
 
 #[test]
@@ -681,8 +664,8 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
     let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points.len(), 4);
-    assert_eq!(surface.control_points[3].y, 20.0);
+    assert_eq!(surface.control_points().len(), 4);
+    assert_eq!(surface.control_points()[3].y, 20.0);
 }
 
 #[test]
@@ -712,7 +695,7 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points.len(), 4);
+    assert_eq!(surface.control_points().len(), 4);
 }
 
 #[test]
@@ -740,7 +723,7 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
         panic!("expected NURBS curve");
     };
-    assert_eq!(curve.control_points.len(), 2);
+    assert_eq!(curve.control_points().len(), 2);
 }
 
 #[test]
@@ -763,8 +746,8 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
         panic!("expected NURBS curve");
     };
-    assert_eq!(curve.control_points.len(), 2);
-    assert_eq!(curve.control_points[1].x, 20.0);
+    assert_eq!(curve.control_points().len(), 2);
+    assert_eq!(curve.control_points()[1].x, 20.0);
 }
 
 #[test]
@@ -809,6 +792,6 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
         panic!("expected NURBS curve");
     };
-    assert_eq!(curve.weights.as_deref(), Some([1.0, 2.0].as_slice()));
-    assert_eq!(curve.control_points[1].x, 20.0);
+    assert_eq!(curve.weights(), Some([1.0, 2.0].as_slice()));
+    assert_eq!(curve.control_points()[1].x, 20.0);
 }

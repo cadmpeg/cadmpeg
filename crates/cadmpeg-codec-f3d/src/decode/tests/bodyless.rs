@@ -16,19 +16,17 @@ use crate::loss::F3dLossCode;
 
 /// A report carrying the BREP-less geometry losses that `build_container_report`
 /// states before the design segment is classified.
-fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
-    cadmpeg_ir::report::DecodeReport {
-        format: "f3d".to_owned(),
-        container_only: false,
+fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
+    cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses: vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
             F3dLossCode::TopologyNotTransferred.note("stated before classification"),
             F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
         notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 

@@ -21,7 +21,7 @@ pub(crate) fn unique_owned_feature_definition(
     exactly_one(
         definitions
             .iter()
-            .filter(|definition| definition.owner_feature_id == Some(feature_id)),
+            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
     )
 }
 
@@ -48,7 +48,7 @@ pub(crate) fn unique_feature_definition_for_transform<'a>(
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<&'a crate::feature::FeatureDefinition> {
     exactly_one(definitions.iter().filter(|definition| {
-        definition.id == transform.definition_id
+        definition.identity.id() == transform.definition_id
             && definition
                 .section_3d
                 .as_ref()
@@ -86,8 +86,8 @@ pub(crate) fn unique_feature_profile_ref(
 }
 
 pub(crate) fn unique_feature_datum_plane(
-    datums: &[crate::datum::DatumPlane],
+    datums: &[crate::datum::DatumPlaneRecord],
     feature_id: u32,
-) -> Option<&crate::datum::DatumPlane> {
+) -> Option<&crate::datum::DatumPlaneRecord> {
     exactly_one(datums.iter().filter(|datum| datum.feature_id == feature_id))
 }

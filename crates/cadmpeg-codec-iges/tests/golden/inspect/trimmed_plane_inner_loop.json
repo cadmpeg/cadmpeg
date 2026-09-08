@@ -1,5 +1,18 @@
 {
   "container_kind": "fixed-ascii",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": "admitted",
+      "declared": {
+        "effective_version": "5.3",
+        "representation": "fixed-ascii",
+        "version_flag": "11"
+      },
+      "dialect": "iges:5.3-fixed-ascii",
+      "format": "iges"
+    }
+  },
   "entries": [
     {
       "attributes": {

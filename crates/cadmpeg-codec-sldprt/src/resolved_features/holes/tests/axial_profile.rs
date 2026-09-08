@@ -4,7 +4,7 @@ use super::{lane_with_position_reference, model_hole, native_history, profile_li
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
+    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, LinearTermination,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -52,7 +52,7 @@ fn axial_profile_resolves_counterbore_roles() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -104,7 +104,7 @@ fn axial_profile_resolves_counterbore_roles() {
         profiled_hole_construction(&profile, &sketch, &entities[..3]).expect("flat-bottom profile");
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -132,14 +132,12 @@ fn axial_profile_resolves_counterdrill_roles() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let profile_point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let profile_point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         profile_point(0, Point2::new(0.0, 2.775)),
@@ -163,7 +161,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
     assert_eq!(construction.diameter, Length(2.9));
-    assert_eq!(construction.extent, Termination::ThroughAll);
+    assert_eq!(construction.extent, LinearTermination::ThroughAll);
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
@@ -215,7 +213,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert_eq!(flat.diameter, Length(14.5));
     assert_eq!(
         flat.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -315,7 +313,7 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
     assert_eq!(construction.diameter, Length(12.2));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(42.0)
         }
     );
@@ -339,14 +337,12 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         point(0, Point2::new(0.0, 0.0)),
@@ -367,7 +363,7 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     assert_eq!(construction.diameter, Length(12.2));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(42.0)
         }
     );
@@ -390,14 +386,12 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         point(0, Point2::new(0.0, 2.5)),
@@ -421,7 +415,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     assert_eq!(construction.diameter, Length(4.134));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(5.0)
         }
     );
@@ -507,7 +501,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         let construction =
             profiled_hole_construction(&profile, &sketch, &exact_entities).expect("exact profile");
         assert_eq!(construction.diameter, Length(6.4));
-        assert_eq!(construction.extent, Termination::ThroughAll);
+        assert_eq!(construction.extent, LinearTermination::ThroughAll);
         assert_eq!(
             construction.kind,
             HoleKind::Countersink {
@@ -611,11 +605,10 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         profile_line(&sketch, 2, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
     ];
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("profile-feature".into()),
+        id: FeatureId::mint("profile-feature").expect("identity grammar"),
         ordinal: 1,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -623,17 +616,15 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         },
         native_ref: Some("native-profile".into()),
     };
     let position_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-feature".into()),
+        id: FeatureId::mint("position-feature").expect("identity grammar"),
         ordinal: 2,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -641,8 +632,9 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(SketchId("position".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "position".into(),
+            ))),
         },
         native_ref: Some("native-position".into()),
     };
@@ -652,7 +644,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } = &feature.definition
             else {
@@ -709,10 +701,13 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         features[0].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(9.0)),
-            extent: Some(Termination::ThroughAll),
-            kind: HoleKind::Counterbore {
-                diameter: Length(15.0),
-                depth: Length(8.6),
+            extent: Some(LinearTermination::ThroughAll),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(15.0),
+                    depth: Length(8.6),
+                },
+                ..
             },
             ..
         }
@@ -760,11 +755,10 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]);
 
     let model_sketch = |id: &str, sketch: &str, ordinal| cadmpeg_ir::features::Feature {
-        id: FeatureId(format!("{id}-feature")),
+        id: FeatureId::mint(format!("{id}-feature")).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -772,13 +766,14 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(SketchId(sketch.into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                sketch.into(),
+            ))),
         },
         native_ref: Some(id.into()),
     };
     let mut second_model_hole = model_hole();
-    second_model_hole.id = FeatureId("second-model-hole".into());
+    second_model_hole.id = FeatureId::mint("second-model-hole").expect("identity grammar");
     second_model_hole.ordinal = 1;
     second_model_hole.native_ref = Some("second-hole".into());
     let mut features = vec![
@@ -829,7 +824,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         features[0].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(4.2)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(6.8)
             }),
             ..
@@ -839,7 +834,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         features[1].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(6.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(14.0)
             }),
             ..

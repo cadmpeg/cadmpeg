@@ -3,8 +3,8 @@
 
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
-    Angle, ConfigurationBodies, DatumPlaneReference, DesignConfiguration, FaceSelection,
-    FeatureDefinition, FeatureId, HoleKind, Length, ParameterValue, SketchSpace, Termination,
+    Angle, ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
+    FaceSelection, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterValue,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -17,6 +17,26 @@ use crate::history::parameters::{
 use crate::history::project::project_features;
 
 const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
+
+fn apply_configuration_state(
+    feature: &mut cadmpeg_ir::features::Feature,
+    state: &cadmpeg_ir::features::ConfigurationFeatureState,
+) {
+    feature.suppressed = Some(state.evaluation.is_suppressed());
+    feature.dependencies.clone_from(&state.dependencies);
+    state.evaluation.outputs().clone_into(&mut feature.outputs);
+    feature.definition.clone_from(&state.definition);
+}
+
+fn configuration_evaluation(feature: &cadmpeg_ir::features::Feature) -> ConfigurationEvaluation {
+    if feature.suppressed.unwrap_or(false) {
+        ConfigurationEvaluation::Suppressed
+    } else {
+        ConfigurationEvaluation::Active {
+            outputs: feature.outputs.clone(),
+        }
+    }
+}
 
 /// Which side of the codec drives the history-enrichment prefix.
 ///
@@ -131,12 +151,8 @@ pub(crate) fn project_configuration_design_states(
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
+    form_padding: Option<usize>,
 ) {
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
     let mut resolved_base_features = ir.model.features.clone();
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut resolved_base_features,
@@ -266,9 +282,14 @@ pub(crate) fn project_configuration_design_states(
                 (
                     feature.id,
                     cadmpeg_ir::features::ConfigurationFeatureState {
-                        suppressed: feature.suppressed.unwrap_or(false),
+                        evaluation: if feature.suppressed.unwrap_or(false) {
+                            cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                        } else {
+                            cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                                outputs: feature.outputs,
+                            }
+                        },
                         dependencies: feature.dependencies,
-                        outputs: feature.outputs,
                         definition: feature.definition,
                     },
                 )
@@ -305,10 +326,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             let Some(state) = states.get(&feature.id) else {
                 continue;
             };
-            feature.suppressed = Some(state.suppressed);
-            feature.dependencies.clone_from(&state.dependencies);
-            feature.outputs.clone_from(&state.outputs);
-            feature.definition.clone_from(&state.definition);
+            apply_configuration_state(feature, state);
         }
         crate::resolved_features::projections::project_compact_edge_selections(
             &mut features,
@@ -331,7 +349,7 @@ pub(crate) fn bind_configuration_topology_selections(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-    face_identities: &[(String, u32, u32)],
+    face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
@@ -349,10 +367,7 @@ pub(crate) fn bind_configuration_topology_selections(
                 .filter_map(|feature| {
                     let state = states.get(&feature.id)?;
                     let mut feature = feature.clone();
-                    feature.suppressed = Some(state.suppressed);
-                    feature.dependencies.clone_from(&state.dependencies);
-                    feature.outputs.clone_from(&state.outputs);
-                    feature.definition.clone_from(&state.definition);
+                    apply_configuration_state(&mut feature, state);
                     Some(feature)
                 })
                 .collect::<Vec<_>>()
@@ -386,9 +401,9 @@ pub(crate) fn bind_configuration_topology_selections(
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
+            state.evaluation = configuration_evaluation(&feature);
             state.definition = feature.definition;
             state.dependencies = feature.dependencies;
-            state.outputs = feature.outputs;
         }
     }
 }
@@ -436,10 +451,7 @@ pub(crate) fn project_configuration_sketch_states(
             .filter_map(|feature| {
                 let state = states.get(&feature.id)?;
                 let mut feature = feature.clone();
-                feature.suppressed = Some(state.suppressed);
-                feature.dependencies.clone_from(&state.dependencies);
-                feature.outputs.clone_from(&state.outputs);
-                feature.definition.clone_from(&state.definition);
+                apply_configuration_state(&mut feature, state);
                 Some(feature)
             })
             .collect::<Vec<_>>();
@@ -468,7 +480,7 @@ pub(crate) fn project_configuration_sketch_states(
             .collect::<HashMap<_, _>>();
         for feature in &mut features {
             if let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition {
-                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
+                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.as_str().replacen(
                     ":model:feature#",
                     ":model:spatial-sketch#",
                     1,
@@ -478,11 +490,7 @@ pub(crate) fn project_configuration_sketch_states(
                 }
                 continue;
             }
-            let FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch,
-            } = &mut feature.definition
-            else {
+            let FeatureDefinition::Sketch { sketch } = &mut feature.definition else {
                 continue;
             };
             let Some(FeatureDefinition::SpatialSketch {
@@ -491,7 +499,7 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            if sketch.is_none() && reusable_spatial_sketches.contains(base_sketch) {
+            if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
                 feature.definition = FeatureDefinition::SpatialSketch {
                     sketch: Some(base_sketch.clone()),
                 };
@@ -677,9 +685,8 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            state.suppressed = feature.suppressed.unwrap_or(false);
+            state.evaluation = configuration_evaluation(&feature);
             state.dependencies = feature.dependencies;
-            state.outputs = feature.outputs;
             state.definition = feature.definition;
         }
     }
@@ -732,10 +739,8 @@ pub(crate) fn inherit_configuration_shared_semantics(
         if reference.is_none() {
             reference.clone_from(base_reference);
         } else if let (
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face, .. }),
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                face: base_face, ..
-            }),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face(face)),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face(base_face)),
         ) = (reference, base_reference)
         {
             let incomplete = match face {
@@ -769,16 +774,14 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile,
         profile_filter,
         face,
-        position,
-        direction,
+        direction: _,
         placements,
-        kind,
+        construction,
         exit_kind,
         diameter,
         extent,
         bottom,
         taper_angle,
-        specification,
         allow_multi_profile_faces,
     } = definition
     else {
@@ -788,16 +791,14 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile: base_profile,
         profile_filter: base_profile_filter,
         face: base_face,
-        position: base_position,
-        direction: base_direction,
+        direction: _,
         placements: base_placements,
-        kind: base_kind,
+        construction: base_construction,
         exit_kind: base_exit_kind,
         diameter: base_diameter,
         extent: base_extent,
         bottom: base_bottom,
         taper_angle: base_taper_angle,
-        specification: base_specification,
         allow_multi_profile_faces: base_allow_multi_profile_faces,
     } = base_definition
     else {
@@ -816,19 +817,40 @@ pub(crate) fn inherit_configuration_hole_semantics(
     if profile_filter.is_none() {
         profile_filter.clone_from(base_profile_filter);
     }
-    if position.is_none() {
-        position.clone_from(base_position);
-    }
-    if direction.is_none() {
-        direction.clone_from(base_direction);
-    }
-    if inherit_placements && placements.is_empty() {
+    if inherit_placements && placements.is_none() {
         placements.clone_from(base_placements);
     }
-    if missing_construction || matches!(kind, HoleKind::Unresolved { .. }) {
-        kind.clone_from(base_kind);
+    match (&mut *construction, base_construction) {
+        (
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind,
+                specification,
+            },
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind: base_kind,
+                specification: base_specification,
+            },
+        ) => {
+            if missing_construction || kind.is_unresolved() {
+                kind.clone_from(base_kind);
+            }
+            if specification.is_none() {
+                specification.clone_from(base_specification);
+            }
+        }
+        (construction, base_construction)
+            if missing_construction
+                || matches!(
+                    &*construction,
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                        if kind.is_unresolved()
+                ) =>
+        {
+            construction.clone_from(base_construction);
+        }
+        _ => {}
     }
-    if exit_kind.is_none() || matches!(exit_kind, Some(HoleKind::Unresolved { .. })) {
+    if exit_kind.is_none_or(|kind| kind.is_unresolved()) {
         exit_kind.clone_from(base_exit_kind);
     }
     if diameter.is_none() {
@@ -836,7 +858,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
     }
     if extent
         .as_ref()
-        .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+        .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
     {
         extent.clone_from(base_extent);
     }
@@ -845,9 +867,6 @@ pub(crate) fn inherit_configuration_hole_semantics(
     }
     if taper_angle.is_none() {
         taper_angle.clone_from(base_taper_angle);
-    }
-    if specification.is_none() {
-        specification.clone_from(base_specification);
     }
     if allow_multi_profile_faces.is_none() {
         allow_multi_profile_faces.clone_from(base_allow_multi_profile_faces);
@@ -973,13 +992,12 @@ fn configuration_reference_plane_frame(
         DatumPlaneReference::Feature(feature_id) => {
             configuration_feature_plane_frame(feature_id, features, visiting)
         }
-        DatumPlaneReference::Face {
-            face,
+        DatumPlaneReference::ResolvedPlane {
             origin,
             normal,
             u_axis,
-        } => (complete_configuration_face_selection(face) && valid_plane_frame(*normal, *u_axis))
-            .then_some((*origin, *normal, *u_axis)),
+        } => valid_plane_frame(*normal, *u_axis).then_some((*origin, *normal, *u_axis)),
+        DatumPlaneReference::Face(_) => None,
     }
 }
 
@@ -1013,8 +1031,7 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
                 } => None,
                 FeatureDefinition::DatumOffsetPlane {
                     reference:
-                        Some(DatumPlaneReference::Face {
-                            face: FaceSelection::Unresolved,
+                        Some(DatumPlaneReference::ResolvedPlane {
                             origin,
                             normal,
                             u_axis,
@@ -1035,12 +1052,11 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
             }
             match base_reference {
                 DatumPlaneReference::Feature(_) => Some(base_reference.clone()),
-                DatumPlaneReference::Face { face, .. }
-                    if complete_configuration_face_selection(face) =>
-                {
+                DatumPlaneReference::Face(face) if complete_configuration_face_selection(face) => {
                     Some(base_reference.clone())
                 }
-                DatumPlaneReference::Face { .. } => None,
+                DatumPlaneReference::ResolvedPlane { .. } => Some(base_reference.clone()),
+                DatumPlaneReference::Face(_) => None,
             }
         })();
         let Some(replacement) = replacement else {
@@ -1048,7 +1064,7 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
         };
         let dependency = match &replacement {
             DatumPlaneReference::Feature(reference) => Some(reference.clone()),
-            DatumPlaneReference::Face { .. } => None,
+            DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => None,
         };
         let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
             continue;
@@ -1071,10 +1087,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
             .filter_map(|base_feature| {
                 let state = configuration.feature_states.get(&base_feature.id)?;
                 let mut feature = base_feature.clone();
-                feature.suppressed = Some(state.suppressed);
-                feature.dependencies.clone_from(&state.dependencies);
-                feature.outputs.clone_from(&state.outputs);
-                feature.definition.clone_from(&state.definition);
+                apply_configuration_state(&mut feature, state);
                 Some(feature)
             })
             .collect::<Vec<_>>();

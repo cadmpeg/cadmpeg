@@ -29,16 +29,13 @@ fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
         .find(|graph| graph.byte_offset == graph_offset as u64)
         .expect("entity-paired graph");
     assert_eq!(graph.records.len(), 1);
-    assert_eq!(graph.records[0].entity_id, Some(1));
+    assert_eq!(graph.records[0].entity_id(), Some(1));
     let record = native
         .entity_records
         .iter()
         .find(|record| record.object_graph == graph.id)
         .expect("paired inline entity");
-    assert_eq!(
-        record.inline_body.as_deref(),
-        Some(&[0x03, 0xea, 1, 0, 0, 0][..])
-    );
+    assert_eq!(record.inline_body(), Some(&[0x03, 0xea, 1, 0, 0, 0][..]));
     assert_eq!(record.object_record, graph.records[0].id);
 }
 
@@ -89,27 +86,56 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
     let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
     let suffix = native.object_graphs[0].records[0]
-        .repeated_reference_suffix
-        .as_ref()
+        .repeated_reference_suffix()
         .expect("repeated reference suffix");
     assert_eq!(suffix.schema_preamble, None);
     assert_eq!(suffix.repeated_references, [60, 62]);
     assert_eq!(suffix.terminal_reference, 49);
 
-    let mut malformed = native;
-    malformed.object_graphs[0].records[0]
-        .repeated_reference_suffix
-        .as_mut()
-        .expect("repeated reference suffix")
-        .terminal_reference += 1;
+    let error = load_tampered_object_record(&native, |record| {
+        record["repeated_reference_suffix"]["terminal_reference"] = serde_json::json!(50);
+    });
+    assert!(error.contains("repeated_reference_suffix"), "{error}");
+}
+
+/// Store `native`, rewrite its first object record with `tamper`, and return
+/// the message of the load failure the rewritten namespace produces.
+fn load_tampered_object_record(
+    native: &crate::native::CatiaNative,
+    tamper: impl FnOnce(&mut serde_json::Value),
+) -> String {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed repeated-reference-suffix view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
+    native.store(&mut namespace).expect("store object records");
+    let arena = namespace
+        .arenas_mut()
+        .get_mut("object_graph_records")
+        .expect("object-record arena");
+    let mut record = serde_json::to_value(&arena[0]).unwrap();
+    tamper(&mut record);
+    arena[0] = serde_json::from_value(record).unwrap();
+    match crate::native::CatiaNative::load(&namespace) {
+        Ok(_) => panic!("tampered object record loaded"),
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn native_namespace_rejects_an_object_record_subtype_disagreeing_with_its_payload() {
+    let payload = [
+        0xb0, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0x81, 0xb1, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0xd1, 0x80,
+        0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
+    let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
+    assert_eq!(
+        native.object_graphs[0].records[0].subtype(),
+        crate::object_graph::PayloadSubtype::AtomVector
+    );
+
+    let error = load_tampered_object_record(&native, |record| {
+        record["subtype"] = serde_json::json!("Empty");
+    });
+    assert!(error.contains("subtype"), "{error}");
 }
 
 #[test]
@@ -159,8 +185,7 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let pair = native.entity_records[0]
-        .numeric_pair
-        .as_ref()
+        .numeric_pair()
         .expect("complete numeric pair");
     assert_eq!(
         pair.slots,
@@ -173,31 +198,13 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         ]
     );
 
-    let mut legacy = native.clone();
-    legacy.entity_records[0].numeric_pair = None;
-    let mut legacy_namespace = cadmpeg_ir::NativeNamespace::default();
-    legacy
-        .store(&mut legacy_namespace)
-        .expect("store legacy numeric-pair view");
-    legacy_namespace.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION;
-    let migrated =
-        crate::native::CatiaNative::load(&legacy_namespace).expect("migrate numeric-pair view");
-    assert!(migrated.entity_records[0].numeric_pair.is_some());
-
-    let mut malformed = native;
-    malformed.entity_records[0]
-        .numeric_pair
-        .as_mut()
-        .expect("complete numeric pair")
-        .slots[0] = crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed numeric-pair view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
+    let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
+    wire["numeric_pair"]["slots"][0] =
+        serde_json::to_value(crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 })
+            .unwrap();
+    assert!(
+        serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err()
+    );
 }
 
 #[test]
@@ -256,20 +263,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_ref()
         .expect("complete reference signature");
-    assert_eq!(signature.production.first_reference, 3);
-    assert_eq!(signature.first_entity.entity_id, 3);
+    assert_eq!(signature.production.first_reference(), 3);
+    assert_eq!(signature.first_entity.entity_id(), 3);
     assert_eq!(
-        signature.first_entity.entity.as_deref(),
+        signature.first_entity.entity(),
         Some(native.entity_records[2].id.as_str())
     );
-    assert!(!signature.first_entity.is_null);
-    assert_eq!(signature.production.second_reference, 4);
-    assert_eq!(signature.second_entity.entity_id, 4);
-    assert!(signature.second_entity.entity.is_none());
-    assert!(signature.second_entity.is_null);
-    assert_eq!(signature.production.second_reference_offset, 17);
-    assert_eq!(signature.production.signature, "2(E)");
-    assert_eq!(signature.production.signature_offset, 12);
+    assert!(!signature.first_entity.is_null());
+    assert_eq!(signature.production.second_reference(), 4);
+    assert_eq!(signature.second_entity.entity_id(), 4);
+    assert!(signature.second_entity.entity().is_none());
+    assert!(signature.second_entity.is_null());
+    assert_eq!(signature.production.second_reference_offset(), 17);
+    assert_eq!(signature.production.signature(), "2(E)");
+    assert_eq!(signature.production.signature_offset(), 12);
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
     };
@@ -283,8 +290,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         format!("catia:outer:reference-signature-cohort#{graph_key}:00000000")
     );
     assert_eq!(cohort.ordinal, 0);
-    assert_eq!(cohort.first_reference, 3);
-    assert_eq!(cohort.second_reference, 4);
+    assert_eq!(cohort.first_reference(), 3);
+    assert_eq!(cohort.second_reference(), 4);
     assert!(cohort.schema_selection.is_none());
     assert_eq!(
         cohort.members,
@@ -292,120 +299,6 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
             native.entity_records[0].id.clone(),
             native.entity_records[1].id.clone()
         ]
-    );
-
-    let expected = signature.clone();
-    let expected_cohort = cohort.clone();
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store reference-signature incidences");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1;
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("signature_offset");
-    stored_signature.remove("second_reference_offset");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store resolved reference-signature incidences");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1;
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("first_entity");
-    stored_signature.remove("second_entity");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store reference-signature program");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1;
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("prefix");
-    stored_signature.remove("signature_program");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store consecutive reference-signature pair");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_PAIR_VERSION - 1;
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("validate reference-signature pair");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected)
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store reference-signature schema incidence");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION - 1;
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("derive reference-signature schema");
-    assert_eq!(
-        migrated.reference_signature_cohorts.as_slice(),
-        std::slice::from_ref(&expected_cohort)
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store reference-signature cohort");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION - 1;
-    stored.arenas.remove("reference_signature_cohorts");
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("derive reference-signature cohort");
-    assert_eq!(
-        migrated.reference_signature_cohorts.as_slice(),
-        std::slice::from_ref(&expected_cohort)
     );
 
     let mut file = standard_catpart();
@@ -489,49 +382,22 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     );
 
     let mut malformed = native;
+    let second_entity = malformed.entity_records[0]
+        .reference_signature
+        .as_ref()
+        .expect("complete reference signature")
+        .second_entity
+        .clone();
+    let next_entity_id = second_entity.entity_id() + 1;
     malformed.entity_records[0]
         .reference_signature
         .as_mut()
         .expect("complete reference signature")
-        .second_entity
-        .entity_id += 1;
+        .second_entity = second_entity.with_entity_id(next_entity_id);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature incidence");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_program
-        .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature program");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
@@ -547,6 +413,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::CatiaNative::decode(&bytes)
+        .store(&mut namespace)
+        .expect("store reference-signature cohort");
+    let mut cohorts: Vec<serde_json::Value> =
+        namespace.arena_as("reference_signature_cohorts").unwrap();
+    cohorts[0]["second_reference"] = serde_json::json!(6);
+    namespace
+        .set_arena("reference_signature_cohorts", &cohorts)
+        .unwrap();
+    let error = crate::native::CatiaNative::load(&namespace)
+        .expect_err("cohort second_reference not following its first");
+    assert!(error.to_string().contains("second_reference"), "{error}");
 }
 
 #[test]
@@ -561,7 +441,7 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        native.entity_records[0].value_fields,
+        native.entity_records[0].value_fields(),
         [
             crate::value_block::ValueField::SchemaSelector {
                 ordinal: 4,
@@ -578,17 +458,6 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
             crate::value_block::ValueField::Terminator { offset: 17 },
         ]
     );
-
-    let mut malformed = native;
-    malformed.entity_records[0].value_fields.pop();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed entity-value view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
 }
 
 #[test]
@@ -668,8 +537,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
     let parameter = native.entity_records[0]
-        .parameter_value
-        .as_ref()
+        .parameter_value()
         .expect("complete named parameter value");
     assert_eq!(parameter.name.value, "Thickness");
     assert_eq!(parameter.binding.value, "#1_ /2");
@@ -678,7 +546,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         CatiaEntityEvaluation::Scalar { bits: scalar }
     );
     assert_eq!(
-        native.entity_records[0].suffix_value,
+        native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [5, 22, 2],
             prefix_atom_widths: [1, 1, 1],
@@ -698,45 +566,15 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     ]));
     assert_eq!(
         unset.entity_records[0]
-            .parameter_value
-            .as_ref()
+            .parameter_value()
             .expect("complete unset parameter")
             .evaluation,
         CatiaEntityEvaluation::Unset
     );
 
-    let mut stale_offsets = native.clone();
-    let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_offsets
-        .entity_records[0]
-        .suffix_value
-        .as_mut()
-        .expect("complete named parameter suffix")
-        .payload
-    else {
-        panic!("named parameter evaluation");
-    };
-    *opcode_offset = 0;
-    stale_offsets.entity_records[0]
-        .parameter_value
-        .as_mut()
-        .expect("complete named parameter value")
-        .evaluation_opcode_offset = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    stale_offsets
-        .store(&mut namespace)
-        .expect("store stale named parameter offsets");
-    namespace.version = crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1;
-    let migrated =
-        crate::native::CatiaNative::load(&namespace).expect("migrate named parameter offsets");
-    assert_eq!(
-        migrated.entity_records[0].parameter_value,
-        native.entity_records[0].parameter_value
-    );
-
     let mut malformed_offset = native.clone();
     malformed_offset.entity_records[0]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -750,8 +588,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
 
     let mut malformed = native;
     malformed.entity_records[0]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter value")
         .name
         .value = "changed".to_string();
@@ -835,8 +672,8 @@ fn native_namespace_binds_two_definition_value_chains() {
     )
     .expect("load definition-chain evaluation");
     assert_eq!(
-        native.entity_records[0].definition_chain_value,
-        Some(CatiaDefinitionChainValue {
+        native.entity_records[0].definition_chain_value(),
+        Some(&CatiaDefinitionChainValue {
             selector: CatiaEntitySchemaValue {
                 offset: native.entity_records[0].definition_schema_selections[0].offset,
                 ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
@@ -874,8 +711,7 @@ fn native_namespace_binds_two_definition_value_chains() {
     ));
 
     native.entity_records[0]
-        .definition_chain_value
-        .as_mut()
+        .definition_chain_value_mut()
         .expect("definition-chain evaluation")
         .role
         .value = "changed".to_string();
@@ -893,7 +729,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             0x84, 0x88, 0x82, 0x32, 5, 0, 0, 0, 0xe7,
         ]));
     assert!(wrong_selector.entity_records[0]
-        .definition_chain_value
+        .definition_chain_value()
         .is_none());
 
     let atom = CatiaCodec
@@ -924,8 +760,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             .expect("load definition-chain atom");
     assert_eq!(
         atom_native.entity_records[0]
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .map(|value| &value.value),
         Some(&CatiaEntitySuffixSchemaValue::Atom { value: 7 })
     );
@@ -945,7 +780,7 @@ fn native_namespace_binds_two_definition_value_chains() {
         assert_eq!(
             decoded
                 .report()
-                .coverage
+                .coverage()
                 .get(coverage)
                 .copied()
                 .unwrap_or(0),
@@ -972,14 +807,15 @@ fn native_namespace_binds_two_definition_value_chains() {
             .expect("load nested definition-chain selector");
     assert_eq!(
         nested_native.entity_records[0]
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .map(|value| &value.value),
         Some(&CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset: 8,
             ordinal: 5,
-            entry: Some(nested_native.catalogs[0].entries[5].id.clone()),
-            name: Some("Real".to_string()),
+            resolution: Some(crate::native::CatiaDesignClass {
+                entry: nested_native.catalogs[0].entries[5].id.clone(),
+                name: "Real".to_string(),
+            }),
         })
     );
 }
@@ -1098,29 +934,33 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0,
         ]));
     let parameter_entity = native.entity_records[0].clone();
-    native.entity_records[0].relation_program_instance =
-        Some(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
-            program_entity: crate::native::CatiaEntityReference::default(),
-            repeated_entity: crate::native::CatiaEntityReference::default(),
-            reference_incidences: Vec::new(),
-            relation_expression: None,
-            parameter_dependencies: Vec::new(),
-            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
-                parameter: "#1_".to_string(),
-                value_type: "Real".to_string(),
-                entity: crate::native::CatiaEntityReference {
-                    entity_id: parameter_entity.entity_id,
-                    is_null: false,
-                    entity: Some(parameter_entity.id.clone()),
-                    class_name: Some("param".to_string()),
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::Unresolved {
+                        entity_id: 0,
+                    },
                 },
-            }]),
-            output_entity: None,
-            lead12_context_entity: None,
-            lead54_trailing_entity: None,
-        });
-    let mut relation_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: None,
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "Real".to_string(),
+                    entity: crate::native::CatiaEntityReference::from_parts(
+                        parameter_entity.entity_id,
+                        false,
+                        Some(parameter_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
+            },
+        ),
+    );
+    let mut relation_ir = CadIr::empty();
     let relation_transfer = crate::formula::transfer_parameters(
         &mut relation_ir,
         &native,
@@ -1156,31 +996,10 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
-    let expected = native.design_objects[0].definition_chain_values.clone();
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut previous_namespace)
-        .expect("store current definition-chain ownership");
-    let mut previous_design_objects: Vec<crate::native::CatiaDesignObject> = previous_namespace
-        .arena_as("design_objects")
-        .expect("load stored design objects");
-    for object in &mut previous_design_objects {
-        object.definition_chain_values.clear();
-    }
-    previous_namespace
-        .set_arena("design_objects", &previous_design_objects)
-        .expect("store previous design objects");
-    previous_namespace.version = 195;
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate previous definition-chain ownership");
-    assert_eq!(migrated.design_objects[0].definition_chain_values, expected);
 }
 
 #[test]
-fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() {
+fn literal_owner_slots_remain_unassigned() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_unassigned_definition_chain_value()),
@@ -1241,25 +1060,6 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut previous_namespace)
-        .expect("store current literal owner slot");
-    let mut previous_records: Vec<crate::native::CatiaObjectRecord> = previous_namespace
-        .arena_as("object_graph_records")
-        .expect("load stored object records");
-    previous_records[0].owner = None;
-    previous_namespace
-        .set_arena("object_graph_records", &previous_records)
-        .expect("store previous object records");
-    previous_namespace.version = 197;
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate previous literal owner slot");
-    assert_eq!(
-        migrated.object_graphs[0].records[0].owner,
-        Some(crate::native::CatiaObjectOwner::UnassignedLiteral(66))
-    );
 }
 
 #[test]
@@ -1306,8 +1106,8 @@ fn native_namespace_binds_and_validates_definition_values() {
     )
     .expect("load definition-bound value");
     assert_eq!(
-        native.entity_records[0].definition_value,
-        Some(CatiaDefinitionValue {
+        native.entity_records[0].definition_value(),
+        Some(&CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
                 offset: native.entity_records[0].definition_schema_selections[0].offset,
                 ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
@@ -1327,16 +1127,20 @@ fn native_namespace_binds_and_validates_definition_values() {
         [native.entity_records[0].id.clone()]
     );
     assert_eq!(
-        native.object_graphs[0].records[0].storage_record,
-        Some(native.object_graphs[0].records[0].id.clone())
+        native.object_graphs[0].records[0].storage_record(),
+        Some(native.object_graphs[0].records[0].id.as_str())
     );
     assert_eq!(
-        native.object_graphs[0].records[0].storage_design_object,
-        Some(native.design_objects[0].id.clone())
+        native.object_graphs[0].records[0].storage_design_object(),
+        Some(native.design_objects[0].id.as_str())
     );
 
     let mut malformed_storage = native.clone();
-    malformed_storage.object_graphs[0].records[0].storage_record = None;
+    malformed_storage.object_graphs[0].records[0]
+        .storage
+        .as_mut()
+        .expect("decoded storage role")
+        .storage_record = None;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_storage
         .store(&mut namespace)
@@ -1360,8 +1164,7 @@ fn native_namespace_binds_and_validates_definition_values() {
     ));
 
     let definition_value = native.entity_records[0]
-        .definition_value
-        .as_mut()
+        .definition_value_mut()
         .expect("definition-bound value");
     definition_value.payload = CatiaEntitySuffixPayload::Evaluation {
         opcode_offset: 5,
@@ -1384,8 +1187,7 @@ fn native_namespace_binds_and_validates_definition_values() {
     ));
     assert!(matches!(
         control.entity_records[0]
-            .definition_value
-            .as_ref()
+            .definition_value()
             .expect("definition-bound control")
             .payload,
         CatiaEntitySuffixPayload::ControlE8
@@ -1398,8 +1200,7 @@ fn native_namespace_binds_and_validates_definition_values() {
             &[0x84, 0x96, 0x82, 0x32, 4, 0, 0, 0, 0xe7, 0x81, 0x49],
         ));
     let definition_value = schema_selected.entity_records[0]
-        .definition_value
-        .as_ref()
+        .definition_value()
         .expect("definition-bound schema-selected value");
     assert!(matches!(
         definition_value.payload,
@@ -1426,7 +1227,7 @@ fn native_namespace_binds_and_validates_definition_values() {
             &value,
             &suffix,
         ));
-        assert_eq!(native.entity_records[0].definition_value, None);
+        assert_eq!(native.entity_records[0].definition_value(), None);
     }
 }
 
@@ -1439,31 +1240,30 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
 
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
-    assert!(native.entity_records[0].suffix_value.is_none());
-    assert!(native.entity_records[0].parameter_value.is_none());
+    assert!(native.entity_records[0].suffix_value().is_none());
+    assert!(native.entity_records[0].parameter_value().is_none());
 
     let control = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x85, 0x96, 0x82, 0x6a, 0xe8, 0x81, 0x52,
     ]));
     assert!(matches!(
         control.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete control suffix")
             .payload,
         crate::native::CatiaEntitySuffixPayload::ControlE8
     ));
-    assert!(control.entity_records[0].parameter_value.is_none());
+    assert!(control.entity_records[0].parameter_value().is_none());
 }
 
 #[test]
-fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
+fn native_retains_and_validates_typed_schema_selector_incidences() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(4, false));
     let expression_entity = &native.entity_records[1];
     let expression = expression_entity
-        .relation_expression
-        .as_ref()
+        .relation_expression()
         .expect("complete relation expression");
     assert_eq!(
         (expression.expression.offset, expression.expression.ordinal),
@@ -1474,8 +1274,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
     );
     let parameter_entity = &native.entity_records[2];
     let parameter = parameter_entity
-        .parameter_value
-        .as_ref()
+        .parameter_value()
         .expect("complete named parameter");
     assert_eq!(
         (parameter.name.offset, parameter.name.ordinal),
@@ -1492,41 +1291,9 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
         )
     );
 
-    let mut stale = native.clone();
-    let expression = stale.entity_records[1]
-        .relation_expression
-        .as_mut()
-        .expect("complete relation expression");
-    expression.expression.offset = 0;
-    expression.expression.ordinal = 0;
-    let parameter = stale.entity_records[2]
-        .parameter_value
-        .as_mut()
-        .expect("complete named parameter");
-    parameter.name.offset = 0;
-    parameter.name.ordinal = 0;
-    parameter.binding.offset = 0;
-    parameter.binding.ordinal = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    stale
-        .store(&mut namespace)
-        .expect("store stale typed schema incidences");
-    namespace.version = crate::native::CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION - 1;
-    let migrated =
-        crate::native::CatiaNative::load(&namespace).expect("migrate typed schema incidences");
-    assert_eq!(
-        migrated.entity_records[1].relation_expression,
-        native.entity_records[1].relation_expression
-    );
-    assert_eq!(
-        migrated.entity_records[2].parameter_value,
-        native.entity_records[2].parameter_value
-    );
-
     let mut malformed = native;
     malformed.entity_records[2]
-        .parameter_value
-        .as_mut()
+        .parameter_value_mut()
         .expect("complete named parameter")
         .name
         .offset = u64::MAX;
@@ -1544,7 +1311,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
 fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_crossing_entity_value_packet());
-    assert_eq!(native.entity_records[0].value_packets.len(), 1);
+    assert_eq!(native.entity_records[0].value_packets().len(), 1);
     assert_eq!(native.entity_records[0].value_schema_selections.len(), 2);
     assert!(native.entity_records[0]
         .value_schema_selections
@@ -1556,4 +1323,29 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
         .store(&mut namespace)
         .expect("store crossing packet fixture");
     crate::native::CatiaNative::load(&namespace).expect("validate canonical packet ownership");
+}
+
+/// The minimal `7C05` frame the parser accepts carries four empty byte
+/// vectors, so `empty_nested` names a producible record rather than an
+/// unreachable one.
+#[test]
+fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
+    let frame = entity_table_record_with_definition_and_value(1, &[], &[]);
+    let mut bytes = frame.clone();
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0xfe],
+    )]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [record] = native.entity_records.as_slice() else {
+        panic!("one minimal entity record");
+    };
+    assert_eq!(
+        record.body,
+        crate::native::CatiaEntityRecordBody::empty_nested()
+    );
+    assert_eq!(record.byte_len(), 24);
+    assert_eq!(record.byte_len() as usize, frame.len());
 }

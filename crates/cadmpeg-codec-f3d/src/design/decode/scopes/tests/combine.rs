@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,256 +7,6 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-
-#[test]
-fn named_solid_primitives_bind_ordered_parameter_owners() {
-    fn owner(
-        scope_record_index: u32,
-        record_index: u32,
-        local_ordinal: u32,
-        value: f64,
-    ) -> DesignParameterOwner {
-        DesignParameterOwner {
-            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
-            frame_length: 104,
-            class_tag: "272".into(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 100,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        }
-    }
-
-    let mut bytes = vec![0; 100];
-    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-    bytes[24] = 0;
-    bytes[25] = 1;
-    let mut box_scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#12", "BoxPrimitive", 12);
-    box_scope.frame_length = bytes.len() as u64;
-    box_scope.reference_members = vec![20, 21, 22, 23, 24];
-    let box_owners = vec![
-        owner(12, 20, 0, 3.0),
-        owner(12, 21, 1, 4.0),
-        owner(12, 22, 2, 2.0),
-        owner(12, 23, 3, 0.5),
-        owner(12, 24, 4, -0.25),
-    ];
-    let records = IndexedRecordOffsets::build(&bytes);
-    assert!(matches!(
-        exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
-        Some(DesignSolidPrimitive::Box {
-            length: 3.0,
-            width: 4.0,
-            height: 2.0,
-            offset_x: 0.5,
-            offset_y: -0.25,
-            operation: DesignExtrudeOperation::Join,
-            operation_offset: 20,
-            ..
-        })
-    ));
-
-    bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
-    let mut cylinder_scope = box_scope;
-    cylinder_scope.kind = "CylinderPrimitive".into();
-    cylinder_scope.record_index = 13;
-    cylinder_scope.reference_members = vec![30, 31];
-    let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
-    assert!(matches!(
-        exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
-        Some(DesignSolidPrimitive::Cylinder {
-            height: 0.7,
-            diameter: 3.0,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 20,
-            ..
-        })
-    ));
-}
-
-#[test]
-fn shifted_cylinder_primitives_bind_exact_generation_frames() {
-    fn indexed_header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
-        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
-        bytes[4..7].copy_from_slice(class_tag);
-        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn guid(bytes: &mut [u8], count_offset: usize) {
-        bytes[count_offset..count_offset + 4].copy_from_slice(&36u32.to_le_bytes());
-        let value = "00000000-0000-0000-0000-000000000000";
-        for (ordinal, code_unit) in value.encode_utf16().enumerate() {
-            let at = count_offset + 4 + ordinal * 2;
-            bytes[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-        }
-    }
-
-    fn owner(
-        scope_record_index: u32,
-        record_index: u32,
-        local_ordinal: u32,
-        value: f64,
-        stream: &str,
-    ) -> DesignParameterOwner {
-        DesignParameterOwner {
-            id: format!("f3d:{stream}:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
-            frame_length: 103,
-            class_tag: "294".into(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 40,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        }
-    }
-
-    fn scope(
-        class_tag: &str,
-        paired_class_tag: &str,
-        record_index: u32,
-        frame_length: usize,
-        reference_members: Vec<u32>,
-    ) -> DesignParameterScope {
-        let stream = "Design/BulkStream.dat";
-        let id = format!("f3d:{stream}:scope#{record_index}");
-        let mut scope = DesignParameterScope::empty(&id, "CylinderPrimitive", record_index);
-        scope.byte_offset = 0;
-        scope.class_tag = class_tag.into();
-        scope.paired_class_tag = paired_class_tag.into();
-        scope.paired_byte_offset = frame_length as u64;
-        scope.frame_length = frame_length as u64;
-        scope.reference_members = reference_members;
-        let (reference_count, history_state, kind, feature_ordinal, previous) =
-            if frame_length == 352 {
-                (174, 233, 241, 275, 306)
-            } else {
-                (302, 383, 391, 425, 456)
-            };
-        scope.reference_count_offset = reference_count;
-        scope.history_state_id_offset = history_state;
-        scope.kind_offset = kind;
-        scope.feature_ordinal_offset = feature_ordinal;
-        scope.previous_history_state_id_offset = previous;
-        scope
-    }
-
-    fn common_prefix(bytes: &mut [u8], operation: u32, references: &[u32]) {
-        bytes[21] = 1;
-        bytes[22..26].copy_from_slice(&operation.to_le_bytes());
-        let mut reversed = references.iter().rev().copied();
-        let first = reversed.next().unwrap();
-        bytes[26] = 1;
-        bytes[27] = 1;
-        bytes[28..32].copy_from_slice(&first.to_le_bytes());
-        for (offset, record_index) in [38, 49, 60].into_iter().zip(reversed.take(3)) {
-            bytes[offset] = 1;
-            bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
-        }
-    }
-
-    let mut compact = vec![0; 352];
-    indexed_header(&mut compact, b"297", 12);
-    let compact_references = [100, 101, 102, 103, 104];
-    common_prefix(&mut compact, 4, &compact_references);
-    compact[71] = 1;
-    compact[72..76].copy_from_slice(&1u32.to_le_bytes());
-    compact[76] = 1;
-    compact[77..81].copy_from_slice(&99u32.to_le_bytes());
-    guid(&mut compact, 95);
-    let compact_scope = scope("297", "258", 12, 352, compact_references.into());
-    let compact_owners = vec![
-        owner(12, 103, 0, 0.7, "Design/BulkStream.dat"),
-        owner(12, 104, 1, 3.0, "Design/BulkStream.dat"),
-    ];
-    assert!(matches!(
-        exact_solid_primitive(
-            &compact,
-            &IndexedRecordOffsets::build(&compact),
-            &compact_scope,
-            &compact_owners,
-        ),
-        Some(DesignSolidPrimitive::Cylinder {
-            height: 0.7,
-            diameter: 3.0,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 22,
-            transform: None,
-            transform_offset: None,
-            ..
-        })
-    ));
-
-    for (class_tag, paired_class_tag) in [("297", "258"), ("375", "258"), ("414", "272")] {
-        let mut expanded = vec![0; 502];
-        indexed_header(&mut expanded, class_tag.as_bytes().try_into().unwrap(), 12);
-        let expanded_references = [100, 101, 102, 103, 104, 105, 106];
-        common_prefix(&mut expanded, 1, &expanded_references);
-        let transform: [[f64; 4]; 4] = [
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-            let at = 72 + ordinal * 8;
-            expanded[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        }
-        expanded[208] = 1;
-        expanded[209..213].copy_from_slice(&0x0100_0000u32.to_le_bytes());
-        expanded[213..217].copy_from_slice(&100u32.to_le_bytes());
-        guid(&mut expanded, 223);
-        let expanded_scope = scope(
-            class_tag,
-            paired_class_tag,
-            12,
-            502,
-            expanded_references.into(),
-        );
-        let expanded_owners = vec![
-            owner(12, 105, 0, 0.7, "Design/BulkStream.dat"),
-            owner(12, 106, 1, 3.0, "Design/BulkStream.dat"),
-        ];
-        assert!(matches!(
-            exact_solid_primitive(
-                &expanded,
-                &IndexedRecordOffsets::build(&expanded),
-                &expanded_scope,
-                &expanded_owners,
-            ),
-            Some(DesignSolidPrimitive::Cylinder {
-                height: 0.7,
-                diameter: 3.0,
-                operation: DesignExtrudeOperation::Join,
-                operation_offset: 22,
-                transform: Some(_),
-                transform_offset: Some(72),
-                ..
-            })
-        ));
-
-        let mut translated = expanded;
-        translated[72 + 3 * 8..72 + 4 * 8].copy_from_slice(&1.0f64.to_le_bytes());
-        assert!(exact_solid_primitive(
-            &translated,
-            &IndexedRecordOffsets::build(&translated),
-            &expanded_scope,
-            &expanded_owners,
-        )
-        .is_none());
-    }
-}
 
 #[test]
 fn combine_scope_projects_ordered_target_tools_and_retention() {
@@ -339,38 +88,43 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: scope_record_index,
-        class_tag: "382".into(),
+        class_tag: crate::records::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("Combine scope");
+    let mut scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("Combine scope");
     let operation = exact_combine_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("Combine construction");
     assert_eq!(
         operation,
         DesignCombineOperation {
             form: DesignCombineForm::Standard,
-            operation: DesignExtrudeOperation::Join,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
-            target: DesignCombineBodySelection {
-                record_index: 96,
-                external_identity: None,
-            },
-            tools: vec![
-                DesignCombineBodySelection {
+            target_record_index: 96,
+            tools: crate::records::feature::DesignCombineTools {
+                first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
                 },
-                DesignCombineBodySelection {
+                additional: vec![DesignCombineBodySelection {
                     record_index: 94,
                     external_identity: None,
-                },
-            ],
+                },]
+            },
         }
     );
-    scope.combine_operation = Some(operation);
+    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+        *slot = Some(operation);
+    }
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Combine {
@@ -381,7 +135,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 "Design1/BulkStream.dat:design-record#92".into(),
                 "Design1/BulkStream.dat:design-record#94".into(),
             ]),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
         })
     );
@@ -398,8 +152,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_bytes[36..44].copy_from_slice(&200u64.to_le_bytes());
     compact_bytes[44..46].fill(0);
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = "387".into();
-    compact_scope.paired_class_tag = "258".into();
+    compact_scope.class_tag = crate::records::DesignClassTag::try_from("387".to_owned()).unwrap();
+    compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     compact_scope.frame_length = 328;
     let compact = exact_combine_operation(
         &compact_bytes,
@@ -407,11 +162,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &compact_scope,
     )
     .expect("compact Combine construction");
-    assert_eq!(compact.operation, DesignExtrudeOperation::Join);
+    assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
     assert_eq!(compact.operation_offset, 21);
     assert!(!compact.keep_tools);
     assert_eq!(compact.form, DesignCombineForm::Compact);
-    assert_eq!(compact.target.record_index, 96);
+    assert_eq!(compact.target_record_index, 96);
     assert_eq!(
         compact
             .tools
@@ -528,24 +283,27 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     target_record(&mut bytes, 93, 94);
     simple_selection_record(&mut bytes, 94);
 
-    let mut scope = DesignParameterScope::empty("scope", "Combine", scope_record_index);
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Combine,
+        scope_record_index,
+    );
     scope.byte_offset = 0;
-    scope.class_tag = "329".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = 363;
-    scope.reference_members = vec![91, 92, 93, 94];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
     let records = IndexedRecordOffsets::build(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
-    assert_eq!(operation.operation, DesignExtrudeOperation::Cut);
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
     assert_eq!(operation.operation_offset, 31);
     assert!(operation.keep_tools);
     assert_eq!(operation.keep_tools_offset, 30);
-    assert_eq!(operation.target.record_index, 94);
-    let [tool] = operation.tools.as_slice() else {
-        panic!("one external tool");
-    };
+    assert_eq!(operation.target_record_index, 94);
+    assert!(operation.tools.additional.is_empty());
+    let tool = &operation.tools.first;
     let identity = tool
         .external_identity
         .as_ref()
@@ -555,11 +313,17 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     assert_eq!(identity.external_segment, 7);
     assert_eq!(identity.external_link_name, "component-body-link");
     assert_eq!(
-        identity.external_property_key.as_deref(),
+        identity
+            .external_version
+            .as_ref()
+            .map(|version| version.property_key.value.as_str()),
         Some("33333333-3333-4333-8333-333333333333")
     );
     assert_eq!(
-        identity.external_version_urn.as_deref(),
+        identity
+            .external_version
+            .as_ref()
+            .map(|version| version.version_urn.value.as_str()),
         Some("urn:example:version:4")
     );
     assert_eq!(identity.tail_values, [11, 12]);
@@ -588,5 +352,5 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         &scope,
     )
     .expect("operation remains exact when only the optional external identity is malformed");
-    assert!(operation.tools[0].external_identity.is_none());
+    assert!(operation.tools.first.external_identity.is_none());
 }

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -65,71 +65,68 @@
     },
     "native": {
       "catia": {
-        "arenas": {
-          "alias_rows": [],
-          "catalog_entries": [],
-          "catalogs": [],
-          "consolidated_circles": [],
-          "consolidated_class5b5c_records": [],
-          "consolidated_class61_records": [],
-          "consolidated_cone_faces": [],
-          "consolidated_cones": [],
-          "consolidated_cylinders": [],
-          "consolidated_edge_nodes": [],
-          "consolidated_edge_runs": [],
-          "consolidated_embedded_cylinders": [],
-          "consolidated_groups": [],
-          "consolidated_line_profiles": [],
-          "consolidated_owner_packets": [],
-          "consolidated_parameter_points": [],
-          "consolidated_pcurves": [],
-          "consolidated_plane_carriers": [],
-          "consolidated_reference_lists": [],
-          "consolidated_revolutions": [],
-          "consolidated_spheres": [],
-          "consolidated_tori": [],
-          "consolidated_vertex_identities": [],
-          "design_objects": [],
-          "entity_records": [],
-          "external_references": [],
-          "finjpl_segments": [],
-          "legacy_entity_runs": [],
-          "object_graph_records": [],
-          "object_graphs": [],
-          "preview_images": [],
-          "reference_signature_cohorts": [],
-          "schema_configuration_row_chains": [],
-          "unknowns": [
-            {
-              "id": "catia:payload:unknown#zero-entity",
-              "links": [
-                "catia:zero-entity:surf#0"
-              ]
-            }
-          ],
-          "value_blocks": [],
-          "value_schema_selections": [],
-          "zero_entity_edge_strides": [],
-          "zero_entity_endpoint_locus_candidates": [],
-          "zero_entity_endpoint_pair_candidates": [],
-          "zero_entity_oriented_use_pairs": [],
-          "zero_entity_ownership_roots": [],
-          "zero_entity_records": [
-            {
-              "byte_offset": 16,
-              "id": "catia:zero-entity:record#1",
-              "logical_end": 166,
-              "record_ordinal": 1,
-              "tag": [
-                40,
-                138
-              ]
-            }
-          ],
-          "zero_entity_support_runs": [],
-          "zero_entity_vertex_incidences": []
-        },
-        "version": 288
+        "alias_rows": [],
+        "catalog_entries": [],
+        "catalogs": [],
+        "consolidated_circles": [],
+        "consolidated_class5b5c_records": [],
+        "consolidated_class61_records": [],
+        "consolidated_cone_faces": [],
+        "consolidated_cones": [],
+        "consolidated_cylinders": [],
+        "consolidated_edge_nodes": [],
+        "consolidated_edge_runs": [],
+        "consolidated_embedded_cylinders": [],
+        "consolidated_groups": [],
+        "consolidated_line_profiles": [],
+        "consolidated_owner_packets": [],
+        "consolidated_parameter_points": [],
+        "consolidated_pcurves": [],
+        "consolidated_plane_carriers": [],
+        "consolidated_reference_lists": [],
+        "consolidated_revolutions": [],
+        "consolidated_spheres": [],
+        "consolidated_tori": [],
+        "consolidated_vertex_identities": [],
+        "design_objects": [],
+        "entity_records": [],
+        "external_references": [],
+        "finjpl_segments": [],
+        "legacy_entity_runs": [],
+        "object_graph_records": [],
+        "object_graphs": [],
+        "preview_images": [],
+        "reference_signature_cohorts": [],
+        "schema_configuration_row_chains": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#zero-entity",
+            "links": [
+              "catia:zero-entity:surf#0"
+            ]
+          }
+        ],
+        "value_blocks": [],
+        "value_schema_selections": [],
+        "zero_entity_edge_strides": [],
+        "zero_entity_endpoint_locus_candidates": [],
+        "zero_entity_endpoint_pair_candidates": [],
+        "zero_entity_oriented_use_pairs": [],
+        "zero_entity_ownership_roots": [],
+        "zero_entity_records": [
+          {
+            "byte_offset": 16,
+            "id": "catia:zero-entity:record#1",
+            "logical_end": 166,
+            "record_ordinal": 1,
+            "tag": [
+              40,
+              138
+            ]
+          }
+        ],
+        "zero_entity_support_runs": [],
+        "zero_entity_vertex_incidences": []
       }
     },
     "source": {
@@ -138,8 +135,15 @@
         "file_size": "181",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "0",
-        "preview_count": "0",
-        "variant": "zero_entity"
+        "preview_count": "0"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:zero-entity",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },
@@ -495,6 +499,14 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "dialect": "catia:zero-entity",
+        "format": "catia"
+      }
+    },
     "format": "catia",
     "geometry_transferred": true,
     "losses": [
@@ -512,7 +524,7 @@
       "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 181); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "record-family census: 1 a9 03, 0 e5 0d 03",
-      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+      "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ]
   },
   "source_fidelity": {
@@ -529,7 +541,7 @@
         "catia:payload:unknown#zero-entity": {
           "offset": 0,
           "stream": 0,
-          "tag": "zero_entity"
+          "tag": "catia:zero-entity"
         },
         "catia:zero-entity:surf#0": {
           "offset": 16,
@@ -551,7 +563,6 @@
         "sha256": "3dfa4c71c0c9202e4fac447a215b74e7e9326ae9a97b493e0ffd792ace0e9097",
         "stream": "catia:CATPart"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

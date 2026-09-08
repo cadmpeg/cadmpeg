@@ -12,12 +12,12 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell, VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
-use super::{annotate, OrientedLoop, OwnershipPlan, TransferPlan};
+use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::UnionFind;
 
 const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
@@ -46,19 +46,20 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let vertex_count = graph
         .vertex_points
         .len()
-        .checked_add(graph.logical_vertex_points.len())?;
+        .checked_add(graph.logical_vertices.len())?;
     let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
     for (loop_id, loop_) in &graph.loops {
         let face = loop_owners[loop_id];
-        for edge in &loop_.edges {
-            let endpoints = graph.edge_vertices.get(edge)?;
+        for member in &loop_.members {
+            let edge = member.edge;
+            let endpoints = graph.edge_vertices.get(&edge)?;
             if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
                 return None;
             }
-            *edge_uses.entry(*edge).or_default() += 1;
-            if let Some(other_face) = first_face_by_edge.insert(*edge, face) {
+            *edge_uses.entry(edge).or_default() += 1;
+            if let Some(other_face) = first_face_by_edge.insert(edge, face) {
                 parents.union(face, other_face);
             }
         }
@@ -71,23 +72,13 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
-    let mut component_faces =
-        alloc_filled(labels.len(), Vec::new(), "catia b5 component faces").ok()?;
-    for (face, component) in face_components.iter().copied().enumerate() {
-        component_faces[component].push(face);
-    }
-    let mut closed_components = cadmpeg_core::decode::alloc_filled(
-        component_faces.len(),
-        true,
-        "catia b5 closed components",
-    )
-    .ok()?;
-    let mut component_has_edges = cadmpeg_core::decode::alloc_filled(
-        component_faces.len(),
-        false,
-        "catia b5 component edge marks",
-    )
-    .ok()?;
+    let component_count = labels.len();
+    let mut closed_components =
+        cadmpeg_core::decode::alloc_filled(component_count, true, "catia b5 closed components")
+            .ok()?;
+    let mut component_has_edges =
+        cadmpeg_core::decode::alloc_filled(component_count, false, "catia b5 component edge marks")
+            .ok()?;
     for (&edge, &uses) in &edge_uses {
         let component = face_components[first_face_by_edge[&edge]];
         component_has_edges[component] = true;
@@ -99,17 +90,16 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         .filter(|(closed, has_edges)| **closed && *has_edges)
         .count();
     let body_kind = if edge_uses.values().any(|uses| *uses > 2)
-        || (closed_component_count != 0 && closed_component_count != component_faces.len())
+        || (closed_component_count != 0 && closed_component_count != component_count)
     {
         BodyKind::General
-    } else if closed_component_count == component_faces.len() && !component_faces.is_empty() {
+    } else if closed_component_count == component_count && component_count != 0 {
         BodyKind::Solid
     } else {
         BodyKind::Sheet
     };
     Some(OwnershipPlan {
         body_kind,
-        components: component_faces,
         face_components,
         loop_owners,
     })
@@ -129,7 +119,7 @@ pub(super) fn orient_loop_members(
         || loop_ids.iter().any(|loop_id| {
             reversed
                 .get(loop_id)
-                .is_none_or(|senses| senses.len() != graph.loops[loop_id].edges.len())
+                .is_none_or(|senses| senses.len() != graph.loops[loop_id].members.len())
         })
     {
         return None;
@@ -138,8 +128,8 @@ pub(super) fn orient_loop_members(
     let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
     for loop_id in &loop_ids {
         let node = node_by_loop[loop_id];
-        for (&edge, &sense) in graph.loops[loop_id].edges.iter().zip(&reversed[loop_id]) {
-            uses.entry(edge).or_default().push((node, sense));
+        for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
+            uses.entry(member.edge).or_default().push((node, sense));
         }
     }
     let mut constraints = alloc_filled(
@@ -193,30 +183,17 @@ pub(super) fn orient_loop_members(
 
     let mut oriented = BTreeMap::new();
     for (node, loop_id) in loop_ids.into_iter().enumerate() {
-        let member_count = graph.loops[&loop_id].edges.len();
-        let flip = flips[node]?;
-        let mut member_order: Vec<usize> = (0..member_count).collect();
-        let mut pcurve_reversed = graph.loops[&loop_id].pcurve_senses();
-        if pcurve_reversed.len() != member_count {
-            return None;
-        }
-        if flip {
-            member_order.reverse();
-            for sense in reversed.get_mut(&loop_id)? {
-                *sense = !*sense;
-            }
-            for sense in &mut pcurve_reversed {
-                *sense = !*sense;
-            }
-        }
-        oriented.insert(
-            loop_id,
-            OrientedLoop {
-                member_order,
-                reversed: reversed.remove(&loop_id)?,
-                pcurve_reversed,
-            },
-        );
+        let flipped = flips[node]?;
+        let members = reversed
+            .remove(&loop_id)?
+            .into_iter()
+            .zip(graph.loops[&loop_id].pcurve_senses())
+            .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
+                reversed: reversed ^ flipped,
+                pcurve_reversed: pcurve_reversed ^ flipped,
+            })
+            .collect();
+        oriented.insert(loop_id, OrientedLoop { flipped, members });
     }
     Some(oriented)
 }
@@ -262,11 +239,11 @@ fn b5_planar_loop_points(
     }
     let v_axis = normal.cross(u_axis).unit()?;
     let loop_ = graph.loops.get(&loop_id)?;
-    let mut points = Vec::with_capacity(loop_.edges.len());
-    for &member in &loop_orientation.member_order {
-        let edge = loop_.edges[member];
+    let mut points = Vec::with_capacity(loop_.members.len());
+    for member in loop_orientation.member_order() {
+        let edge = loop_.members[member].edge;
         let endpoints = graph.edge_vertices.get(&edge)?;
-        let endpoint_indices = if loop_orientation.reversed[member] {
+        let endpoint_indices = if loop_orientation.members[member].reversed {
             [endpoints[1], endpoints[0]]
         } else {
             *endpoints
@@ -380,11 +357,18 @@ pub(super) fn emit_faces(
     edge_id_map: &HashMap<u32, EdgeId>,
 ) -> bool {
     let ownership = &plan.ownership;
+    let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;
 
-    let body_id = BodyId("catia:b5:body#0".to_string());
-    let region_ids: Vec<RegionId> = (0..ownership.components.len())
-        .map(|component| RegionId(format!("catia:b5:region#{component}")))
+    let body_id = BodyId::mint("catia:b5:body#0".to_string()).expect("identity grammar");
+    let region_ids: BTreeMap<usize, RegionId> = components
+        .keys()
+        .map(|&component| {
+            (
+                component,
+                RegionId::mint(format!("catia:b5:region#{component}")).expect("identity grammar"),
+            )
+        })
         .collect();
     annotate(
         annotations,
@@ -399,15 +383,16 @@ pub(super) fn emit_faces(
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
-        regions: region_ids.clone(),
+        regions: region_ids.values().cloned().collect(),
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
-    for (component_index, component_faces) in ownership.components.iter().enumerate() {
+    for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
-        let shell_id = ShellId(format!("catia:b5:shell#{component_index}"));
+        let shell_id =
+            ShellId::mint(format!("catia:b5:shell#{component_index}")).expect("identity grammar");
         annotate(
             annotations,
             &region_id,
@@ -438,7 +423,10 @@ pub(super) fn emit_faces(
             region: region_id,
             faces: component_faces
                 .iter()
-                .map(|face| FaceId(format!("catia:b5:face#{}", graph.faces[*face].object_id)))
+                .map(|face| {
+                    FaceId::mint(format!("catia:b5:face#{}", graph.faces[*face].object_id))
+                        .expect("identity grammar")
+                })
                 .collect(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
@@ -447,11 +435,13 @@ pub(super) fn emit_faces(
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
-        let face_id = FaceId(format!("catia:b5:face#{}", face.object_id));
-        let shell_id = ShellId(format!(
+        let face_id =
+            FaceId::mint(format!("catia:b5:face#{}", face.object_id)).expect("identity grammar");
+        let shell_id = ShellId::mint(format!(
             "catia:b5:shell#{}",
             ownership.face_components[face_index]
-        ));
+        ))
+        .expect("identity grammar");
         let Some(boundary_roles) =
             b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses)
         else {
@@ -476,8 +466,11 @@ pub(super) fn emit_faces(
             loops: face
                 .loops
                 .iter()
-                .map(|loop_id| LoopId(format!("catia:b5:loop#{loop_id}")))
-                .collect(),
+                .map(|loop_id| {
+                    LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
+                })
+                .collect::<Vec<_>>()
+                .into(),
             name: None,
             color: None,
             tolerance: None,
@@ -485,25 +478,28 @@ pub(super) fn emit_faces(
         for (loop_position, loop_id_value) in face.loops.iter().enumerate() {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
-            let senses = &orientation.reversed;
-            let member_order = &orientation.member_order;
-            let loop_id = LoopId(format!("catia:b5:loop#{loop_id_value}"));
-            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edges.len())
-                .map(|index| CoedgeId(format!("catia:b5:coedge#{loop_id_value}-{index}")))
+            let loop_id =
+                LoopId::mint(format!("catia:b5:loop#{loop_id_value}")).expect("identity grammar");
+            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
+                .map(|index| {
+                    CoedgeId::mint(format!("catia:b5:coedge#{loop_id_value}-{index}"))
+                        .expect("identity grammar")
+                })
                 .collect();
-            let coedge_ids: Vec<CoedgeId> = member_order
-                .iter()
-                .map(|member| coedge_ids_by_member[*member].clone())
+            let coedge_ids: Vec<CoedgeId> = orientation
+                .member_order()
+                .map(|member| coedge_ids_by_member[member].clone())
                 .collect();
-            let vertex_uses: Vec<VertexUse> = member_order
-                .iter()
-                .map(|&member| {
-                    let edge = loop_.edges[member];
+            let vertex_uses: Vec<AnchoredVertexUse> = orientation
+                .member_order()
+                .map(|member| {
+                    let edge = loop_.members[member].edge;
                     let endpoints = graph.edge_vertices[&edge];
-                    let endpoint = endpoints[1 - usize::from(senses[member])];
-                    VertexUse {
-                        vertex: VertexId(format!("catia:b5:vertex#{endpoint}")),
-                        after: Some(coedge_ids_by_member[member].clone()),
+                    let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)];
+                    AnchoredVertexUse {
+                        vertex: VertexId::mint(format!("catia:b5:vertex#{endpoint}"))
+                            .expect("identity grammar"),
+                        after: coedge_ids_by_member[member].clone(),
                         pcurves: Vec::new(),
                     }
                 })
@@ -526,16 +522,18 @@ pub(super) fn emit_faces(
             if boundary_role != LoopBoundaryRole::Unspecified {
                 annotations.derived(&loop_id, "boundary_role");
             }
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
+            else {
+                return false;
+            };
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role,
-                coedges: coedge_ids.clone(),
-                vertex_uses,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
-            for (position, &member) in member_order.iter().enumerate() {
-                let edge = loop_.edges[member];
-                let reversed = senses[member];
+            for member in orientation.member_order() {
+                let edge = loop_.members[member].edge;
+                let reversed = orientation.members[member].reversed;
                 let id = coedge_ids_by_member[member].clone();
                 annotate(
                     annotations,
@@ -561,9 +559,6 @@ pub(super) fn emit_faces(
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id_map[&edge].clone(),
-                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: id,
                     sense: if reversed {
                         Sense::Reversed
@@ -576,17 +571,23 @@ pub(super) fn emit_faces(
                             |(pcurve, parameter_range)| cadmpeg_ir::topology::PcurveUse {
                                 pcurve: pcurve.clone(),
                                 isoparametric: None,
-                                parameter_range: orientation.pcurve_reversed[member]
+                                parameter_range: orientation.members[member]
+                                    .pcurve_reversed
                                     .then_some([parameter_range[1], parameter_range[0]]),
                             },
                         )
                         .into_iter()
                         .collect(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
         }
+        ir.model
+            .faces
+            .last_mut()
+            .expect("b5 face was just pushed")
+            .loops
+            .apply_roles(&boundary_roles);
     }
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
@@ -606,10 +607,9 @@ mod tests {
     use cadmpeg_ir::ids::{PcurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::LoopBoundaryRole;
-    use cadmpeg_ir::units::Units;
 
-    use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMetadata};
-    use super::{b5_boundary_roles, OrientedLoop};
+    use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMember, B5LoopMetadata};
+    use super::{b5_boundary_roles, OrientedLoop, OrientedLoopMember};
 
     #[test]
     fn planar_line_pcurve_faces_derive_roles_from_containment() {
@@ -648,7 +648,8 @@ mod tests {
                 let start_point = points[start];
                 let end_point = points[end];
                 pcurves.push(Pcurve {
-                    id: PcurveId(format!("pc#{pcurve}")),
+                    id: PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
+                        .expect("identity grammar"),
                     geometry: PcurveGeometry::Line {
                         origin: Point2::new(start_point[0], start_point[1]),
                         direction: Point2::new(
@@ -656,25 +657,36 @@ mod tests {
                             end_point[1] - start_point[1],
                         ),
                     },
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some([0.0, 1.0]),
-                    fit_tolerance: None,
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        Some([0.0, 1.0]),
+                        None,
+                    ),
                 });
                 pcurve_uses.insert(
                     (loop_id, member),
-                    (PcurveId(format!("pc#{pcurve}")), [0.0, 1.0]),
+                    (
+                        PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
+                            .expect("identity grammar"),
+                        [0.0, 1.0],
+                    ),
                 );
             }
             loops.insert(
                 loop_id,
                 B5Loop {
                     object_id: loop_id,
-                    pcurves: loop_pcurves,
-                    edges: loop_edges,
+                    members: loop_pcurves
+                        .into_iter()
+                        .zip(loop_edges)
+                        .map(|(pcurve, edge)| B5LoopMember {
+                            pcurve,
+                            edge,
+                            controls: [0, 0, 0],
+                        })
+                        .collect(),
                     metadata: B5LoopMetadata {
                         framing_controls: [0, 0],
-                        edge_controls: vec![[0, 0, 0]; 4],
                         extension: None,
                     },
                     surface: 10,
@@ -683,9 +695,14 @@ mod tests {
             orientations.insert(
                 loop_id,
                 OrientedLoop {
-                    member_order: vec![0, 1, 2, 3],
-                    reversed: vec![false; 4],
-                    pcurve_reversed: vec![false; 4],
+                    flipped: false,
+                    members: vec![
+                        OrientedLoopMember {
+                            reversed: false,
+                            pcurve_reversed: false
+                        };
+                        4
+                    ],
                 },
             );
         }
@@ -711,16 +728,16 @@ mod tests {
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
             vertex_points: points,
-            logical_vertex_points: Vec::new(),
-            logical_vertex_refs: Vec::new(),
+            logical_vertices: Vec::new(),
             edge_vertices,
             edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("surface#10".to_string()),
+            id: SurfaceId::mint("catia:test:surface#surface%2310".to_string())
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -736,7 +753,11 @@ mod tests {
                 &graph,
                 &graph.faces[0],
                 &orientations,
-                &HashMap::from([(10, SurfaceId("surface#10".to_string()))]),
+                &HashMap::from([(
+                    10,
+                    SurfaceId::mint("catia:test:surface#surface%2310".to_string())
+                        .expect("identity grammar")
+                )]),
                 &pcurve_uses,
             ),
             Some(vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer])

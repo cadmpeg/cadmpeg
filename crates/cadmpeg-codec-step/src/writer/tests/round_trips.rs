@@ -14,13 +14,13 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
 use crate::test_support::export;
-use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeometry> {
     let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
@@ -82,42 +82,38 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => Some(CurveGeometry::Nurbs(NurbsCurve {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points.iter().copied().map(point).collect(),
-            weights: weights.clone(),
-            periodic: *periodic,
-        })),
+        PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs.control_points().iter().copied().map(point).collect(),
+                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.periodic(),
+            )
+            .ok()?,
+        )),
         PcurveGeometry::Transformed { basis, transform } => {
             let CurveGeometry::Line { origin, direction } = curve_geometry_for_sheet_pcurve(basis)?
             else {
                 return None;
             };
-            let transform = Transform {
-                rows: [
-                    [
-                        transform.rows[0][0],
-                        transform.rows[0][1],
-                        0.0,
-                        transform.rows[0][2],
-                    ],
-                    [
-                        transform.rows[1][0],
-                        transform.rows[1][1],
-                        0.0,
-                        transform.rows[1][2],
-                    ],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
+            let transform = Transform::from_rows([
+                [
+                    transform.rows()[0][0],
+                    transform.rows()[0][1],
+                    0.0,
+                    transform.rows()[0][2],
                 ],
-            };
+                [
+                    transform.rows()[1][0],
+                    transform.rows()[1][1],
+                    0.0,
+                    transform.rows()[1][2],
+                ],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .expect("affine transform");
             let direction = transform.apply_vector(direction);
             let length = direction.norm();
             (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
@@ -237,9 +233,9 @@ fn buf_line_count(buf: &[u8]) -> usize {
 /// A minimal single-cylinder-surface document exercising analytic emission and
 /// interning of shared points/directions.
 pub(crate) fn cylinder_surface_doc() -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("cyl".into()),
+        id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -260,32 +256,39 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(10.0, 0.0),
-        ],
-        weights: Some(vec![1.0, 2.0]),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(10.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();
     align_sheet_edge_to_pcurve(&mut ir, &geometry);
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write NURBS pcurve");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write NURBS pcurve");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode NURBS pcurve");
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-            ..
-        } if control_points.len() == 2 && weights == &[1.0, 2.0]
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && !nurbs.periodic()
+                && nurbs.control_points().len() == 2
+                && nurbs.weights() == Some(&[1.0, 2.0][..])
     ));
 }
 
@@ -352,9 +355,12 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
                 origin: Point2::new(1.0, 2.0),
                 direction: Point2::new(3.0, 4.0),
             }),
-            transform: Transform2 {
-                rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
-            },
+            transform: Transform2::from_rows([
+                [0.0, -2.0, 10.0],
+                [2.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0],
+            ])
+            .expect("affine transform"),
         },
     ];
 
@@ -363,7 +369,13 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
         ir.model.pcurves[0].geometry = geometry.clone();
         align_sheet_edge_to_pcurve(&mut ir, &geometry);
         let mut output = Vec::new();
-        write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write exact pcurve");
+        write_step(
+            &ir,
+            &mut output,
+            StepSchema::Ap214,
+            &StepWriteOptions::default(),
+        )
+        .expect("write exact pcurve");
         let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
         if matches!(&geometry, PcurveGeometry::Transformed { .. }) {
             assert!(output_text.contains("CURVE_REPLICA"));
@@ -388,20 +400,20 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
 #[test]
 pub(crate) fn writer_round_trips_rigid_body_placements() {
     let mut ir = unit_cube();
-    ir.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    ir.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
             [0.0, 0.0, 1.0, 2.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     let options = StepWriteOptions {
-        unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &options).expect("write placed body");
+    write_step(&ir, &mut output, StepSchema::Ap214, &options).expect("write placed body");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
@@ -415,7 +427,9 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
 #[test]
 pub(crate) fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
-    let product = cadmpeg_ir::ids::ProductDefinitionId("product-0".into());
+    let product =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-0")
+            .expect("identity grammar");
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -430,34 +444,27 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")
+            .expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Root,
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
-        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: Some("Cube root".into()),
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
-        link_transform: None,
+        link: None,
         native_ref: None,
     });
     let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &options).expect("write product-owned body");
+    write_step(&ir, &mut output, StepSchema::Ap242Edition3, &options)
+        .expect("write product-owned body");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
@@ -512,7 +519,13 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write wire body");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write wire body");
     let text = String::from_utf8(output.clone()).expect("wire STEP is UTF-8");
     assert!(text.contains("CURVE_STYLE"));
     assert_eq!(text.matches("STYLED_ITEM").count(), 1);
@@ -554,7 +567,13 @@ fn writer_round_trips_standalone_points_and_curves() {
     ir.model.vertices.clear();
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write standalone geometry");
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write standalone geometry");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode standalone geometry");
@@ -566,34 +585,31 @@ fn writer_round_trips_standalone_points_and_curves() {
 #[test]
 pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     let mut ir = unit_cube();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            faces: Vec::new(),
-            chordal_deflection: None,
-            id: "mesh-0".into(),
-            body: Some(ir.model.bodies[0].id.clone()),
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "mesh-0",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2], [2, 1, 0]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
+            vec![[0, 1, 2], [2, 1, 0]],
+            Vec::new(),
+            vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation")
+        .with_body(Some(ir.model.bodies[0].id.clone())),
+    );
     let mut bytes = Vec::new();
-    let report = write_step(&ir, &mut bytes, &options).expect("write AP242 tessellation");
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write AP242 tessellation");
     assert!(!report
         .losses
         .iter()
@@ -606,9 +622,9 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
         .expect("decode AP242 tessellation");
     assert_eq!(decoded.ir().model.tessellations.len(), 1);
     let mesh = &decoded.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices.len(), 3);
-    assert_eq!(mesh.triangles, [[0, 1, 2], [2, 1, 0]]);
-    assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(mesh.vertices().len(), 3);
+    assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
+    assert_eq!(mesh.normals().len(), 3);
     assert!(mesh.body.is_some());
 }
 
@@ -627,22 +643,28 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
         major_radius: 4.0,
         minor_radius: 1.5,
     };
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
-            id: CurveId("parabola".into()),
+            id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
         },
         Curve {
-            id: CurveId("hyperbola".into()),
+            id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
         },
     ]);
 
     let mut output = Vec::new();
-    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write conics");
+    write_step(
+        &source,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write conics");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode conics");
@@ -662,9 +684,9 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 
 #[test]
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("line".into()),
+        id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
@@ -774,7 +796,13 @@ fn every_reference_resolves() {
 #[test]
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
-    let report = write_step(&unit_cube(), &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &unit_cube(),
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     assert_eq!(report.census.total(), buf_line_count(&buf));
     assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
     assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
@@ -788,7 +816,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId("test:appearance#hidden".into());
+    let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("hidden face".into()),
@@ -808,7 +836,9 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#hidden-face".into(),
+        id: "test:model:appearance-binding#hidden-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -818,8 +848,13 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write hidden appearance binding");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write hidden appearance binding");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("INVISIBILITY"));
@@ -843,8 +878,10 @@ fn writer_round_trips_surface_appearance_transparency() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId("test:appearance#transparent".into());
-    let second_appearance = AppearanceId("test:appearance#more-transparent".into());
+    let appearance =
+        AppearanceId::mint("test:model:appearance#transparent").expect("identity grammar");
+    let second_appearance =
+        AppearanceId::mint("test:model:appearance#more-transparent").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("transparent face".into()),
@@ -882,7 +919,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#transparent-face".into(),
+        id: "test:model:appearance-binding#transparent-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -891,7 +930,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#more-transparent-face".into(),
+        id: "test:model:appearance-binding#more-transparent-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
         appearance: second_appearance,
         source_entity_id: None,
@@ -901,8 +942,13 @@ fn writer_round_trips_surface_appearance_transparency() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write transparent surface appearance");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write transparent surface appearance");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("SURFACE_STYLE_TRANSPARENT"));
@@ -931,7 +977,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#hidden".into()),
+        id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
@@ -939,8 +985,13 @@ fn writer_round_trips_presentation_layer_visibility() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write hidden presentation layer");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write hidden presentation layer");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('hidden layer','layer visibility',"));
@@ -968,7 +1019,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#unnamed".into()),
+        id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
@@ -976,8 +1027,13 @@ fn writer_round_trips_empty_presentation_layer_label() {
     });
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write empty-label presentation layer");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write empty-label presentation layer");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('','unnamed layer',"));
@@ -1045,15 +1101,20 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ),
     ];
     for (geom, kw) in cases {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("s".into()),
+            id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(&ir.model.surfaces[0].geometry);
+        let s = emit_surface_only(
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
+        );
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }
@@ -1073,17 +1134,18 @@ fn analytic_surface_placements_preserve_orientation() {
 
 #[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
-    let n = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let n = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let s = emit_curve_only(&CurveGeometry::Nurbs(n));
     assert!(s.contains("B_SPLINE_CURVE_WITH_KNOTS"));
     // Clamped end knots collapse to multiplicity 3.
@@ -1093,17 +1155,18 @@ fn nurbs_curve_non_rational_uses_with_knots() {
 
 #[test]
 fn nurbs_curve_rational_uses_complex_form() {
-    let n = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let n = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .unwrap();
     let s = emit_curve_only(&CurveGeometry::Nurbs(n));
     assert!(s.contains("RATIONAL_B_SPLINE_CURVE"));
     assert!(s.contains("BOUNDED_CURVE()"));
@@ -1111,24 +1174,25 @@ fn nurbs_curve_rational_uses_complex_form() {
 
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
-    let n = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let n = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let s = emit_surface_only(&SurfaceGeometry::Nurbs(n));
     assert!(s.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
 }
@@ -1136,7 +1200,6 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
 #[test]
 fn v1_document_uses_canonical_millimeter_unit() {
     let ir = unit_cube();
-    assert_eq!(ir.units.length, LengthUnit::Millimeter);
     let s = export(&ir);
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
     assert!(!s.contains("CONVERSION_BASED_UNIT"));
@@ -1158,8 +1221,13 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     ir.model.shells[0].wire_edges = vec![edge];
 
     let mut output = Vec::new();
-    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write mixed general body");
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write mixed general body");
     assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
             && loss.message.contains("wire region")
@@ -1172,18 +1240,27 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
 #[test]
 fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let mut source = unit_cube();
-    source
+    let loop_ = source
         .model
         .loops
         .iter_mut()
-        .find(|loop_| loop_.coedges.len() >= 3)
-        .expect("unit cube has an edge loop")
-        .coedges
-        .swap(0, 1);
+        .find(|loop_| loop_.coedges().len() >= 3)
+        .expect("unit cube has an edge loop");
+    let mut coedges = loop_.coedges().to_vec();
+    coedges.swap(0, 1);
+    let vertex_uses = loop_.anchored_vertex_uses().to_vec();
+    loop_
+        .replace_ring(coedges, vertex_uses)
+        .expect("reordered loop ring remains valid");
 
     let mut bytes = Vec::new();
-    let report = write_step(&source, &mut bytes, &StepWriteOptions::default())
-        .expect("writer should recover a continuous loop order");
+    let report = write_step(
+        &source,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("writer should recover a continuous loop order");
     assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
@@ -1209,12 +1286,10 @@ fn writer_declares_each_supported_target_schema_exactly() {
         StepSchema::Ap242Edition3,
     ] {
         let options = StepWriteOptions {
-            schema,
-            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         };
         let mut bytes = Vec::new();
-        write_step(&unit_cube(), &mut bytes, &options).expect("write target schema");
+        write_step(&unit_cube(), &mut bytes, schema, &options).expect("write target schema");
         let text = std::str::from_utf8(&bytes).expect("ASCII STEP output");
         assert!(text.contains(&format!("FILE_SCHEMA(('{}'));", schema.file_schema())));
         StepCodec::default()
@@ -1230,8 +1305,13 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode noncanonical unit fixture");
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("export salvaged IR");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("export salvaged IR");
 
     let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
     assert!(diagnostics.is_empty());

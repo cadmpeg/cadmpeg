@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_dialect,
+    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_global_table,
     analyze_trailing_pointer_groups_with_records, entity_primary_end,
-    entity_primary_end_for_dialect, entity_primary_end_with_records, groups_for_candidate,
+    entity_primary_end_for_global_table, entity_primary_end_with_records, groups_for_candidate,
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::card::{scan, Section};
-use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -50,9 +50,9 @@ fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     bytes[card_start + 64..card_start + 72].copy_from_slice(&field);
     let scan = scan(&bytes).unwrap();
     let line = scan
-        .lines
-        .iter()
-        .find(|line| line.section == Some(Section::Parameter))
+        .section(Section::Parameter)
+        .map(|(_, line)| line)
+        .next()
         .expect("Parameter Data line");
     super::back_pointer(line)
 }
@@ -81,12 +81,7 @@ fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,

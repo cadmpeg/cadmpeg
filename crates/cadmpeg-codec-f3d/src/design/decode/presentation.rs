@@ -39,8 +39,7 @@ pub(crate) struct PresentationMaterial {
     pub physical_token_offset: u64,
     pub visual_guid: String,
     pub visual_guid_offset: u64,
-    pub visual_preset: Option<String>,
-    pub visual_preset_offset: Option<u64>,
+    pub visual_preset: Option<crate::records::Located<String>>,
 }
 
 /// One body record, its exact owner header, and its browser-node join.
@@ -59,7 +58,7 @@ pub(crate) enum BodyPresentationOwner {
     /// The owner stores a component-qualified entity ID after its entity
     /// suffix.
     Named {
-        entity_id: String,
+        entity_id: crate::records::DesignEntityId,
         entity_id_offset: u64,
     },
     /// The owner stores only its u64 entity suffix in the indexed head.
@@ -82,7 +81,13 @@ pub(crate) fn browser_node_records(
             || !frame
                 .design_type
                 .base_type_guid
-                .as_deref()
+                .as_ref()
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -159,7 +164,13 @@ pub(crate) fn body_presentations(
             || !frame
                 .design_type
                 .base_type_guid
-                .as_deref()
+                .as_ref()
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -170,13 +181,10 @@ pub(crate) fn body_presentations(
         let framed_bytes = &bytes[..frame.end];
         let named_header = parse_settled_entity_header(framed_bytes, frame.start)
             .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
-        let (entity_suffix, owner, material) = if let Some((
-            entity_suffix,
-            entity_id,
-            _,
-            header_end,
-        )) = named_header
+        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) =
+            named_header
         {
+            let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
@@ -184,7 +192,7 @@ pub(crate) fn body_presentations(
                 )));
             }
             let entity_id_offset = header_end
-                .checked_sub(entity_id.encode_utf16().count() * 2)
+                .checked_sub(entity_id.as_str().encode_utf16().count() * 2)
                 .expect("entity header end follows its UTF-16 payload");
             (
                 entity_suffix,
@@ -256,7 +264,7 @@ fn entity_types(
 ) -> Result<HashMap<u64, (&str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if out
                 .insert(
                     entity_id,
@@ -391,8 +399,10 @@ fn presentation_material(
             physical_token_offset: (token_at + 4) as u64,
             visual_guid,
             visual_guid_offset: (visual_at + 4) as u64,
-            visual_preset: visual_preset.as_ref().map(|(_, value)| value.clone()),
-            visual_preset_offset: visual_preset.map(|(at, _)| (at + 4) as u64),
+            visual_preset: visual_preset.map(|(at, value)| crate::records::Located {
+                value,
+                offset: (at + 4) as u64,
+            }),
         });
     }
     match candidates.as_slice() {
@@ -493,7 +503,6 @@ fn bare_presentation_material(
             visual_guid,
             visual_guid_offset: (*visual_at + 4) as u64,
             visual_preset: None,
-            visual_preset_offset: None,
         });
     }
     match candidates.as_slice() {
@@ -510,13 +519,11 @@ enum LocalReference {
 
 fn local_reference_value(bytes: &[u8], at: &mut usize) -> Option<LocalReference> {
     let reference = take_reference(bytes, at)?;
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
+    match reference {
+        crate::bytes::Reference::Null => Some(LocalReference::Null),
+        crate::bytes::Reference::Local { target, .. } => Some(LocalReference::Target(target)),
+        _ => None,
     }
-    Some(match reference.target {
-        Some(target) => LocalReference::Target(target),
-        None => LocalReference::Null,
-    })
 }
 
 fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
@@ -628,15 +635,16 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(str::to_owned),
-            base_type_guid_offset: base_type_guid.map(|_| 0),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: Some(value.to_owned().try_into().expect("base GUID")),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
-            entity_ids,
-            entity_id_offsets: Vec::new(),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -723,7 +731,7 @@ mod tests {
         assert_eq!(
             presentation.owner,
             BodyPresentationOwner::Named {
-                entity_id: format!("0_{entity}"),
+                entity_id: crate::records::DesignEntityId::from_parts("0", entity),
                 entity_id_offset: 25,
             }
         );
@@ -797,7 +805,10 @@ mod tests {
             presentations[0]
                 .material
                 .as_ref()
-                .and_then(|material| material.visual_preset.as_deref()),
+                .and_then(|material| material
+                    .visual_preset
+                    .as_ref()
+                    .map(|field| field.value.as_str())),
             Some("Prism-001")
         );
     }

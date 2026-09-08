@@ -46,9 +46,9 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
 
     assert_eq!(scan.features.entity_tables.len(), 1);
     let table = &scan.features.entity_tables[0];
-    assert_eq!(table.feature_id, Some(4));
+    assert_eq!(table.feature_id, 4);
     assert_eq!(table.table_class_id, 29);
-    assert_eq!(table.entry_ids, vec![7, 9]);
+    assert_eq!(table.entry_ids(), vec![7, 9]);
     assert_eq!(table.entries.len(), 2);
     assert!(!table.entries[0].prefixed);
     assert!(table.entries[1].prefixed);
@@ -56,11 +56,11 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.entries[1].entity_id, 9);
     assert_eq!(table.entries[0].class_id, 200);
     assert_eq!(table.entries[1].class_id, 200);
-    assert_eq!(table.entries[0].source_entity_id, Some(1));
-    assert_eq!(table.entries[1].source_entity_id, Some(2));
+    assert_eq!(table.entries[0].source_entity_id(), Some(1));
+    assert_eq!(table.entries[1].source_entity_id(), Some(2));
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
-    assert_eq!(table.surface_ids, vec![7]);
-    assert_eq!(table.non_surface_entity_ids, vec![9]);
+    assert_eq!(table.surface_ids(), vec![7]);
+    assert_eq!(table.non_surface_entity_ids(), vec![9]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -70,7 +70,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert!(matches!(
         feature.definition,
@@ -88,7 +88,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         feature.source_properties["native_parameter.generated_entity.9.source_section_entity_id"],
         "2"
     );
-    let tables = &result.ir().native.namespace("creo").unwrap().arenas["feature_entity_tables"];
+    let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].fields()["owner_feature_id"], 4);
     assert_eq!(tables[0].fields()["table_class_id"], 29);
@@ -129,10 +129,10 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
     let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one generated-entity table");
     };
-    assert_eq!(table.entry_ids, vec![7, 8]);
+    assert_eq!(table.entry_ids(), vec![7, 8]);
     assert_eq!(table.entries[0].class_id, 200);
-    assert_eq!(table.entries[0].source_entity_id, Some(227));
-    assert_eq!(table.entries[1].source_entity_id, Some(3));
+    assert_eq!(table.entries[0].source_entity_id(), Some(227));
+    assert_eq!(table.entries[1].source_entity_id(), Some(3));
 }
 
 #[test]
@@ -152,10 +152,10 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
     let [table] = scan.features.entity_tables.as_slice() else {
         panic!("expected one large generated-entity table");
     };
-    assert_eq!(table.feature_id, Some(4));
-    assert_eq!(table.entry_ids.len(), 65);
-    assert_eq!(table.surface_ids, vec![7]);
-    assert_eq!(table.non_surface_entity_ids.len(), 64);
+    assert_eq!(table.feature_id, 4);
+    assert_eq!(table.entry_ids().len(), 65);
+    assert_eq!(table.surface_ids(), vec![7]);
+    assert_eq!(table.non_surface_entity_ids().len(), 64);
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
 
     assert_eq!(scan.features.rows.len(), 2);
     assert_eq!(scan.features.rows[0].feature_id, 4);
-    assert_eq!(scan.features.rows[0].header, [0xeb, 0x04]);
+    assert_eq!(scan.features.rows[0].body[..2], [0xeb, 0x04]);
     assert_eq!(
         scan.features.rows[0].body,
         vec![
@@ -233,8 +233,18 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.features.rows[0].root_schema_class, Some(917));
-    assert_eq!(scan.features.rows[1].root_schema_class, Some(913));
+    assert_eq!(
+        scan.features.rows[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(
+        scan.features.rows[1]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(913)
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -277,7 +287,10 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references.len(), 2);
     assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
     assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
-    assert!(scan.features.entity_references[0].target_resolved);
+    assert!(
+        (scan.features.entity_references[0].target_entity_id as usize)
+            < scan.features.entities.len()
+    );
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
@@ -289,12 +302,12 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    let entities = &namespace.arenas["feature_entities"];
+    let entities = &namespace.arenas()["feature_entities"];
     assert_eq!(entities.len(), 3);
     assert_eq!(entities[0].id(), "creo:allfeatur:entity#0");
     assert_eq!(entities[0].fields()["type_byte"], 0);
     assert_eq!(entities[0].fields()["name"], "Sld_Features");
-    let references = &namespace.arenas["feature_entity_references"];
+    let references = &namespace.arenas()["feature_entity_references"];
     assert_eq!(references.len(), 2);
     let forward = references
         .iter()
@@ -375,11 +388,9 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-            ..
-        }])
+        } if matches!(groups.as_slice(), [group]
+            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+                && group.radius.is_unresolved())
     ));
     assert_eq!(
         feature.source_properties["native_parameter.choice.blend_choice.count"],
@@ -418,16 +429,16 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
-    let rows = &namespace.arenas["feature_rows"];
+    let rows = &namespace.arenas()["feature_rows"];
     assert_eq!(rows[0].fields()["owner_feature_id"], 4);
     assert_eq!(rows[0].fields()["header"][0], 0xeb);
     assert_eq!(rows[0].fields()["header"][1], 0x04);
     assert_eq!(rows[0].fields()["body"][0], 0xeb);
     assert_eq!(rows[0].fields()["body"][14], 0xe0);
-    let choices = &namespace.arenas["feature_choices"];
+    let choices = &namespace.arenas()["feature_choices"];
     assert_eq!(choices[0].fields()["owner_feature_id"], 4);
     assert_eq!(choices[0].fields()["label"], "blend_choice");
-    let fields = &namespace.arenas["feature_choice_fields"];
+    let fields = &namespace.arenas()["feature_choice_fields"];
     assert_eq!(fields[0].fields()["choice_label"], "blend_choice");
     assert_eq!(fields[0].fields()["name"], "values");
     assert_eq!(fields[0].fields()["value"]["kind"], "scalar_array");
@@ -461,17 +472,17 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind,
-        crate::feature::FeatureGeometryTableKind::DatumIds
+        crate::feature::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
     );
     assert_eq!(
-        scan.features.geometry_tables[2].entry_ids,
-        Some(vec![42, 43])
+        scan.features.geometry_tables[2].kind.datum_ids(),
+        Some(&[42, 43][..])
     );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let tables = &result.ir().native.namespace("creo").unwrap().arenas["feature_geometry_tables"];
+    let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
     assert_eq!(tables[0].fields()["owner_feature_id"], 4);
     assert_eq!(tables[0].fields()["kind"], "edge_ids");
@@ -515,7 +526,7 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_loop_history_entries"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_history_entries"];
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].fields()["owner_feature_id"], 4);
     assert_eq!(records[0].fields()["ordinal"], 0);
@@ -580,7 +591,7 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["feature_affected_ids"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_affected_ids"];
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].fields()["owner_feature_id"], 4);
     assert_eq!(records[0].fields()["kind"], "geometry");
@@ -625,13 +636,13 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         &result.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
-        }] if selection == "creo:allfeatur:replay_edgs_affected#4:9")
+        } if matches!(groups.as_slice(), [group]
+            if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
+                if selection == "creo:allfeatur:replay_edgs_affected#4:9")
+                && group.radius.is_unresolved())
     ));
     let records =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_replay_affected_ids"];
     assert_eq!(records[0].fields()["geometry_extent"], "explicit");
     assert_eq!(records[0].fields()["edge_ids"][0], 9);
 }
@@ -658,7 +669,7 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_restore_directions"];
     assert_eq!(records[0].fields()["value"], 0);
     assert_eq!(records[1].fields()["value"], 167);
     assert_eq!(records[2].fields()["value"], 1);
@@ -712,12 +723,16 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
     assert_eq!(
-        scan.features.depdb_recipe_rows[0].root_schema_class,
+        scan.features.depdb_recipe_rows[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
         Some(917)
     );
     assert_eq!(scan.features.depdb_recipe_rows[1].feature_id, 8055);
     assert_eq!(
-        scan.features.depdb_recipe_rows[1].root_schema_class,
+        scan.features.depdb_recipe_rows[1]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
         Some(916)
     );
     assert!(scan.features.depdb_recipe_rows[0].offset < scan.features.depdb_recipe_rows[1].offset);
@@ -742,18 +757,18 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
 
     assert_eq!(scan.features.definitions.len(), 1);
     let definition = &scan.features.definitions[0];
-    assert_eq!(definition.id, 2);
-    assert_eq!(definition.owner_feature_id, Some(17));
+    assert_eq!(definition.identity.id(), 2);
+    assert_eq!(definition.identity.owner_feature_id(), Some(17));
     let variables = definition.variables.as_ref().expect("var_arr");
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(1.0));
-    assert_eq!(variables.points[0].v, Some(3.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(1.0));
+    assert_eq!(variables.points()[0].v, Some(3.0));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -778,10 +793,15 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .features
         .geometry_tables
         .iter()
-        .find(|table| table.kind == crate::feature::FeatureGeometryTableKind::DatumIds)
+        .find(|table| {
+            matches!(
+                table.kind,
+                crate::feature::FeatureGeometryTableKind::DatumIds(_)
+            )
+        })
         .expect("datum table");
     assert_eq!(datum_table.feature_id, 17);
-    assert_eq!(datum_table.entry_ids.as_deref(), Some(&[41][..]));
+    assert_eq!(datum_table.kind.datum_ids(), Some(&[41][..]));
 
     let parents = scan
         .features
@@ -810,7 +830,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     let decoded = CreoCodec
         .decode(&mut Cursor::new(null_data), &DecodeOptions::default())
         .expect("decode null family table");
-    let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas["configuration"];
+    let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas()["configuration"];
     assert_eq!(configuration.len(), 1);
     assert_eq!(configuration[0].id(), "creo:family_info:driver_table#root");
     assert_eq!(configuration[0].fields()["pointer_kind"], "null");
@@ -851,7 +871,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     let decoded = CreoCodec
         .decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
         .expect("decode referenced family table");
-    let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas["configuration"];
+    let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas()["configuration"];
     assert_eq!(
         configuration[0].fields()["pointer_kind"],
         "entity_reference"

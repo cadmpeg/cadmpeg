@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -12,8 +11,10 @@ pub(super) use super::*;
 
 mod assembly;
 mod assembly_variable_reference;
+mod coil;
 mod combine;
 mod component_insert;
+mod copy_paste_bodies;
 mod derived_instance;
 mod existing;
 mod extrude_class_296;

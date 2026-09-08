@@ -2,37 +2,160 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
+use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
-/// Four two-digit fields in the Directory Entry status number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Status {
-    pub(crate) blank: u8,
-    pub(crate) subordinate: u8,
-    pub(crate) use_flag: u8,
-    pub(crate) hierarchy: u8,
+/// Source status fields. Undefined numeric values remain available to native serialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub(crate) struct SourceStatus {
+    #[serde(rename = "blank_status")]
+    blank: u8,
+    #[serde(rename = "subordinate_status")]
+    subordinate: u8,
+    use_flag: u8,
+    #[serde(rename = "hierarchy_status")]
+    hierarchy: u8,
+    #[serde(skip)]
+    global_table: GlobalTable,
 }
 
-impl Status {
-    pub(crate) fn is_use_flag_valid(self, dialect: Dialect) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Hierarchy {
+    GlobalTopDown,
+    GlobalDefer,
+    Property,
+}
+
+impl Hierarchy {
+    pub(crate) fn parse(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::GlobalTopDown),
+            1 => Some(Self::GlobalDefer),
+            2 => Some(Self::Property),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Subordinate {
+    Independent,
+    Physically,
+    Logically,
+    Both,
+}
+
+impl Subordinate {
+    pub(crate) fn parse(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Independent),
+            1 => Some(Self::Physically),
+            2 => Some(Self::Logically),
+            3 => Some(Self::Both),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UseFlag {
+    Geometry,
+    Annotation,
+    Definition,
+    Other,
+    LogicalPositional,
+    Parametric,
+    Construction,
+}
+
+impl UseFlag {
+    pub(crate) fn parse(value: u8, global_table: GlobalTable) -> Option<Self> {
+        match value {
+            0 => Some(Self::Geometry),
+            1 => Some(Self::Annotation),
+            2 => Some(Self::Definition),
+            3 => Some(Self::Other),
+            4 => Some(Self::LogicalPositional),
+            5 => Some(Self::Parametric),
+            6 if !matches!(global_table, GlobalTable::V4_0) => Some(Self::Construction),
+            _ => None,
+        }
+    }
+}
+
+impl SourceStatus {
+    /// Whether the source blank status is visible (00).
+    pub(crate) fn is_visible(self) -> bool {
+        self.blank == 0
+    }
+
+    pub(crate) fn subordinate(self) -> Option<Subordinate> {
+        Subordinate::parse(self.subordinate)
+    }
+
+    pub(crate) fn use_flag(self) -> Option<UseFlag> {
+        UseFlag::parse(self.use_flag, self.global_table)
+    }
+
+    pub(crate) fn hierarchy(self) -> Option<Hierarchy> {
+        Hierarchy::parse(self.hierarchy)
+    }
+
+    pub(crate) fn use_flag_code(self) -> u8 {
         self.use_flag
-            <= if matches!(dialect, Dialect::V4_0) {
-                5
-            } else {
-                6
-            }
     }
 
     pub(crate) fn is_physically_dependent(self) -> bool {
-        matches!(self.subordinate, 1 | 3)
+        matches!(
+            self.subordinate(),
+            Some(Subordinate::Physically | Subordinate::Both)
+        )
     }
 
     pub(crate) fn is_logically_dependent(self) -> bool {
-        matches!(self.subordinate, 2 | 3)
+        matches!(
+            self.subordinate(),
+            Some(Subordinate::Logically | Subordinate::Both)
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_codes(
+        [blank, subordinate, use_flag, hierarchy]: [u8; 4],
+        global_table: GlobalTable,
+    ) -> Self {
+        Self {
+            blank,
+            subordinate,
+            use_flag,
+            hierarchy,
+            global_table,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_blank(&mut self, value: u8) {
+        self.blank = value;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_subordinate(&mut self, value: u8) {
+        self.subordinate = value;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_use_flag(&mut self, value: u8, global_table: GlobalTable) {
+        self.use_flag = value;
+        self.global_table = global_table;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_hierarchy(&mut self, value: u8) {
+        self.hierarchy = value;
     }
 }
 
@@ -49,7 +172,7 @@ pub(crate) struct DirectoryEntry {
     pub(crate) view: i64,
     pub(crate) transform: i64,
     pub(crate) label_display: i64,
-    pub(crate) status: Status,
+    pub(crate) status: SourceStatus,
     pub(crate) line_weight: i64,
     pub(crate) color: i64,
     pub(crate) parameter_line_count: i64,
@@ -61,12 +184,8 @@ pub(crate) struct DirectoryEntry {
 
 impl DirectoryEntry {
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
-        cadmpeg_ir::SourceProvenance {
-            format: "iges".into(),
-            stream: "iges".into(),
-            offset: self.source_offset,
-            tag: Some(format!("directory_entry:D{}", self.sequence)),
-        }
+        cadmpeg_ir::SourceProvenance::in_stream("iges", "iges", self.source_offset)
+            .with_tag(format!("directory_entry:D{}", self.sequence))
     }
 }
 
@@ -79,6 +198,12 @@ pub(crate) enum DirectoryDefect {
     StatusNumberInvalid,
     RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
     UnpairedCard,
+}
+
+impl Serialize for DirectoryDefect {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.key())
+    }
 }
 
 impl DirectoryDefect {
@@ -139,12 +264,10 @@ impl QuarantinedDirectoryRecord {
                 self.defect.describe(),
                 self.cards
             ))
-            .with_provenance(SourceProvenance {
-                format: "iges".into(),
-                stream: "iges".into(),
-                offset: self.source_offset,
-                tag: Some(format!("directory_entry:D{}", self.sequence)),
-            })
+        .with_provenance(
+            SourceProvenance::in_stream("iges", "iges", self.source_offset)
+                .with_tag(format!("directory_entry:D{}", self.sequence)),
+        )
     }
 }
 
@@ -171,9 +294,9 @@ fn directory_integer(
     field: [u8; 8],
     name: &'static str,
     number: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<i64, DirectoryDefect> {
-    if matches!(dialect, Dialect::V4_0)
+    if matches!(global_table, GlobalTable::V4_0)
         && matches!(number, 1 | 2 | 11 | 14)
         && field.iter().all(|byte| *byte == b' ')
     {
@@ -182,17 +305,21 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
+fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
-        return Ok(Status {
+        return Ok(SourceStatus {
             blank: 0,
             subordinate: 0,
             use_flag: 0,
             hierarchy: 0,
+            global_table,
         });
     }
     let mut digits = [b'0'; 8];
-    if matches!(dialect, Dialect::Legacy | Dialect::V4_0 | Dialect::V5_0) {
+    if matches!(
+        global_table,
+        GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
+    ) {
         let first_digit = field
             .iter()
             .position(u8::is_ascii_digit)
@@ -213,24 +340,26 @@ fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
     }
     let digit = |at: usize| digits[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
-    Ok(Status {
+    Ok(SourceStatus {
         blank: pair(0),
         subordinate: pair(2),
         use_flag: pair(4),
         hierarchy: pair(6),
+        global_table,
     })
 }
 
 fn parse_pair(
+    sequence: u32,
     first: &PhysicalLine,
     second: &PhysicalLine,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
-    let sequence = first.sequence.unwrap_or_default();
     let first_fields = fields(first);
     let second_fields = fields(second);
-    let entity_type = directory_integer(first_fields[0], "entity type", 1, dialect)?;
-    let repeated_type = directory_integer(second_fields[0], "repeated entity type", 11, dialect)?;
+    let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
+    let repeated_type =
+        directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
     if entity_type != repeated_type {
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
@@ -241,39 +370,45 @@ fn parse_pair(
         source_offset: first.offset,
         sequence,
         entity_type,
-        parameter_start: directory_integer(first_fields[1], "Parameter Data start", 2, dialect)?,
-        structure: directory_integer(first_fields[2], "structure", 3, dialect)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, dialect)?,
-        level: directory_integer(first_fields[4], "level", 5, dialect)?,
-        view: directory_integer(first_fields[5], "view", 6, dialect)?,
-        transform: directory_integer(first_fields[6], "transformation", 7, dialect)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, dialect)?,
-        status: status(first_fields[8], dialect)?,
-        line_weight: directory_integer(second_fields[1], "line weight", 12, dialect)?,
-        color: directory_integer(second_fields[2], "color", 13, dialect)?,
+        parameter_start: directory_integer(
+            first_fields[1],
+            "Parameter Data start",
+            2,
+            global_table,
+        )?,
+        structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, global_table)?,
+        level: directory_integer(first_fields[4], "level", 5, global_table)?,
+        view: directory_integer(first_fields[5], "view", 6, global_table)?,
+        transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, global_table)?,
+        status: status(first_fields[8], global_table)?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table)?,
+        color: directory_integer(second_fields[2], "color", 13, global_table)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
             14,
-            dialect,
+            global_table,
         )?,
-        form: directory_integer(second_fields[4], "form", 15, dialect)?,
+        form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, dialect)?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table)?,
     })
 }
 
-fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDirectoryRecord {
+fn quarantine(
+    first: (u32, &PhysicalLine),
+    rest: &[(u32, &PhysicalLine)],
+    defect: DirectoryDefect,
+) -> QuarantinedDirectoryRecord {
     QuarantinedDirectoryRecord {
-        sequence: cards
-            .first()
-            .and_then(|line| line.sequence)
-            .unwrap_or_default(),
-        source_offset: cards.first().map_or(0, |line| line.offset),
-        cards: cards.len(),
-        bytes: cards
-            .iter()
+        sequence: first.0,
+        source_offset: first.1.offset,
+        cards: rest.len() + 1,
+        bytes: std::iter::once(first.1)
+            .chain(rest.iter().map(|(_, line)| *line))
             .flat_map(|line| line.payload.iter().copied())
             .collect(),
         defect,
@@ -283,24 +418,20 @@ fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDi
 /// Split the Directory Entry section into typed records and quarantined ones.
 pub(crate) fn parse(
     scan: &CardScan,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
-    let lines = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Directory))
-        .collect::<Vec<_>>();
+    let lines = scan.section(Section::Directory).collect::<Vec<_>>();
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-        match parse_pair(pair[0], pair[1], dialect) {
+        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => entries.push(entry),
-            Err(defect) => quarantined.push(quarantine(pair, defect)),
+            Err(defect) => quarantined.push(quarantine(pair[0], &pair[1..], defect)),
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-        quarantined.push(quarantine(&[unpaired], DirectoryDefect::UnpairedCard));
+        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
     }
     (entries, quarantined)
 }

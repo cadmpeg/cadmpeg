@@ -22,50 +22,125 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::topology::Sense;
 
 use crate::layout::world_point as world_pt;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-/// A parsed topology record. Only the fields the chain walk needs are kept.
-#[derive(Debug, Clone)]
-pub struct Record {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bridge {
     pub attr: u16,
-    /// Big-endian document sequence carried by sequence-bearing topology records.
-    pub sequence: Option<u32>,
-    /// Big-endian `refs` array (length varies by family).
-    pub refs: Vec<u16>,
-    /// Orientation marker (`0x2b` forward / `0x2d` reversed), when the family
-    /// carries one.
-    pub marker: Option<u8>,
-    /// World-point coordinates in metres, for `00 1d` only.
-    pub xyz_m: Option<[f64; 3]>,
-    /// Byte offset of the world-point coordinates, for `00 1d` only.
-    pub xyz_offset: Option<usize>,
-    /// Owning entity reference carried by bridge records.
+    pub refs: [u16; 5],
+    pub sequence: u32,
+    pub sense: Sense,
     pub owner: Option<u16>,
-    /// Byte offset of the record's tag within the stream body.
     pub offset: usize,
 }
 
-/// Read `count` big-endian u16 refs starting at `at`.
-fn refs_be(buf: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
-    let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        out.push(View::u16_be_at(buf, at + 2 * i)?);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loop {
+    pub attr: u16,
+    pub refs: [u16; 4],
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeUse {
+    pub attr: u16,
+    pub references: EdgeReferences,
+    pub sequence: u32,
+    pub offset: usize,
+}
+
+/// Bare edge-use cells or the curve-only compact layout.
+#[derive(Debug, Clone, Eq)]
+pub enum EdgeReferences {
+    Bare([u16; 6]),
+    Compact { curve: u16 },
+}
+
+impl PartialEq for EdgeReferences {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bare(left), Self::Bare(right)) => left == right,
+            (Self::Compact { curve: left }, Self::Compact { curve: right }) => left == right,
+            (Self::Bare(refs), Self::Compact { curve })
+            | (Self::Compact { curve }, Self::Bare(refs)) => {
+                // Candidate equivalence treats absent compact cells as null bare cells.
+                refs[3] == *curve && [refs[0], refs[1], refs[2], refs[4], refs[5]] == [0; 5]
+            }
+        }
+    }
+}
+
+impl EdgeReferences {
+    pub fn canonical(&self) -> Option<u16> {
+        match self {
+            Self::Bare(refs) => Some(refs[0]),
+            Self::Compact { .. } => None,
+        }
+    }
+
+    pub fn curve(&self) -> u16 {
+        match self {
+            Self::Bare(refs) => refs[3],
+            Self::Compact { curve } => *curve,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Coedge {
+    pub attr: u16,
+    pub refs: [u16; 9],
+    pub sense: Sense,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VertexUse {
+    pub attr: u16,
+    pub refs: [u16; 5],
+    pub sequence: u32,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Point {
+    pub attr: u16,
+    pub refs: Vec<u16>,
+    pub xyz_m: [f64; 3],
+    pub xyz_offset: usize,
+    pub offset: usize,
+}
+
+fn parse_sense(marker: u8) -> Option<Sense> {
+    match marker {
+        0x2b => Some(Sense::Forward),
+        0x2d => Some(Sense::Reversed),
+        _ => None,
+    }
+}
+
+/// Read the fixed reference cell count of a topology family.
+fn refs_be<const N: usize>(buf: &[u8], at: usize) -> Option<[u16; N]> {
+    let mut out = [0; N];
+    for (index, reference) in out.iter_mut().enumerate() {
+        *reference = View::u16_be_at(buf, at + 2 * index)?;
     }
     Some(out)
 }
 
-fn refs_tripled(buf: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
-    let mut out = Vec::with_capacity(count);
-    for index in 0..count {
+fn refs_tripled<const N: usize>(buf: &[u8], at: usize) -> Option<[u16; N]> {
+    let mut out = [0; N];
+    for (index, reference) in out.iter_mut().enumerate() {
         let p = at + index * 3;
         if buf.get(p + 2) != Some(&1) {
             return None;
         }
-        out.push(View::u16_be_at(buf, p)?);
+        *reference = View::u16_be_at(buf, p)?;
     }
     Some(out)
 }
@@ -95,24 +170,19 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
 /// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
 /// The deltas form stores the owner as a `[hi][lo][01]` triple, so the magic
 /// sits at body+9 and the five refs follow as triples with the marker after.
-fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
+fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
         let sequence = View::u32_be_at(buf, p + 2)?;
         let owner = View::u16_be_at(buf, p + 6)?;
-        let refs = refs_tripled(buf, p + 17, 5)?;
+        let refs = refs_tripled::<5>(buf, p + 17)?;
         let marker = *buf.get(p + 32)?;
-        if marker != 0x2b && marker != 0x2d {
-            return None;
-        }
-        return Some(Record {
+        return Some(Bridge {
             attr,
-            sequence: Some(sequence),
+            sequence,
             refs,
-            marker: Some(marker),
-            xyz_m: None,
-            xyz_offset: None,
+            sense: parse_sense(marker)?,
             owner: (owner > 1).then_some(owner),
             offset: off,
         });
@@ -125,20 +195,15 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     let owner = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
-        (refs_tripled(buf, p + 16, 5)?, *buf.get(p + 31)?)
+        (refs_tripled::<5>(buf, p + 16)?, *buf.get(p + 31)?)
     } else {
-        (refs_be(buf, p + 16, 5)?, *buf.get(p + 26)?)
+        (refs_be::<5>(buf, p + 16)?, *buf.get(p + 26)?)
     };
-    if marker != 0x2b && marker != 0x2d {
-        return None;
-    }
-    Some(Record {
+    Some(Bridge {
         attr,
-        sequence: Some(sequence),
+        sequence,
         refs,
-        marker: Some(marker),
-        xyz_m: None,
-        xyz_offset: None,
+        sense: parse_sense(marker)?,
         owner: (owner > 1).then_some(owner),
         offset: off,
     })
@@ -146,55 +211,27 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
 
 /// Loop head `00 0f`: minimal 14-byte body, no magic, `refs[4]` at body+6.
 /// `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling.
-fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
+fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
     let p = body_start(buf, off, 0x0f)?;
     if p + 14 > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let refs = refs_tripled(buf, p + 6, 4).or_else(|| refs_be(buf, p + 6, 4))?;
-    Some(Record {
+    let refs = refs_tripled::<4>(buf, p + 6).or_else(|| refs_be::<4>(buf, p + 6))?;
+    Some(Loop {
         attr,
-        sequence: None,
         refs,
-        marker: None,
-        xyz_m: None,
-        xyz_offset: None,
-        owner: None,
         offset: off,
     })
-}
-
-fn record(attr: u16, refs: Vec<u16>, marker: Option<u8>, offset: usize) -> Record {
-    record_with_sequence(attr, None, refs, marker, offset)
-}
-
-fn record_with_sequence(
-    attr: u16,
-    sequence: Option<u32>,
-    refs: Vec<u16>,
-    marker: Option<u8>,
-    offset: usize,
-) -> Record {
-    Record {
-        attr,
-        sequence,
-        refs,
-        marker,
-        xyz_m: None,
-        xyz_offset: None,
-        owner: None,
-        offset,
-    }
 }
 
 /// Return all syntactically valid edge-use readings at one offset.
 ///
 /// A prefixed edge-use does not carry the complete six-cell array in the
 /// compact form. The third post-magic cell is the support-curve carrier, so
-/// preserve that field and leave the other cells as sentinels. The missing
+/// preserve that field in the compact variant. The missing
 /// canonical-coedge slot is resolved from the coedge table by the graph walk.
-fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
+fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(p) = body_start(buf, off, 0x10) else {
         return Vec::new();
     };
@@ -204,11 +241,18 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
     let Some(attr) = attr_at(buf, p) else {
         return Vec::new();
     };
-    let sequence = View::u32_be_at(buf, p + 2);
+    let Some(sequence) = View::u32_be_at(buf, p + 2) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
-        if let Some(refs) = refs_be(buf, p + 16, 6) {
-            out.push(record_with_sequence(attr, sequence, refs, None, off));
+        if let Some(refs) = refs_be::<6>(buf, p + 16) {
+            out.push(EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare(refs),
+                offset: off,
+            });
         }
     }
 
@@ -239,24 +283,27 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
                 at += 3;
             }
             if decoded.len() >= 3 {
-                let mut refs = vec![0; 6];
-                refs[3] = decoded[2];
-                out.push(record_with_sequence(attr, sequence, refs, None, off));
+                out.push(EdgeUse {
+                    attr,
+                    sequence,
+                    references: EdgeReferences::Compact { curve: decoded[2] },
+                    offset: off,
+                });
             }
         }
     }
-    deduplicate_records(out)
+    out.dedup();
+    out
 }
 
 /// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
 /// `refs[0]` = canonical forward coedge when the bare record stores one;
-/// `refs[3]` = support curve carrier. Prefixed records leave `refs[0]` as a
-/// sentinel because their compact payload has no canonical-coedge slot.
+/// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
 /// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
 /// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
-fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Record> {
+fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
     };
@@ -267,33 +314,33 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Record> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if let (Some(refs), Some(marker)) = (refs_be(buf, p + 2, 9), buf.get(p + 20).copied()) {
-        if matches!(marker, 0x2b | 0x2d) {
-            out.push(record(attr, refs, Some(marker), off));
+    if let (Some(refs), Some(marker)) = (refs_be::<9>(buf, p + 2), buf.get(p + 20).copied()) {
+        if let Some(sense) = parse_sense(marker) {
+            out.push(Coedge {
+                attr,
+                refs,
+                sense,
+                offset: off,
+            });
         }
     }
-    if let (Some(refs), Some(marker)) = (refs_tripled(buf, p + 2, 9), buf.get(p + 29).copied()) {
-        if matches!(marker, 0x2b | 0x2d) {
-            out.push(record(attr, refs, Some(marker), off));
+    if let (Some(refs), Some(marker)) = (refs_tripled::<9>(buf, p + 2), buf.get(p + 29).copied()) {
+        if let Some(sense) = parse_sense(marker) {
+            out.push(Coedge {
+                attr,
+                refs,
+                sense,
+                offset: off,
+            });
         }
     }
-    deduplicate_records(out)
-}
-
-fn deduplicate_records(mut records: Vec<Record>) -> Vec<Record> {
-    records.dedup_by(|right, left| {
-        right.attr == left.attr
-            && right.sequence == left.sequence
-            && right.refs == left.refs
-            && right.marker == left.marker
-            && right.offset == left.offset
-    });
-    records
+    out.dedup();
+    out
 }
 
 /// Vertex-use `00 12`: 24-byte body, magic at body+16, `refs[5]` at body+6.
 /// `refs[4]` = world-point attr.
-fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
+fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
     let p = body_start(buf, off, 0x12)?;
     if p + 24 > buf.len() {
         return None;
@@ -301,7 +348,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
     let attr = attr_at(buf, p)?;
     let sequence = View::u32_be_at(buf, p + 2)?;
     let refs = if buf.get(p + 16..p + 24) == Some(MAGIC.as_slice()) {
-        refs_be(buf, p + 6, 5)?
+        refs_be::<5>(buf, p + 6)?
     } else {
         let magic = (p + 21..=(p + 32).min(buf.len().saturating_sub(MAGIC.len())))
             .find(|at| buf.get(*at..*at + MAGIC.len()) == Some(MAGIC.as_slice()))?;
@@ -309,23 +356,22 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
         if count < 5 || p + 6 + count * 3 != magic {
             return None;
         }
-        refs_tripled(buf, p + 6, count)?
+        if !(0..count).all(|index| buf.get(p + 8 + index * 3) == Some(&1)) {
+            return None;
+        }
+        refs_tripled::<5>(buf, p + 6)?
     };
-    Some(Record {
+    Some(VertexUse {
         attr,
-        sequence: Some(sequence),
+        sequence,
         refs,
-        marker: None,
-        xyz_m: None,
-        xyz_offset: None,
-        owner: None,
         offset: off,
     })
 }
 
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
-fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
+fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     let p = body_start(buf, off, 0x1d)?;
     if p + world_pt::LEN > buf.len() {
         return None;
@@ -343,7 +389,10 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
         }
         (refs, cursor)
     } else {
-        (refs_be(buf, p + world_pt::REFS, 4)?, p + world_pt::XYZ)
+        (
+            refs_be::<4>(buf, p + world_pt::REFS)?.to_vec(),
+            p + world_pt::XYZ,
+        )
     };
     if refs.first().is_none_or(|reference| *reference > 1) {
         return None;
@@ -358,14 +407,11 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
             return None;
         }
     }
-    Some(Record {
+    Some(Point {
         attr,
-        sequence: None,
         refs,
-        marker: None,
-        xyz_m: Some([x, y, z]),
-        xyz_offset: Some(xyz_at),
-        owner: None,
+        xyz_m: [x, y, z],
+        xyz_offset: xyz_at,
         offset: off,
     })
 }
@@ -373,12 +419,12 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
 /// The topology record tables of one stream, each keyed by `attr`.
 #[derive(Default)]
 pub struct Tables {
-    pub bridges: HashMap<u16, Record>,
-    pub loops: HashMap<u16, Record>,
-    pub edge_uses: HashMap<u16, Record>,
-    pub coedges: HashMap<u16, Record>,
-    pub vertex_uses: HashMap<u16, Record>,
-    pub points: HashMap<u16, Record>,
+    pub bridges: HashMap<u16, Bridge>,
+    pub loops: HashMap<u16, Loop>,
+    pub edge_uses: HashMap<u16, EdgeUse>,
+    pub coedges: HashMap<u16, Coedge>,
+    pub vertex_uses: HashMap<u16, VertexUse>,
+    pub points: HashMap<u16, Point>,
 }
 
 impl Tables {
@@ -405,7 +451,7 @@ impl Tables {
 }
 
 fn retain_selected_bridges(
-    bridges: &mut HashMap<u16, Record>,
+    bridges: &mut HashMap<u16, Bridge>,
     selected_bridge_attrs: &HashSet<u16>,
 ) {
     bridges.retain(|attr, record| {
@@ -416,24 +462,47 @@ fn retain_selected_bridges(
     });
 }
 
-fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>) {
+fn merge_missing<T>(target: &mut HashMap<u16, T>, source: HashMap<u16, T>) {
     for (attr, record) in source {
         target.entry(attr).or_insert(record);
     }
 }
 
-type CandidateMap = HashMap<u16, Vec<Record>>;
+type CandidateMap<T> = HashMap<u16, Vec<T>>;
+
+trait Candidate: PartialEq {
+    fn attr(&self) -> u16;
+    fn offset(&self) -> usize;
+}
+
+impl Candidate for EdgeUse {
+    fn attr(&self) -> u16 {
+        self.attr
+    }
+    fn offset(&self) -> usize {
+        self.offset
+    }
+}
+
+impl Candidate for Coedge {
+    fn attr(&self) -> u16 {
+        self.attr
+    }
+    fn offset(&self) -> usize {
+        self.offset
+    }
+}
 type CoedgeEvidence = [bool; 7];
 
 /// Keep the latest record occurrence for each attribute while retaining all
 /// frame readings at that occurrence. A stream can contain overlapping payload
 /// bytes, and a later complete record has the same override semantics as the
 /// ordinary topology tables.
-fn insert_candidates(target: &mut CandidateMap, records: Vec<Record>) {
+fn insert_candidates<T: Candidate>(target: &mut CandidateMap<T>, records: Vec<T>) {
     let Some(first) = records.first() else {
         return;
     };
-    let attr = first.attr;
+    let attr = first.attr();
     match target.entry(attr) {
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(records);
@@ -442,26 +511,23 @@ fn insert_candidates(target: &mut CandidateMap, records: Vec<Record>) {
             let current = entry.get();
             if current
                 .first()
-                .is_some_and(|record| record.offset < first.offset)
+                .is_some_and(|record| record.offset() < first.offset())
             {
                 entry.insert(records);
             } else if current
                 .first()
-                .is_some_and(|record| record.offset == first.offset)
+                .is_some_and(|record| record.offset() == first.offset())
             {
                 let candidates = entry.get_mut();
                 candidates.extend(records);
-                *candidates = deduplicate_records(std::mem::take(candidates));
+                candidates.dedup();
             }
         }
     }
 }
 
-fn loop_is_owned(record: &Record, bridges: &HashMap<u16, Record>) -> bool {
-    record
-        .refs
-        .get(2)
-        .is_some_and(|owner| *owner != 0 && bridges.contains_key(owner))
+fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
+    record.refs[2] != 0 && bridges.contains_key(&record.refs[2])
 }
 
 /// Collect independent graph invariants for one coedge frame. The first four
@@ -469,44 +535,41 @@ fn loop_is_owned(record: &Record, bridges: &HashMap<u16, Record>) -> bool {
 /// and loop-head membership provide additional confirmation. No field is a
 /// byte-position discriminator.
 fn coedge_evidence(
-    candidate: &Record,
-    loops: &[Record],
-    bridges: &HashMap<u16, Record>,
-    vertex_uses: &HashMap<u16, Record>,
-    edge_candidates: &CandidateMap,
-    coedge_candidates: &CandidateMap,
+    candidate: &Coedge,
+    loops: &[Loop],
+    bridges: &HashMap<u16, Bridge>,
+    vertex_uses: &HashMap<u16, VertexUse>,
+    edge_candidates: &CandidateMap<EdgeUse>,
+    coedge_candidates: &CandidateMap<Coedge>,
 ) -> CoedgeEvidence {
-    let owner = candidate.refs.get(1).copied().unwrap_or(0);
+    let owner = candidate.refs[1];
     let owner_valid = owner != 0
         && loops
             .iter()
             .rev()
             .find(|loop_| loop_.attr == owner)
             .is_some_and(|loop_| loop_is_owned(loop_, bridges));
-    let start = candidate.refs.get(4).copied().unwrap_or(0);
+    let start = candidate.refs[4];
     let start_valid = start != 0 && vertex_uses.contains_key(&start);
-    let edge = candidate.refs.get(6).copied().unwrap_or(0);
+    let edge = candidate.refs[6];
     let edge_valid = edge != 0 && edge_candidates.contains_key(&edge);
-    let next = candidate.refs.get(3).copied().unwrap_or(0);
+    let next = candidate.refs[3];
     let next_candidates = coedge_candidates.get(&next);
     let next_valid = next != 0 && next_candidates.is_some();
     let next_owner_valid = next_candidates.is_some_and(|candidates| {
         candidates
             .iter()
-            .any(|next_candidate| next_candidate.refs.get(1) == Some(&owner))
+            .any(|next_candidate| next_candidate.refs[1] == owner)
     });
-    let previous = candidate.refs.get(2).copied().unwrap_or(0);
+    let previous = candidate.refs[2];
     let previous_valid = previous == 0
         || coedge_candidates.get(&previous).is_some_and(|candidates| {
             candidates.iter().any(|previous_candidate| {
-                previous_candidate.refs.get(3) == Some(&candidate.attr)
-                    && previous_candidate.refs.get(1) == Some(&owner)
+                previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
             })
         });
     let loop_head_valid = loops.iter().rev().any(|loop_| {
-        loop_.attr == owner
-            && loop_is_owned(loop_, bridges)
-            && loop_.refs.get(1) == Some(&candidate.attr)
+        loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
     });
     [
         owner_valid,
@@ -526,13 +589,13 @@ fn evidence_dominates(left: CoedgeEvidence, right: CoedgeEvidence) -> bool {
 }
 
 fn select_coedge(
-    candidates: &[Record],
-    loops: &[Record],
-    bridges: &HashMap<u16, Record>,
-    vertex_uses: &HashMap<u16, Record>,
-    edge_candidates: &CandidateMap,
-    coedge_candidates: &CandidateMap,
-) -> Option<Record> {
+    candidates: &[Coedge],
+    loops: &[Loop],
+    bridges: &HashMap<u16, Bridge>,
+    vertex_uses: &HashMap<u16, VertexUse>,
+    edge_candidates: &CandidateMap<EdgeUse>,
+    coedge_candidates: &CandidateMap<Coedge>,
+) -> Option<Coedge> {
     if candidates.len() == 1 {
         return candidates.first().cloned();
     }
@@ -564,22 +627,23 @@ fn select_coedge(
 }
 
 fn edge_candidate_is_valid(
-    candidate: &Record,
-    coedges: &HashMap<u16, Record>,
+    candidate: &EdgeUse,
+    coedges: &HashMap<u16, Coedge>,
     curve_attrs: Option<&HashSet<u16>>,
 ) -> bool {
-    let canonical = candidate.refs.first().copied().unwrap_or(0);
-    let curve = candidate.refs.get(3).copied().unwrap_or(0);
-    let canonical_valid = canonical == 0 || coedges.contains_key(&canonical);
+    let canonical = candidate.references.canonical();
+    let curve = candidate.references.curve();
+    let canonical_valid =
+        canonical.is_none_or(|canonical| canonical == 0 || coedges.contains_key(&canonical));
     let curve_valid = curve == 0 || curve_attrs.is_none_or(|attrs| attrs.contains(&curve));
     canonical_valid && curve_valid
 }
 
 fn select_edge_use(
-    candidates: &[Record],
-    coedges: &HashMap<u16, Record>,
+    candidates: &[EdgeUse],
+    coedges: &HashMap<u16, Coedge>,
     curve_attrs: Option<&HashSet<u16>>,
-) -> Option<Record> {
+) -> Option<EdgeUse> {
     if candidates.len() == 1 {
         return candidates.first().cloned();
     }
@@ -626,13 +690,7 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let Some(record) = scan(buf).points.remove(&attr) else {
         return false;
     };
-    let Some(old_xyz_m) = record.xyz_m else {
-        return false;
-    };
-    let Some(xyz_at) = record.xyz_offset else {
-        return false;
-    };
-    patch_point_values(buf, xyz_at, old_xyz_m, xyz_m)
+    patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
 }
 
 /// Scan the stream body for every typed topology record. Successful records do
@@ -642,12 +700,6 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
     scan_with_point_framing(body, false, None, None)
-}
-
-/// Scan a partition stream with the typed curve attributes available to
-/// resolve an otherwise ambiguous edge-use reference orientation.
-pub(crate) fn scan_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, false, Some(curve_attrs), None)
 }
 
 /// Scan a partition stream while admitting typed FACE offsets that carry a
@@ -666,12 +718,6 @@ pub(crate) fn scan_with_curve_attrs_excluding(
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
     )
-}
-
-/// Scan a deltas stream with the typed curve attributes available to resolve
-/// an otherwise ambiguous edge-use reference orientation.
-pub(crate) fn scan_deltas_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs), None)
 }
 
 /// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
@@ -704,7 +750,7 @@ fn scan_with_point_framing(
                 if let Some(record) = parse_bridge(body, i) {
                     let excluded =
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
-                    let carries_loop = record.refs.get(2).is_some_and(|reference| *reference > 1);
+                    let carries_loop = record.refs[2] > 1;
                     if !excluded || carries_loop {
                         t.bridges.insert(record.attr, record);
                     }
@@ -755,12 +801,12 @@ fn scan_with_point_framing(
         }
     }
     for record in loop_candidates {
-        let owner = record.refs.get(2).copied().unwrap_or(0);
-        let first = record.refs.get(1).copied().unwrap_or(0);
+        let owner = record.refs[2];
+        let first = record.refs[1];
         if t.bridges.contains_key(&owner)
             && t.coedges
                 .get(&first)
-                .is_some_and(|coedge| coedge.refs.get(1) == Some(&record.attr))
+                .is_some_and(|coedge| coedge.refs[1] == record.attr)
         {
             t.loops.insert(record.attr, record);
         }
@@ -771,6 +817,39 @@ fn scan_with_point_framing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edge_candidate_equivalence_preserves_null_cells_across_layouts() {
+        let compact = EdgeReferences::Compact { curve: 300 };
+        let bare = EdgeReferences::Bare([0, 0, 0, 300, 0, 0]);
+        assert_eq!(compact, bare);
+        assert_eq!(bare, compact);
+        assert_eq!(compact.canonical(), None);
+        assert_eq!(bare.canonical(), Some(0));
+        for slot in [0, 1, 2, 4, 5] {
+            let mut refs = [0, 0, 0, 300, 0, 0];
+            refs[slot] = 1;
+            assert_ne!(EdgeReferences::Bare(refs), compact);
+        }
+        assert_ne!(EdgeReferences::Compact { curve: 301 }, bare);
+    }
+
+    #[test]
+    fn vertex_use_validates_extra_tripled_cells_before_the_magic() {
+        let mut bytes = vec![0, 0x12];
+        bytes.extend(50_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        for reference in [0_u16, 0, 0, 0, 60, 90] {
+            bytes.extend(reference.to_be_bytes());
+            bytes.push(1);
+        }
+        bytes.extend(MAGIC);
+        let vertex = parse_vertex_use(&bytes, 0).unwrap();
+        assert_eq!(vertex.refs, [0, 0, 0, 0, 60]);
+        assert_eq!(vertex.sequence, 7);
+        bytes[25] = 0;
+        assert!(parse_vertex_use(&bytes, 0).is_none());
+    }
 
     fn bridge_with_refs(refs: &[u16], tripled: bool) -> Vec<u8> {
         let mut bytes = vec![0, 0x0e];
@@ -807,10 +886,10 @@ mod tests {
 
         let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
-        assert_eq!(bridge.sequence, Some(7));
+        assert_eq!(bridge.sequence, 7);
         assert_eq!(bridge.owner, Some(0x4321));
-        assert_eq!(bridge.refs, expected);
-        assert_eq!(bridge.marker, Some(0x2b));
+        assert_eq!(bridge.refs.as_slice(), expected);
+        assert_eq!(bridge.sense, Sense::Forward);
     }
 
     #[test]
@@ -821,10 +900,10 @@ mod tests {
             let bridge = parse_bridge(&bytes, 0)
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
-            assert_eq!(bridge.sequence, Some(7));
+            assert_eq!(bridge.sequence, 7);
             assert_eq!(bridge.owner, Some(0x4321));
-            assert_eq!(bridge.refs, expected);
-            assert_eq!(bridge.marker, Some(0x2d));
+            assert_eq!(bridge.refs.as_slice(), expected);
+            assert_eq!(bridge.sense, Sense::Reversed);
         }
     }
 
@@ -936,8 +1015,8 @@ mod tests {
         body.extend(topology_vertex_use(50, 0x0506_0708));
 
         let tables = scan(&body);
-        assert_eq!(tables.edge_uses[&40].sequence, Some(0x0102_0304));
-        assert_eq!(tables.vertex_uses[&50].sequence, Some(0x0506_0708));
+        assert_eq!(tables.edge_uses[&40].sequence, 0x0102_0304);
+        assert_eq!(tables.vertex_uses[&50].sequence, 0x0506_0708);
     }
 
     #[test]
@@ -958,8 +1037,8 @@ mod tests {
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
-        let tables = scan_deltas_with_curve_attrs(&bytes, &curve_attrs);
-        assert_eq!(tables.edge_uses[&40].refs[3], 0x0103);
+        let tables = scan_deltas_with_curve_attrs_excluding(&bytes, &curve_attrs, &HashSet::new());
+        assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
     }
 
     #[test]
@@ -984,7 +1063,7 @@ mod tests {
 
         let point = parse_point(&bytes, 0, false).expect("adjacent world point");
         assert_eq!(point.refs, vec![0, 0x0102, 0, 0]);
-        assert_eq!(point.xyz_m, Some([4.0, 5.0, 6.0]));
-        assert_eq!(point.xyz_offset, Some(16));
+        assert_eq!(point.xyz_m, [4.0, 5.0, 6.0]);
+        assert_eq!(point.xyz_offset, 16);
     }
 }

@@ -9,7 +9,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Vertex;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, SourceProvenance};
 
 use crate::loss::IgesLossCode;
@@ -28,7 +27,7 @@ fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
     assert!(
         matches!(
             &error,
-            CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
                     && limit.limit == 64
                     && limit.used == 64
@@ -53,7 +52,7 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityRetainedUnprojected.kind()));
     assert_eq!(
-        result.report().transfer_ledger.entries[0].note.as_deref(),
+        result.report().transfer_ledger.entries[0].note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
@@ -209,7 +208,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         assert!(
             matches!(
                 error,
-                CodecError::ResourceLimit(limit)
+                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                     if limit.dimension == expected && limit.context.operation == operation
             ),
             "{error:#?}"
@@ -246,7 +245,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         .unwrap_err();
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.context.operation == "iges_native_entities"
     ));
@@ -280,10 +279,10 @@ fn inspect_enforces_iges_parser_resource_limits() {
 
 #[test]
 fn semantic_decode_barrier_rejects_invalid_cadir() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
-        id: VertexId("iges:model:vertex#invalid".into()),
-        point: PointId("iges:model:point#missing".into()),
+        id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
+        point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
         tolerance: None,
     });
 
@@ -307,12 +306,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
 fn tagged_loss(tag: &str) -> LossNote {
     IgesLossCode::EntityRetainedUnprojected
         .note("attribution fixture")
-        .with_provenance(SourceProvenance {
-            format: "iges".into(),
-            stream: "iges".into(),
-            offset: 0,
-            tag: Some(tag.to_owned()),
-        })
+        .with_provenance(SourceProvenance::in_stream("iges", "iges", 0).with_tag(tag.to_owned()))
 }
 
 #[test]

@@ -10,9 +10,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 
 use crate::test_support::*;
@@ -31,7 +34,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 )
                 .expect("G2 blend decode");
             let ProceduralSurfaceDefinition::G2Blend { construction } =
-                &result.ir().model.procedural_surfaces[0].definition
+                &result.ir().model.procedural_surfaces[0].definition()
             else {
                 panic!("expected G2 blend")
             };
@@ -46,9 +49,10 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 [vec![0.25], vec![], vec![0.5, 0.75]]
             );
             match &construction.first_shape {
-                G2BlendFirstShape::Full { surface, tolerance } if full => {
-                    assert!(surface.is_some());
-                    assert_eq!(*tolerance, Some(0.02));
+                G2BlendFirstShape::Full {
+                    support: Some(support),
+                } if full => {
+                    assert_eq!(support.tolerance, 0.02);
                 }
                 G2BlendFirstShape::None {
                     coefficients,
@@ -96,17 +100,14 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             };
             let mut encoded = Vec::new();
             F3dCodec
-                .plan(cadmpeg_ir::codec::EncodeInput {
-                    ir: &source_less,
-                    fidelity: None,
-                })
+                .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
                 .and_then(|plan| plan.write_to(&mut encoded))
                 .expect("source-less G2 encode");
             let round_trip = F3dCodec
                 .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
                 .expect("source-less G2 round trip");
             let ProceduralSurfaceDefinition::G2Blend { construction } =
-                &round_trip.ir().model.procedural_surfaces[0].definition
+                &round_trip.ir().model.procedural_surfaces[0].definition()
             else {
                 panic!("expected round-trip G2 blend")
             };
@@ -120,16 +121,16 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             );
             for side in [&construction.first, &construction.second] {
                 assert!(matches!(
-                    round_trip
-                        .ir()
-                        .model
-                        .curves
-                        .iter()
-                        .find(|curve| curve.id == side.curve)
-                        .map(|curve| &curve.geometry),
-                    Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                        if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                ));
+                        round_trip
+                            .ir()
+                            .model
+                            .curves
+                            .iter()
+                            .find(|curve| curve.id == side.curve)
+                            .map(|curve| &curve.geometry),
+                        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                    ));
             }
             assert!(matches!(
                 round_trip
@@ -140,8 +141,8 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     .find(|curve| curve.id == construction.center_curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1
-                        && curve.knots == [-0.5, -0.5, 1.5, 1.5]
+            if curve.degree() == 1
+                && curve.knots() == [-0.5, -0.5, 1.5, 1.5]
             ));
         }
     }
@@ -168,7 +169,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let ProceduralSurfaceDefinition::Blend {
             native: Some(native),
             ..
-        } = &result.ir().model.procedural_surfaces[0].definition
+        } = &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected complete rolling-ball graph")
         };
@@ -187,8 +188,20 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         );
         assert!(native.sides.iter().all(|side| side.surface.is_some()));
         assert!(native.sides.iter().all(|side| side.pcurve.is_some()));
-        assert_eq!(native.sides[0].extension, Some(3));
-        assert_eq!(native.sides[1].extension, Some(4));
+        assert_eq!(
+            native.sides[0]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(3)
+        );
+        assert_eq!(
+            native.sides[1]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(4)
+        );
         assert_eq!(native.offsets, [-3.0, -6.0]);
         assert_eq!(native.radius_selector, RollingBallRadiusSelector::None);
         assert_eq!(native.u_range, [Some(-1.0), Some(2.0)]);
@@ -196,8 +209,8 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.shape_prefix, 1);
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
-        assert_eq!(native.tail_enum, 0);
-        assert_eq!(native.tail_parameterization, None);
+        assert_eq!(native.cache.selector(), 0);
+        assert_eq!(native.cache.parameterization(), None);
         assert_eq!(
             native.discontinuities,
             expected_revision_surface_tail_discontinuities()
@@ -216,7 +229,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let side_curves = native
             .sides
             .iter()
-            .map(|side| side.curve.clone())
+            .map(|side| side.curve.as_ref().map(|support| support.curve.clone()))
             .collect::<Vec<_>>();
         let third_curve = native.third.as_ref().map(|third| third.curve.clone());
         let slice_curve = native.slice.clone();
@@ -259,10 +272,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less rolling-ball encode");
         let round_trip = F3dCodec
@@ -271,7 +281,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let ProceduralSurfaceDefinition::Blend {
             native: Some(actual),
             ..
-        } = &round_trip.ir().model.procedural_surfaces[0].definition
+        } = &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected complete round-trip rolling-ball graph")
         };
@@ -283,10 +293,10 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         if let Some(third) = &actual.third {
@@ -299,7 +309,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .find(|curve| curve.id == third.curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -311,7 +321,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }
@@ -333,14 +343,15 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
         )
         .expect("parameterized variable-blend decode");
     let procedural = &decoded.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
-    let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition else {
+    assert_eq!(procedural.cache_fit_tolerance(), None);
+    let ProceduralSurfaceDefinition::VariableBlend { construction } = procedural.definition()
+    else {
         panic!("expected variable-blend construction")
     };
-    assert_eq!(construction.tail_enum, 2);
+    assert_eq!(construction.cache.selector(), 2);
     assert_eq!(
-        construction.tail_parameterization,
-        Some(expected_revision_surface_tail_parameterization())
+        construction.cache.parameterization(),
+        Some(&expected_revision_surface_tail_parameterization())
     );
     // Fields after the tail; a misframed tail shifts every one of them.
     assert_eq!(construction.tail_extensions, [31, 32, 33]);
@@ -356,18 +367,18 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
             )
             .expect("parameterized rolling-ball decode");
         let procedural = &decoded.ir().model.procedural_surfaces[0];
-        assert_eq!(procedural.cache_fit_tolerance, None);
+        assert_eq!(procedural.cache_fit_tolerance(), None);
         let ProceduralSurfaceDefinition::Blend {
             native: Some(native),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected complete rolling-ball graph")
         };
-        assert_eq!(native.tail_enum, 2);
+        assert_eq!(native.cache.selector(), 2);
         assert_eq!(
-            native.tail_parameterization,
-            Some(expected_revision_surface_tail_parameterization())
+            native.cache.parameterization(),
+            Some(&expected_revision_surface_tail_parameterization())
         );
         assert_eq!(
             native.discontinuities,
@@ -391,19 +402,19 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     // Form `2` stores no cache and no fit tolerance. The surface block inside
     // the directrix scope is not this record's cache and its trailing scalar is
     // not this record's fit tolerance.
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Extrusion {
         parameter_interval: Some([0.25, 0.75]),
         revision_form: Some(form),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    assert_eq!(form.tail_enum, 2);
+    assert_eq!(form.cache.selector(), 2);
     assert_eq!(
-        form.tail_parameterization,
-        Some(expected_revision_surface_tail_parameterization())
+        form.cache.parameterization(),
+        Some(&expected_revision_surface_tail_parameterization())
     );
     assert_eq!(
         form.discontinuities,
@@ -430,13 +441,19 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == current_procedural.surface)
+        .find(|surface| {
+            current
+                .ir()
+                .model
+                .procedural_surface_owner(&current_procedural.id)
+                == Some(&surface.id)
+        })
         .expect("current variable-blend carrier");
     assert!(matches!(
-        current_carrier.geometry,
-        SurfaceGeometry::Nurbs(_)
+        current_carrier.geometry.solved_cache(),
+        Some(SurfaceGeometry::Nurbs(_))
     ));
-    assert!(current_procedural.cache_fit_tolerance.is_some());
+    assert!(current_procedural.cache_fit_tolerance().is_some());
 
     let stale = F3dCodec
         .decode(
@@ -452,17 +469,27 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == stale_procedural.surface)
+        .find(|surface| {
+            stale
+                .ir()
+                .model
+                .procedural_surface_owner(&stale_procedural.id)
+                == Some(&surface.id)
+        })
         .expect("stale variable-blend carrier");
     assert!(matches!(
         stale_carrier.geometry,
         SurfaceGeometry::Procedural { .. }
     ));
-    assert_eq!(stale_procedural.cache_fit_tolerance, None);
+    assert_eq!(stale_procedural.cache_fit_tolerance(), None);
     assert!(matches!(
-        &stale_procedural.definition,
+        stale_procedural.definition(),
         ProceduralSurfaceDefinition::VariableBlend { construction }
-            if construction.shape_prefix == 0 && construction.tail_enum == 0
+            if construction.cache.shape_prefix() == 0
+                && matches!(
+                    construction.cache,
+                    cadmpeg_ir::geometry::VariableBlendCache::Stale
+                )
     ));
     assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
         .findings
@@ -492,12 +519,14 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let expected = source_less.model.procedural_surfaces[0].clone();
-        assert_eq!(expected.cache_fit_tolerance, None);
+        assert_eq!(expected.cache_fit_tolerance(), None);
         let carrier = source_less
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == expected.surface)
+            .find(|surface| {
+                source_less.model.procedural_surface_owner(&expected.id) == Some(&surface.id)
+            })
             .expect("blend surface carrier");
         assert!(matches!(
             carrier.geometry,
@@ -512,15 +541,18 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("parameterized blend round trip");
         let actual = &round_trip.ir().model.procedural_surfaces[0];
-        assert_eq!(actual.cache_fit_tolerance, None);
-        let (enumeration, parameterization) = match &actual.definition {
+        assert_eq!(actual.cache_fit_tolerance(), None);
+        let (enumeration, parameterization) = match actual.definition() {
             ProceduralSurfaceDefinition::Blend {
                 native: Some(native),
                 ..
-            } => (native.tail_enum, native.tail_parameterization.clone()),
+            } => (
+                native.cache.selector(),
+                native.cache.parameterization().cloned(),
+            ),
             ProceduralSurfaceDefinition::VariableBlend { construction } => (
-                construction.tail_enum,
-                construction.tail_parameterization.clone(),
+                construction.cache.selector(),
+                construction.cache.parameterization().cloned(),
             ),
             other => panic!("expected a parameterized blend construction: {other:?}"),
         };
@@ -550,13 +582,13 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
         )
         .expect("half-bounded second-interval decode");
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
-    assert_eq!(construction.v_range, [Some(-0.5), None]);
-    assert_eq!(construction.shape_prefix, 11);
+    assert_eq!(construction.u_range, [-1.0, 2.0]);
+    assert_eq!(construction.v_lower, Some(-0.5));
+    assert_eq!(construction.cache.shape_prefix(), 11);
     assert_eq!(construction.shape_length, 6.0);
 }
 
@@ -589,22 +621,28 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
             )
             .expect("interp variable-blend decode");
         let ProceduralSurfaceDefinition::VariableBlend { construction } =
-            &result.ir().model.procedural_surfaces[0].definition
+            &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
         let VariableBlendValuePayload::Interpolated {
             function, points, ..
-        } = &construction.first_value.payload
+        } = &construction.radii.first().payload
         else {
             panic!("expected interpolated radius law")
         };
         assert_eq!(points.len(), 1);
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = function else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = function else {
             panic!("expected NURBS radius function")
         };
-        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(2.5, 0.5));
-        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(7.5, 1.5));
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(2.5, 0.5)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(7.5, 1.5)
+        );
         assert_eq!(construction.cross_section, expected);
 
         assert_revision_surface_round_trip(smbh, "variable_blend");
@@ -627,12 +665,13 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
         )
         .expect("edge-offset variable-blend decode");
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &result.ir().model.procedural_surfaces[0].definition
+        &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
-    let VariableBlendValuePayload::EdgeOffset { scalars, lengths } =
-        &construction.first_value.payload
+    let VariableBlendValuePayload::EdgeOffset {
+        scalars, lengths, ..
+    } = &construction.radii.first().payload
     else {
         panic!("expected edge-offset radius law")
     };
@@ -685,7 +724,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             )
             .expect("variable-blend decode");
         let ProceduralSurfaceDefinition::VariableBlend { construction } =
-            &result.ir().model.procedural_surfaces[0].definition
+            &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
@@ -699,33 +738,43 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             construction.sides[1].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
         );
-        assert_eq!(construction.sides[0].extension, Some(0));
-        assert_eq!(construction.sides[1].extension, Some(5));
+        assert_eq!(
+            construction.sides[0]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(0)
+        );
+        assert_eq!(
+            construction.sides[1]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(5)
+        );
         assert_eq!(
             construction.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
         );
         assert_eq!(construction.offsets, [-2.0, 4.0]);
-        assert_eq!(
-            construction.radius_kind,
-            cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
-        );
-        let VariableBlendValuePayload::TwoEnds { parameters, radii } =
-            &construction.first_value.payload
+        let VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } = &construction.radii.first().payload
         else {
             panic!("expected two-ends radius law")
         };
-        assert!(construction.first_value.modern_flag);
-        assert_eq!(construction.first_value.discriminator, 7);
-        assert_eq!(construction.first_value.calibrated, 3);
+        assert!(construction.radii.is_single());
+        assert!(construction.radii.first().modern_flag);
+        assert_eq!(construction.radii.first().payload.discriminator(), 7);
+        assert_eq!(construction.radii.first().calibrated, 3);
         assert_eq!(*parameters, [0.25, 0.75]);
         assert_eq!(*radii, [15.0, 25.0]);
         assert_eq!(construction.slice_range, [None, None]);
-        assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
-        assert_eq!(construction.v_range, [None, None]);
-        assert_eq!(construction.shape_prefix, 11);
+        assert_eq!(construction.u_range, [-1.0, 2.0]);
+        assert_eq!(construction.v_lower, None);
+        assert_eq!(construction.cache.shape_prefix(), 11);
         assert_eq!(construction.shape_length, 6.0);
-        assert_eq!(construction.tail_enum, 0);
+        assert_eq!(construction.cache.selector(), 0);
         assert_eq!(
             construction.discontinuities,
             [
@@ -740,7 +789,14 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert!(construction.tail_flag);
         assert_eq!(construction.tail_extensions, [31, 32, 33]);
         assert!(construction.secondary_curve.is_some());
-        assert_eq!(construction.secondary_range, [None, None]);
+        assert_eq!(
+            construction
+                .secondary_curve
+                .as_ref()
+                .expect("secondary curve")
+                .parameter_range,
+            [None, None]
+        );
         assert_eq!(
             construction.convexity,
             cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -760,7 +816,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let side_curves = construction
             .sides
             .iter()
-            .map(|side| side.curve.clone().expect("side curve"))
+            .map(|side| side.curve.as_ref().expect("side curve").curve.clone())
             .collect::<Vec<_>>();
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
@@ -799,10 +855,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less variable-blend encode");
         let round_trip = F3dCodec
@@ -810,7 +863,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .expect("source-less variable-blend round trip");
         let ProceduralSurfaceDefinition::VariableBlend {
             construction: actual,
-        } = &round_trip.ir().model.procedural_surfaces[0].definition
+        } = &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip variable blend")
         };
@@ -824,7 +877,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| Some(&curve.id) == actual.post_curve.as_ref())
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
         ));
         for side in actual.sides.iter() {
             assert!(matches!(
@@ -833,10 +886,10 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -848,54 +901,15 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }
 
 #[test]
-fn generated_variable_blend_rejects_radius_cardinality_mismatch() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    let mut decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh(
-                "var_blend_spl_sur",
-            ))),
-            &DecodeOptions::default(),
-        )
-        .expect("variable-blend decode")
-        .into_parts()
-        .0;
-    decoded.source = None;
-    decoded.set_native_unknowns("f3d", &[]).unwrap();
-    let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &mut decoded.model.procedural_surfaces[0].definition
-    else {
-        panic!("expected variable blend")
-    };
-    construction.second_value = Some(construction.first_value.clone());
-
-    assert!(cadmpeg_ir::validate_neutral(&decoded, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "variable blend construction payload is invalid"));
-    let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("single-radius variable blend carries two-radii payloads"));
-}
-
-#[test]
 fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendRadiusKind, VariableBlendValuePayload,
+        ProceduralSurfaceDefinition, VariableBlendRadii, VariableBlendValuePayload,
     };
 
     let decoded = F3dCodec
@@ -908,20 +922,23 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         )
         .expect("two-radii variable-blend decode");
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
     assert!(matches!(
-        construction
-            .second_value
-            .as_ref()
-            .map(|value| &value.payload),
-        Some(VariableBlendValuePayload::TwoEnds {
-            parameters: [0.1, 0.9],
-            radii: [35.0, 45.0]
-        })
+        &construction.radii,
+        VariableBlendRadii::Two {
+            second: cadmpeg_ir::geometry::VariableBlendValue {
+                payload: VariableBlendValuePayload::TwoEnds {
+                    parameters: [0.1, 0.9],
+                    radii: [35.0, 45.0],
+                    ..
+                },
+                ..
+            },
+            ..
+        }
     ));
     let Some(cadmpeg_ir::geometry::VariableBlendCrossSection::RoundedChamfer {
         radius: Some(radius),
@@ -933,7 +950,8 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         &radius.payload,
         VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
-            radii: [55.0, 65.0]
+            radii: [55.0, 65.0],
+            ..
         }
     ));
 
@@ -943,17 +961,14 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("two-radii variable-blend source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("two-radii variable-blend round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::VariableBlend { construction }
             if construction == &expected
     ));
@@ -961,7 +976,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
 
 #[test]
 fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadiusKind};
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadii};
 
     let decoded = F3dCodec
         .decode(
@@ -975,11 +990,11 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
         )
         .expect("two-radii selector-zero decode");
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
+    assert!(matches!(construction.radii, VariableBlendRadii::Two { .. }));
     assert!(matches!(
         &construction.cross_section,
         Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
@@ -990,17 +1005,14 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition,
+        &round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::VariableBlend { construction }
             if construction == &expected
     ));

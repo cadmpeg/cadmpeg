@@ -3,7 +3,7 @@
 
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -58,7 +58,7 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
 
     assert_eq!(
         crate::representation::classify(&mut reader).unwrap(),
-        crate::representation::Representation::FixedAscii
+        Some(crate::representation::Representation::FixedAscii)
     );
     assert_eq!(reader.stream_position().unwrap(), 0);
 }

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate a small parametric `FCStd` document without a source archive.
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::fs::File;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdDocumentBuilder, FcstdPropertyValue};
-use cadmpeg_ir::codec::Encoder;
+use cadmpeg_ir::codec::write::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = std::env::args_os()
@@ -39,10 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     let ir = document.build()?;
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut File::create(output)?))?;
     Ok(())
 }

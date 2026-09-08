@@ -19,176 +19,99 @@
 //! geometry, writer) have no honest common default.
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
-use std::collections::BTreeMap;
+macro_rules! loss_codes {
+    ($( $(#[$meta:meta])* $variant:ident => $code:literal ),+ $(,)?) => {
+        /// A stable identifier for one IGES transfer loss.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub(crate) enum IgesLossCode {
+            $( $(#[$meta])* $variant ),+
+        }
 
-/// One `loss.<namespace>/<code>=<count>` census line per distinct loss code.
-///
-/// A [`cadmpeg_core::ContainerSummary`] has no loss channel, so a container
-/// inspection reports the losses it resolves as census notes. The census covers
-/// only the losses that inspection computes; a complete loss report needs a
-/// decode.
-pub(crate) fn census(losses: &[LossNote]) -> Vec<String> {
-    let mut counts = BTreeMap::<(&str, &str), usize>::new();
-    for loss in losses {
-        *counts
-            .entry((loss.code.namespace.as_str(), loss.code.code.as_str()))
-            .or_default() += 1;
-    }
-    counts
-        .into_iter()
-        .map(|((namespace, code), count)| format!("loss.{namespace}/{code}={count}"))
-        .collect()
+        impl IgesLossCode {
+            /// Every code in declaration order.
+            #[cfg(test)]
+            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            /// The stable string identifier.
+            #[must_use]
+            pub(crate) const fn code(self) -> &'static str {
+                match self { $(Self::$variant => $code),+ }
+            }
+        }
+    };
 }
 
-/// A stable, machine-readable identifier for one IGES transfer loss.
-///
-/// Variants are grouped by the record family whose transfer degraded. The
-/// string form (via [`IgesLossCode::code`]) is the stable contract.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum IgesLossCode {
+loss_codes! {
     /// Product-occurrence expansion stopped at the configured output limit.
-    OccurrenceExpansionOutputTruncated,
+    OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
     /// Product-occurrence expansion stopped at the configured nesting-depth limit.
-    OccurrenceExpansionDepthTruncated,
+    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
-    OccurrenceRootInferenceBlocked,
+    OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
-    OccurrencePlacementMalformed,
+    OccurrencePlacementMalformed => "occurrence.placement-malformed",
     /// An envelope-admitted entity was retained without a neutral projection.
-    EntityRetainedUnprojected,
+    EntityRetainedUnprojected => "entity.retained-unprojected",
     /// An entity type/form is outside the Fixed ASCII mechanical/document envelope.
-    EntityOutsideEnvelope,
+    EntityOutsideEnvelope => "entity.outside-envelope",
     /// An entity was not projected; the instance message names the reason.
-    EntityNotProjected,
+    EntityNotProjected => "entity.not-projected",
+    /// A NURBS coordinate or parameter transformation produced a non-finite value.
+    NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
-    BoundaryPcurveOutsideSupportDomain,
+    BoundaryPcurveOutsideSupportDomain => "topology.boundary-pcurve-outside-support-domain",
     /// A Directory Entry pointer did not resolve to the expected target.
-    PointerUnresolved,
+    PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
-    ParameterBoundaryAmbiguous,
+    ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
     /// A counted list declares more items than its Parameter Data record holds.
-    ParameterCountOverdeclared,
+    ParameterCountOverdeclared => "parameter.count-overdeclared",
     /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
-    DirectoryRecordQuarantined,
+    DirectoryRecordQuarantined => "directory.record-quarantined",
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
-    ParameterDataQuarantined,
+    ParameterDataQuarantined => "parameter.data-quarantined",
     /// Card framing came from the card census because the file's own declaration did not.
-    CardFramingRecovered,
+    CardFramingRecovered => "card.framing-recovered",
     /// Directory display, font, or color data was not projected.
-    DisplayDataNotProjected,
+    DisplayDataNotProjected => "presentation.display-data-not-projected",
     /// A drawing has conflicting valid properties of the same form.
-    DrawingPropertyAmbiguous,
+    DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
     /// The Global line-weight scale is unavailable, so no entity has a width.
-    LineWeightScaleUnavailable,
+    LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
     /// A Type 118 developability flag was not transferred to neutral geometry.
-    RuledDevelopabilityNotTransferred,
+    RuledDevelopabilityNotTransferred => "geometry.ruled-developability-not-transferred",
     /// Type 112 or Type 114 header semantics were not transferred to neutral geometry.
-    SplineHeaderNotTransferred,
+    SplineHeaderNotTransferred => "geometry.spline-header-not-transferred",
     /// A Type 102 composite has no admitted concatenated carrier.
-    CompositeCarrierDegraded,
+    CompositeCarrierDegraded => "curve.composite-carrier-degraded",
     /// A Global metadata field is absent or malformed and was not transferred.
-    GlobalMetadataFieldUnusable,
+    GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
     /// A Global comparison context came from this codec's specification.
-    GlobalSemanticContextSubstituted,
+    GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
     /// A Global real used a recoverable noncanonical numeric spelling.
-    GlobalNumericSyntaxRecovered,
+    GlobalNumericSyntaxRecovered => "global.numeric-syntax-recovered",
     /// The Global fields 13, 14, and 15 produced no millimetre length factor.
-    GlobalLengthUnitUnresolved,
+    GlobalLengthUnitUnresolved => "global.length-unit-unresolved",
     /// Global framing is recoverable but noncanonical for the declared profile.
-    GlobalNoncanonicalFraming,
+    GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
-    SourceDialectUnverified,
+    SourceDialectUnverified => "source.dialect-unverified",
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced => "target.source-dialect-displaced",
     /// Preserved source image required for a byte-exact write was unavailable.
-    PreservedSourceUnavailable,
+    PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
-    ProceduralReduced,
+    ProceduralReduced => "geometry.procedural-reduced",
     /// A native passthrough arena is not regenerated by the semantic writer.
-    PassthroughRecordOmitted,
+    PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
-    WriterMinimumResolutionAdjusted,
+    WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
 }
 
 impl IgesLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    pub const ALL: &'static [IgesLossCode] = &[
-        Self::OccurrenceExpansionOutputTruncated,
-        Self::OccurrenceExpansionDepthTruncated,
-        Self::OccurrenceRootInferenceBlocked,
-        Self::OccurrencePlacementMalformed,
-        Self::EntityRetainedUnprojected,
-        Self::EntityOutsideEnvelope,
-        Self::EntityNotProjected,
-        Self::BoundaryPcurveOutsideSupportDomain,
-        Self::PointerUnresolved,
-        Self::ParameterBoundaryAmbiguous,
-        Self::ParameterCountOverdeclared,
-        Self::DirectoryRecordQuarantined,
-        Self::ParameterDataQuarantined,
-        Self::CardFramingRecovered,
-        Self::DisplayDataNotProjected,
-        Self::DrawingPropertyAmbiguous,
-        Self::LineWeightScaleUnavailable,
-        Self::RuledDevelopabilityNotTransferred,
-        Self::SplineHeaderNotTransferred,
-        Self::CompositeCarrierDegraded,
-        Self::GlobalMetadataFieldUnusable,
-        Self::GlobalSemanticContextSubstituted,
-        Self::GlobalNumericSyntaxRecovered,
-        Self::GlobalLengthUnitUnresolved,
-        Self::GlobalNoncanonicalFraming,
-        Self::SourceDialectUnverified,
-        Self::PreservedSourceUnavailable,
-        Self::ProceduralReduced,
-        Self::PassthroughRecordOmitted,
-        Self::WriterMinimumResolutionAdjusted,
-    ];
-
-    /// The stable string identifier. This is the gating contract.
-    #[must_use]
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
-            Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
-            Self::OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
-            Self::OccurrencePlacementMalformed => "occurrence.placement-malformed",
-            Self::EntityRetainedUnprojected => "entity.retained-unprojected",
-            Self::EntityOutsideEnvelope => "entity.outside-envelope",
-            Self::EntityNotProjected => "entity.not-projected",
-            Self::BoundaryPcurveOutsideSupportDomain => {
-                "topology.boundary-pcurve-outside-support-domain"
-            }
-            Self::PointerUnresolved => "graph.pointer-unresolved",
-            Self::ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
-            Self::ParameterCountOverdeclared => "parameter.count-overdeclared",
-            Self::DirectoryRecordQuarantined => "directory.record-quarantined",
-            Self::ParameterDataQuarantined => "parameter.data-quarantined",
-            Self::CardFramingRecovered => "card.framing-recovered",
-            Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
-            Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
-            Self::LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
-            Self::RuledDevelopabilityNotTransferred => {
-                "geometry.ruled-developability-not-transferred"
-            }
-            Self::SplineHeaderNotTransferred => "geometry.spline-header-not-transferred",
-            Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
-            Self::GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
-            Self::GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
-            Self::GlobalNumericSyntaxRecovered => "global.numeric-syntax-recovered",
-            Self::GlobalLengthUnitUnresolved => "global.length-unit-unresolved",
-            Self::GlobalNoncanonicalFraming => "global.noncanonical-framing",
-            Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
-            Self::ProceduralReduced => "geometry.procedural-reduced",
-            Self::PassthroughRecordOmitted => "writer.passthrough-omitted",
-            Self::WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
-        }
-    }
-
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
                 Severity::Blocking
@@ -201,6 +124,7 @@ impl IgesLossCode {
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
+            | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
@@ -219,6 +143,7 @@ impl IgesLossCode {
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
         }
@@ -244,9 +169,9 @@ impl IgesLossCode {
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
-            Self::CompositeCarrierDegraded | Self::GlobalLengthUnitUnresolved => {
-                LossTaxonomy::GeometryNotTransferred
-            }
+            Self::CompositeCarrierDegraded
+            | Self::GlobalLengthUnitUnresolved
+            | Self::NurbsTransformNonFinite => LossTaxonomy::GeometryNotTransferred,
             Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
@@ -255,6 +180,7 @@ impl IgesLossCode {
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
@@ -264,7 +190,7 @@ impl IgesLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced("iges", self.code(), self.shared_taxonomy())
     }
 
@@ -274,7 +200,7 @@ impl IgesLossCode {
     /// text only. Severity comes from the local code and the strict floor from
     /// the shared taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -298,6 +224,7 @@ mod tests {
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
+                "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
@@ -317,6 +244,7 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",

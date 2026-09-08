@@ -50,6 +50,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install nightly public API tooling
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-public-api 0.52.0
+        run: cargo +nightly install cargo-public-api --version =0.52.0 --locked
+
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
@@ -81,15 +87,15 @@ jobs:
           python3 scripts/check-golden-coverage-floors.py
 
       - name: Public API ledger
-        # Parse docs/public-api-ledger.toml and confirm snapshot files exist.
+        # Parse docs/public-api-ledger.toml and regenerate every API snapshot.
         # Change rows retain SHAs from completed refactor branches. Those
         # commits are not necessarily advertised by a current remote ref, so
-        # even a full clone cannot resolve them. Shape and snapshot checks are
-        # the durable CI contract; regenerate snapshots locally.
+        # even a full clone cannot resolve them. Skip only object resolution;
+        # missing nightly API tooling or a stale snapshot fails this job.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_public_api_ledger.py
-          python3 scripts/check-public-api-ledger.py --skip-git-objects
+          python3 scripts/check-public-api-ledger.py --self-test
+          python3 scripts/check-public-api-ledger.py --skip-git-objects --diff --require-tooling
 
       - name: Codec facade
         # Crate-root pub items must match docs/codec-facade.toml.
@@ -97,6 +103,34 @@ jobs:
           set -euo pipefail
           python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
+
+      - name: Dialect identity registry
+        # Schema, id grammar, witness form, and the IGES admission lattice in
+        # docs/dialects.toml. Ids are pinned from the commit that adds them.
+        run: |
+          set -euo pipefail
+          python3 scripts/check-dialects.py --self-test
+          python3 scripts/check-dialects.py
+
+      - name: Dialect capability registry
+        # docs/dialect-support.toml against the identity registry, the fixture
+        # tree, the golden snapshots that pin each fixture's emitted dialect
+        # id, and the encoders' write-target catalogs. Fixture gating lives
+        # here: a row with no fixture cannot claim a read score.
+        run: |
+          set -euo pipefail
+          python3 scripts/check-dialect-support.py --self-test
+          python3 scripts/check-dialect-support.py
+
+      - name: Rendered capability tables
+        # Every score table in docs/format-support.md, the root README, each
+        # codec crate README, and each codec lib.rs doc header is rendered from
+        # the two registries. --check re-renders and compares byte for byte, so
+        # a registry edit without a re-render fails here.
+        run: |
+          set -euo pipefail
+          python3 scripts/render-format-support.py --self-test
+          python3 scripts/render-format-support.py --check
 
       - name: Format check
         run: cargo fmt --all --check
@@ -159,18 +193,6 @@ jobs:
       - name: Independent Inventor evidence test
         run: python3 -m unittest -v scripts/test_inventor_evidence.py
 
-      - name: Convergence ratchet unit tests
-        run: python3 -m unittest -v scripts/test_convergence_ratchet.py
-
-      - name: Golden coverage floor unit tests
-        run: python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
-
-      - name: Public API ledger unit tests
-        run: python3 -m unittest -v scripts/test_check_public_api_ledger.py
-
-      - name: Codec facade unit tests
-        run: python3 -m unittest -v scripts/test_check_codec_facade.py
-
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
         # would pay for the whole workspace again.
@@ -202,10 +224,9 @@ jobs:
         # type fails here rather than at release time.
         run: |
           set -euo pipefail
-          cargo test -p cadmpeg-ir --features schema --lib
-          cargo check -p cadmpeg-core -p cadmpeg-codec-f3d -p cadmpeg-codec-inventor \
-            -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --all-targets \
-            --features cadmpeg-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-inventor/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
+          cargo test -q -p cadmpeg-ir --features schema --lib
+          cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
+            --features cadmpeg-core/schema,cadmpeg-asm/schema
 
       - name: Fuzz targets compile
         # The fuzz crate declares its own `[workspace]`, so every other job

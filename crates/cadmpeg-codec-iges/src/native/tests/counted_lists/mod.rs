@@ -24,7 +24,7 @@ fn decode_bounds_declared_attribute_counts_by_record_tokens() {
         .unwrap();
 
     let definitions =
-        &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
+        &result.ir().native.namespace("iges").unwrap().arenas()["attribute_table_definitions"];
     assert_eq!(definitions.len(), 1);
     assert!(definitions[0].fields()["attributes"]
         .as_array()
@@ -74,27 +74,27 @@ fn decode_stops_cursor_records_after_an_overlong_nested_count() {
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
 
-    let characters = native.arenas["text_fonts"][0].fields()["characters"]
+    let characters = native.arenas()["text_fonts"][0].fields()["characters"]
         .as_array()
         .unwrap()
         .clone();
     assert_eq!(characters.len(), 0);
     assert_eq!(
-        native.arenas["text_fonts"][0].fields()["declared_character_count"],
+        native.arenas()["text_fonts"][0].fields()["declared_character_count"],
         2
     );
 
-    let classes = native.arenas["associativities"][0].fields()["classes"]
+    let classes = native.arenas()["associativities"][0].fields()["classes"]
         .as_array()
         .unwrap()
         .clone();
     assert_eq!(classes.len(), 0);
     assert_eq!(
-        native.arenas["associativities"][0].fields()["declared_class_count"],
+        native.arenas()["associativities"][0].fields()["declared_class_count"],
         2
     );
 
-    let definitions = &native.arenas["attribute_table_definitions"];
+    let definitions = &native.arenas()["attribute_table_definitions"];
     for definition in definitions {
         let attributes = definition.fields()["attributes"]
             .as_array()
@@ -150,11 +150,11 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
 
-    let assembly = &native.arenas["solid_assemblies"][0];
+    let assembly = &native.arenas()["solid_assemblies"][0];
     assert_eq!(assembly.fields()["declared_count"], 2);
     assert!(assembly.fields()["items"].as_array().unwrap().is_empty());
 
-    let network = &native.arenas["network_definitions"][0];
+    let network = &native.arenas()["network_definitions"][0];
     assert_eq!(network.fields()["declared_member_count"], 99);
     assert!(network.fields()["members"].as_array().unwrap().is_empty());
     assert!(network.fields()["type_flag"].is_null());
@@ -166,13 +166,13 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
         .unwrap()
         .is_empty());
 
-    let copious = &native.arenas["copious_data"][0];
+    let copious = &native.arenas()["copious_data"][0];
     assert_eq!(copious.fields()["declared_tuple_count"], 3);
     assert!(copious.fields()["common_z"].is_number());
     assert!(copious.fields()["tuples"].as_array().unwrap().is_empty());
 
     let property = |form| {
-        native.arenas["properties"]
+        native.arenas()["properties"]
             .iter()
             .find(|property| property.fields()["form"] == form)
             .unwrap()
@@ -204,8 +204,8 @@ fn decode_type_406_form_11_does_not_expose_a_partial_independent_prefix() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
-    let property = &native.arenas["properties"][0];
+    let entity = &native.arenas()["entities"][0];
+    let property = &native.arenas()["properties"][0];
 
     assert_eq!(entity.fields()["parameters"].as_array().unwrap().len(), 10);
     assert_eq!(property.fields()["declared_dependent_count"], 1);
@@ -232,7 +232,7 @@ fn decode_type_406_form_11_does_not_expose_zero_count_independent_values() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let property = &native.arenas["properties"][0];
+    let property = &native.arenas()["properties"][0];
 
     assert_eq!(property.fields()["declared_dependent_count"], 1);
     assert!(property.fields()["independent_variables"]
@@ -267,8 +267,8 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
-    let levels = &native.arenas["definition_levels"][0];
+    let entity = &native.arenas()["entities"][0];
+    let levels = &native.arenas()["definition_levels"][0];
 
     assert_eq!(
         entity.fields()["property_links"][0],
@@ -300,8 +300,8 @@ fn decode_label_display_defaulted_final_placement_rejects_trailing_property_grou
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
-    let associativity = &native.arenas["associativities"][0];
+    let entity = &native.arenas()["entities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert!(entity.fields()["property_links"][0].is_null());
     assert_eq!(associativity.fields()["declared_count"], 2);
@@ -351,7 +351,7 @@ fn decode_view_list_uses_form6_class_entry_and_visible_count() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = native.arenas["associativities"]
+    let associativity = native.arenas()["associativities"]
         .iter()
         .find(|record| record.id() == "iges:structure:associativity#D3")
         .unwrap();
@@ -360,7 +360,7 @@ fn decode_view_list_uses_form6_class_entry_and_visible_count() {
     assert_eq!(fields["view"], "iges:entity:directory#1");
     assert_eq!(fields["visible_entities"][0], "iges:entity:directory#5");
 
-    let source = native.arenas["entities"]
+    let source = native.arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -399,7 +399,7 @@ fn decode_external_reference_index_uses_counted_name_pointer_pairs() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let index = native.arenas["associativities"]
+    let index = native.arenas()["associativities"]
         .iter()
         .find(|record| record.id() == "iges:structure:associativity#D3")
         .unwrap();
@@ -474,7 +474,7 @@ fn decode_dimensioned_geometry_uses_counted_geometry_pointers() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let dimensioned = native.arenas["associativities"]
+    let dimensioned = native.arenas()["associativities"]
         .iter()
         .find(|record| record.id() == "iges:structure:associativity#D11")
         .unwrap();
@@ -525,8 +525,8 @@ fn decode_view_visibility_counts_use_the_table_boundary() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
-    let visibility = &native.arenas["view_visibility"][0];
+    let entity = &native.arenas()["entities"][0];
+    let visibility = &native.arenas()["view_visibility"][0];
     let fields = visibility.fields();
 
     assert!(entity.fields()["property_links"]
@@ -567,8 +567,8 @@ fn decode_flow_counts_do_not_recover_incomplete_class_lists() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
-    let flow = &native.arenas["associativities"][0];
+    let entity = &native.arenas()["entities"][0];
+    let flow = &native.arenas()["associativities"][0];
 
     assert!(entity.fields()["property_links"]
         .as_array()
@@ -614,7 +614,7 @@ fn decode_flow_form18_keeps_zero_class_lists_before_trailing_groups() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let source = native.arenas["entities"]
+    let source = native.arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
@@ -622,7 +622,7 @@ fn decode_flow_form18_keeps_zero_class_lists_before_trailing_groups() {
         source.fields()["association_links"].as_array().unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
-    let flow = native.arenas["associativities"]
+    let flow = native.arenas()["associativities"]
         .iter()
         .find(|record| record.id() == "iges:structure:associativity#D3")
         .unwrap();
@@ -671,7 +671,7 @@ fn decode_native_type_106_does_not_invent_tuples_for_invalid_interpretation() {
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
     let record = |sequence| {
-        native.arenas["copious_data"]
+        native.arenas()["copious_data"]
             .iter()
             .find(|record| record.id() == format!("iges:native:copious-data#D{sequence}"))
             .unwrap()
@@ -760,7 +760,7 @@ fn decode_bounds_declared_presentation_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("font header")));
-    let fonts = &result.ir().native.namespace("iges").unwrap().arenas["text_fonts"];
+    let fonts = &result.ir().native.namespace("iges").unwrap().arenas()["text_fonts"];
     assert!(fonts[0].fields()["characters"]
         .as_array()
         .unwrap()
@@ -785,7 +785,7 @@ fn decode_bounds_declared_annotation_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("text count")));
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert!(annotations[0].fields()["strings"]
         .as_array()
         .unwrap()
@@ -810,7 +810,7 @@ fn decode_bounds_declared_drawing_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("drawing view placements")));
-    let drawings = &result.ir().native.namespace("iges").unwrap().arenas["drawings"];
+    let drawings = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"];
     assert!(drawings[0].fields()["views"].as_array().unwrap().is_empty());
 }
 
@@ -832,7 +832,7 @@ fn decode_bounds_declared_solid_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("Boolean postfix length")));
-    let trees = &result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"];
+    let trees = &result.ir().native.namespace("iges").unwrap().arenas()["boolean_trees"];
     assert!(trees[0].fields()["terms"].as_array().unwrap().is_empty());
 }
 
@@ -865,7 +865,7 @@ fn decode_text_score_forms_uses_counted_ranges_before_trailing_associations() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let properties = &native.arenas["properties"];
+    let properties = &native.arenas()["properties"];
     for (form, kind, ranges) in [(34, "underscore", 1), (35, "overscore", 2)] {
         let property = properties
             .iter()
@@ -876,7 +876,7 @@ fn decode_text_score_forms_uses_counted_ranges_before_trailing_associations() {
         assert_eq!(property["ranges"].as_array().unwrap().len(), ranges);
     }
     for sequence in [3, 5] {
-        let entity = native.arenas["entities"]
+        let entity = native.arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
@@ -905,7 +905,7 @@ fn decode_leader_segment_count_does_not_invent_tails_past_the_arrowhead_block() 
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let leader = &native.arenas["annotations"][0];
+    let leader = &native.arenas()["annotations"][0];
 
     assert_eq!(leader.fields()["declared_segment_count"], 3);
     assert!(leader.fields()["segment_tails"]
@@ -943,7 +943,7 @@ fn decode_view_list_visible_entities_stop_at_the_view_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_visible_count"], 2);
     assert!(associativity.fields()["visible_entities"]
@@ -974,7 +974,7 @@ fn decode_single_parent_children_stop_at_the_parent_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_child_count"], 2);
     assert!(associativity.fields()["children"]
@@ -1012,7 +1012,7 @@ fn decode_dimensioned_geometry_stops_at_the_dimension_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_geometry_count"], 2);
     assert!(associativity.fields()["geometry"]
@@ -1043,7 +1043,7 @@ fn decode_planar_entities_stop_at_the_transform_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_entity_count"], 2);
     assert!(associativity.fields()["entities"]
@@ -1074,7 +1074,7 @@ fn decode_recalculable_dimension_reads_a_defaulted_final_tuple() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
+    let associativity = &native.arenas()["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_geometry_count"], 1);
     let fields = associativity.fields();
@@ -1118,13 +1118,13 @@ fn decode_array_positions_stop_at_the_do_dont_flag() {
         .unwrap();
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let rectangular = &native.arenas["rectangular_arrays"][0];
+    let rectangular = &native.arenas()["rectangular_arrays"][0];
     assert!(rectangular.fields()["positions"]
         .as_array()
         .unwrap()
         .is_empty());
 
-    let circular = &native.arenas["circular_arrays"][0];
+    let circular = &native.arenas()["circular_arrays"][0];
     assert!(circular.fields()["positions"]
         .as_array()
         .unwrap()
@@ -1181,7 +1181,7 @@ fn decode_complete_leader_and_island_lists_keep_every_declared_item() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let annotations = &native.arenas["annotations"];
+    let annotations = &native.arenas()["annotations"];
     let annotation = |kind: &str| {
         annotations
             .iter()

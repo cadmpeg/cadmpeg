@@ -11,107 +11,17 @@ mod commands;
 mod inspect;
 mod loader;
 mod query;
+mod registry_view;
+mod reject_json;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use registry_view::{print_dialects, print_formats};
 
-use crate::application::{ForcedInput, InputCatalog, NativeValidatorCatalog};
-use crate::commands::AppCatalogs;
-
-#[cfg(feature = "step")]
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum StepTarget {
-    Ap203e1,
-    Ap203e2,
-    #[default]
-    Ap214,
-    Ap242e1,
-    Ap242e2,
-    Ap242e3,
-}
-
-#[cfg(feature = "step")]
-impl StepTarget {
-    fn schema(self) -> cadmpeg_codec_step::StepSchema {
-        match self {
-            Self::Ap203e1 => cadmpeg_codec_step::StepSchema::Ap203Edition1,
-            Self::Ap203e2 => cadmpeg_codec_step::StepSchema::Ap203Edition2,
-            Self::Ap214 => cadmpeg_codec_step::StepSchema::Ap214,
-            Self::Ap242e1 => cadmpeg_codec_step::StepSchema::Ap242Edition1,
-            Self::Ap242e2 => cadmpeg_codec_step::StepSchema::Ap242Edition2,
-            Self::Ap242e3 => cadmpeg_codec_step::StepSchema::Ap242Edition3,
-        }
-    }
-}
-
-#[cfg(feature = "iges")]
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum IgesTarget {
-    /// IGES 5.3 Fixed ASCII.
-    #[default]
-    #[value(name = "5.3", alias = "v5.3", alias = "v5_3")]
-    V5_3,
-    /// IGES 5.2 Fixed ASCII.
-    #[value(name = "5.2", alias = "v5.2", alias = "v5_2")]
-    V5_2,
-    /// IGES 5.1 Fixed ASCII.
-    #[value(name = "5.1", alias = "v5.1", alias = "v5_1")]
-    V5_1,
-    /// IGES 5.0 Fixed ASCII.
-    #[value(name = "5.0", alias = "v5.0", alias = "v5_0")]
-    V5_0,
-    /// IGES 4.0 Fixed ASCII.
-    #[value(name = "4.0", alias = "v4.0", alias = "v4_0")]
-    V4_0,
-}
-
-#[cfg(feature = "iges")]
-impl IgesTarget {
-    const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
-        cadmpeg_codec_iges::IgesWriteOptions {
-            version: match self {
-                Self::V4_0 => cadmpeg_codec_iges::IgesVersion::V4_0,
-                Self::V5_0 => cadmpeg_codec_iges::IgesVersion::V5_0,
-                Self::V5_1 => cadmpeg_codec_iges::IgesVersion::V5_1,
-                Self::V5_3 => cadmpeg_codec_iges::IgesVersion::V5_3,
-                Self::V5_2 => cadmpeg_codec_iges::IgesVersion::V5_2,
-            },
-        }
-    }
-}
-
-#[cfg(feature = "step")]
-#[derive(Debug, Clone, Args)]
-struct StepOutputArgs {
-    /// STEP application protocol and edition; valid only for STEP output.
-    #[arg(long, value_enum)]
-    step_target: Option<StepTarget>,
-    /// Do not write STEP if the export would report any loss.
-    #[arg(long)]
-    reject_step_losses: bool,
-}
-
-#[cfg(feature = "step")]
-impl StepOutputArgs {
-    /// True when a STEP-only flag was present on the command line.
-    fn flag_present(&self) -> bool {
-        self.step_target.is_some() || self.reject_step_losses
-    }
-
-    fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
-        cadmpeg_codec_step::StepWriteOptions {
-            schema: self.step_target.unwrap_or_default().schema(),
-            unsupported: if self.reject_step_losses {
-                cadmpeg_codec_step::StepUnsupportedPolicy::Reject
-            } else {
-                cadmpeg_codec_step::StepUnsupportedPolicy::Report
-            },
-            ..Default::default()
-        }
-    }
-}
+use crate::application::transcoder::{DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -132,226 +42,25 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Format {
-    /// CADIR JSON.
-    #[value(alias = "json")]
-    Cadir,
-    /// ISO 10303-21 STEP AP214.
-    #[cfg(feature = "step")]
-    Step,
-    /// `FreeCAD` `.FCStd`.
-    #[cfg(feature = "fcstd")]
-    Fcstd,
-    /// Autodesk Fusion `.f3d`.
-    #[cfg(feature = "f3d")]
-    F3d,
-    /// `SolidWorks` `.sldprt`.
-    #[cfg(feature = "sldprt")]
-    Sldprt,
-    /// Rhino `.3dm`.
-    #[cfg(feature = "rhino")]
-    #[value(alias = "3dm")]
-    Rhino,
-    /// IGES `.igs` or `.iges`.
-    #[cfg(feature = "iges")]
-    #[value(alias = "igs")]
-    Iges,
-}
-
-#[cfg(feature = "rhino")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum RhinoVersion {
-    /// Rhino 5 archive version 50.
-    #[value(name = "50", alias = "5")]
-    V5,
-    /// Rhino 6 archive version 60.
-    #[value(name = "60", alias = "6")]
-    V6,
-    /// Rhino 7 archive version 70.
-    #[value(name = "70", alias = "7")]
-    V7,
-    /// Rhino 8 archive version 80.
-    #[value(name = "80", alias = "8")]
-    V8,
-}
-
-#[cfg(feature = "rhino")]
-impl RhinoVersion {
-    const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
-        match self {
-            Self::V5 => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
-            Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
-            Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
-            Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
-        }
-    }
-}
-
-impl Format {
-    fn from_extension(extension: &str) -> Option<Self> {
-        match extension.to_ascii_lowercase().as_str() {
-            "cadir" | "json" => Some(Self::Cadir),
-            #[cfg(feature = "step")]
-            "step" | "stp" => Some(Self::Step),
-            #[cfg(feature = "fcstd")]
-            "fcstd" => Some(Self::Fcstd),
-            #[cfg(feature = "f3d")]
-            "f3d" => Some(Self::F3d),
-            #[cfg(feature = "sldprt")]
-            "sldprt" => Some(Self::Sldprt),
-            #[cfg(feature = "rhino")]
-            "3dm" => Some(Self::Rhino),
-            #[cfg(feature = "iges")]
-            "iges" | "igs" => Some(Self::Iges),
-            _ => None,
-        }
-    }
-
-    fn is_geometry_export(self) -> bool {
-        match self {
-            Self::Cadir => false,
-            #[cfg(feature = "step")]
-            Self::Step => true,
-            #[cfg(feature = "fcstd")]
-            Self::Fcstd => true,
-            #[cfg(feature = "f3d")]
-            Self::F3d => true,
-            #[cfg(feature = "sldprt")]
-            Self::Sldprt => true,
-            #[cfg(feature = "rhino")]
-            Self::Rhino => true,
-            #[cfg(feature = "iges")]
-            Self::Iges => true,
-        }
-    }
-
-    /// Whether this output format is a binary container, which is unsafe to
-    /// stream to a terminal or a JSON-expecting pipe by accident.
-    fn is_binary_container(self) -> bool {
-        match self {
-            #[cfg(feature = "fcstd")]
-            Self::Fcstd => true,
-            #[cfg(feature = "f3d")]
-            Self::F3d => true,
-            #[cfg(feature = "sldprt")]
-            Self::Sldprt => true,
-            #[cfg(feature = "rhino")]
-            Self::Rhino => true,
-            _ => false,
-        }
-    }
-
-    fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
-        path.and_then(std::path::Path::extension)
-            .and_then(|extension| extension.to_str())
-            .and_then(Self::from_extension)
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Cadir => "cadir",
-            #[cfg(feature = "step")]
-            Self::Step => "step",
-            #[cfg(feature = "fcstd")]
-            Self::Fcstd => "fcstd",
-            #[cfg(feature = "f3d")]
-            Self::F3d => "f3d",
-            #[cfg(feature = "sldprt")]
-            Self::Sldprt => "sldprt",
-            #[cfg(feature = "rhino")]
-            Self::Rhino => "rhino",
-            #[cfg(feature = "iges")]
-            Self::Iges => "iges",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum InputFormat {
-    /// `FreeCAD` `.FCStd`.
-    #[cfg(feature = "fcstd")]
-    Fcstd,
-    /// Autodesk Fusion `.f3d`.
-    #[cfg(feature = "f3d")]
-    F3d,
-    /// Autodesk Inventor `.ipt` or `.iam`.
-    #[cfg(feature = "inventor")]
-    #[value(alias = "ipt", alias = "iam")]
-    Inventor,
-    /// `SolidWorks` `.sldprt`.
-    #[cfg(feature = "sldprt")]
-    Sldprt,
-    /// CATIA V5 `.CATPart`.
-    #[cfg(feature = "catia")]
-    #[value(alias = "catia")]
-    Catpart,
-    /// Siemens NX `.prt`.
-    #[cfg(feature = "nx")]
-    Nx,
-    /// Creo Parametric `.prt`.
-    #[cfg(feature = "creo")]
-    Creo,
-    /// Rhino `.3dm`.
-    #[cfg(feature = "rhino")]
-    #[value(alias = "3dm")]
-    Rhino,
-    /// IGES `.igs` or `.iges`.
-    #[cfg(feature = "iges")]
-    #[value(alias = "igs")]
-    Iges,
-    /// ISO 10303 STEP.
-    #[cfg(feature = "step")]
-    Step,
-    /// Bare ASM `.sat`/`.smt`/`.smb`/`.sab` stream.
-    #[cfg(feature = "sat")]
-    #[value(alias = "smt", alias = "smb", alias = "sab")]
-    Sat,
-    /// CADIR JSON.
-    Cadir,
-}
-
-impl InputFormat {
-    fn resolution(self) -> ForcedInput {
-        match self {
-            #[cfg(feature = "fcstd")]
-            Self::Fcstd => ForcedInput::Codec("fcstd"),
-            #[cfg(feature = "f3d")]
-            Self::F3d => ForcedInput::Codec("f3d"),
-            #[cfg(feature = "inventor")]
-            Self::Inventor => ForcedInput::Codec("inventor"),
-            #[cfg(feature = "sldprt")]
-            Self::Sldprt => ForcedInput::Codec("sldprt"),
-            #[cfg(feature = "catia")]
-            Self::Catpart => ForcedInput::Codec("catia"),
-            #[cfg(feature = "nx")]
-            Self::Nx => ForcedInput::Codec("nx"),
-            #[cfg(feature = "creo")]
-            Self::Creo => ForcedInput::Codec("creo"),
-            #[cfg(feature = "rhino")]
-            Self::Rhino => ForcedInput::Codec("rhino"),
-            #[cfg(feature = "iges")]
-            Self::Iges => ForcedInput::Codec("iges"),
-            #[cfg(feature = "step")]
-            Self::Step => ForcedInput::Codec("step"),
-            #[cfg(feature = "sat")]
-            Self::Sat => ForcedInput::Codec("sat"),
-            Self::Cadir => ForcedInput::Cadir,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
     /// Treat the input as this format.
-    #[arg(long, visible_alias = "from", value_enum)]
-    input_format: Option<InputFormat>,
+    #[arg(
+        long,
+        visible_alias = "from",
+        value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+    )]
+    input_format: Option<String>,
 }
 
 impl InputArgs {
     fn forced(&self) -> Option<ForcedInput> {
-        self.input_format.map(InputFormat::resolution)
+        forced_input(self.input_format.as_deref())
     }
+}
+
+fn forced_input(name: Option<&str>) -> Option<ForcedInput> {
+    name.map(|name| cadmpeg_registry::forced_input(name).expect("clap validates input formats"))
 }
 
 #[derive(Debug, Clone, Args)]
@@ -406,39 +115,34 @@ enum Command {
     /// Convert a CAD file to another format.
     ///
     /// Reads a CAD file, checks it, and writes another format.
-    /// The output path's extension selects the format. Pass `-f` when writing to stdout.
+    /// The output path's extension selects the format. Pass `--to` when writing to stdout.
+    ///
+    /// `--to FORMAT:DIALECT` names the output dialect as well as the format.
+    /// With no `--to`, a same-format conversion keeps the dialect the input
+    /// already is, and a cross-format conversion writes the format's default.
     ///
     /// `--allow-errors` writes the file even if the check finds errors.
     #[command(
         display_order = 1,
-        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.f3d -f step"
+        after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
     )]
     Convert {
-        /// CAD file to convert.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
-        /// Rejected placeholder: the artifact format comes from --format/-o and
-        /// the machine-readable report from --report.
-        #[arg(long, hide = true)]
-        json: bool,
+        #[command(flatten)]
+        file: inspect::FileArg,
+        #[command(flatten)]
+        _reject_json: crate::reject_json::RejectJson,
         /// Stream a binary output format to standard output anyway.
         #[arg(long, hide = true)]
         binary_stdout: bool,
-        /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, visible_alias = "to", value_enum)]
-        format: Option<Format>,
+        /// Output format and dialect: `FORMAT`, `FORMAT:DIALECT`, or a bare
+        /// dialect of the format the output path implies. Inferred from the
+        /// output extension when omitted.
+        #[arg(short, long, visible_alias = "to", value_name = "FORMAT[:DIALECT]")]
+        format: Option<String>,
         /// Output file; omit to write to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Replace an existing output file.
+        /// Replace an existing output or command-report file.
         #[arg(long)]
         force: bool,
         /// Write a JSON report to this file.
@@ -450,24 +154,38 @@ enum Command {
         /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
-        /// Do not write if decoding reported any loss.
-        #[arg(long)]
-        reject_lossy: bool,
-        /// Target Rhino archive version; valid only for Rhino output.
-        #[cfg(feature = "rhino")]
-        #[arg(long, value_enum)]
-        rhino_target: Option<RhinoVersion>,
-        /// Target IGES specification version; valid only for IGES output.
-        #[cfg(feature = "iges")]
-        #[arg(long, value_enum)]
-        iges_target: Option<IgesTarget>,
+        /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
+        /// only on decode loss, `=export` only on export loss, and the bare
+        /// flag on either.
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            require_equals = true,
+            default_missing_value = "any",
+            value_name = "SCOPE"
+        )]
+        reject_lossy: Option<LossPolicy>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
-        #[cfg(feature = "step")]
-        #[command(flatten)]
-        step: StepOutputArgs,
+    },
+    /// List the formats this build reads and writes.
+    #[command(display_order = 7)]
+    Formats,
+    /// List the dialects of each format, and what this build does with them.
+    ///
+    /// The identity registry crossed with the capability registry: which
+    /// dialects exist, how well each is read, and which are write targets of
+    /// this build's encoders.
+    #[command(
+        display_order = 8,
+        after_help = "Examples:\n  cadmpeg dialects\n  cadmpeg dialects rhino"
+    )]
+    Dialects {
+        /// Show only this format's rows.
+        format: Option<String>,
     },
     /// Show what is inside a CAD file.
     ///
@@ -483,36 +201,7 @@ enum Command {
         subcommand_help_heading = "Byte tools",
         after_help = "Examples:\n  cadmpeg inspect part.sldprt"
     )]
-    Inspect {
-        /// CAD file to inspect.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
-        /// Write JSON to standard output.
-        #[arg(long)]
-        json: bool,
-        /// Write a JSON report to this file.
-        #[arg(short = 'o', long, visible_alias = "output")]
-        report: Option<PathBuf>,
-        /// Replace an existing report file.
-        #[arg(long)]
-        force: bool,
-        /// Resource-limit profile applied during inspection.
-        #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
-        limits: LimitProfile,
-        #[command(flatten)]
-        input_args: InputArgs,
-        /// Byte tool to run instead of showing the container.
-        #[command(subcommand)]
-        bytes: Option<inspect::ByteCommand>,
-    },
+    Inspect(inspect::InspectArgs),
     /// Write a CAD file as CADIR JSON.
     ///
     /// CADIR is cadmpeg's JSON form of a model. dump does not check.
@@ -523,20 +212,10 @@ enum Command {
         after_help = "Examples:\n  cadmpeg dump part.sldprt -o part.cadir.json"
     )]
     Dump {
-        /// CAD file to dump.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
-        /// Rejected placeholder: dump's stdout is already CADIR JSON; dump report goes to --report.
-        #[arg(long, hide = true)]
-        json: bool,
+        #[command(flatten)]
+        file: inspect::FileArg,
+        #[command(flatten)]
+        _reject_json: crate::reject_json::RejectJson,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -572,17 +251,8 @@ enum Command {
         after_help = "Examples:\n  cadmpeg check part.sldprt"
     )]
     Check {
-        /// CAD file to check.
-        #[arg(required_unless_present = "input_flag")]
-        input: Option<PathBuf>,
-        /// Tolerated spelling of the positional input.
-        #[arg(
-            long = "input",
-            value_name = "FILE",
-            hide = true,
-            conflicts_with = "input"
-        )]
-        input_flag: Option<PathBuf>,
+        #[command(flatten)]
+        file: inspect::FileArg,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -613,11 +283,17 @@ enum Command {
         /// Second CAD file.
         b: PathBuf,
         /// Treat the first file as this format.
-        #[arg(long, value_enum)]
-        input_format_a: Option<InputFormat>,
+        #[arg(
+            long,
+            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+        )]
+        input_format_a: Option<String>,
         /// Treat the second file as this format.
-        #[arg(long, value_enum)]
-        input_format_b: Option<InputFormat>,
+        #[arg(
+            long,
+            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+        )]
+        input_format_b: Option<String>,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -630,25 +306,6 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
-}
-
-/// Collapses the positional input and the tolerated `--input` spelling.
-///
-/// Clap guarantees exactly one of the pair is present: the positional is
-/// required unless the flag is given, and the two conflict.
-fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf {
-    positional
-        .or(flag)
-        .expect("clap requires one input spelling")
-}
-
-/// Error for `--json` on a command whose output is an artifact.
-fn misdirected_json(command: &str) -> anyhow::Error {
-    anyhow::anyhow!(
-        "--json is not an output selector on {command}; the artifact format comes from \
-         --format/-o, and the machine-readable report from --report FILE, projected \
-         with `cadmpeg query`"
-    )
 }
 
 /// Restore `SIG_DFL` so a closed stdout pipe delivers SIGPIPE instead of a
@@ -672,77 +329,52 @@ fn main() -> ExitCode {
     #[cfg(unix)]
     reset_sigpipe();
     let command = Cli::parse().command;
-    let catalogs = AppCatalogs {
-        inputs: InputCatalog::with_builtins(),
-        validators: NativeValidatorCatalog::with_builtins(),
-    };
-    let result = match command {
-        Command::Inspect {
-            input,
-            input_flag,
-            json,
-            report,
-            force,
-            limits,
-            input_args,
-            bytes,
-        } => match bytes {
-            Some(byte_command) => inspect::run(byte_command),
-            None => {
-                let input = resolve_input(input, input_flag);
-                commands::inspect(
-                    &catalogs,
-                    &input,
-                    input_args.forced(),
-                    json,
-                    report.as_deref(),
-                    force,
-                    limits.limits(),
-                )
-                .map(|()| ExitCode::SUCCESS)
-            }
-        },
+    let inputs = InputCatalog::with_builtins();
+    let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
+        Command::Inspect(inspect::InspectArgs::Bytes(byte_command)) => {
+            inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
+        }
+        Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
+            &inputs,
+            args.file.path(),
+            args.input_args.forced(),
+            args.json,
+            args.report.as_deref(),
+            args.force,
+            args.limits.limits(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Dump {
-            input,
-            input_flag,
-            json,
+            file,
+            _reject_json: _,
             output,
             force,
             report,
             input_args,
             decode,
-        } => {
-            if json {
-                Err(anyhow::anyhow!(
-                    "dump writes the CADIR JSON artifact itself; its standard output is \
-                     already JSON when -o is omitted; the dump report goes to --report FILE, \
-                     projected with `cadmpeg query`"
-                ))
-            } else {
-                commands::dump(
-                    &catalogs,
-                    &resolve_input(input, input_flag),
-                    output.as_deref(),
-                    force,
-                    report.as_deref(),
-                    input_args.forced(),
-                    &decode,
-                )
-            }
-        }
+        } => commands::dump(
+            &inputs,
+            file.path(),
+            output.as_deref(),
+            force,
+            report.as_deref(),
+            input_args.forced(),
+            &decode,
+        )
         .map(|()| ExitCode::SUCCESS),
-        Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
+        Command::Query { view } => query::run(&view)
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(application::refusal::ApplicationError::from),
         Command::Check {
-            input,
-            input_flag,
+            file,
             json,
             report,
             force,
             input_args,
             decode,
         } => commands::check_cmd(
-            &catalogs,
-            &resolve_input(input, input_flag),
+            &inputs,
+            file.path(),
             input_args.forced(),
             &decode,
             json,
@@ -760,14 +392,14 @@ fn main() -> ExitCode {
             force,
             decode,
         } => commands::diff(
-            &catalogs,
+            &inputs,
             commands::DiffInput {
                 path: &a,
-                forced: input_format_a.map(InputFormat::resolution),
+                forced: forced_input(input_format_a.as_deref()),
             },
             commands::DiffInput {
                 path: &b,
-                forced: input_format_b.map(InputFormat::resolution),
+                forced: forced_input(input_format_b.as_deref()),
             },
             &decode,
             json,
@@ -775,9 +407,8 @@ fn main() -> ExitCode {
             force,
         ),
         Command::Convert {
-            input,
-            input_flag,
-            json,
+            file,
+            _reject_json: _,
             binary_stdout,
             format,
             output,
@@ -786,53 +417,38 @@ fn main() -> ExitCode {
             allow_errors,
             allow_empty,
             reject_lossy,
-            #[cfg(feature = "rhino")]
-            rhino_target,
-            #[cfg(feature = "iges")]
-            iges_target,
             input_args,
             decode,
-            #[cfg(feature = "step")]
-            step,
         } => {
-            if json {
-                Err(misdirected_json("convert"))
-            } else {
-                let plan = commands::ConversionPlan {
-                    force,
-                    report,
-                    binary_stdout,
-                    allow_errors,
-                    allow_empty,
-                    reject_lossy,
-                    #[cfg(feature = "rhino")]
-                    rhino_target: rhino_target.map(RhinoVersion::codec),
-                    #[cfg(feature = "step")]
-                    step_options: step.flag_present().then(|| step.options()),
-                    #[cfg(feature = "step")]
-                    step_flag_present: step.flag_present(),
-                    #[cfg(feature = "iges")]
-                    iges_options: iges_target.map(IgesTarget::options),
-                    forced_input: input_args.forced(),
-                };
-                commands::convert(
-                    &catalogs,
-                    &resolve_input(input, input_flag),
-                    format,
-                    output.as_deref(),
-                    &plan,
-                    &decode,
-                )
-            }
+            let conversion_args = commands::ConversionArgs {
+                losses: reject_lossy.unwrap_or_default(),
+                allow_errors,
+                allow_empty,
+                destination: DestinationPolicy::new(output, force, binary_stdout),
+                overwrite_report: force,
+                report,
+                forced_input: input_args.forced(),
+            };
+            commands::convert(
+                &inputs,
+                file.path(),
+                format.as_deref(),
+                &conversion_args,
+                &decode,
+            )
         }
         .map(|()| ExitCode::SUCCESS),
+        Command::Formats => {
+            print_formats(&inputs);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Dialects { format } => print_dialects(format.as_deref())
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(anyhow::Error::new)
+            .map_err(application::refusal::ApplicationError::from),
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
-        if let Some(refusal) = err.downcast_ref::<application::ConversionRefusal>() {
-            ExitCode::from(refusal.exit_code())
-        } else {
-            ExitCode::from(2)
-        }
+        ExitCode::from(err.exit_code())
     })
 }

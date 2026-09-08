@@ -5,11 +5,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Stable identity of one document asset.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct AssetId(pub String);
+crate::ids::local_id_type!(
+    /// Stable identity of one document asset.
+    AssetId
+);
 
 /// Bytes or location supplying an asset's content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

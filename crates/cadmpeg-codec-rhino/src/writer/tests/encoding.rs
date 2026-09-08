@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Color, Point};
-use cadmpeg_ir::units::Units;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn empty_utf16_string_has_zero_count_and_no_terminator() {
@@ -53,29 +55,30 @@ fn object_attribute_items_are_written_in_ascending_order() {
 
 #[test]
 fn nonempty_user_string_presentation_is_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#user-strings".into()),
+        id: PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
@@ -85,15 +88,15 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
             "user_strings".into(),
             serde_json::json!([{ "key": "name", "value": "value" }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("user-string metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -102,29 +105,30 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 
 #[test]
 fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#mesh-modifiers".into()),
+        id: PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
@@ -134,15 +138,15 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
             "mesh_modifiers".into(),
             serde_json::json!({ "displacement": { "on": true } }),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("mesh modifier metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
@@ -151,29 +155,30 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 
 #[test]
 fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#layer-settings".into()),
+        id: PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("layers")
             .expect("decoded layer presentation");
         let original = records.first().expect("decoded layer presentation record");
@@ -187,15 +192,15 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
                 "color": [10, 20, 30, 40]
             }]),
         );
-        records[0] = cadmpeg_ir::NativeRecord::new(id, fields);
+        records[0] = cadmpeg_ir::NativeRecord::new(id, fields).expect("valid native identity");
     }
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("layer metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));

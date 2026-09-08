@@ -7,7 +7,8 @@
 //! positions. Token positions identify fields within a record payload without
 //! depending on serialized byte offsets.
 
-use crate::nurbs::reader::checked_knot_layout;
+use crate::kernel_header::RefWidth;
+use crate::nurbs::reader::{checked_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
@@ -187,8 +188,7 @@ impl<'a> Cur<'a> {
     /// Consume one optional range bound: `True` + `Double` or a bare `Double`
     /// is a present bound, `False` is an absent bound. The outer `None` is a
     /// parse failure.
-    #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent bound.
-    pub(crate) fn take_optional_range_value(&mut self) -> Option<Option<f64>> {
+    pub(crate) fn take_optional_range_value(&mut self) -> Option<Nullable<f64>> {
         let mark = self.pos;
         match self.peek()? {
             Token::True => {
@@ -197,13 +197,13 @@ impl<'a> Cur<'a> {
                     self.pos = mark;
                     return None;
                 };
-                Some(Some(value))
+                Some(Nullable::Value(value))
             }
             Token::False => {
                 self.pos += 1;
-                Some(None)
+                Some(Nullable::Null)
             }
-            Token::Double(_) => self.take_f64().map(Some),
+            Token::Double(_) => self.take_f64().map(Nullable::Value),
             _ => None,
         }
     }
@@ -225,38 +225,13 @@ pub(crate) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len);
+    let mut expanded = Vec::with_capacity(expansion.expanded_len());
     for (value, &run_length) in values.iter().zip(&expansion.expanded_run_lengths) {
         for _ in 0..run_length {
             expanded.push(*value);
         }
     }
     Some((expanded, expansion.n_poles))
-}
-
-/// A B-spline block marker: `nubs` introduces a non-rational block, `nurbs` a
-/// rational one whose poles carry a fourth weight component.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum BsplineMarker {
-    /// Non-rational: three doubles per pole.
-    Nubs,
-    /// Rational: four doubles per pole, the fourth a homogeneous weight.
-    Nurbs,
-}
-
-impl BsplineMarker {
-    /// Doubles per control point.
-    pub(crate) fn cp_dims(self) -> usize {
-        match self {
-            Self::Nubs => 3,
-            Self::Nurbs => 4,
-        }
-    }
-
-    /// Whether poles carry homogeneous weights.
-    pub(crate) fn rational(self) -> bool {
-        self == Self::Nurbs
-    }
 }
 
 /// The B-spline marker at token `pos`, if any.
@@ -359,51 +334,27 @@ pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
 }
 
 fn canonical_intcurve_kind(name: &str) -> &str {
-    match name {
-        "bldcur" => "blend_int_cur",
-        "blndsprngcur" => "spring_int_cur",
-        "exactcur" => "exact_int_cur",
-        "lawintcur" => "law_int_cur",
-        "offintcur" => "off_int_cur",
-        "offsetintcur" => "offset_int_cur",
-        "offsurfintcur" => "off_surf_int_cur",
-        "parasil" => "para_silh_int_cur",
-        "parcur" => "par_int_cur",
-        "projcur" => "proj_int_cur",
-        "surfcur" => "surf_int_cur",
-        "surfintcur" => "int_int_cur",
-        "d5c2_cur" => "skin_int_cur",
-        "subsetintcur" => "subset_int_cur",
-        _ => name,
-    }
+    super::subtypes::INTCURVE_ALIASES
+        .iter()
+        .find_map(|(modern, legacy)| (*legacy == name).then_some(*modern))
+        .unwrap_or(name)
 }
 
 /// Token index of the `intcurve` subtype definition `toks` owns, given the
 /// subtype's modern name. The legacy spelling of the same construction is
 /// accepted as a second candidate.
 pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Option<usize> {
-    let legacy = match modern {
-        "blend_int_cur" => "bldcur",
-        "spring_int_cur" => "blndsprngcur",
-        "exact_int_cur" => "exactcur",
-        "law_int_cur" => "lawintcur",
-        "off_int_cur" => "offintcur",
-        "offset_int_cur" => "offsetintcur",
-        "off_surf_int_cur" => "offsurfintcur",
-        "para_silh_int_cur" => "parasil",
-        "par_int_cur" => "parcur",
-        "proj_int_cur" => "projcur",
-        "surf_int_cur" => "surfcur",
-        "int_int_cur" => "surfintcur",
-        "skin_int_cur" => "d5c2_cur",
-        "subset_int_cur" => "subsetintcur",
-        _ => "",
+    if modern.is_empty() {
+        return None;
+    }
+    let legacy = super::subtypes::INTCURVE_ALIASES
+        .iter()
+        .find_map(|(name, alias)| (*name == modern).then_some(*alias));
+    let found = match legacy {
+        Some(legacy) => find_owned_subtype_marker(toks, &[modern, legacy]),
+        None => find_owned_subtype_marker(toks, &[modern]),
     };
-    let candidates: Vec<&str> = [modern, legacy]
-        .into_iter()
-        .filter(|name| !name.is_empty())
-        .collect();
-    find_owned_subtype_marker(toks, &candidates).map(|(marker, _)| marker)
+    found.map(|(marker, _)| marker)
 }
 
 /// The token span of the balanced subtype scope opening at `start`, inclusive
@@ -546,7 +497,7 @@ impl SubtypeTable {
 /// # Panics
 ///
 /// Panics when `bytes` fails to lex as one record payload.
-pub fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> {
+pub fn lex_test_span(bytes: &[u8], ref_width: RefWidth) -> std::sync::Arc<[Token]> {
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
     wrapped.push(0x11);
@@ -556,11 +507,11 @@ pub fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> 
 }
 
 /// Build a [`SubtypeTable`] over a bare byte span, for tests.
-pub fn test_table(bytes: &[u8], ref_width: usize) -> SubtypeTable {
+pub fn test_table(bytes: &[u8], ref_width: RefWidth) -> SubtypeTable {
     let record = crate::sab::Record {
         index: 0,
         name: String::new(),
-        head: String::new(),
+
         tokens: lex_test_span(bytes, ref_width),
         offset: 0,
         len: 0,

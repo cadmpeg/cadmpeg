@@ -1,46 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-coverage counters for transferred features and numeric carriers.
 
-use std::collections::BTreeMap;
-
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolveExtent,
+    BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
+    FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusSpec, RevolveExtent,
+    UnresolvedFamily,
 };
 
 use crate::container::ContainerScan;
 
 use super::super::feature_history::replayed_torus_minor_radius;
 use super::ir::{
-    body_selection_has_unresolved_operands, face_selection_has_unresolved_operands,
+    angular_termination_has_unresolved_operands, body_selection_has_unresolved_operands,
+    face_selection_has_unresolved_operands, linear_termination_has_unresolved_operands,
     pattern_kind_has_unresolved_operands, surface_boundary_has_unresolved_operands,
-    termination_has_unresolved_operands,
 };
-
-pub(in super::super) fn record_coverage<const N: usize>(
-    coverage: &mut BTreeMap<String, usize>,
-    entries: [(&str, usize); N],
-) {
-    coverage.extend(
-        entries
-            .into_iter()
-            .map(|(key, count)| (key.to_string(), count)),
-    );
-}
-
-macro_rules! record_transferred_feature_coverage {
-    ($coverage:expr, $($counter:ident),+ $(,)?) => {
-        record_coverage(
-            $coverage,
-            [$((
-                concat!("transferred_", stringify!($counter)),
-                $counter,
-            ),)+],
-        );
-    };
-}
 
 /// Count transferred features by kind and record the counts in `coverage`.
 ///
@@ -54,7 +29,7 @@ pub(in super::super) fn collect_feature_coverage(
     geometry_generator_feature_count: usize,
     feature_result_topology_count: usize,
     feature_result_edge_count: usize,
-    coverage: &mut BTreeMap<String, usize>,
+    coverage: &mut cadmpeg_ir::Coverage,
 ) {
     let native_feature_count = ir
         .model
@@ -139,13 +114,19 @@ pub(in super::super) fn collect_feature_coverage(
     let mut native_axis_helix_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
-            IrFeatureDefinition::DatumPlaneUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            } => {
                 unresolved_datum_plane_feature_count += 1;
             }
-            IrFeatureDefinition::DatumCoordinateSystemUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            } => {
                 unresolved_datum_coordinate_system_feature_count += 1;
             }
-            IrFeatureDefinition::BoundarySurfaceUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::BoundarySurface,
+            } => {
                 unresolved_boundary_surface_feature_count += 1;
             }
             IrFeatureDefinition::Extrude {
@@ -165,11 +146,11 @@ pub(in super::super) fn collect_feature_coverage(
                 );
                 let incomplete_termination = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        termination_has_unresolved_operands(&side.termination)
+                        linear_termination_has_unresolved_operands(&side.termination)
                     }
                     ExtrudeExtent::TwoSided { first, second } => {
-                        termination_has_unresolved_operands(&first.termination)
-                            || termination_has_unresolved_operands(&second.termination)
+                        linear_termination_has_unresolved_operands(&first.termination)
+                            || linear_termination_has_unresolved_operands(&second.termination)
                     }
                 };
                 let unresolved_op = *op == BooleanOp::Unresolved;
@@ -189,25 +170,20 @@ pub(in super::super) fn collect_feature_coverage(
             IrFeatureDefinition::Revolve { construction, op } => {
                 revolve_feature_count += 1;
                 let unresolved_profile = construction
-                    .profile
-                    .as_ref()
+                    .profile()
                     .is_none_or(|profile| matches!(profile, ProfileRef::Unresolved(_)));
-                let native_profile = matches!(construction.profile, Some(ProfileRef::Native(_)));
-                let unresolved_axis = construction.axis.is_none();
-                let incomplete_extent =
-                    construction
-                        .extent
-                        .as_ref()
-                        .is_none_or(|extent| match extent {
-                            RevolveExtent::OneSided { termination }
-                            | RevolveExtent::Symmetric { termination } => {
-                                termination_has_unresolved_operands(termination)
-                            }
-                            RevolveExtent::TwoSided { first, second } => {
-                                termination_has_unresolved_operands(first)
-                                    || termination_has_unresolved_operands(second)
-                            }
-                        });
+                let native_profile = matches!(construction.profile(), Some(ProfileRef::Native(_)));
+                let unresolved_axis = construction.axis().is_none();
+                let incomplete_extent = construction.extent().is_none_or(|extent| match extent {
+                    RevolveExtent::OneSided { termination }
+                    | RevolveExtent::Symmetric { termination } => {
+                        angular_termination_has_unresolved_operands(termination)
+                    }
+                    RevolveExtent::TwoSided { first, second } => {
+                        angular_termination_has_unresolved_operands(first)
+                            || angular_termination_has_unresolved_operands(second)
+                    }
+                });
                 let unresolved_op = *op == BooleanOp::Unresolved;
                 unresolved_revolve_profile_feature_count += usize::from(unresolved_profile);
                 native_revolve_profile_feature_count += usize::from(native_profile);
@@ -225,18 +201,15 @@ pub(in super::super) fn collect_feature_coverage(
             IrFeatureDefinition::Hole {
                 profile,
                 face,
-                position,
-                direction,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
                 ..
             } => {
                 hole_feature_count += 1;
-                let unresolved_location =
-                    profile.is_none() && position.is_none() && placements.is_empty();
+                let unresolved_location = profile.is_none() && placements.is_none();
                 let unresolved_profile = matches!(profile, Some(ProfileRef::Unresolved(_)));
                 let native_profile = matches!(profile, Some(ProfileRef::Native(_)));
                 let unresolved_face = matches!(
@@ -244,19 +217,23 @@ pub(in super::super) fn collect_feature_coverage(
                     Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })
                 );
                 let native_face = matches!(face, Some(FaceSelection::Native(_)));
-                let unresolved_direction = direction.is_none()
-                    && !placements.iter().any(|placement| {
+                let unresolved_direction = placements.as_ref().is_none_or(|placements| {
+                    !placements.iter().any(|placement| {
                         matches!(
                             placement,
                             cadmpeg_ir::features::HolePlacement::Directed { .. }
                         )
-                    });
-                let unresolved_kind = matches!(kind, HoleKind::Unresolved { .. })
-                    || matches!(exit_kind, Some(HoleKind::Unresolved { .. }));
+                    })
+                });
+                let unresolved_kind = matches!(
+                    construction,
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                        if kind.is_unresolved()
+                ) || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
                 let unresolved_diameter = diameter.is_none();
                 let incomplete_termination = extent
                     .as_ref()
-                    .is_none_or(termination_has_unresolved_operands);
+                    .is_none_or(linear_termination_has_unresolved_operands);
                 unresolved_hole_location_feature_count += usize::from(unresolved_location);
                 unresolved_hole_profile_feature_count += usize::from(unresolved_profile);
                 native_hole_profile_feature_count += usize::from(native_profile);
@@ -290,18 +267,11 @@ pub(in super::super) fn collect_feature_coverage(
                 let native_edges = groups
                     .iter()
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_radius = groups.is_empty()
-                    || groups
-                        .iter()
-                        .any(|group| matches!(&group.radius, RadiusSpec::Unresolved { .. }));
-                let variable_radius = groups.iter().any(|group| {
-                    matches!(
-                        &group.radius,
-                        RadiusSpec::Unresolved {
-                            form: Some(RadiusForm::Variable)
-                        }
-                    )
-                });
+                let unresolved_radius =
+                    groups.is_empty() || groups.iter().any(|group| group.radius.is_unresolved());
+                let variable_radius = groups
+                    .iter()
+                    .any(|group| matches!(&group.radius, RadiusSpec::UnresolvedVariable));
                 let has_generated_surface = feature
                     .id
                     .as_str()
@@ -336,10 +306,8 @@ pub(in super::super) fn collect_feature_coverage(
                 let native_edges = groups
                     .iter()
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_spec = groups.is_empty()
-                    || groups
-                        .iter()
-                        .any(|group| matches!(&group.spec, ChamferSpec::Unresolved { .. }));
+                let unresolved_spec =
+                    groups.is_empty() || groups.iter().any(|group| group.spec.is_unresolved());
                 unresolved_chamfer_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_chamfer_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_chamfer_spec_feature_count += usize::from(unresolved_spec);
@@ -348,8 +316,7 @@ pub(in super::super) fn collect_feature_coverage(
             }
             IrFeatureDefinition::Draft {
                 faces,
-                neutral_plane,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
                 ..
@@ -360,12 +327,21 @@ pub(in super::super) fn collect_feature_coverage(
                     FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
                 );
                 let native_faces = matches!(faces, FaceSelection::Native(_));
-                let unresolved_neutral_plane = matches!(
-                    neutral_plane,
-                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                let unresolved_neutral_plane = match anchor {
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => matches!(
+                        plane,
+                        FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                    ),
+                    cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => true,
+                };
+                let native_neutral_plane = matches!(
+                    anchor,
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: FaceSelection::Native(_),
+                        ..
+                    }
                 );
-                let native_neutral_plane = matches!(neutral_plane, FaceSelection::Native(_));
-                let unresolved_direction = pull_direction.is_none();
+                let unresolved_direction = anchor.pull().is_none();
                 let unresolved_angle = angle.is_none();
                 let unresolved_outward = outward.is_none();
                 unresolved_draft_face_selection_feature_count += usize::from(unresolved_faces);
@@ -386,7 +362,9 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_outward,
                 );
             }
-            IrFeatureDefinition::DraftUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft,
+            } => {
                 draft_feature_count += 1;
                 incomplete_draft_feature_count += 1;
                 explicitly_unresolved_draft_feature_count += 1;
@@ -401,7 +379,7 @@ pub(in super::super) fn collect_feature_coverage(
                 filled_surface_feature_count += 1;
                 let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);
                 let unresolved_support = face_selection_has_unresolved_operands(support_faces);
-                let unresolved_continuity = continuity.is_none();
+                let unresolved_continuity = continuity.is_unresolved();
                 let unresolved_merge = merge_result.is_none();
                 unresolved_filled_surface_boundary_feature_count +=
                     usize::from(unresolved_boundary);
@@ -507,125 +485,347 @@ pub(in super::super) fn collect_feature_coverage(
     let incomplete_other_construction_feature_count = incomplete_section_shape_feature_count
         + incomplete_pattern_feature_count
         + native_axis_helix_feature_count;
-    record_coverage(
-        coverage,
-        [
-            ("transferred_feature_count", ir.model.features.len()),
-            (
-                "transferred_feature_result_edge_count",
-                feature_result_edge_count,
-            ),
-            (
-                "transferred_feature_result_topology_count",
-                feature_result_topology_count,
-            ),
-            (
-                "transferred_typed_feature_count",
-                ir.model.features.len() - native_feature_count,
-            ),
-            ("transferred_native_feature_count", native_feature_count),
-            (
-                "transferred_geometry_generator_feature_count",
-                geometry_generator_feature_count,
-            ),
-            (
-                "transferred_explicitly_unresolved_feature_count",
-                explicitly_unresolved_feature_count,
-            ),
-            (
-                "transferred_incomplete_sweep_feature_count",
-                incomplete_sweep_feature_count,
-            ),
-            (
-                "transferred_incomplete_recognized_feature_count",
-                incomplete_recognized_feature_count,
-            ),
-            (
-                "transferred_incomplete_surface_operation_feature_count",
-                incomplete_surface_operation_feature_count,
-            ),
-            (
-                "transferred_incomplete_other_construction_feature_count",
-                incomplete_other_construction_feature_count,
-            ),
-        ],
-    );
-    record_transferred_feature_coverage!(
-        coverage,
+    coverage.extend([
+        (
+            crate::coverage::TRANSFERRED_FEATURE_COUNT,
+            ir.model.features.len(),
+        ),
+        (
+            crate::coverage::TRANSFERRED_FEATURE_RESULT_EDGE_COUNT,
+            feature_result_edge_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_FEATURE_RESULT_TOPOLOGY_COUNT,
+            feature_result_topology_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT,
+            ir.model.features.len() - native_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT,
+            native_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT,
+            geometry_generator_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT,
+            explicitly_unresolved_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT,
+            incomplete_sweep_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_INCOMPLETE_RECOGNIZED_FEATURE_COUNT,
+            incomplete_recognized_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_INCOMPLETE_SURFACE_OPERATION_FEATURE_COUNT,
+            incomplete_surface_operation_feature_count,
+        ),
+        (
+            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT,
+            incomplete_other_construction_feature_count,
+        ),
+    ]);
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT,
         unresolved_datum_plane_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT,
         unresolved_datum_coordinate_system_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT,
         unresolved_boundary_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT,
         extrude_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT,
         incomplete_extrude_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT,
         unresolved_extrude_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT,
         native_extrude_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT,
         incomplete_extrude_start_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT,
         incomplete_extrude_termination_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT,
         unresolved_extrude_boolean_operation_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT,
         revolve_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT,
         incomplete_revolve_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT,
         unresolved_revolve_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT,
         native_revolve_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT,
         unresolved_revolve_axis_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT,
         incomplete_revolve_extent_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT,
         unresolved_revolve_boolean_operation_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT,
         hole_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT,
         incomplete_hole_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_LOCATION_FEATURE_COUNT,
         unresolved_hole_location_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT,
         unresolved_hole_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT,
         native_hole_profile_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT,
         unresolved_hole_face_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT,
         native_hole_face_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_DIRECTION_FEATURE_COUNT,
         unresolved_hole_direction_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_KIND_FEATURE_COUNT,
         unresolved_hole_kind_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_DIAMETER_FEATURE_COUNT,
         unresolved_hole_diameter_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_TERMINATION_FEATURE_COUNT,
         incomplete_hole_termination_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT,
         fillet_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT,
         incomplete_fillet_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT,
         unresolved_fillet_edge_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT,
         native_fillet_edge_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT,
         unresolved_fillet_radius_feature_count,
-        unresolved_fillet_radius_without_generated_surface_feature_count,
+    );
+    coverage.record(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT, unresolved_fillet_radius_without_generated_surface_feature_count);
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT,
         unresolved_fillet_radius_with_generated_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT,
         variable_radius_fillet_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT,
         chamfer_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT,
         incomplete_chamfer_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT,
         unresolved_chamfer_edge_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT,
         native_chamfer_edge_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT,
         unresolved_chamfer_spec_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT,
         draft_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT,
         incomplete_draft_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_DRAFT_FEATURE_COUNT,
         explicitly_unresolved_draft_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_FACE_SELECTION_FEATURE_COUNT,
         unresolved_draft_face_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT,
         native_draft_face_selection_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT,
         unresolved_draft_neutral_plane_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT,
         native_draft_neutral_plane_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_DIRECTION_FEATURE_COUNT,
         unresolved_draft_direction_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_ANGLE_FEATURE_COUNT,
         unresolved_draft_angle_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_DRAFT_OUTWARD_FEATURE_COUNT,
         unresolved_draft_outward_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_FILLED_SURFACE_FEATURE_COUNT,
         filled_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_FILLED_SURFACE_FEATURE_COUNT,
         incomplete_filled_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_BOUNDARY_FEATURE_COUNT,
         unresolved_filled_surface_boundary_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_SUPPORT_FEATURE_COUNT,
         unresolved_filled_surface_support_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_CONTINUITY_FEATURE_COUNT,
         unresolved_filled_surface_continuity_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLED_SURFACE_MERGE_FEATURE_COUNT,
         unresolved_filled_surface_merge_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT,
         knit_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT,
         incomplete_knit_surface_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT,
         unresolved_knit_surface_faces_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_KNIT_SURFACE_FACES_FEATURE_COUNT,
         native_knit_surface_faces_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT,
         unresolved_knit_surface_merge_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT,
         unresolved_knit_surface_solid_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_THICKEN_FEATURE_COUNT,
         thicken_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_THICKEN_FEATURE_COUNT,
         incomplete_thicken_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_FACES_FEATURE_COUNT,
         unresolved_thicken_faces_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_THICKNESS_FEATURE_COUNT,
         unresolved_thicken_thickness_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_THICKEN_SIDE_FEATURE_COUNT,
         unresolved_thicken_side_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_SECTION_SHAPE_FEATURE_COUNT,
         section_shape_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_SECTION_SHAPE_FEATURE_COUNT,
         incomplete_section_shape_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT,
         pattern_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT,
         incomplete_pattern_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT,
         unresolved_pattern_seed_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT,
         unresolved_pattern_transform_feature_count,
+    );
+    coverage.record(
+        crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT,
         native_axis_helix_feature_count,
     );
 }
@@ -647,7 +847,7 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
     TorusParameterCoverage {
         radius_overrides: rows
             .clone()
-            .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
+            .filter(|(record, _)| record.torus_radius_overrides().is_some())
             .count(),
         replayed_minor_radii: rows
             .clone()
@@ -655,22 +855,14 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
             .count(),
         outline_extents: rows
             .clone()
-            .filter(|(record, row)| record.torus_outline_frame(row.type_byte).is_some())
+            .filter(|(record, _)| record.torus_outline_frame().is_some())
             .count(),
         five_coordinate_envelopes: rows
             .clone()
-            .filter(|(record, row)| {
-                record
-                    .type26_five_coordinate_envelope(row.type_byte)
-                    .is_some()
-            })
+            .filter(|(record, _)| record.type26_five_coordinate_envelope().is_some())
             .count(),
         split_coordinate_envelopes: rows
-            .filter(|(record, row)| {
-                record
-                    .type26_split_coordinate_envelope(row.type_byte)
-                    .is_some()
-            })
+            .filter(|(record, _)| record.type26_split_coordinate_envelope().is_some())
             .count(),
     }
 }

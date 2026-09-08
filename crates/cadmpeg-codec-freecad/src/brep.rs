@@ -31,6 +31,7 @@ pub enum ShapePayloadForm {
 
 /// One exact-shape property bound to its side entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ShapePayloadRecordWire", into = "ShapePayloadRecordWire")]
 pub struct ShapePayloadRecord {
     /// Stable payload identity.
     pub id: String,
@@ -38,18 +39,49 @@ pub struct ShapePayloadRecord {
     pub property: String,
     /// Side-entry identity.
     pub entry: String,
-    /// Carrier form.
-    pub form: ShapePayloadForm,
-    /// Text shape-set facts, when applicable.
-    pub text: Option<TextFacts>,
-    /// Decoded binary shape-set prefix, when applicable.
-    pub binary: Option<BinaryFacts>,
+    /// Carrier payload.
+    pub payload: ShapePayload,
 }
 
-/// Versioned prefix tables decoded from a binary shape set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BinaryFacts {
-    /// Binary topology grammar version.
+/// Parsed exact-shape carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShapePayload {
+    /// Explicit zero-byte null shape.
+    Empty,
+    /// Compact text shape-set grammar.
+    Text {
+        /// Shared table contents.
+        facts: ShapeSet,
+        /// Shape-type token census.
+        shape_types: BTreeMap<String, usize>,
+    },
+    /// Binary shape-set grammar.
+    Binary(ShapeSet),
+}
+
+impl ShapePayload {
+    /// Carrier form retained on the CADIR wire.
+    pub const fn form(&self) -> ShapePayloadForm {
+        match self {
+            Self::Empty => ShapePayloadForm::Empty,
+            Self::Text { .. } => ShapePayloadForm::Text,
+            Self::Binary(_) => ShapePayloadForm::Binary,
+        }
+    }
+
+    /// Shared table contents when the carrier is text or binary.
+    pub const fn shape_set(&self) -> Option<&ShapeSet> {
+        match self {
+            Self::Empty => None,
+            Self::Text { facts, .. } | Self::Binary(facts) => Some(facts),
+        }
+    }
+}
+
+/// Versioned prefix tables shared by text and binary shape sets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeSet {
+    /// Topology grammar version.
     pub topology_version: u8,
     /// Ordered location table with resolved transforms.
     pub locations: Vec<TextLocation>,
@@ -67,37 +99,182 @@ pub struct BinaryFacts {
     pub triangulations: Vec<TextTriangulation>,
     /// Ordered subshape-first topology records.
     pub tshapes: Vec<TextTShape>,
-    /// Root shape use stored after the shape set.
+    /// Root shape uses stored after the shape set.
     pub roots: Vec<TextShapeUse>,
 }
 
-/// Framing facts from a text shape set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextFacts {
-    /// Topology grammar version.
-    pub topology_version: u8,
-    /// Declared table counts by section name.
-    pub section_counts: BTreeMap<String, usize>,
-    /// Shape-type token census.
-    pub shape_types: BTreeMap<String, usize>,
-    /// Ordered location table with resolved transforms.
-    pub locations: Vec<TextLocation>,
-    /// Ordered parameter-space curve table.
-    pub curve2ds: Vec<TextCurve2d>,
-    /// Ordered 3D curve table.
-    pub curves: Vec<TextCurve>,
-    /// Ordered surface table.
-    pub surfaces: Vec<TextSurface>,
-    /// Ordered standalone 3D polygons.
-    pub polygons3d: Vec<TextPolygon3d>,
-    /// Ordered polygons indexing triangulation nodes.
-    pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
-    /// Ordered display triangulations.
-    pub triangulations: Vec<TextTriangulation>,
-    /// Ordered subshape-first topology records.
-    pub tshapes: Vec<TextTShape>,
-    /// Oriented root shape uses following the topology table.
-    pub roots: Vec<TextShapeUse>,
+impl ShapeSet {
+    fn section_counts(&self) -> BTreeMap<String, usize> {
+        [
+            ("Locations", self.locations.len()),
+            ("Curve2ds", self.curve2ds.len()),
+            ("Curves", self.curves.len()),
+            ("Polygon3D", self.polygons3d.len()),
+            (
+                "PolygonOnTriangulations",
+                self.polygons_on_triangulations.len(),
+            ),
+            ("Surfaces", self.surfaces.len()),
+            ("Triangulations", self.triangulations.len()),
+            ("TShapes", self.tshapes.len()),
+        ]
+        .into_iter()
+        .map(|(name, count)| (name.to_owned(), count))
+        .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ShapePayloadRecordWire {
+    id: String,
+    property: String,
+    entry: String,
+    form: ShapePayloadForm,
+    text: Option<TextFactsWire>,
+    binary: Option<BinaryFactsWire>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextFactsWire {
+    topology_version: u8,
+    section_counts: BTreeMap<String, usize>,
+    shape_types: BTreeMap<String, usize>,
+    locations: Vec<TextLocation>,
+    curve2ds: Vec<TextCurve2d>,
+    curves: Vec<TextCurve>,
+    surfaces: Vec<TextSurface>,
+    polygons3d: Vec<TextPolygon3d>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    triangulations: Vec<TextTriangulation>,
+    tshapes: Vec<TextTShape>,
+    roots: Vec<TextShapeUse>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BinaryFactsWire {
+    topology_version: u8,
+    locations: Vec<TextLocation>,
+    curve2ds: Vec<TextCurve2d>,
+    curves: Vec<TextCurve>,
+    polygons3d: Vec<TextPolygon3d>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    surfaces: Vec<TextSurface>,
+    triangulations: Vec<TextTriangulation>,
+    tshapes: Vec<TextTShape>,
+    roots: Vec<TextShapeUse>,
+}
+
+impl From<ShapeSet> for BinaryFactsWire {
+    fn from(value: ShapeSet) -> Self {
+        Self {
+            topology_version: value.topology_version,
+            locations: value.locations,
+            curve2ds: value.curve2ds,
+            curves: value.curves,
+            polygons3d: value.polygons3d,
+            polygons_on_triangulations: value.polygons_on_triangulations,
+            surfaces: value.surfaces,
+            triangulations: value.triangulations,
+            tshapes: value.tshapes,
+            roots: value.roots,
+        }
+    }
+}
+
+impl From<BinaryFactsWire> for ShapeSet {
+    fn from(value: BinaryFactsWire) -> Self {
+        Self {
+            topology_version: value.topology_version,
+            locations: value.locations,
+            curve2ds: value.curve2ds,
+            curves: value.curves,
+            polygons3d: value.polygons3d,
+            polygons_on_triangulations: value.polygons_on_triangulations,
+            surfaces: value.surfaces,
+            triangulations: value.triangulations,
+            tshapes: value.tshapes,
+            roots: value.roots,
+        }
+    }
+}
+
+impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
+    fn from(value: ShapePayloadRecord) -> Self {
+        let form = value.payload.form();
+        let (text, binary) = match value.payload {
+            ShapePayload::Empty => (None, None),
+            ShapePayload::Text { facts, shape_types } => {
+                let section_counts = facts.section_counts();
+                (
+                    Some(TextFactsWire {
+                        topology_version: facts.topology_version,
+                        section_counts,
+                        shape_types,
+                        locations: facts.locations,
+                        curve2ds: facts.curve2ds,
+                        curves: facts.curves,
+                        surfaces: facts.surfaces,
+                        polygons3d: facts.polygons3d,
+                        polygons_on_triangulations: facts.polygons_on_triangulations,
+                        triangulations: facts.triangulations,
+                        tshapes: facts.tshapes,
+                        roots: facts.roots,
+                    }),
+                    None,
+                )
+            }
+            ShapePayload::Binary(facts) => (None, Some(facts.into())),
+        };
+        Self {
+            id: value.id,
+            property: value.property,
+            entry: value.entry,
+            form,
+            text,
+            binary,
+        }
+    }
+}
+
+impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
+    type Error = String;
+
+    fn try_from(wire: ShapePayloadRecordWire) -> Result<Self, Self::Error> {
+        let payload = match (wire.form, wire.text, wire.binary) {
+            (ShapePayloadForm::Empty, None, None) => ShapePayload::Empty,
+            (ShapePayloadForm::Text, Some(text), None) => {
+                let facts = ShapeSet {
+                    topology_version: text.topology_version,
+                    locations: text.locations,
+                    curve2ds: text.curve2ds,
+                    curves: text.curves,
+                    polygons3d: text.polygons3d,
+                    polygons_on_triangulations: text.polygons_on_triangulations,
+                    surfaces: text.surfaces,
+                    triangulations: text.triangulations,
+                    tshapes: text.tshapes,
+                    roots: text.roots,
+                };
+                if text.section_counts != facts.section_counts() {
+                    return Err(
+                        "text shape-set section_counts disagrees with table lengths".to_owned()
+                    );
+                }
+                ShapePayload::Text {
+                    facts,
+                    shape_types: text.shape_types,
+                }
+            }
+            (ShapePayloadForm::Binary, None, Some(binary)) => ShapePayload::Binary(binary.into()),
+            _ => return Err("shape payload form disagrees with text and binary facts".to_owned()),
+        };
+        Ok(Self {
+            id: wire.id,
+            property: wire.property,
+            entry: wire.entry,
+            payload,
+        })
+    }
 }
 
 /// Topological shape family.
@@ -137,50 +314,594 @@ pub struct TextShapeUse {
 
 /// One vertex point representation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextPointRepresentation {
-    /// First curve/surface parameter.
-    pub parameter: f64,
-    /// Optional second surface parameter.
-    pub second_parameter: Option<f64>,
-    /// Representation family code 1 through 3.
-    pub kind: u8,
-    /// Referenced 3D or 2D curve index.
-    pub curve: Option<usize>,
-    /// Referenced surface index.
-    pub surface: Option<usize>,
-    /// Location index, or zero for identity.
-    pub location: usize,
+#[serde(
+    try_from = "TextPointRepresentationWire",
+    into = "TextPointRepresentationWire"
+)]
+pub enum TextPointRepresentation {
+    /// Kind 1: point on a 3D curve.
+    Curve3d {
+        /// Curve parameter.
+        parameter: f64,
+        /// One-based 3D curve index.
+        curve: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 2: point on a parameter-space curve of a surface.
+    Pcurve {
+        /// Parameter-curve parameter.
+        parameter: f64,
+        /// One-based 2D curve index.
+        curve: usize,
+        /// One-based surface index.
+        surface: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 3: point on a surface.
+    Surface {
+        /// First surface parameter.
+        parameter: f64,
+        /// Second surface parameter.
+        second_parameter: f64,
+        /// One-based surface index.
+        surface: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+}
+
+impl TextPointRepresentation {
+    /// Representation family code 1 through 3 retained on the CADIR wire.
+    pub const fn kind(&self) -> u8 {
+        match self {
+            Self::Curve3d { .. } => 1,
+            Self::Pcurve { .. } => 2,
+            Self::Surface { .. } => 3,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextPointRepresentationWire {
+    parameter: f64,
+    second_parameter: Option<f64>,
+    kind: u8,
+    curve: Option<usize>,
+    surface: Option<usize>,
+    location: usize,
+}
+
+impl From<TextPointRepresentation> for TextPointRepresentationWire {
+    fn from(value: TextPointRepresentation) -> Self {
+        let kind = value.kind();
+        match value {
+            TextPointRepresentation::Curve3d {
+                parameter,
+                curve,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: None,
+                kind,
+                curve: Some(curve),
+                surface: None,
+                location,
+            },
+            TextPointRepresentation::Pcurve {
+                parameter,
+                curve,
+                surface,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: None,
+                kind,
+                curve: Some(curve),
+                surface: Some(surface),
+                location,
+            },
+            TextPointRepresentation::Surface {
+                parameter,
+                second_parameter,
+                surface,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: Some(second_parameter),
+                kind,
+                curve: None,
+                surface: Some(surface),
+                location,
+            },
+        }
+    }
+}
+
+impl TryFrom<TextPointRepresentationWire> for TextPointRepresentation {
+    type Error = String;
+
+    fn try_from(wire: TextPointRepresentationWire) -> Result<Self, Self::Error> {
+        match (
+            wire.kind,
+            wire.parameter,
+            wire.second_parameter,
+            wire.curve,
+            wire.surface,
+            wire.location,
+        ) {
+            (1, parameter, None, Some(curve), None, location) => Ok(Self::Curve3d {
+                parameter,
+                curve,
+                location,
+            }),
+            (2, parameter, None, Some(curve), Some(surface), location) => Ok(Self::Pcurve {
+                parameter,
+                curve,
+                surface,
+                location,
+            }),
+            (3, parameter, Some(second_parameter), None, Some(surface), location) => {
+                Ok(Self::Surface {
+                    parameter,
+                    second_parameter,
+                    surface,
+                    location,
+                })
+            }
+            _ => Err("vertex representation kind disagrees with payload fields".to_owned()),
+        }
+    }
 }
 
 /// One edge representation record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextEdgeRepresentation {
-    /// Representation code 1 through 7.
-    pub kind: u8,
-    /// Primary curve or polygon index.
-    pub primary: usize,
-    /// Optional secondary curve or polygon index.
-    pub secondary: Option<usize>,
-    /// Optional first surface index.
-    pub surface: Option<usize>,
-    /// Optional second surface index for regularity records.
-    pub second_surface: Option<usize>,
+#[serde(
+    try_from = "TextEdgeRepresentationWire",
+    into = "TextEdgeRepresentationWire"
+)]
+pub enum TextEdgeRepresentation {
+    /// Kind 1: exact 3D curve.
+    Curve3d {
+        /// One-based 3D curve index.
+        curve: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+        /// Curve parameter range.
+        parameter_range: [f64; 2],
+    },
+    /// Kind 2: one parameter-space curve on a surface.
+    Pcurve {
+        /// One-based 2D curve index.
+        curve: usize,
+        /// One-based surface index.
+        surface: usize,
+        /// Surface location index, or zero for identity.
+        location: usize,
+        /// Parameter-curve range.
+        parameter_range: [f64; 2],
+        /// Optional V2 cached UV endpoints.
+        uv_endpoints: Option<[Point2; 2]>,
+    },
+    /// Kind 3: a pair of parameter-space curves on one surface.
+    PcurvePair {
+        /// One-based primary and secondary 2D curve indices.
+        curves: [usize; 2],
+        /// Continuity token joining the pair.
+        continuity: String,
+        /// One-based surface index.
+        surface: usize,
+        /// Surface location index, or zero for identity.
+        location: usize,
+        /// Parameter-curve range.
+        parameter_range: [f64; 2],
+        /// Optional V2 cached UV endpoints.
+        uv_endpoints: Option<[Point2; 2]>,
+    },
+    /// Kind 4: regularity between two surfaces.
+    Regularity {
+        /// Continuity token.
+        continuity: String,
+        /// One-based first and second surface indices.
+        surfaces: [usize; 2],
+        /// First and second location indices.
+        locations: [usize; 2],
+    },
+    /// Kind 5: standalone 3D polygon.
+    Polygon3d {
+        /// One-based 3D polygon index.
+        polygon: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 6: polygon on one triangulation.
+    PolygonOnTriangulation {
+        /// One-based polygon-on-triangulation index.
+        polygon: usize,
+        /// One-based triangulation index.
+        triangulation: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 7: a pair of polygons on one triangulation.
+    PolygonPair {
+        /// One-based primary and secondary polygon-on-triangulation indices.
+        polygons: [usize; 2],
+        /// One-based triangulation index.
+        triangulation: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+}
+
+impl TextEdgeRepresentation {
+    /// Representation code 1 through 7 retained on the CADIR wire.
+    pub const fn kind(&self) -> u8 {
+        match self {
+            Self::Curve3d { .. } => 1,
+            Self::Pcurve { .. } => 2,
+            Self::PcurvePair { .. } => 3,
+            Self::Regularity { .. } => 4,
+            Self::Polygon3d { .. } => 5,
+            Self::PolygonOnTriangulation { .. } => 6,
+            Self::PolygonPair { .. } => 7,
+        }
+    }
+
     /// Primary location index, or zero for identity.
-    pub location: usize,
-    /// Optional second location index.
-    pub second_location: Option<usize>,
-    /// Optional parameter range.
-    pub parameter_range: Option<[f64; 2]>,
-    /// Optional continuity token.
-    pub continuity: Option<String>,
-    /// Optional V2 cached UV endpoints.
-    pub uv_endpoints: Option<[Point2; 2]>,
+    pub const fn location(&self) -> usize {
+        match *self {
+            Self::Curve3d { location, .. }
+            | Self::Pcurve { location, .. }
+            | Self::PcurvePair { location, .. }
+            | Self::Regularity {
+                locations: [location, _],
+                ..
+            }
+            | Self::Polygon3d { location, .. }
+            | Self::PolygonOnTriangulation { location, .. }
+            | Self::PolygonPair { location, .. } => location,
+        }
+    }
+
+    /// Parameter range when the representation carries one.
+    pub const fn parameter_range(&self) -> Option<[f64; 2]> {
+        match *self {
+            Self::Curve3d {
+                parameter_range, ..
+            }
+            | Self::Pcurve {
+                parameter_range, ..
+            }
+            | Self::PcurvePair {
+                parameter_range, ..
+            } => Some(parameter_range),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextEdgeRepresentationWire {
+    kind: u8,
+    primary: usize,
+    secondary: Option<usize>,
+    surface: Option<usize>,
+    second_surface: Option<usize>,
+    location: usize,
+    second_location: Option<usize>,
+    parameter_range: Option<[f64; 2]>,
+    continuity: Option<String>,
+    uv_endpoints: Option<[Point2; 2]>,
+}
+
+impl From<TextEdgeRepresentation> for TextEdgeRepresentationWire {
+    fn from(value: TextEdgeRepresentation) -> Self {
+        let kind = value.kind();
+        match value {
+            TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            } => Self {
+                kind,
+                primary: curve,
+                secondary: None,
+                surface: None,
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::Pcurve {
+                curve,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            } => Self {
+                kind,
+                primary: curve,
+                secondary: None,
+                surface: Some(surface),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: None,
+                uv_endpoints,
+            },
+            TextEdgeRepresentation::PcurvePair {
+                curves,
+                continuity,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            } => Self {
+                kind,
+                primary: curves[0],
+                secondary: Some(curves[1]),
+                surface: Some(surface),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: Some(parameter_range),
+                continuity: Some(continuity),
+                uv_endpoints,
+            },
+            TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces,
+                locations,
+            } => Self {
+                kind,
+                primary: 0,
+                secondary: None,
+                surface: Some(surfaces[0]),
+                second_surface: Some(surfaces[1]),
+                location: locations[0],
+                second_location: Some(locations[1]),
+                parameter_range: None,
+                continuity: Some(continuity),
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::Polygon3d { polygon, location } => Self {
+                kind,
+                primary: polygon,
+                secondary: None,
+                surface: None,
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::PolygonOnTriangulation {
+                polygon,
+                triangulation,
+                location,
+            } => Self {
+                kind,
+                primary: polygon,
+                secondary: None,
+                surface: Some(triangulation),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+            TextEdgeRepresentation::PolygonPair {
+                polygons,
+                triangulation,
+                location,
+            } => Self {
+                kind,
+                primary: polygons[0],
+                secondary: Some(polygons[1]),
+                surface: Some(triangulation),
+                second_surface: None,
+                location,
+                second_location: None,
+                parameter_range: None,
+                continuity: None,
+                uv_endpoints: None,
+            },
+        }
+    }
+}
+
+impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
+    type Error = String;
+
+    fn try_from(wire: TextEdgeRepresentationWire) -> Result<Self, Self::Error> {
+        match (
+            wire.kind,
+            wire.primary,
+            wire.secondary,
+            wire.surface,
+            wire.second_surface,
+            wire.location,
+            wire.second_location,
+            wire.parameter_range,
+            wire.continuity,
+            wire.uv_endpoints,
+        ) {
+            (1, curve, None, None, None, location, None, Some(parameter_range), None, None) => {
+                Ok(Self::Curve3d {
+                    curve,
+                    location,
+                    parameter_range,
+                })
+            }
+            (
+                2,
+                curve,
+                None,
+                Some(surface),
+                None,
+                location,
+                None,
+                Some(parameter_range),
+                None,
+                uv_endpoints,
+            ) => Ok(Self::Pcurve {
+                curve,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            }),
+            (
+                3,
+                primary,
+                Some(secondary),
+                Some(surface),
+                None,
+                location,
+                None,
+                Some(parameter_range),
+                Some(continuity),
+                uv_endpoints,
+            ) => Ok(Self::PcurvePair {
+                curves: [primary, secondary],
+                continuity,
+                surface,
+                location,
+                parameter_range,
+                uv_endpoints,
+            }),
+            (
+                4,
+                0,
+                None,
+                Some(first_surface),
+                Some(second_surface),
+                location,
+                Some(second_location),
+                None,
+                Some(continuity),
+                None,
+            ) => Ok(Self::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            }),
+            (5, polygon, None, None, None, location, None, None, None, None) => {
+                Ok(Self::Polygon3d { polygon, location })
+            }
+            (6, polygon, None, Some(triangulation), None, location, None, None, None, None) => {
+                Ok(Self::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                })
+            }
+            (
+                7,
+                primary,
+                Some(secondary),
+                Some(triangulation),
+                None,
+                location,
+                None,
+                None,
+                None,
+                None,
+            ) => Ok(Self::PolygonPair {
+                polygons: [primary, secondary],
+                triangulation,
+                location,
+            }),
+            _ => Err("edge representation kind disagrees with payload fields".to_owned()),
+        }
+    }
 }
 
 /// Geometry and flags specific to a topology record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TextTShapeGeometry {
+    Vertex {
+        tolerance: f64,
+        point: Point3,
+        representations: Vec<TextPointRepresentation>,
+    },
+    Edge {
+        tolerance: f64,
+        same_parameter: bool,
+        same_range: bool,
+        degenerated: bool,
+        representations: Vec<TextEdgeRepresentation>,
+    },
+    Face {
+        natural_restriction: bool,
+        tolerance: f64,
+        surface: usize,
+        location: usize,
+        triangulation: Option<usize>,
+    },
+    Wire,
+    Shell,
+    Solid,
+    CompSolid,
+    Compound,
+}
+
+impl TextTShapeGeometry {
+    /// Shape family retained as `kind` on the CADIR wire.
+    pub const fn kind(&self) -> TextShapeKind {
+        match self {
+            Self::Vertex { .. } => TextShapeKind::Vertex,
+            Self::Edge { .. } => TextShapeKind::Edge,
+            Self::Face { .. } => TextShapeKind::Face,
+            Self::Wire => TextShapeKind::Wire,
+            Self::Shell => TextShapeKind::Shell,
+            Self::Solid => TextShapeKind::Solid,
+            Self::CompSolid => TextShapeKind::CompSolid,
+            Self::Compound => TextShapeKind::Compound,
+        }
+    }
+}
+
+/// One subshape-first topology record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "TextTShapeWire", into = "TextTShapeWire")]
+pub struct TextTShape {
+    /// One-based table index.
+    pub index: usize,
+    /// Family-specific geometry, including geometry-less families.
+    pub geometry: TextTShapeGeometry,
+    /// Free, modified, checked, orientable, closed, infinite, convex flags.
+    pub flags: [bool; 7],
+    /// Ordered child uses.
+    pub children: Vec<TextShapeUse>,
+}
+
+impl TextTShape {
+    /// Shape family retained as `kind` on the CADIR wire.
+    pub const fn kind(&self) -> TextShapeKind {
+        self.geometry.kind()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextTShapeWire {
+    index: usize,
+    kind: TextShapeKind,
+    geometry: TextTShapeGeometryWire,
+    flags: [bool; 7],
+    children: Vec<TextShapeUse>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TextTShapeGeometryWire {
     Vertex {
         tolerance: f64,
         point: Point3,
@@ -203,19 +924,128 @@ pub enum TextTShapeGeometry {
     Empty,
 }
 
-/// One subshape-first topology record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextTShape {
-    /// One-based table index.
-    pub index: usize,
-    /// Shape family.
-    pub kind: TextShapeKind,
-    /// Family-specific geometry.
-    pub geometry: TextTShapeGeometry,
-    /// Free, modified, checked, orientable, closed, infinite, convex flags.
-    pub flags: [bool; 7],
-    /// Ordered child uses.
-    pub children: Vec<TextShapeUse>,
+impl From<TextTShape> for TextTShapeWire {
+    fn from(value: TextTShape) -> Self {
+        let kind = value.kind();
+        let geometry = match value.geometry {
+            TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            } => TextTShapeGeometryWire::Vertex {
+                tolerance,
+                point,
+                representations,
+            },
+            TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            } => TextTShapeGeometryWire::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            },
+            TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            } => TextTShapeGeometryWire::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            },
+            TextTShapeGeometry::Wire
+            | TextTShapeGeometry::Shell
+            | TextTShapeGeometry::Solid
+            | TextTShapeGeometry::CompSolid
+            | TextTShapeGeometry::Compound => TextTShapeGeometryWire::Empty,
+        };
+        Self {
+            index: value.index,
+            kind,
+            geometry,
+            flags: value.flags,
+            children: value.children,
+        }
+    }
+}
+
+impl TryFrom<TextTShapeWire> for TextTShape {
+    type Error = String;
+
+    fn try_from(wire: TextTShapeWire) -> Result<Self, Self::Error> {
+        let geometry = match (wire.kind, wire.geometry) {
+            (
+                TextShapeKind::Vertex,
+                TextTShapeGeometryWire::Vertex {
+                    tolerance,
+                    point,
+                    representations,
+                },
+            ) => TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            },
+            (
+                TextShapeKind::Edge,
+                TextTShapeGeometryWire::Edge {
+                    tolerance,
+                    same_parameter,
+                    same_range,
+                    degenerated,
+                    representations,
+                },
+            ) => TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            },
+            (
+                TextShapeKind::Face,
+                TextTShapeGeometryWire::Face {
+                    natural_restriction,
+                    tolerance,
+                    surface,
+                    location,
+                    triangulation,
+                },
+            ) => TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            },
+            (TextShapeKind::Wire, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Wire,
+            (TextShapeKind::Shell, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Shell,
+            (TextShapeKind::Solid, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Solid,
+            (TextShapeKind::CompSolid, TextTShapeGeometryWire::Empty) => {
+                TextTShapeGeometry::CompSolid
+            }
+            (TextShapeKind::Compound, TextTShapeGeometryWire::Empty) => {
+                TextTShapeGeometry::Compound
+            }
+            _ => return Err("TShape kind disagrees with geometry".to_owned()),
+        };
+        Ok(Self {
+            index: wire.index,
+            geometry,
+            flags: wire.flags,
+            children: wire.children,
+        })
+    }
 }
 
 /// One standalone 3D polygon carrier.
@@ -541,25 +1371,19 @@ pub fn parse_payloads(
         let entry = entries.get(name.as_str()).ok_or_else(|| {
             CodecError::malformed(format_args!("missing exact-shape entry {name}"))
         })?;
-        let form = if entry.data.is_empty() {
-            ShapePayloadForm::Empty
+        let payload = if entry.data.is_empty() {
+            ShapePayload::Empty
         } else if name.to_ascii_lowercase().ends_with(".bin") {
-            ShapePayloadForm::Binary
+            ShapePayload::Binary(parse_binary_prefix(&entry.data)?)
         } else {
-            ShapePayloadForm::Text
-        };
-        let (text, binary) = match form {
-            ShapePayloadForm::Empty => (None, None),
-            ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
-            ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
+            let (facts, shape_types) = parse_text(&entry.data)?;
+            ShapePayload::Text { facts, shape_types }
         };
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
             property: property.id.clone(),
             entry: entry.id.clone(),
-            form,
-            text,
-            binary,
+            payload,
         });
     }
     Ok(payloads)
@@ -604,39 +1428,22 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
     payloads
         .iter()
         .filter_map(|payload| {
-            let (version, curve2ds, curves, surfaces, polygons3d, indexed, triangulations, tshapes) =
-                if let Some(facts) = &payload.text {
-                    (
-                        facts.topology_version,
-                        &facts.curve2ds,
-                        &facts.curves,
-                        &facts.surfaces,
-                        facts.polygons3d.len(),
-                        facts.polygons_on_triangulations.len(),
-                        facts.triangulations.len(),
-                        &facts.tshapes,
-                    )
-                } else if let Some(facts) = &payload.binary {
-                    (
-                        facts.topology_version,
-                        &facts.curve2ds,
-                        &facts.curves,
-                        &facts.surfaces,
-                        facts.polygons3d.len(),
-                        facts.polygons_on_triangulations.len(),
-                        facts.triangulations.len(),
-                        &facts.tshapes,
-                    )
-                } else {
-                    return None;
-                };
+            let facts = payload.payload.shape_set()?;
+            let version = facts.topology_version;
+            let curve2ds = &facts.curve2ds;
+            let curves = &facts.curves;
+            let surfaces = &facts.surfaces;
+            let polygons3d = facts.polygons3d.len();
+            let indexed = facts.polygons_on_triangulations.len();
+            let triangulations = facts.triangulations.len();
+            let tshapes = &facts.tshapes;
             let mut record = crate::native::CarrierCensusRecord {
                 id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
                 payload: payload.id.clone(),
-                form: match payload.form {
-                    ShapePayloadForm::Empty => "empty".into(),
-                    ShapePayloadForm::Text => "text".into(),
-                    ShapePayloadForm::Binary => "binary".into(),
+                form: match payload.payload.form() {
+                    ShapePayloadForm::Text => crate::native::CarrierCensusForm::Text,
+                    ShapePayloadForm::Binary => crate::native::CarrierCensusForm::Binary,
+                    ShapePayloadForm::Empty => return None,
                 },
                 topology_version: version,
                 curves_2d: BTreeMap::new(),
@@ -659,7 +1466,7 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
             for shape in tshapes {
                 increment(
                     &mut record.topology,
-                    match shape.kind {
+                    match shape.kind() {
                         TextShapeKind::Vertex => "vertex",
                         TextShapeKind::Edge => "edge",
                         TextShapeKind::Wire => "wire",
@@ -760,7 +1567,7 @@ fn census_surface(
     increment(counts, family);
 }
 
-pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
+pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usize>), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -863,23 +1670,24 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
     let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
-    Ok(TextFacts {
-        topology_version,
-        section_counts,
+    Ok((
+        ShapeSet {
+            topology_version,
+            locations,
+            curve2ds,
+            curves,
+            polygons3d,
+            polygons_on_triangulations,
+            surfaces,
+            triangulations,
+            tshapes,
+            roots,
+        },
         shape_types,
-        locations,
-        curve2ds,
-        curves,
-        surfaces,
-        polygons3d,
-        polygons_on_triangulations,
-        triangulations,
-        tshapes,
-        roots,
-    })
+    ))
 }
 
-pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
+pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -903,12 +1711,15 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
             1 => {
-                let mut transform = Transform::identity();
-                for row in 0..3 {
-                    for column in 0..4 {
-                        transform.rows[row][column] = cursor.f64("binary location transform")?;
+                let mut rows = Transform::identity().rows();
+                for row in rows.iter_mut().take(3) {
+                    for value in row {
+                        *value = cursor.f64("binary location transform")?;
                     }
                 }
+                let transform = Transform::from_rows(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform is not affine".into())
+                })?;
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -951,7 +1762,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
             other => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid binary location type {other}"
-                )))
+                )));
             }
         };
         locations.push(location);
@@ -1131,7 +1942,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
             }]
         }
     };
-    Ok(BinaryFacts {
+    Ok(ShapeSet {
         topology_version: version,
         locations,
         curve2ds,
@@ -1171,7 +1982,7 @@ fn parse_binary_tshape(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary TShape kind {other}"
-            )))
+            )));
         }
     };
     let geometry = match kind {
@@ -1190,61 +2001,66 @@ fn parse_binary_tshape(
                     ));
                 }
                 let parameter = cursor.f64("binary vertex parameter")?;
-                let (second_parameter, curve, surface) = match representation_kind {
-                    1 => (
-                        None,
-                        Some(checked_binary_reference(
+                let representation = match representation_kind {
+                    1 => TextPointRepresentation::Curve3d {
+                        parameter,
+                        curve: checked_binary_reference(
                             cursor.i32("binary vertex curve")?,
                             curve_count,
                             false,
                             "vertex curve",
-                        )?),
-                        None,
-                    ),
-                    2 => (
-                        None,
-                        Some(checked_binary_reference(
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
+                    2 => TextPointRepresentation::Pcurve {
+                        parameter,
+                        curve: checked_binary_reference(
                             cursor.i32("binary vertex pcurve")?,
                             curve2d_count,
                             false,
                             "vertex pcurve",
-                        )?),
-                        Some(checked_binary_reference(
+                        )?,
+                        surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
-                        )?),
-                    ),
-                    3 => (
-                        Some(cursor.f64("binary vertex second surface parameter")?),
-                        None,
-                        Some(checked_binary_reference(
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
+                    3 => TextPointRepresentation::Surface {
+                        parameter,
+                        second_parameter: cursor.f64("binary vertex second surface parameter")?,
+                        surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
-                        )?),
-                    ),
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
                     other => {
                         return Err(CodecError::malformed(format_args!(
                             "invalid binary vertex representation kind {other}"
-                        )))
+                        )));
                     }
                 };
-                representations.push(TextPointRepresentation {
-                    parameter,
-                    second_parameter,
-                    kind: representation_kind,
-                    curve,
-                    surface,
-                    location: checked_binary_reference(
-                        cursor.i32("binary vertex location")?,
-                        location_count,
-                        true,
-                        "vertex location",
-                    )?,
-                });
+                representations.push(representation);
             }
             TextTShapeGeometry::Vertex {
                 tolerance,
@@ -1315,7 +2131,7 @@ fn parse_binary_tshape(
                 other => {
                     return Err(CodecError::malformed(format_args!(
                         "invalid binary face triangulation marker {other}"
-                    )))
+                    )));
                 }
             };
             TextTShapeGeometry::Face {
@@ -1326,11 +2142,11 @@ fn parse_binary_tshape(
                 triangulation,
             }
         }
-        TextShapeKind::Wire
-        | TextShapeKind::Shell
-        | TextShapeKind::Solid
-        | TextShapeKind::CompSolid
-        | TextShapeKind::Compound => TextTShapeGeometry::Empty,
+        TextShapeKind::Wire => TextTShapeGeometry::Wire,
+        TextShapeKind::Shell => TextTShapeGeometry::Shell,
+        TextShapeKind::Solid => TextTShapeGeometry::Solid,
+        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
+        TextShapeKind::Compound => TextTShapeGeometry::Compound,
     };
     let mut flags = [false; 7];
     for flag in &mut flags {
@@ -1367,7 +2183,6 @@ fn parse_binary_tshape(
     }
     Ok(TextTShape {
         index,
-        kind,
         geometry,
         flags,
         children,
@@ -1387,152 +2202,187 @@ fn parse_binary_edge_representation(
     indexed_polygon_count: usize,
     triangulation_count: usize,
 ) -> Result<TextEdgeRepresentation, CodecError> {
-    let mut record = TextEdgeRepresentation {
-        kind,
-        primary: 0,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
-    };
     match kind {
         1 => {
-            record.primary = checked_binary_reference(
+            let curve = checked_binary_reference(
                 cursor.i32("binary edge curve")?,
                 curve_count,
                 false,
                 "edge curve",
             )?;
-            record.location = checked_binary_reference(
+            let location = checked_binary_reference(
                 cursor.i32("binary edge curve location")?,
                 location_count,
                 true,
                 "edge curve location",
             )?;
-            record.parameter_range = Some([
+            let parameter_range = [
                 cursor.f64("binary edge curve start")?,
                 cursor.f64("binary edge curve end")?,
-            ]);
+            ];
+            Ok(TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            })
         }
         2 | 3 => {
-            record.primary = checked_binary_reference(
+            let curve = checked_binary_reference(
                 cursor.i32("binary edge pcurve")?,
                 curve2d_count,
                 false,
                 "edge pcurve",
             )?;
-            if kind == 3 {
-                record.secondary = Some(checked_binary_reference(
-                    cursor.i32("binary edge secondary pcurve")?,
-                    curve2d_count,
-                    false,
-                    "edge secondary pcurve",
-                )?);
-                record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
-            }
-            record.surface = Some(checked_binary_reference(
+            let secondary = if kind == 3 {
+                Some((
+                    checked_binary_reference(
+                        cursor.i32("binary edge secondary pcurve")?,
+                        curve2d_count,
+                        false,
+                        "edge secondary pcurve",
+                    )?,
+                    cursor.u8("binary edge continuity")?.to_string(),
+                ))
+            } else {
+                None
+            };
+            let surface = checked_binary_reference(
                 cursor.i32("binary edge surface")?,
                 surface_count,
                 false,
                 "edge surface",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge surface location")?,
                 location_count,
                 true,
                 "edge surface location",
             )?;
-            record.parameter_range = Some([
+            let parameter_range = [
                 cursor.f64("binary edge pcurve start")?,
                 cursor.f64("binary edge pcurve end")?,
-            ]);
-            if matches!(version, 2 | 3) {
-                record.uv_endpoints = Some([
+            ];
+            let uv_endpoints = if matches!(version, 2 | 3) {
+                Some([
                     cursor.point2("binary edge first UV endpoint")?,
                     cursor.point2("binary edge last UV endpoint")?,
-                ]);
-            }
+                ])
+            } else {
+                None
+            };
+            Ok(if let Some((secondary, continuity)) = secondary {
+                TextEdgeRepresentation::PcurvePair {
+                    curves: [curve, secondary],
+                    continuity,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            } else {
+                TextEdgeRepresentation::Pcurve {
+                    curve,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            })
         }
         4 => {
-            record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
-            record.surface = Some(checked_binary_reference(
+            let continuity = cursor.u8("binary edge continuity")?.to_string();
+            let first_surface = checked_binary_reference(
                 cursor.i32("binary edge regularity surface")?,
                 surface_count,
                 false,
                 "edge regularity surface",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge regularity location")?,
                 location_count,
                 true,
                 "edge regularity location",
             )?;
-            record.second_surface = Some(checked_binary_reference(
+            let second_surface = checked_binary_reference(
                 cursor.i32("binary edge second regularity surface")?,
                 surface_count,
                 false,
                 "edge second regularity surface",
-            )?);
-            record.second_location = Some(checked_binary_reference(
+            )?;
+            let second_location = checked_binary_reference(
                 cursor.i32("binary edge second regularity location")?,
                 location_count,
                 true,
                 "edge second regularity location",
-            )?);
+            )?;
+            Ok(TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            })
         }
         5 => {
-            record.primary = checked_binary_reference(
+            let polygon = checked_binary_reference(
                 cursor.i32("binary edge 3D polygon")?,
                 polygon3d_count,
                 false,
                 "edge 3D polygon",
             )?;
-            record.location = checked_binary_reference(
+            let location = checked_binary_reference(
                 cursor.i32("binary edge polygon location")?,
                 location_count,
                 true,
                 "edge polygon location",
             )?;
+            Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
-            record.primary = checked_binary_reference(
+            let polygon = checked_binary_reference(
                 cursor.i32("binary edge indexed polygon")?,
                 indexed_polygon_count,
                 false,
                 "edge indexed polygon",
             )?;
-            if kind == 7 {
-                record.secondary = Some(checked_binary_reference(
+            let secondary = if kind == 7 {
+                Some(checked_binary_reference(
                     cursor.i32("binary edge secondary indexed polygon")?,
                     indexed_polygon_count,
                     false,
                     "edge secondary indexed polygon",
-                )?);
-            }
-            record.surface = Some(checked_binary_reference(
+                )?)
+            } else {
+                None
+            };
+            let triangulation = checked_binary_reference(
                 cursor.i32("binary edge triangulation")?,
                 triangulation_count,
                 false,
                 "edge triangulation",
-            )?);
-            record.location = checked_binary_reference(
+            )?;
+            let location = checked_binary_reference(
                 cursor.i32("binary edge triangulation location")?,
                 location_count,
                 true,
                 "edge triangulation location",
             )?;
+            Ok(if let Some(secondary) = secondary {
+                TextEdgeRepresentation::PolygonPair {
+                    polygons: [polygon, secondary],
+                    triangulation,
+                    location,
+                }
+            } else {
+                TextEdgeRepresentation::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                }
+            })
         }
-        other => {
-            return Err(CodecError::malformed(format_args!(
-                "invalid binary edge representation kind {other}"
-            )))
-        }
+        other => Err(CodecError::malformed(format_args!(
+            "invalid binary edge representation kind {other}"
+        ))),
     }
-    Ok(record)
 }
 
 fn checked_binary_reference(
@@ -1671,27 +2521,30 @@ fn parse_binary_surface(
                     weights.push(cursor.f64("binary Bezier surface weight")?);
                 }
             }
-            TextSurface::Nurbs(NurbsSurface {
-                u_degree: u32::try_from(u_degree).map_err(|_| {
-                    CodecError::Malformed("binary Bezier u degree exceeds u32".into())
-                })?,
-                v_degree: u32::try_from(v_degree).map_err(|_| {
-                    CodecError::Malformed("binary Bezier v degree exceeds u32".into())
-                })?,
-                u_knots: clamped_bezier_knots(u_degree),
-                v_knots: clamped_bezier_knots(v_degree),
-                u_count: u32::try_from(u_count).map_err(|_| {
-                    CodecError::Malformed("binary Bezier u count exceeds u32".into())
-                })?,
-                v_count: u32::try_from(v_count).map_err(|_| {
-                    CodecError::Malformed("binary Bezier v count exceeds u32".into())
-                })?,
-                control_points,
-                weights,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            })
+            TextSurface::Nurbs(
+                NurbsSurface::new(
+                    u32::try_from(u_degree).map_err(|_| {
+                        CodecError::Malformed("binary Bezier u degree exceeds u32".into())
+                    })?,
+                    u32::try_from(v_degree).map_err(|_| {
+                        CodecError::Malformed("binary Bezier v degree exceeds u32".into())
+                    })?,
+                    clamped_bezier_knots(u_degree),
+                    clamped_bezier_knots(v_degree),
+                    u32::try_from(u_count).map_err(|_| {
+                        CodecError::Malformed("binary Bezier u count exceeds u32".into())
+                    })?,
+                    u32::try_from(v_count).map_err(|_| {
+                        CodecError::Malformed("binary Bezier v count exceeds u32".into())
+                    })?,
+                    control_points,
+                    weights,
+                    false,
+                    false,
+                    false,
+                )
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+            )
         }
         9 => {
             let u_rational = cursor.bool("binary B-spline u-rational flag")?;
@@ -1716,23 +2569,17 @@ fn parse_binary_surface(
                     weights.push(cursor.f64("binary B-spline surface weight")?);
                 }
             }
-            TextSurface::Nurbs(normalize_periodic_surface(NurbsSurface {
-                u_degree,
-                v_degree,
-                u_knots: cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
-                v_knots: cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
-                u_count: u32::try_from(u_count).map_err(|_| {
-                    CodecError::Malformed("binary B-spline u count exceeds u32".into())
-                })?,
-                v_count: u32::try_from(v_count).map_err(|_| {
-                    CodecError::Malformed("binary B-spline v count exceeds u32".into())
-                })?,
+            TextSurface::Nurbs(normalize_periodic_surface(
+                [u_degree, v_degree],
+                [
+                    cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
+                    cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
+                ],
+                [u_count, v_count],
                 control_points,
                 weights,
-                normal_reversed: false,
-                u_periodic,
-                v_periodic,
-            })?)
+                [u_periodic, v_periodic],
+            )?)
         }
         10 => TextSurface::Trimmed {
             parameter_ranges: [
@@ -1754,7 +2601,7 @@ fn parse_binary_surface(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary surface kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -1846,15 +2693,18 @@ fn parse_binary_curve(
                     weights.push(cursor.f64("binary Bezier weight")?);
                 }
             }
-            TextCurve::Nurbs(NurbsCurve {
-                degree: u32::try_from(degree).map_err(|_| {
-                    CodecError::Malformed("binary Bezier degree exceeds u32".into())
-                })?,
-                knots: clamped_bezier_knots(degree),
-                control_points,
-                weights,
-                periodic: false,
-            })
+            TextCurve::Nurbs(
+                NurbsCurve::new(
+                    u32::try_from(degree).map_err(|_| {
+                        CodecError::Malformed("binary Bezier degree exceeds u32".into())
+                    })?,
+                    clamped_bezier_knots(degree),
+                    control_points,
+                    weights,
+                    false,
+                )
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+            )
         }
         7 => {
             let rational = cursor.bool("binary B-spline rational flag")?;
@@ -1875,13 +2725,10 @@ fn parse_binary_curve(
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
             let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
-            TextCurve::Nurbs(NurbsCurve {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic,
-            })
+            TextCurve::Nurbs(
+                NurbsCurve::new(degree, knots, control_points, weights, periodic)
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
+            )
         }
         8 => TextCurve::Trimmed {
             parameter_range: [
@@ -1898,7 +2745,7 @@ fn parse_binary_curve(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary 3D curve kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -2013,7 +2860,7 @@ fn parse_binary_curve2d(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary parameter-curve kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -2203,12 +3050,15 @@ fn parse_locations(
         let kind = cursor.integer("location type")?;
         let location = match kind {
             1 => {
-                let mut transform = Transform::identity();
-                for row in 0..3 {
-                    for column in 0..4 {
-                        transform.rows[row][column] = cursor.real("location transform value")?;
+                let mut rows = Transform::identity().rows();
+                for row in rows.iter_mut().take(3) {
+                    for value in row {
+                        *value = cursor.real("location transform value")?;
                     }
                 }
+                let transform = Transform::from_rows(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform is not affine".into())
+                })?;
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -2251,7 +3101,7 @@ fn parse_locations(
                 return Err(CodecError::malformed(format_args!(
                     "invalid location type {other} at table index {}",
                     index + 1
-                )))
+                )));
             }
         };
         locations.push(location);
@@ -2356,7 +3206,7 @@ fn parse_curve2d(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep 2D curve family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -2431,46 +3281,9 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
 }
 
 fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
-    if transform.rows[3] != [0.0, 0.0, 0.0, 1.0] {
-        return Err(CodecError::Malformed(
-            "location transform is not affine".into(),
-        ));
-    }
-    let m = transform.rows;
-    let determinant = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    if !determinant.is_finite() || determinant == 0.0 {
-        return Err(CodecError::Malformed(
-            "location transform is not invertible".into(),
-        ));
-    }
-    let inverse_linear = [
-        [
-            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / determinant,
-            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / determinant,
-            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / determinant,
-        ],
-        [
-            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / determinant,
-            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / determinant,
-            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / determinant,
-        ],
-        [
-            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / determinant,
-            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / determinant,
-            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / determinant,
-        ],
-    ];
-    let translation = [m[0][3], m[1][3], m[2][3]];
-    let mut result = Transform::identity();
-    for (row, inverse_row) in inverse_linear.iter().enumerate() {
-        result.rows[row][..3].copy_from_slice(inverse_row);
-        result.rows[row][3] = -(0..3)
-            .map(|column| inverse_row[column] * translation[column])
-            .sum::<f64>();
-    }
-    Ok(result)
+    transform
+        .try_inverse_affine()
+        .ok_or_else(|| CodecError::Malformed("location transform is not invertible".into()))
 }
 
 fn parse_polygons3d(
@@ -2702,7 +3515,6 @@ fn parse_tshapes(
         }
         shapes.push(TextTShape {
             index,
-            kind,
             geometry,
             flags,
             children,
@@ -2750,11 +3562,11 @@ fn parse_tshape_geometry(
         TextShapeKind::Vertex => parse_vertex_geometry(cursor, counts),
         TextShapeKind::Edge => parse_edge_geometry(cursor, counts, topology_version),
         TextShapeKind::Face => parse_face_geometry(cursor, counts),
-        TextShapeKind::Wire
-        | TextShapeKind::Shell
-        | TextShapeKind::Solid
-        | TextShapeKind::CompSolid
-        | TextShapeKind::Compound => Ok(TextTShapeGeometry::Empty),
+        TextShapeKind::Wire => Ok(TextTShapeGeometry::Wire),
+        TextShapeKind::Shell => Ok(TextTShapeGeometry::Shell),
+        TextShapeKind::Solid => Ok(TextTShapeGeometry::Solid),
+        TextShapeKind::CompSolid => Ok(TextTShapeGeometry::CompSolid),
+        TextShapeKind::Compound => Ok(TextTShapeGeometry::Compound),
     }
 }
 
@@ -2776,57 +3588,39 @@ fn parse_vertex_geometry(
                 "vertex representation-count limit exceeded".into(),
             ));
         }
-        let (second_parameter, curve, surface) = match kind {
-            1 => (
-                None,
-                Some(parse_reference(
-                    cursor,
-                    "vertex curve",
-                    counts["Curves"],
-                    false,
-                )?),
-                None,
-            ),
-            2 => (
-                None,
-                Some(parse_reference(
+        let location_of = |cursor: &mut TokenCursor<'_>| {
+            parse_reference(cursor, "vertex location", counts["Locations"], true)
+        };
+        let representation = match kind {
+            1 => TextPointRepresentation::Curve3d {
+                parameter,
+                curve: parse_reference(cursor, "vertex curve", counts["Curves"], false)?,
+                location: location_of(cursor)?,
+            },
+            2 => TextPointRepresentation::Pcurve {
+                parameter,
+                curve: parse_reference(
                     cursor,
                     "vertex parameter curve",
                     counts["Curve2ds"],
                     false,
-                )?),
-                Some(parse_reference(
-                    cursor,
-                    "vertex surface",
-                    counts["Surfaces"],
-                    false,
-                )?),
-            ),
-            3 => (
-                Some(cursor.real("vertex second surface parameter")?),
-                None,
-                Some(parse_reference(
-                    cursor,
-                    "vertex surface",
-                    counts["Surfaces"],
-                    false,
-                )?),
-            ),
+                )?,
+                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                location: location_of(cursor)?,
+            },
+            3 => TextPointRepresentation::Surface {
+                parameter,
+                second_parameter: cursor.real("vertex second surface parameter")?,
+                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                location: location_of(cursor)?,
+            },
             other => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid vertex representation kind {other}"
-                )))
+                )));
             }
         };
-        let location = parse_reference(cursor, "vertex location", counts["Locations"], true)?;
-        representations.push(TextPointRepresentation {
-            parameter,
-            second_parameter,
-            kind: kind as u8,
-            curve,
-            surface,
-            location,
-        });
+        representations.push(representation);
     }
     Ok(TextTShapeGeometry::Vertex {
         tolerance,
@@ -2877,125 +3671,146 @@ fn parse_edge_representation(
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextEdgeRepresentation, CodecError> {
-    let mut record = TextEdgeRepresentation {
-        kind: u8::try_from(kind)
-            .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?,
-        primary: 0,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
-    };
+    u8::try_from(kind)
+        .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?;
     match kind {
         1 => {
-            record.primary = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
-            record.location =
+            let curve = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
+            let location =
                 parse_reference(cursor, "edge curve location", counts["Locations"], true)?;
-            record.parameter_range = Some(parse_range(cursor, "edge curve")?);
+            let parameter_range = parse_range(cursor, "edge curve")?;
+            Ok(TextEdgeRepresentation::Curve3d {
+                curve,
+                location,
+                parameter_range,
+            })
         }
         2 | 3 => {
-            record.primary =
-                parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
-            if kind == 3 {
+            let curve = parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
+            let secondary = if kind == 3 {
                 let (secondary, joined_continuity) = parse_reference_suffix(
                     cursor,
                     "edge secondary parameter curve",
                     counts["Curve2ds"],
                 )?;
-                record.secondary = Some(secondary);
-                record.continuity = Some(
-                    joined_continuity
-                        .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?,
-                );
-            }
-            record.surface = Some(parse_reference(
-                cursor,
-                "edge surface",
-                counts["Surfaces"],
-                false,
-            )?);
-            record.location =
+                let continuity = joined_continuity
+                    .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?;
+                Some((secondary, continuity))
+            } else {
+                None
+            };
+            let surface = parse_reference(cursor, "edge surface", counts["Surfaces"], false)?;
+            let location =
                 parse_reference(cursor, "edge surface location", counts["Locations"], true)?;
-            record.parameter_range = Some(parse_range(cursor, "edge parameter curve")?);
-            if topology_version == 2 {
-                record.uv_endpoints = Some([
+            let parameter_range = parse_range(cursor, "edge parameter curve")?;
+            let uv_endpoints = if topology_version == 2 {
+                Some([
                     cursor.point2("edge first UV endpoint")?,
                     cursor.point2("edge last UV endpoint")?,
-                ]);
-            }
+                ])
+            } else {
+                None
+            };
+            Ok(if let Some((secondary, continuity)) = secondary {
+                TextEdgeRepresentation::PcurvePair {
+                    curves: [curve, secondary],
+                    continuity,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            } else {
+                TextEdgeRepresentation::Pcurve {
+                    curve,
+                    surface,
+                    location,
+                    parameter_range,
+                    uv_endpoints,
+                }
+            })
         }
         4 => {
-            record.continuity = Some(cursor.next("edge continuity")?.to_owned());
-            record.surface = Some(parse_reference(
-                cursor,
-                "edge regularity surface",
-                counts["Surfaces"],
-                false,
-            )?);
-            record.location = parse_reference(
+            let continuity = cursor.next("edge continuity")?.to_owned();
+            let first_surface =
+                parse_reference(cursor, "edge regularity surface", counts["Surfaces"], false)?;
+            let location = parse_reference(
                 cursor,
                 "edge regularity location",
                 counts["Locations"],
                 true,
             )?;
-            record.second_surface = Some(parse_reference(
+            let second_surface = parse_reference(
                 cursor,
                 "edge second regularity surface",
                 counts["Surfaces"],
                 false,
-            )?);
-            record.second_location = Some(parse_reference(
+            )?;
+            let second_location = parse_reference(
                 cursor,
                 "edge second regularity location",
                 counts["Locations"],
                 true,
-            )?);
+            )?;
+            Ok(TextEdgeRepresentation::Regularity {
+                continuity,
+                surfaces: [first_surface, second_surface],
+                locations: [location, second_location],
+            })
         }
         5 => {
-            record.primary =
-                parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
-            record.location =
+            let polygon = parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
+            let location =
                 parse_reference(cursor, "edge polygon location", counts["Locations"], true)?;
+            Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
-            record.primary = parse_reference(
+            let polygon = parse_reference(
                 cursor,
                 "edge polygon on triangulation",
                 counts["PolygonOnTriangulations"],
                 false,
             )?;
-            if kind == 7 {
-                record.secondary = Some(parse_reference(
+            let secondary = if kind == 7 {
+                Some(parse_reference(
                     cursor,
                     "edge second polygon on triangulation",
                     counts["PolygonOnTriangulations"],
                     false,
-                )?);
-            }
-            record.surface = Some(parse_reference(
+                )?)
+            } else {
+                None
+            };
+            let triangulation = parse_reference(
                 cursor,
                 "edge triangulation",
                 counts["Triangulations"],
                 false,
-            )?);
-            record.location = parse_reference(
+            )?;
+            let location = parse_reference(
                 cursor,
                 "edge triangulation location",
                 counts["Locations"],
                 true,
             )?;
+            Ok(if let Some(secondary) = secondary {
+                TextEdgeRepresentation::PolygonPair {
+                    polygons: [polygon, secondary],
+                    triangulation,
+                    location,
+                }
+            } else {
+                TextEdgeRepresentation::PolygonOnTriangulation {
+                    polygon,
+                    triangulation,
+                    location,
+                }
+            })
         }
-        other => {
-            return Err(CodecError::malformed(format_args!(
-                "invalid edge representation kind {other}"
-            )))
-        }
+        other => Err(CodecError::malformed(format_args!(
+            "invalid edge representation kind {other}"
+        ))),
     }
-    Ok(record)
 }
 
 fn parse_face_geometry(
@@ -3056,7 +3871,7 @@ fn parse_shape_use(
         _ => {
             return Err(CodecError::malformed(format_args!(
                 "invalid shape use {token:?}"
-            )))
+            )));
         }
     };
     let encoded = encoded
@@ -3216,7 +4031,7 @@ fn parse_surface(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep surface family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -3310,19 +4125,14 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
-    normalize_periodic_surface(NurbsSurface {
-        u_degree: u_degree as u32,
-        v_degree: v_degree as u32,
-        u_knots,
-        v_knots,
-        u_count: u_count as u32,
-        v_count: v_count as u32,
+    normalize_periodic_surface(
+        [u_degree as u32, v_degree as u32],
+        [u_knots, v_knots],
+        [u_count, v_count],
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic,
-        v_periodic,
-    })
+        [u_periodic, v_periodic],
+    )
 }
 
 fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
@@ -3344,19 +4154,20 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
             weights.push(cursor.real("Bezier surface weight")?);
         }
     }
-    Ok(NurbsSurface {
-        u_degree: u_degree as u32,
-        v_degree: v_degree as u32,
-        u_knots: clamped_bezier_knots(u_degree),
-        v_knots: clamped_bezier_knots(v_degree),
-        u_count: u_count as u32,
-        v_count: v_count as u32,
+    NurbsSurface::new(
+        u_degree as u32,
+        v_degree as u32,
+        clamped_bezier_knots(u_degree),
+        clamped_bezier_knots(v_degree),
+        u_count as u32,
+        v_count as u32,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+        false,
+        false,
+        false,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_knots(
@@ -3463,21 +4274,28 @@ fn append_periodic_curve_poles<T: Clone>(
     Ok(())
 }
 
-fn normalize_periodic_surface(mut surface: NurbsSurface) -> Result<NurbsSurface, CodecError> {
-    let (u_knots, u_padding) = normalize_periodic_knots(
-        std::mem::take(&mut surface.u_knots),
-        surface.u_degree,
-        surface.u_periodic,
-    )?;
-    let (v_knots, v_padding) = normalize_periodic_knots(
-        std::mem::take(&mut surface.v_knots),
-        surface.v_degree,
-        surface.v_periodic,
-    )?;
-    let old_u = usize::try_from(surface.u_count)
-        .map_err(|_| CodecError::Malformed("B-spline u pole count exceeds usize".into()))?;
-    let old_v = usize::try_from(surface.v_count)
-        .map_err(|_| CodecError::Malformed("B-spline v pole count exceeds usize".into()))?;
+fn normalize_periodic_surface(
+    degrees: [u32; 2],
+    knots: [Vec<f64>; 2],
+    counts: [usize; 2],
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+    periodic: [bool; 2],
+) -> Result<NurbsSurface, CodecError> {
+    let [u_source_knots, v_source_knots] = knots;
+    let (u_knots, u_padding) = normalize_periodic_knots(u_source_knots, degrees[0], periodic[0])?;
+    let (v_knots, v_padding) = normalize_periodic_knots(v_source_knots, degrees[1], periodic[1])?;
+    let [old_u, old_v] = counts;
+    let source_count = checked_grid_count(old_u, old_v, "B-spline")?;
+    if control_points.len() != source_count
+        || weights
+            .as_ref()
+            .is_some_and(|values| values.len() != source_count)
+    {
+        return Err(CodecError::Malformed(
+            "B-spline pole grid cardinality mismatch".into(),
+        ));
+    }
     if old_u == 0 || old_v == 0 {
         return Err(CodecError::Malformed(
             "periodic B-spline pole grid is empty".into(),
@@ -3493,40 +4311,42 @@ fn normalize_periodic_surface(mut surface: NurbsSurface) -> Result<NurbsSurface,
         .checked_mul(new_v)
         .filter(|count| *count <= 2_000_000)
         .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
-    if surface.control_points.len() != old_u.saturating_mul(old_v)
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return Err(CodecError::Malformed(
-            "periodic B-spline pole grid is invalid".into(),
-        ));
-    }
-    if u_padding != 0 || v_padding != 0 {
-        let old_points = std::mem::take(&mut surface.control_points);
-        let old_weights = surface.weights.take();
+    let (control_points, weights) = if u_padding != 0 || v_padding != 0 {
+        let old_points = &control_points;
+        let old_weights = weights.as_deref();
         let mut points = Vec::with_capacity(new_count);
-        let mut weights = old_weights.as_ref().map(|_| Vec::with_capacity(new_count));
+        let mut weights = old_weights.map(|_| Vec::with_capacity(new_count));
         for u in 0..new_u {
             for v in 0..new_v {
                 let source = (u % old_u) * old_v + v % old_v;
                 points.push(old_points[source]);
-                if let (Some(source_weights), Some(target_weights)) = (&old_weights, &mut weights) {
+                if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut weights) {
                     target_weights.push(source_weights[source]);
                 }
             }
         }
-        surface.control_points = points;
-        surface.weights = weights;
-    }
-    surface.u_knots = u_knots;
-    surface.v_knots = v_knots;
-    surface.u_count = u32::try_from(new_u)
+        (points, weights)
+    } else {
+        (control_points, weights)
+    };
+    let u_count = u32::try_from(new_u)
         .map_err(|_| CodecError::Malformed("periodic B-spline u pole count exceeds u32".into()))?;
-    surface.v_count = u32::try_from(new_v)
+    let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
-    Ok(surface)
+    NurbsSurface::new(
+        degrees[0],
+        degrees[1],
+        u_knots,
+        v_knots,
+        u_count,
+        v_count,
+        control_points,
+        weights,
+        false,
+        periodic[0],
+        periodic[1],
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_curves(
@@ -3655,7 +4475,7 @@ fn parse_curve(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep 3D curve family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -3679,13 +4499,8 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
     let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
-    Ok(NurbsCurve {
-        degree: degree as u32,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    })
+    NurbsCurve::new(degree as u32, knots, control_points, weights, periodic)
+        .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
@@ -3700,13 +4515,14 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
             weights.push(cursor.real("Bezier weight")?);
         }
     }
-    Ok(NurbsCurve {
-        degree: degree as u32,
-        knots: clamped_bezier_knots(degree),
+    NurbsCurve::new(
+        degree as u32,
+        clamped_bezier_knots(degree),
         control_points,
         weights,
-        periodic: false,
-    })
+        false,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn clamped_bezier_knots(degree: usize) -> Vec<f64> {
@@ -3817,7 +4633,7 @@ impl<'a> TokenCursor<'a> {
 #[derive(Default)]
 pub(crate) struct CurveTransfer {
     pub(crate) curves: Vec<Curve>,
-    pub(crate) procedural: Vec<ProceduralCurve>,
+    pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
 pub(crate) fn transfer_text_curves(
@@ -3826,11 +4642,7 @@ pub(crate) fn transfer_text_curves(
 ) -> CurveTransfer {
     let mut transfer = CurveTransfer::default();
     for payload in payloads {
-        let curves = if let Some(text) = &payload.text {
-            &text.curves
-        } else if let Some(binary) = &payload.binary {
-            &binary.curves
-        } else {
+        let Some(curves) = payload.payload.shape_set().map(|set| &set.curves) else {
             continue;
         };
         let object_id = properties
@@ -3841,7 +4653,7 @@ pub(crate) fn transfer_text_curves(
                 |property| property.owner.clone(),
             );
         let association = SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id,
             name: None,
             color: None,
@@ -3850,11 +4662,12 @@ pub(crate) fn transfer_text_curves(
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
-            let id = CurveId(native::model_id(
+            let id = CurveId::mint(native::model_id(
                 "curve",
                 &payload.id,
                 (index + 1).to_string(),
-            ));
+            ))
+            .expect("identity grammar");
             append_text_curve(curve, id, &association, &mut transfer);
         }
     }
@@ -3931,23 +4744,25 @@ pub(crate) fn append_text_curve(
             parameter_range,
             basis,
         } => {
-            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
             let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 &basis_geometry,
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
-            transfer.procedural.push(ProceduralCurve {
-                id: ProceduralCurveId(format!("{}:construction", id.0)),
-                curve: id.clone(),
-                definition: ProceduralCurveDefinition::Subset {
-                    source: basis_id,
-                    parameter_range,
-                    sense: true,
-                },
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralCurveDefinition::Subset {
+                        source: basis_id,
+                        parameter_range,
+                        sense: true,
+                    },
+                ),
+            ));
             basis_geometry
         }
         TextCurve::Offset {
@@ -3955,22 +4770,24 @@ pub(crate) fn append_text_curve(
             direction,
             basis,
         } => {
-            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
             append_text_curve(basis, basis_id.clone(), association, transfer);
-            transfer.procedural.push(ProceduralCurve {
-                id: ProceduralCurveId(format!("{}:construction", id.0)),
-                curve: id.clone(),
-                definition: ProceduralCurveDefinition::Offset {
-                    source: basis_id,
-                    distance: *distance,
-                    direction: Some(*direction),
-                    support: None,
-                    distance_law: None,
-                    normal: None,
-                    parameter_range: None,
-                },
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralCurveDefinition::Offset {
+                        source: basis_id,
+                        distance: *distance,
+                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
+                            direction: *direction,
+                            support: None,
+                        },
+                        range: None,
+                    },
+                ),
+            ));
             CurveGeometry::Unknown { record: None }
         }
     };
@@ -3985,7 +4802,7 @@ pub(crate) fn append_text_curve(
 #[derive(Default)]
 pub(crate) struct SurfaceTransfer {
     pub(crate) surfaces: Vec<Surface>,
-    pub(crate) procedural: Vec<ProceduralSurface>,
+    pub(crate) procedural: Vec<(SurfaceId, ProceduralSurface)>,
 }
 
 pub(crate) fn transfer_text_surfaces(
@@ -3995,11 +4812,7 @@ pub(crate) fn transfer_text_surfaces(
 ) -> SurfaceTransfer {
     let mut transfer = SurfaceTransfer::default();
     for payload in payloads {
-        let surfaces = if let Some(text) = &payload.text {
-            &text.surfaces
-        } else if let Some(binary) = &payload.binary {
-            &binary.surfaces
-        } else {
+        let Some(surfaces) = payload.payload.shape_set().map(|set| &set.surfaces) else {
             continue;
         };
         let object_id = properties
@@ -4010,7 +4823,7 @@ pub(crate) fn transfer_text_surfaces(
                 |property| property.owner.clone(),
             );
         let association = SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id,
             name: None,
             color: None,
@@ -4021,11 +4834,12 @@ pub(crate) fn transfer_text_surfaces(
         for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
                 surface,
-                SurfaceId(native::model_id(
+                SurfaceId::mint(native::model_id(
                     "surface",
                     &payload.id,
                     (index + 1).to_string(),
-                )),
+                ))
+                .expect("identity grammar"),
                 &association,
                 curve_transfer,
                 &mut transfer,
@@ -4111,21 +4925,23 @@ pub(crate) fn append_text_surface(
             direction,
             directrix,
         } => {
-            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
-            transfer.procedural.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
-                surface: id.clone(),
-                definition: ProceduralSurfaceDefinition::Extrusion {
-                    directrix: directrix_id,
-                    parameter_interval: None,
-                    direction: *direction,
-                    native_position: None,
-                    revision_form: None,
-                },
-                record_bounds: None,
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: directrix_id,
+                        parameter_interval: None,
+                        direction: *direction,
+                        native_position: None,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            ));
             SurfaceGeometry::Unknown { record: None }
         }
         TextSurface::Revolution {
@@ -4133,24 +4949,26 @@ pub(crate) fn append_text_surface(
             axis_direction,
             directrix,
         } => {
-            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
-            transfer.procedural.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
-                surface: id.clone(),
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin: *axis_origin,
-                    axis_direction: *axis_direction,
-                    angular_interval: [0.0, std::f64::consts::TAU],
-                    angular_parameter_interval: None,
-                    parameter_interval: None,
-                    transposed: true,
-                    revision_form: None,
-                },
-                record_bounds: None,
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: directrix_id,
+                        axis_origin: *axis_origin,
+                        axis_direction: *axis_direction,
+                        angular_interval: [0.0, std::f64::consts::TAU],
+                        angular_parameter_interval: None,
+                        parameter_interval: None,
+                        transposed: true,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            ));
             SurfaceGeometry::Unknown { record: None }
         }
         TextSurface::Trimmed {
@@ -4166,7 +4984,7 @@ pub(crate) fn append_text_surface(
                     value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
-            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_id = SurfaceId::mint(format!("{id}:basis")).expect("identity grammar");
             let basis_geometry = append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -4174,22 +4992,24 @@ pub(crate) fn append_text_surface(
                 curve_transfer,
                 transfer,
             );
-            transfer.procedural.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
-                surface: id.clone(),
-                definition: ProceduralSurfaceDefinition::Subset {
-                    support: basis_id,
-                    parameter_ranges,
-                    u_sense: None,
-                    v_sense: None,
-                },
-                record_bounds: None,
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Subset {
+                        support: basis_id,
+                        parameter_ranges,
+                        u_sense: None,
+                        v_sense: None,
+                    },
+                    None,
+                ),
+            ));
             basis_geometry
         }
         TextSurface::Offset { distance, basis } => {
-            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_id = SurfaceId::mint(format!("{id}:basis")).expect("identity grammar");
             append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -4197,21 +5017,24 @@ pub(crate) fn append_text_surface(
                 curve_transfer,
                 transfer,
             );
-            transfer.procedural.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
-                surface: id.clone(),
-                definition: ProceduralSurfaceDefinition::Offset {
-                    support: basis_id,
-                    distance: *distance,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension_flags: Vec::new(),
-                    revision_form: None,
-                },
-                record_bounds: None,
-                cache_fit_tolerance: None,
-            });
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!("{id}:construction"))
+                        .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Offset {
+                        support: basis_id,
+                        distance: *distance,
+                        u_sense: None,
+                        v_sense: None,
+                        support_extension: None,
+                        extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    },
+                    None,
+                ),
+            ));
             SurfaceGeometry::Unknown { record: None }
         }
     };
@@ -4233,14 +5056,14 @@ pub(crate) mod tests {
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
-        let surface = NurbsSurface {
-            u_degree: 3,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 6,
-            v_count: 2,
-            control_points: (0..6)
+        let normalized = normalize_periodic_surface(
+            [3, 1],
+            [
+                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+            ],
+            [6, 2],
+            (0..6)
                 .flat_map(|u| {
                     [
                         Point3::new(f64::from(u), 0.0, 0.0),
@@ -4248,21 +5071,25 @@ pub(crate) mod tests {
                     ]
                 })
                 .collect(),
-            weights: None,
-            normal_reversed: false,
-            u_periodic: true,
-            v_periodic: false,
-        };
+            None,
+            [true, false],
+        )
+        .expect("valid periodic surface");
 
-        let normalized = normalize_periodic_surface(surface).expect("periodic surface");
-        assert_eq!(normalized.u_count, 7);
+        assert_eq!(normalized.u_count(), 7);
         assert_eq!(
-            normalized.u_knots,
+            normalized.u_knots(),
             [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
         );
-        assert_eq!(normalized.control_points.len(), 14);
-        assert_eq!(normalized.control_points[12], normalized.control_points[0]);
-        assert_eq!(normalized.control_points[13], normalized.control_points[1]);
+        assert_eq!(normalized.control_points().len(), 14);
+        assert_eq!(
+            normalized.control_points()[12],
+            normalized.control_points()[0]
+        );
+        assert_eq!(
+            normalized.control_points()[13],
+            normalized.control_points()[1]
+        );
         let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
             .expect("periodic start point");
         let end = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 1.0, 0.5)
@@ -4289,9 +5116,14 @@ pub(crate) mod tests {
         ]);
         let record = parse_edge_representation(3, &mut cursor, &counts, 1)
             .expect("joined pcurve continuity");
-        assert_eq!(record.primary, 1);
-        assert_eq!(record.secondary, Some(2));
-        assert_eq!(record.continuity.as_deref(), Some("CN"));
+        let TextEdgeRepresentation::PcurvePair {
+            curves, continuity, ..
+        } = record
+        else {
+            panic!("expected pcurve pair");
+        };
+        assert_eq!(curves, [1, 2]);
+        assert_eq!(continuity, "CN");
         assert!(cursor.is_empty());
     }
 
@@ -4351,12 +5183,13 @@ pub(crate) mod tests {
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            transient: false,
-            dynamic: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
+                dynamic: None,
+            },
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
             raw_xml: r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
                 .into(),
             byte_start: 0,
@@ -4365,18 +5198,14 @@ pub(crate) mod tests {
         let entry = EntryRecord {
             id: crate::native::native_id("entry", "empty.brp"),
             name: "empty.brp".into(),
-            role: "brep".into(),
-            byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            role: cadmpeg_core::container::ContainerRole::Brep,
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
         let second_entry = EntryRecord {
             id: crate::native::native_id("entry", "empty-2.brp"),
             name: "empty-2.brp".into(),
-            role: "brep".into(),
-            byte_len: 0,
-            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            role: cadmpeg_core::container::ContainerRole::Brep,
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
@@ -4384,9 +5213,7 @@ pub(crate) mod tests {
             parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
-        assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
-        assert!(payloads[0].text.is_none());
-        assert!(payloads[0].binary.is_none());
+        assert!(matches!(payloads[0].payload, ShapePayload::Empty));
     }
 
     #[test]
@@ -4398,12 +5225,13 @@ pub(crate) mod tests {
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            transient: false,
-            dynamic: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["nested.brp".into()],
+                dynamic: None,
+            },
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["nested.brp".into()],
             raw_xml: r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
             byte_start: 0,
             byte_end: 0,
@@ -4421,12 +5249,13 @@ pub(crate) mod tests {
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            transient: false,
-            dynamic: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["first.brp".into(), "second.brp".into()],
+                dynamic: None,
+            },
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["first.brp".into(), "second.brp".into()],
             raw_xml: r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#
                 .into(),
             byte_start: 0,
@@ -4444,12 +5273,8 @@ pub(crate) mod tests {
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: Some(152),
-            transient: true,
-            dynamic: None,
+            body: crate::native::PropertyBody::Transient,
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
             raw_xml:
                 r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
                     .into(),
@@ -4469,12 +5294,13 @@ pub(crate) mod tests {
             type_name: "Custom::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Unknown,
             status: None,
-            transient: false,
-            dynamic: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["custom.brp".into()],
+                dynamic: None,
+            },
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["custom.brp".into()],
             raw_xml: String::new(),
             byte_start: 0,
             byte_end: 0,
@@ -4487,27 +5313,29 @@ pub(crate) mod tests {
     #[test]
     fn normalizes_rational_bezier_curve_to_nurbs() {
         let input = text_brep("6 1 2 0 0 0 1 5 0 0 2 10 0 0 1", 1, "", 0);
-        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve");
+        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve").0;
         let TextCurve::Nurbs(curve) = &facts.curves[0] else {
             panic!("Bezier curve was not normalized to NURBS")
         };
-        assert_eq!(curve.degree, 2);
-        assert_eq!(curve.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-        assert_eq!(curve.weights.as_deref(), Some(&[1.0, 2.0, 1.0][..]));
+        assert_eq!(curve.degree(), 2);
+        assert_eq!(curve.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(curve.weights(), Some(&[1.0, 2.0, 1.0][..]));
     }
 
     #[test]
     fn normalizes_bezier_surface_to_nurbs() {
         let input = text_brep("", 0, "8 0 0 1 1 0 0 0 0 1 0 1 0 0 1 1 0", 1);
-        let facts = parse_text(input.as_bytes()).expect("valid Bezier surface");
+        let facts = parse_text(input.as_bytes())
+            .expect("valid Bezier surface")
+            .0;
         let TextSurface::Nurbs(surface) = &facts.surfaces[0] else {
             panic!("Bezier surface was not normalized to NURBS")
         };
-        assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-        assert_eq!((surface.u_count, surface.v_count), (2, 2));
-        assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-        assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
-        assert!(surface.weights.is_none());
+        assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+        assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert!(surface.weights().is_none());
     }
 
     #[test]
@@ -4529,7 +5357,7 @@ pub(crate) mod tests {
             "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
             3,
         );
-        let facts = parse_text(input.as_bytes()).expect("recursive surfaces");
+        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
         let TextSurface::Extrusion {
             direction,
             directrix,
@@ -4559,11 +5387,11 @@ pub(crate) mod tests {
     #[test]
     fn resolves_elementary_and_compound_locations_in_source_order() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 3\n1 1 0 0 5 0 1 0 0 0 0 1 0\n2 1 2 0\n2 1 -1 2 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("location table");
+        let facts = parse_text(input.as_bytes()).expect("location table").0;
         assert_eq!(facts.locations.len(), 3);
-        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
-        assert_eq!(facts.locations[1].transform.rows[0][3], 10.0);
-        assert_eq!(facts.locations[2].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
+        assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
+        assert_eq!(facts.locations[2].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
     }
 
@@ -4646,7 +5474,7 @@ pub(crate) mod tests {
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
-        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
         assert!(matches!(facts.curves[0], TextCurve::Line { .. }));
@@ -4667,7 +5495,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_analytic_spline_and_recursive_parameter_curves() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 3\n1 0 0 1 0\n6 1 2 0 0 1 5 0 2 10 0 1\n8 0 6.28 9 2 2 0 0 1 0 0 1 3\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("2D curve table");
+        let facts = parse_text(input.as_bytes()).expect("2D curve table").0;
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[1] else {
             panic!("expected normalized 2D Bezier")
@@ -4689,7 +5517,9 @@ pub(crate) mod tests {
     #[test]
     fn expands_periodic_parameter_curve_knots_and_poles() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 1\n7 1 1 6 6 2 0 0 1 1 0 1 1 1 1 0 1 1 -1 0 1 -1 -1 1 0 6 6.283185307179586 6\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("periodic parameter curve");
+        let facts = parse_text(input.as_bytes())
+            .expect("periodic parameter curve")
+            .0;
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[0] else {
             panic!("expected periodic NURBS")
         };
@@ -4705,7 +5535,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_polygonal_carriers_and_version_three_normals() {
         let input = "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n2 1 0.1 0 0 0 1 0 0 0 1\nPolygonOnTriangulations 1\n2 1 2 p 0.2 1 0 1\nSurfaces 0\nTriangulations 1\n3 1 1 1 0.01 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 1 2 3 0 0 1 0 0 1 0 0 1\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("polygonal carriers");
+        let facts = parse_text(input.as_bytes()).expect("polygonal carriers").0;
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
             facts.polygons3d[0].parameters.as_deref(),
@@ -4722,9 +5552,9 @@ pub(crate) mod tests {
     #[test]
     fn parses_subshape_first_topology_and_reverse_references() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
-        let facts = parse_text(input.as_bytes()).expect("topology table");
+        let facts = parse_text(input.as_bytes()).expect("topology table").0;
         assert_eq!(facts.tshapes.len(), 8);
-        assert_eq!(facts.tshapes[2].kind, TextShapeKind::Edge);
+        assert_eq!(facts.tshapes[2].kind(), TextShapeKind::Edge);
         assert_eq!(facts.tshapes[2].children[0].shape, 1);
         assert_eq!(facts.tshapes[2].children[1].shape, 2);
         let TextTShapeGeometry::Edge {
@@ -4733,7 +5563,7 @@ pub(crate) mod tests {
         else {
             panic!("expected edge geometry")
         };
-        assert_eq!(representations[0].parameter_range, Some([0.0, 1.0]));
+        assert_eq!(representations[0].parameter_range(), Some([0.0, 1.0]));
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
     }
@@ -4783,7 +5613,7 @@ pub(crate) mod tests {
             }),
         };
         let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
-            crate::topology_transfer::pcurve_geometry(&source)
+            crate::topology_transfer::pcurve_geometry(&source).expect("valid recursive pcurve")
         else {
             panic!("expected offset pcurve");
         };
@@ -4884,7 +5714,7 @@ pub(crate) mod tests {
             cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
         ));
         assert_eq!(result.ir().model.tessellations.len(), 1);
-        assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+        assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(
@@ -4896,7 +5726,7 @@ pub(crate) mod tests {
             [result.ir().model.faces[0].id.clone()]
         );
         assert_eq!(result.ir().model.coedges.len(), 1);
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
     }
 
     #[test]
@@ -4909,7 +5739,7 @@ pub(crate) mod tests {
             radius: 0.0,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: "object".into(),
             name: None,
             color: None,
@@ -4921,7 +5751,7 @@ pub(crate) mod tests {
 
         let geometry = crate::brep::append_text_curve(
             &curve,
-            cadmpeg_ir::ids::CurveId("curve".into()),
+            cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#1").expect("identity grammar"),
             &association,
             &mut transfer,
         );
@@ -4945,7 +5775,7 @@ pub(crate) mod tests {
             }),
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: "fcstd:native:object#Surface".into(),
             name: None,
             color: None,
@@ -4957,13 +5787,14 @@ pub(crate) mod tests {
         let mut surfaces = crate::brep::SurfaceTransfer::default();
         crate::brep::append_text_surface(
             &surface,
-            cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+            cadmpeg_ir::ids::SurfaceId::mint("fcstd:model:surface#revolution")
+                .expect("identity grammar"),
             &association,
             &mut curves,
             &mut surfaces,
         );
         assert!(matches!(
-            surfaces.procedural[0].definition,
+            surfaces.procedural[0].1.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 transposed: true,
                 ..

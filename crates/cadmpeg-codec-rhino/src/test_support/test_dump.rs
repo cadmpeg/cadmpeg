@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 //! Dump-test byte builders shared by owner suites.
 
@@ -145,22 +145,16 @@ pub(crate) fn tagged_attributes(items: &[(u8, Vec<u8>)], minor: u8) -> Vec<u8> {
 pub(crate) fn descriptor(
     attributes: crate::objects::ObjectAttributes,
     offset: usize,
-) -> crate::objects::ObjectDescriptor {
+) -> crate::objects::ObjectDescriptor<()> {
     crate::objects::ObjectDescriptor {
         range: offset..offset + 10,
         object_type: 0,
         class_uuid: Uuid::nil(),
         class_data_range: offset..offset,
-        framing_degraded: false,
-        attributes: Some(attributes),
-        attributes_degraded: false,
+        attributes: crate::objects::AttributeState::Parsed(Box::new(attributes)),
         attributes_userdata: Vec::new(),
-        identity: None,
+        identity: (),
         userdata: Vec::new(),
-        attributes_range: None,
-        attributes_body_range: None,
-        attributes_userdata_range: None,
-        attributes_userdata_body_range: None,
         history: None,
         unknown_trailer: Vec::new(),
         checksum_warnings: Vec::new(),
@@ -808,29 +802,23 @@ pub(crate) fn metadata_record(typecode: u32, data: Vec<u8>) -> (Vec<u8>, crate::
     let length = data.len();
     (
         data,
-        crate::container::Record {
-            typecode,
-            range: 0..length,
-            body: 0..length,
-            short: false,
-            value: 0,
-        },
+        crate::container::Record::long(typecode, 0..length, 0..length),
     )
 }
 
 pub(crate) fn set_test_units(scan: &mut crate::container::Scan<'_>, scale: f64) {
+    let unit = match scale {
+        1.0 => settings::UnitSystem::Standard(settings::StandardUnit::Millimeters),
+        25.4 => settings::UnitSystem::Standard(settings::StandardUnit::Inches),
+        _ => settings::UnitSystem::custom(scale / 1000.0, String::new())
+            .expect("valid test unit scale"),
+    };
     scan.metadata.settings.units = Some(settings::UnitsAndTolerances {
-        version: 1,
-        unit_value: 2,
-        unit: settings::UnitSystem::Standard(2),
-        millimeters_per_unit: Some(scale),
+        unit,
         absolute_tolerance: 0.01,
-        absolute_tolerance_millimeters: Some(0.01 * scale),
         angular_tolerance: 0.1,
         relative_tolerance: 0.01,
-        distance_display_mode: None,
-        distance_display_precision: None,
-        source: settings::SourceRange { range: 0..0 },
+        distance_display: None,
     });
 }
 
@@ -979,15 +967,9 @@ pub(crate) fn static_definition(
             meters_per_unit: 0.001,
             custom_name: String::new(),
         },
-        legacy_linked_path: String::new(),
-        legacy_relative_linked_path: String::new(),
-        legacy_checksum_range: None,
-        legacy_relative_path: false,
         linked_depth: 0,
         linked_appearance: 0,
-        file_reference_range: None,
-        file_reference: None,
-        reference_settings_range: None,
+        link: crate::instances::LinkSource::None,
     }
 }
 
@@ -999,24 +981,24 @@ pub(crate) fn set_identity(
     color: Option<[u8; 4]>,
     visible: bool,
 ) {
-    let object = &mut scan.objects[source_order];
-    object.identity = Some(crate::objects::SourceIdentity {
+    let crate::objects::ObjectRecord::Framed(object) = &mut scan.objects[source_order] else {
+        panic!("test object is framed");
+    };
+    object.identity = crate::objects::SourceIdentity {
         source_id: format!("rhino:object:record#{source_key}"),
         object_id: Uuid::from_wire(object_id),
         class_uuid: object.class_uuid,
         name: String::new(),
         layer_index: -1,
-        layer_id: None,
-        layer_name: None,
+        layer: None,
         effective_color: color,
         effective_visible: visible,
         object_mode: 0,
-        definition_member: false,
         object_frame: None,
         source: settings::SourceRange {
             range: object.range.clone(),
         },
-    });
+    };
 }
 
 pub(crate) fn scan_with_objects(objects: &[Vec<u8>]) -> crate::container::Scan<'static> {

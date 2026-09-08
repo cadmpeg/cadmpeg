@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::UseFlag;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -14,30 +15,36 @@ use super::{
     enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
     DeclaredInterval, DeclaredTransformFrameError,
 };
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 #[test]
 fn point_display_symbol_targets_follow_the_declared_dialect() {
-    assert!(super::point_display_symbol_type_allowed(408, Dialect::V4_0));
+    assert!(super::point_display_symbol_type_allowed(
+        408,
+        GlobalTable::V4_0
+    ));
     assert!(!super::point_display_symbol_type_allowed(
         308,
-        Dialect::V4_0
-    ));
-    assert!(super::point_display_symbol_type_allowed(308, Dialect::V5_0));
-    assert!(!super::point_display_symbol_type_allowed(
-        408,
-        Dialect::V5_0
+        GlobalTable::V4_0
     ));
     assert!(super::point_display_symbol_type_allowed(
         308,
-        Dialect::Legacy
+        GlobalTable::V5_0
+    ));
+    assert!(!super::point_display_symbol_type_allowed(
+        408,
+        GlobalTable::V5_0
+    ));
+    assert!(super::point_display_symbol_type_allowed(
+        308,
+        GlobalTable::Legacy
     ));
     assert!(super::point_display_symbol_type_allowed(
         408,
-        Dialect::Legacy
+        GlobalTable::Legacy
     ));
 }
 
@@ -86,22 +93,27 @@ fn base_geometry_line_font_follows_the_declared_dialect() {
             entity_type,
             0,
             0,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
         assert!(base_geometry_line_font_valid(
             entity_type,
             0,
             1,
-            Dialect::V4_0
+            GlobalTable::V4_0
         ));
     }
-    assert!(base_geometry_line_font_valid(106, 1, 0, Dialect::V4_0));
-    assert!(base_geometry_line_font_valid(106, 3, 0, Dialect::V4_0));
+    assert!(base_geometry_line_font_valid(106, 1, 0, GlobalTable::V4_0));
+    assert!(base_geometry_line_font_valid(106, 3, 0, GlobalTable::V4_0));
     for form in [11, 12, 13, 63] {
-        assert!(!base_geometry_line_font_valid(106, form, 0, Dialect::V4_0));
+        assert!(!base_geometry_line_font_valid(
+            106,
+            form,
+            0,
+            GlobalTable::V4_0
+        ));
     }
-    assert!(base_geometry_line_font_valid(116, 0, 0, Dialect::V4_0));
-    assert!(base_geometry_line_font_valid(110, 0, 0, Dialect::V5_0));
+    assert!(base_geometry_line_font_valid(116, 0, 0, GlobalTable::V4_0));
+    assert!(base_geometry_line_font_valid(110, 0, 0, GlobalTable::V5_0));
 }
 
 #[test]
@@ -110,21 +122,36 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
         assert!(base_geometry_use_flag_valid(
             110,
             0,
-            use_flag,
-            Dialect::V4_0
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later).unwrap(),
+            GlobalTable::V4_0
         ));
     }
     for use_flag in [3, 4] {
         assert!(!base_geometry_use_flag_valid(
             110,
             0,
-            use_flag,
-            Dialect::V4_0
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later).unwrap(),
+            GlobalTable::V4_0
         ));
     }
-    assert!(base_geometry_use_flag_valid(110, 0, 3, Dialect::V5_0));
-    assert!(!base_geometry_use_flag_valid(116, 0, 3, Dialect::V4_0));
-    assert!(base_geometry_use_flag_valid(125, 0, 3, Dialect::V4_0));
+    assert!(base_geometry_use_flag_valid(
+        110,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
+        GlobalTable::V5_0
+    ));
+    assert!(!base_geometry_use_flag_valid(
+        116,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
+        GlobalTable::V4_0
+    ));
+    assert!(base_geometry_use_flag_valid(
+        125,
+        0,
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
+        GlobalTable::V4_0
+    ));
 }
 
 #[test]
@@ -252,7 +279,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .model
         .points
         .iter()
-        .any(|point| point.id.0 == "iges:model:point#D5"));
+        .any(|point| point.id.as_str() == "iges:model:point#D5"));
     assert!(!v4.report().losses.iter().any(|loss| {
         loss.message
             .contains("Type 116 display symbol pointer is invalid")
@@ -269,7 +296,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .model
         .points
         .iter()
-        .any(|point| point.id.0 == "iges:model:point#D5"));
+        .any(|point| point.id.as_str() == "iges:model:point#D5"));
     assert!(!v5.report().losses.iter().any(|loss| {
         loss.message
             .contains("Type 116 display symbol pointer is invalid")
@@ -287,7 +314,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
             .model
             .points
             .iter()
-            .any(|point| point.id.0 == "iges:model:point#D5"));
+            .any(|point| point.id.as_str() == "iges:model:point#D5"));
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::DisplayDataNotProjected.kind()
                 && loss
@@ -357,7 +384,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .iter()
             .filter(|point| {
                 matches!(
-                    point.id.0.as_str(),
+                    point.id.as_str(),
                     "iges:model:point#D1"
                         | "iges:model:point#D3"
                         | "iges:model:point#D5"
@@ -380,11 +407,11 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .model
             .points
             .iter()
-            .find(|point| point.id.0 == format!("iges:model:point#D{sequence}"))
+            .find(|point| point.id.as_str() == format!("iges:model:point#D{sequence}"))
             .unwrap();
         assert_eq!(point.position, cadmpeg_ir::math::Point3::new(x, y, 0.0));
     }
-    let flashes = &result.ir().native.namespace("iges").unwrap().arenas["flashes"];
+    let flashes = &result.ir().native.namespace("iges").unwrap().arenas()["flashes"];
     assert_eq!(flashes.len(), 5);
     assert_eq!(flashes[0].fields()["form"], 0);
     assert_eq!(
@@ -425,7 +452,7 @@ fn type125_flash_is_admitted_in_v4_and_v5() {
             .unwrap();
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
-            result.ir().native.namespace("iges").unwrap().arenas["flashes"].len(),
+            result.ir().native.namespace("iges").unwrap().arenas()["flashes"].len(),
             1
         );
         assert!(!result.report().losses.iter().any(|loss| {
@@ -475,12 +502,10 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
             view: 0,
             transform,
             label_display: 0,
-            status: crate::directory::Status {
-                blank: 0,
-                subordinate: 0,
-                use_flag: 0,
-                hierarchy: 0,
-            },
+            status: crate::directory::SourceStatus::from_codes(
+                [0, 0, 0, 0],
+                crate::global::GlobalTable::V5Later,
+            ),
             line_weight: 0,
             color: 0,
             parameter_line_count: 0,
@@ -529,15 +554,15 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.weights, Some(vec![1.0, 0.5, 1.0]));
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0][..]));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
@@ -697,7 +722,7 @@ fn type_123_accepts_a_finite_non_unit_direction() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let direction = &result.ir().native.namespace("iges").unwrap().arenas["directions"][0];
+    let direction = &result.ir().native.namespace("iges").unwrap().arenas()["directions"][0];
     assert_eq!(
         direction.fields()["components"],
         serde_json::json!([2.0, -3.0, 4.0])
@@ -725,7 +750,7 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
     let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
         panic!("expected a NURBS carrier");
     };
-    assert!(!nurbs.periodic);
+    assert!(!nurbs.periodic());
 }
 
 #[test]
@@ -791,17 +816,17 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 1);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(nurbs.control_points.len(), 2);
-    assert_eq!(nurbs.weights, None);
-    assert!(!nurbs.periodic);
+    assert_eq!(nurbs.degree(), 1);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.control_points().len(), 2);
+    assert_eq!(nurbs.weights(), None);
+    assert!(!nurbs.periodic());
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
@@ -826,16 +851,16 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
     let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 0);
-    assert_eq!(nurbs.knots, vec![0.0, 1.0]);
-    assert_eq!(nurbs.control_points.len(), 1);
-    assert_eq!(nurbs.weights, None);
+    assert_eq!(nurbs.degree(), 0);
+    assert_eq!(nurbs.knots(), [0.0, 1.0]);
+    assert_eq!(nurbs.control_points().len(), 1);
+    assert_eq!(nurbs.weights(), None);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
@@ -873,7 +898,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
             else {
                 panic!("expected a NURBS carrier");
             };
-            assert_eq!(nurbs.weights, None);
+            assert_eq!(nurbs.weights(), None);
         } else {
             assert!(result.report().losses[0]
                 .message
@@ -1142,7 +1167,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         );
         assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
-        assert_eq!(native.arenas["entities"][0].fields()["form"], form);
+        assert_eq!(native.arenas()["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
@@ -1162,7 +1187,7 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
     assert_eq!(result.ir().model.points[0].position.y, 80.0);
     assert_eq!(result.ir().model.points[0].position.z, 60.0);
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["transformations"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["transformations"].len(),
         2
     );
     assert!(result.report().losses.is_empty());

@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 
 use super::super::*;
 
 #[test]
 fn face_transition_requires_one_changed_surface_geometry() {
     use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalPlane};
-    use crate::records::{ConstructionRecipeKind, DesignFaceOperand, DesignRecipeReference};
+    use crate::records::topology::DesignFaceOperand;
+    use crate::records::{ConstructionRecipeKind, DesignRecipeReference};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let face = |slot| FaceId(format!("f3d:brep:entity#{slot}"));
+    let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar");
     let reference = |candidate_faces, alternate_selector_faces| DesignRecipeReference {
         selector: 2,
         selector_offset: 0,

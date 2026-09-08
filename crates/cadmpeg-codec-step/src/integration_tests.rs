@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 
 use crate::archive::tests::{
@@ -53,12 +55,10 @@ use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_roun
 use crate::writer::tests::{
     analytic_conics_round_trip_through_step,
     ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,
-    nurbs_surface_grid_orientation_is_u_major, rejected_step_write_detects_incomplete_datum_system,
+    nurbs_surface_grid_orientation_is_u_major,
     standalone_geometry_uses_general_shape_representation,
-    strict_writer_refuses_retained_opaque_step_records_atomically,
-    strict_writer_rejects_before_emitting_bytes, writer_round_trips_edge_based_wire_bodies,
-    writer_round_trips_product_body_ownership, writer_round_trips_rational_nurbs_pcurves,
-    writer_round_trips_rigid_body_placements,
+    writer_round_trips_edge_based_wire_bodies, writer_round_trips_product_body_ownership,
+    writer_round_trips_rational_nurbs_pcurves, writer_round_trips_rigid_body_placements,
 };
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
@@ -144,14 +144,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         StepSchema::Ap242Edition2,
         StepSchema::Ap242Edition3,
     ] {
-        let options = StepWriteOptions {
-            schema,
-            ..StepWriteOptions::default()
-        };
+        let options = StepWriteOptions::default();
         let mut bytes = Vec::new();
-        write_step(&ir, &mut bytes, &options).expect("STEP cube write");
+        write_step(&ir, &mut bytes, schema, &options).expect("STEP cube write");
         let mut repeated = Vec::new();
-        write_step(&ir, &mut repeated, &options).expect("repeat STEP cube write");
+        write_step(&ir, &mut repeated, schema, &options).expect("repeat STEP cube write");
         assert_eq!(
             bytes, repeated,
             "STEP output must be deterministic for {schema:?}"
@@ -177,21 +174,24 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             options: options.clone(),
         };
         let plan = codec
-            .plan(EncodeInput {
-                ir: &edited,
-                fidelity: Some(result.source_fidelity()),
-            })
+            .plan(
+                EncodeInput::new(&edited, Some(result.source_fidelity())),
+                TargetRequest::Inherit,
+            )
             .expect("edited STEP document plan");
-        assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
         assert_eq!(
-            plan.fidelity_resolution(),
+            plan.report().write_path(),
+            cadmpeg_ir::WritePath::Synthesized
+        );
+        assert_eq!(
+            &plan.report().fidelity(),
             &cadmpeg_ir::FidelityResolution::NotConsumed
         );
         let mut edited_bytes = Vec::new();
         let export = plan
             .write_to(&mut edited_bytes)
             .expect("edited STEP document write");
-        assert_eq!(export.write_path, cadmpeg_ir::WritePath::Synthesized);
+        assert_eq!(export.write_path(), cadmpeg_ir::WritePath::Synthesized);
         let edited_result = codec
             .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
             .expect("edited STEP document decode");
@@ -235,7 +235,4 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             );
         }
     }
-    strict_writer_rejects_before_emitting_bytes();
-    strict_writer_refuses_retained_opaque_step_records_atomically();
-    rejected_step_write_detects_incomplete_datum_system();
 }

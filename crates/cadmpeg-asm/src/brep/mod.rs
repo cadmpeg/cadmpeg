@@ -17,22 +17,21 @@
 //! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
 //! knots, weights, and UV parameters keep their native scale.
 
+pub mod annotations;
 pub mod attributes;
 mod emit;
 pub mod geometry;
+mod key_maps;
 pub mod records;
+pub mod stats;
+use stats::Stats;
 mod topology;
 pub mod transfer;
 
 use crate::asm_header;
 use crate::ids::IdFormat;
 use crate::nurbs;
-use crate::nurbs::proc_curve::{
-    CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
-    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceOffset,
-    EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset, SubsetDefinition,
-    VectorOffsetDefinition,
-};
+use crate::nurbs::proc_curve::ProceduralCurveConstruction;
 use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
@@ -40,18 +39,19 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use std::collections::{HashMap, HashSet};
 
+use self::annotations::{emit_annotation_records, AnnotationRecord};
 use self::attributes::attribute_owner;
 use self::emit::{
-    count_other_records, emit_annotation_records, emit_attributes, emit_carrier_records,
-    emit_coedges, emit_containers, emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns,
-    emit_pcurves, emit_points, emit_vertices, project_subshell_faces,
+    count_other_records, emit_attributes, emit_carrier_records, emit_coedges, emit_containers,
+    emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
+    emit_vertices, project_subshell_faces,
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
 use self::records::{
@@ -63,19 +63,10 @@ use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
     keep_faces_and_carriers, walk_reachable_topology,
 };
-pub(crate) fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> PcurveGeometry {
-    PcurveGeometry::Nurbs {
-        degree: pcurve.degree,
-        knots: pcurve.knots,
-        control_points: pcurve.control_points,
-        weights: pcurve.weights,
-        periodic: pcurve.periodic,
-    }
-}
-
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
 #[derive(Default, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct AsmBrep {
     /// Bodies.
     pub bodies: Vec<Body>,
@@ -102,9 +93,9 @@ pub struct AsmBrep {
     /// Parameter-space curve carriers.
     pub pcurves: Vec<Pcurve>,
     /// Native procedural definitions for solved surface carriers.
-    pub procedural_surfaces: Vec<ProceduralSurface>,
+    pub procedural_surfaces: Vec<(SurfaceId, ProceduralSurface)>,
     /// Native procedural definitions for solved curve caches.
-    pub procedural_curves: Vec<ProceduralCurve>,
+    pub procedural_curves: Vec<(CurveId, ProceduralCurve)>,
     /// Kernel continuity classifications stored on solved edges.
     pub edge_continuities: Vec<EdgeContinuity>,
     /// Native owner-coedge selectors stored on solved edges.
@@ -113,9 +104,8 @@ pub struct AsmBrep {
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
-    /// Native ASM face key by emitted face id, used by Design-side joins.
-    pub face_keys: HashMap<FaceId, u64>,
     /// Native Design-join key field for every emitted face, including null keys.
+    #[serde(flatten, with = "key_maps::faces")]
     pub face_native_keys: Vec<FaceNativeKey>,
     /// Native parameter intervals stored on tolerant coedges.
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
@@ -127,9 +117,8 @@ pub struct AsmBrep {
     pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native rotation/reflection/shear classifications stored on transforms.
     pub transform_hints: Vec<TransformHints>,
-    /// Native ASM body key by emitted body id, used by Design-side joins.
-    pub body_keys: HashMap<BodyId, u64>,
     /// Native Design-join key field for every emitted body, including null keys.
+    #[serde(flatten, with = "key_maps::bodies")]
     pub body_native_keys: Vec<BodyNativeKey>,
     /// Native wire records projected onto solved shells.
     pub wire_topologies: Vec<WireTopology>,
@@ -144,59 +133,21 @@ pub struct AsmBrep {
     pub annotation_records: Vec<AnnotationRecord>,
 }
 
-/// One sparse v1 annotation produced while SAB record offsets are available.
-pub struct AnnotationRecord {
-    /// Globally unique IR entity id.
-    pub id: String,
-    /// BREP ZIP entry containing the source SAB record.
-    pub stream: String,
-    /// Byte offset in the decompressed ASM stream.
-    pub offset: u64,
-    /// Source SAB record name.
-    pub tag: String,
-    /// Serialized fields whose values were canonically derived.
-    pub derived_fields: Vec<&'static str>,
+impl Serialize for AsmBrep {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_ir::topology::with_topology_serialization(
+            &self.faces,
+            &self.loops,
+            &self.coedges,
+            || Self::serialize(self, serializer),
+        )
+    }
 }
 
-/// Counts used to construct the B-rep loss report.
-#[derive(Default, Serialize, Deserialize)]
-pub struct Stats {
-    /// Faces omitted because their required surface reference is null or dangling.
-    pub missing_face_surfaces: usize,
-    /// Omitted face counts by null/dangling surface-reference condition.
-    pub missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,
-    /// Faces resting on a spline/procedural surface whose shape was not decoded
-    /// into a typed carrier; emitted with an unknown-geometry surface.
-    pub unknown_surface_faces: usize,
-    /// Undecoded face-surface counts by owned native construction kind, or by
-    /// record head when the record owns no construction subtype.
-    pub unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
-    /// Faces whose surface record explicitly delegates shape to mesh attributes.
-    pub mesh_surface_faces: usize,
-    /// Spline surface records whose cached B-spline block was decoded into a
-    /// NURBS carrier.
-    pub nurbs_surfaces: usize,
-    /// Procedural curve records whose cached 3D B-spline block was decoded into
-    /// a NURBS carrier.
-    pub nurbs_curves: usize,
-    /// Edges whose 3D curve is a procedural carrier (emitted with no curve).
-    pub procedural_curve_edges: usize,
-    /// Undecoded edge-curve counts by full native record name.
-    pub procedural_curve_kinds: std::collections::BTreeMap<String, usize>,
-    /// Coedges that carried an explicit UV pcurve ref with no decodable 2D
-    /// carrier on the face surface's parameterization (undecodable bytes, or
-    /// UV values on the exact procedural parameterization rather than the
-    /// solved cache's).
-    pub undecoded_pcurve_refs: usize,
-    /// Undecoded coedge-pcurve counts by full native record name.
-    pub undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
-    /// Procedural blends for which only one of two support families resolved.
-    pub partial_procedural_supports: usize,
-    /// Record names in the active slice that were neither topology nor a
-    /// decoded/preserved carrier (attributes, transforms, refinements, …).
-    pub other_records: usize,
-    /// Residual record counts by full record name.
-    pub other_record_kinds: std::collections::BTreeMap<String, usize>,
+impl<'de> Deserialize<'de> for AsmBrep {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::deserialize(deserializer)
+    }
 }
 
 impl AsmBrep {
@@ -238,50 +189,7 @@ impl AsmBrep {
             unknowns,
             annotation_records,
         );
-        self.body_keys.extend(other.body_keys);
-        self.face_keys.extend(other.face_keys);
         self.stats.merge(other.stats);
-    }
-}
-
-impl Stats {
-    fn merge(&mut self, other: Self) {
-        macro_rules! add_counts {
-            ($($field:ident),+ $(,)?) => {
-                $(self.$field += other.$field;)+
-            };
-        }
-        add_counts!(
-            missing_face_surfaces,
-            unknown_surface_faces,
-            mesh_surface_faces,
-            nurbs_surfaces,
-            nurbs_curves,
-            procedural_curve_edges,
-            undecoded_pcurve_refs,
-            partial_procedural_supports,
-            other_records,
-        );
-        for (target, source) in [
-            (
-                &mut self.missing_face_surface_kinds,
-                other.missing_face_surface_kinds,
-            ),
-            (&mut self.unknown_surface_kinds, other.unknown_surface_kinds),
-            (
-                &mut self.procedural_curve_kinds,
-                other.procedural_curve_kinds,
-            ),
-            (
-                &mut self.undecoded_pcurve_kinds,
-                other.undecoded_pcurve_kinds,
-            ),
-            (&mut self.other_record_kinds, other.other_record_kinds),
-        ] {
-            for (kind, count) in source {
-                *target.entry(kind).or_default() += count;
-            }
-        }
     }
 }
 
@@ -394,11 +302,17 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
     };
-    for value in fields.values_mut() {
-        let Value::Seq(items) = value else {
-            continue;
-        };
-        items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
+    for (name, value) in fields {
+        match value {
+            Value::Seq(items) => {
+                items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
+            }
+            Value::Map(keys) if matches!(name, Value::String(name) if matches!(name.as_str(), "body_keys" | "face_keys")) =>
+            {
+                keys.retain(|key, _| matches!(key, Value::String(id) if reachable.contains(id)));
+            }
+            _ => {}
+        }
     }
 }
 
@@ -442,31 +356,11 @@ pub fn id(format: IdFormat<'_>, index: i64) -> String {
     format!("{format}:brep:entity#{index}")
 }
 
-/// Decoded procedural-curve construction fields captured for a cached
-/// `intcurve`, in the declaration order of
-/// [`DecodedProceduralCurve`].
-type ProceduralCurveTail = (
-    String,
-    Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    Option<VectorOffsetDefinition>,
-    Option<SubsetDefinition>,
-    Option<CompoundDefinition>,
-    Option<EmbeddedTwoSidedOffset>,
-    Option<(EmbeddedIntersection, bool)>,
-    Option<EmbeddedThreeSurfaceIntersection>,
-    Option<(
-        cadmpeg_ir::geometry::SurfaceCurveFamily,
-        EmbeddedIntersection,
-        Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-    )>,
-    Option<EmbeddedSilhouette>,
-    Option<EmbeddedSurfaceOffset>,
-    Option<EmbeddedSpring>,
-    Option<EmbeddedDeformable>,
-    Option<EmbeddedProjection>,
-    Option<EmbeddedLawCurve>,
-    Option<f64>,
-);
+/// Construction and fit metadata separated from the cache geometry.
+struct ProceduralCurveTail {
+    construction: ProceduralCurveConstruction,
+    cache_fit_tolerance: Option<f64>,
+}
 
 /// Decoded carrier geometry keyed by `RecordTable` index. The reachability and
 /// emit passes read decoded shapes from here and consume them (`remove`) as the
@@ -477,8 +371,7 @@ pub(crate) struct Carriers {
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveTail>,
-    cacheless_procedural_curve_defs:
-        HashMap<i64, (String, cadmpeg_ir::geometry::ProceduralCurveDefinition)>,
+    cacheless_procedural_curve_defs: HashMap<i64, cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     pcurve_geo: HashMap<i64, PcurveGeometry>,
     pcurve_parameter_ranges: HashMap<i64, [f64; 2]>,
 }

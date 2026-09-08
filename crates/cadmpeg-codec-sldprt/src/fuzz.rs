@@ -12,7 +12,7 @@ pub fn container(data: &[u8]) {
 
 /// Exercise embedded Parasolid stream extraction.
 pub fn parasolid(data: &[u8]) {
-    let _ = crate::parasolid::extract_streams(data);
+    let _ = crate::parasolid::extract_streams_with_offsets(data);
 }
 
 /// Exercise spline-curve carrier scanning.
@@ -68,7 +68,7 @@ pub fn pmi(data: &[u8]) {
             assert_eq!(parsed.basic_offset, record.basic_offset);
             assert_eq!(parsed.inspection_offset, record.inspection_offset);
             assert_eq!(parsed.reference_only_offset, record.reference_only_offset);
-            assert_eq!(parsed.display_text_offset, record.display_text_offset);
+            assert_eq!(parsed.display_text_offset(), record.display_text_offset());
         }
     }
 }

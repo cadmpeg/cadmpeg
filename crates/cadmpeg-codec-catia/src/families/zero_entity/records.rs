@@ -9,8 +9,8 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
-    SurfaceGeometry,
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
+    ProceduralCurveDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
@@ -70,6 +70,32 @@ pub struct ZeroEntitySupportRun {
     pub supports: Vec<ZeroEntitySupportOccurrence>,
 }
 
+/// Terminal control byte following a zero-entity face allocation lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZeroEntityFaceControl {
+    /// Control byte `0x03`.
+    Control03,
+    /// Control byte `0x05`.
+    Control05,
+}
+
+impl ZeroEntityFaceControl {
+    pub fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x03 => Some(Self::Control03),
+            0x05 => Some(Self::Control05),
+            _ => None,
+        }
+    }
+
+    pub fn as_byte(self) -> u8 {
+        match self {
+            Self::Control03 => 0x03,
+            Self::Control05 => 0x05,
+        }
+    }
+}
+
 /// One counted zero-entity `5fxx` face record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityFace {
@@ -81,12 +107,22 @@ pub struct ZeroEntityFace {
     pub tag: [u8; 2],
     /// Counted allocation values in storage order.
     pub allocations: Vec<u32>,
-    /// Ordered loop terminals `allocations[0] - allocations[1..]`.
-    pub loop_terminals: Vec<u32>,
     /// Positionally aligned loop records when the complete flattened roster agrees.
-    pub loops: Vec<ZeroEntityLoop>,
+    pub loops: Option<Vec<ZeroEntityLoop>>,
     /// Terminal control byte following the allocation lane.
-    pub terminal_control: u8,
+    pub terminal_control: ZeroEntityFaceControl,
+}
+
+impl ZeroEntityFace {
+    pub fn loop_terminals(&self) -> Vec<u32> {
+        let Some(first) = self.allocations.first().copied() else {
+            return Vec::new();
+        };
+        self.allocations[1..]
+            .iter()
+            .filter_map(|allocation| first.checked_sub(*allocation))
+            .collect()
+    }
 }
 
 /// One counted zero-entity `62xx` loop record.
@@ -159,6 +195,36 @@ pub struct ZeroEntityOrientedUsePair {
     pub uses: [ZeroEntityOrientedUse; 2],
 }
 
+/// Counted allocation vector of a zero-entity vertex-incidence record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ZeroEntityVertexAllocations {
+    /// Tag `050b`: two allocations.
+    Two([u32; 2]),
+    /// Tag `0510`: three allocations.
+    Three([u32; 3]),
+    /// Tag `0515`: four allocations.
+    Four([u32; 4]),
+}
+
+impl ZeroEntityVertexAllocations {
+    /// Complete two-byte record tag for this allocation arity.
+    pub fn tag(&self) -> [u8; 2] {
+        match self {
+            Self::Two(_) => [0x05, 0x0b],
+            Self::Three(_) => [0x05, 0x10],
+            Self::Four(_) => [0x05, 0x15],
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u32] {
+        match self {
+            Self::Two(allocations) => allocations,
+            Self::Three(allocations) => allocations,
+            Self::Four(allocations) => allocations,
+        }
+    }
+}
+
 /// One counted zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityVertexIncidence {
@@ -166,10 +232,15 @@ pub struct ZeroEntityVertexIncidence {
     pub pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Complete two-byte record tag.
-    pub tag: [u8; 2],
-    /// Stored allocation values.
-    pub allocations: Vec<u32>,
+    /// Stored allocation values whose length selects the record tag.
+    pub allocations: ZeroEntityVertexAllocations,
+}
+
+impl ZeroEntityVertexIncidence {
+    /// Complete two-byte record tag selected by allocation arity.
+    pub fn tag(&self) -> [u8; 2] {
+        self.allocations.tag()
+    }
 }
 
 /// The terminal zero-entity body hierarchy.
@@ -183,12 +254,20 @@ pub struct ZeroEntityOwnershipRoot {
     pub face_slots: Vec<u32>,
     /// Offset of the immediately following `6006` shell root.
     pub shell_pos: usize,
-    /// One-based global record ordinal of the shell root.
-    pub shell_record_ordinal: u32,
     /// Offset of the immediately following `6508` body root.
     pub body_pos: usize,
-    /// One-based global record ordinal of the body root.
-    pub body_record_ordinal: u32,
+}
+
+impl ZeroEntityOwnershipRoot {
+    /// One-based ordinal of the immediately following `6006` shell root.
+    pub fn shell_record_ordinal(&self) -> u32 {
+        self.face_roster_record_ordinal.saturating_add(1)
+    }
+
+    /// One-based ordinal of the immediately following `6508` body root.
+    pub fn body_record_ordinal(&self) -> u32 {
+        self.face_roster_record_ordinal.saturating_add(2)
+    }
 }
 
 /// One framed record in the zero-entity global identity namespace.
@@ -550,9 +629,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
                 face_roster_record_ordinal: face_roster.ordinal,
                 face_slots,
                 shell_pos: shell.pos,
-                shell_record_ordinal: shell.ordinal,
                 body_pos: body.pos,
-                body_record_ordinal: body.ordinal,
             })
         })
         .collect()
@@ -633,17 +710,11 @@ pub(crate) fn zero_entity_support_runs_in_range(
                         .map(|endpoints| endpoints.map(|uv| uv[0]));
                 }
                 support.model_midpoint = support.pcurve.as_ref().and_then(|pcurve| {
-                    let PcurveGeometry::Nurbs {
-                        degree,
-                        knots,
-                        control_points,
-                        ..
-                    } = pcurve
-                    else {
+                    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
                         return None;
                     };
-                    let start = *knots.get(usize::try_from(*degree).ok()?)?;
-                    let end = *knots.get(control_points.len())?;
+                    let start = *nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
+                    let end = *nurbs.knots().get(nurbs.control_points().len())?;
                     if !start.is_finite() || !end.is_finite() || start >= end {
                         return None;
                     }
@@ -676,7 +747,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let loops = zero_entity_loops_from_records(data, &records);
     let flattened_terminals = faces
         .iter()
-        .flat_map(|face| face.loop_terminals.iter().copied())
+        .flat_map(ZeroEntityFace::loop_terminals)
         .collect::<Vec<_>>();
     let loop_terminals = loops
         .iter()
@@ -685,7 +756,8 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let loop_roster_is_valid = flattened_terminals == loop_terminals && {
         let mut loop_index = 0;
         faces.iter().all(|face| {
-            let loop_end = loop_index + face.loop_terminals.len();
+            let terminals = face.loop_terminals();
+            let loop_end = loop_index + terminals.len();
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             face_loops.first().is_some_and(|outer| {
@@ -697,8 +769,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
     if loop_roster_is_valid {
         let mut loop_index = 0;
         for face in &mut faces {
-            let loop_end = loop_index + face.loop_terminals.len();
-            face.loops.extend_from_slice(&loops[loop_index..loop_end]);
+            let terminals = face.loop_terminals();
+            let loop_end = loop_index + terminals.len();
+            face.loops = Some(loops[loop_index..loop_end].to_vec());
             loop_index = loop_end;
         }
     }
@@ -728,9 +801,9 @@ fn bind_face_support_occurrences(
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
 ) {
-    if face.loops.len() != face.loop_terminals.len() {
+    let Some(face_loops) = face.loops.as_mut() else {
         return;
-    }
+    };
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
     for support in supports {
         supports_by_slot
@@ -738,8 +811,7 @@ fn bind_face_support_occurrences(
             .and_modify(|record| *record = None)
             .or_insert(Some(support.record_ordinal));
     }
-    let bindings = face
-        .loops
+    let bindings = face_loops
         .iter()
         .map(|loop_record| {
             loop_record
@@ -762,14 +834,14 @@ fn bind_face_support_occurrences(
     if bound.len() != supports.len() {
         return;
     }
-    for (loop_record, support_record_ordinals) in face.loops.iter_mut().zip(bindings) {
+    for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
     let supports_by_ordinal = supports
         .iter()
         .map(|support| (support.record_ordinal, support))
         .collect::<HashMap<_, _>>();
-    for loop_record in &mut face.loops {
+    for loop_record in face_loops {
         let endpoints = loop_record
             .support_record_ordinals
             .iter()
@@ -865,17 +937,13 @@ fn zero_entity_faces_from_records(
             {
                 return None;
             }
-            let terminal_control = *data.get(record.end - 1)?;
-            if !matches!(terminal_control, 0x03 | 0x05) {
-                return None;
-            }
+            let terminal_control = ZeroEntityFaceControl::from_byte(*data.get(record.end - 1)?)?;
             Some(ZeroEntityFace {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 allocations,
-                loop_terminals,
-                loops: Vec::new(),
+                loops: None,
                 terminal_control,
             })
         })
@@ -1168,11 +1236,7 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         None
     };
     Some(PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic: false,
+        nurbs: PcurveNurbs::new(degree, knots, control_points, weights, false).ok()?,
     })
 }
 
@@ -1198,17 +1262,11 @@ pub(crate) fn zero_entity_neutral_pcurve(
     if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
         return None;
     }
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let control_points = control_points
+    let control_points = nurbs
+        .control_points()
         .iter()
         .map(|point| {
             let point = Point2::new(point.u * u_scale, point.v * v_scale);
@@ -1216,11 +1274,14 @@ pub(crate) fn zero_entity_neutral_pcurve(
         })
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
-        degree: *degree,
-        knots: knots.clone(),
-        control_points,
-        weights: weights.clone(),
-        periodic: *periodic,
+        nurbs: PcurveNurbs::new(
+            nurbs.degree(),
+            nurbs.knots().to_vec(),
+            control_points,
+            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.periodic(),
+        )
+        .ok()?,
     })
 }
 
@@ -1229,23 +1290,20 @@ fn zero_entity_model_curve(
     pcurve: &PcurveGeometry,
     uv_endpoints: [[f64; 2]; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic: false,
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
+    if nurbs.periodic() {
+        return None;
+    }
     let constant_coordinate = |dimension: usize| {
         let value = if dimension == 0 {
-            control_points.first()?.u
+            nurbs.control_points().first()?.u
         } else {
-            control_points.first()?.v
+            nurbs.control_points().first()?.v
         };
-        control_points
+        nurbs
+            .control_points()
             .iter()
             .all(|point| {
                 if dimension == 0 {
@@ -1263,28 +1321,34 @@ fn zero_entity_model_curve(
             u_axis,
         } => {
             let v_axis = normal.cross(*u_axis);
-            let degree_index = usize::try_from(*degree).ok()?;
+            let degree_index = usize::try_from(nurbs.degree()).ok()?;
             let parameters = [
-                *knots.get(degree_index)?,
-                *knots.get(knots.len().checked_sub(degree_index + 1)?)?,
+                *nurbs.knots().get(degree_index)?,
+                *nurbs
+                    .knots()
+                    .get(nurbs.knots().len().checked_sub(degree_index + 1)?)?,
             ];
             Some((
-                CurveGeometry::Nurbs(NurbsCurve {
-                    degree: *degree,
-                    knots: knots.clone(),
-                    control_points: control_points
-                        .iter()
-                        .map(|point| {
-                            Point3::new(
-                                origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                                origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                                origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                            )
-                        })
-                        .collect(),
-                    weights: weights.clone(),
-                    periodic: false,
-                }),
+                CurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        nurbs.degree(),
+                        nurbs.knots().to_vec(),
+                        nurbs
+                            .control_points()
+                            .iter()
+                            .map(|point| {
+                                Point3::new(
+                                    origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                                    origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                                    origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                                )
+                            })
+                            .collect(),
+                        nurbs.weights().map(<[f64]>::to_vec),
+                        false,
+                    )
+                    .ok()?,
+                ),
                 parameters,
             ))
         }
@@ -1471,18 +1535,15 @@ fn zero_entity_model_curve_construction(
             ratio: 1.0,
             half_angle,
         },
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            weights: None,
-            periodic: false,
-            ..
-        },
+        PcurveGeometry::Nurbs { nurbs },
     ) = (surface, pcurve)
     else {
         return None;
     };
-    let [first, second] = control_points.as_slice() else {
+    if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
+        return None;
+    }
+    let [first, second] = nurbs.control_points() else {
         return None;
     };
     if first.u == second.u || first.v == second.v {
@@ -1769,16 +1830,21 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             {
                 return None;
             }
-            let allocations = (0..count)
-                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
-                .collect::<Option<Vec<_>>>()?;
-            if allocations.contains(&0) {
+            let slot = |index: usize| tagged_u32(data, record.pos + 13 + index * 5);
+            let allocations = match record.tag {
+                [0x05, 0x0b] => ZeroEntityVertexAllocations::Two([slot(0)?, slot(1)?]),
+                [0x05, 0x10] => ZeroEntityVertexAllocations::Three([slot(0)?, slot(1)?, slot(2)?]),
+                [0x05, 0x15] => {
+                    ZeroEntityVertexAllocations::Four([slot(0)?, slot(1)?, slot(2)?, slot(3)?])
+                }
+                _ => return None,
+            };
+            if allocations.as_slice().contains(&0) {
                 return None;
             }
             Some(ZeroEntityVertexIncidence {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                tag: record.tag,
                 allocations,
             })
         })
@@ -1858,19 +1924,22 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
             layout.grid.checked_add(pole.checked_mul(24)?)?,
         )?);
     }
-    Some(SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: layout.u_degree,
-        v_degree: layout.v_degree,
-        u_knots: expand_knots(&layout.u_distinct, &layout.u_mults)?,
-        v_knots: expand_knots(&layout.v_distinct, &layout.v_mults)?,
-        u_count: layout.u_count,
-        v_count: layout.v_count,
-        control_points,
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }))
+    Some(SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            layout.u_degree,
+            layout.v_degree,
+            expand_knots(&layout.u_distinct, &layout.u_mults)?,
+            expand_knots(&layout.v_distinct, &layout.v_mults)?,
+            layout.u_count,
+            layout.v_count,
+            control_points,
+            None,
+            false,
+            false,
+            false,
+        )
+        .ok()?,
+    ))
 }
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
@@ -1948,6 +2017,14 @@ mod tests {
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };
+
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
+    fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
+        PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap(),
+        }
+    }
 
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
         record[at] = 0x10;
@@ -2184,24 +2261,19 @@ mod tests {
         assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
         assert_eq!(
             support.pcurve,
-            Some(PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(-2.0, 4.0), Point2::new(6.0, 8.0)],
-                weights: None,
-                periodic: false,
-            })
+            Some(test_pcurve(vec![
+                Point2::new(-2.0, 4.0),
+                Point2::new(6.0, 8.0),
+            ]))
         );
         assert!(matches!(
             support.model_curve,
-            Some(CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                ref control_points,
-                weights: None,
-                periodic: false,
-                ..
-            })) if control_points
-                == &[Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
+            Some(CurveGeometry::Nurbs(ref curve))
+                if curve.degree() == 1
+                    && curve.weights().is_none()
+                    && !curve.periodic()
+                    && curve.control_points()
+                == [Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
         assert_eq!(support.model_parameters, Some([0.0, 1.0]));
         assert_eq!(support.model_midpoint, Some(Point3::new(3.0, 8.0, 3.0)));
@@ -2232,18 +2304,12 @@ mod tests {
             let support =
                 zero_entity_support_occurrence(&bytes, *record).expect("complete support pcurve");
             assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
-            let Some(PcurveGeometry::Nurbs {
-                degree: actual_degree,
-                control_points,
-                weights,
-                ..
-            }) = support.pcurve
-            else {
+            let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve else {
                 panic!("NURBS support pcurve")
             };
-            assert_eq!(actual_degree, degree);
-            assert_eq!(control_points.len(), control_count);
-            assert_eq!(weights.is_some(), rational);
+            assert_eq!(nurbs.degree(), degree);
+            assert_eq!(nurbs.control_points().len(), control_count);
+            assert_eq!(nurbs.weights().is_some(), rational);
 
             let multiplicity_start = match tag {
                 0x18 => 107,
@@ -2289,13 +2355,7 @@ mod tests {
             ratio: 1.0,
             half_angle,
         };
-        let pcurve = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)],
-            weights: None,
-            periodic: false,
-        };
+        let pcurve = test_pcurve(vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)]);
         let Some(ProceduralCurveDefinition::Helix {
             angle_range,
             center,
@@ -2368,16 +2428,12 @@ mod tests {
             half_angle: std::f64::consts::FRAC_PI_4,
         };
         let endpoints = [[0.0, -2.0], [1.0, -2.0]];
-        let pcurve = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: endpoints
+        let pcurve = test_pcurve(
+            endpoints
                 .map(|[u, v]| Point2::new(u, v))
                 .into_iter()
                 .collect(),
-            weights: None,
-            periodic: false,
-        };
+        );
         let (curve, parameters) =
             zero_entity_model_curve(&surface, &pcurve, endpoints).expect("cone latitude");
         for index in 0..2 {
@@ -2442,13 +2498,7 @@ mod tests {
     fn support_pcurve_conversion_uses_the_neutral_surface_chart() {
         use cadmpeg_ir::math::Vector3;
 
-        let pcurve = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)],
-            weights: None,
-            periodic: false,
-        };
+        let pcurve = test_pcurve(vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)]);
         let cylinder = SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -2457,13 +2507,10 @@ mod tests {
         };
         assert_eq!(
             zero_entity_neutral_pcurve(&cylinder, &pcurve),
-            Some(PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(1.0, 3.0), Point2::new(2.0, 5.0)],
-                weights: None,
-                periodic: false,
-            })
+            Some(test_pcurve(vec![
+                Point2::new(1.0, 3.0),
+                Point2::new(2.0, 5.0),
+            ]))
         );
 
         let cone = SurfaceGeometry::Cone {
@@ -2474,13 +2521,12 @@ mod tests {
             ratio: 1.0,
             half_angle: 0.25,
         };
-        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
-            zero_entity_neutral_pcurve(&cone, &pcurve)
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&cone, &pcurve)
         else {
             panic!("neutral cone pcurve")
         };
-        assert_eq!(control_points[0].u, 2.0);
-        assert_eq!(control_points[0].v, 3.0 * 0.25_f64.cos());
+        assert_eq!(nurbs.control_points()[0].u, 2.0);
+        assert_eq!(nurbs.control_points()[0].v, 3.0 * 0.25_f64.cos());
 
         let torus = SurfaceGeometry::Torus {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -2489,12 +2535,11 @@ mod tests {
             major_radius: 4.0,
             minor_radius: 2.0,
         };
-        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
-            zero_entity_neutral_pcurve(&torus, &pcurve)
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&torus, &pcurve)
         else {
             panic!("neutral torus pcurve")
         };
-        assert_eq!(control_points[1], Point2::new(1.0, 2.5));
+        assert_eq!(nurbs.control_points()[1], Point2::new(1.0, 2.5));
     }
 
     #[test]
@@ -2614,8 +2659,8 @@ mod tests {
         let root = zero_entity_ownership_root(&stream).expect("complete ownership root");
         assert_eq!(root.face_roster_record_ordinal, 1);
         assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
-        assert_eq!(root.shell_record_ordinal, 2);
-        assert_eq!(root.body_record_ordinal, 3);
+        assert_eq!(root.shell_record_ordinal(), 2);
+        assert_eq!(root.body_record_ordinal(), 3);
     }
 
     #[test]
@@ -2667,8 +2712,8 @@ mod tests {
             panic!("one vertex incidence")
         };
         assert_eq!(incidence.record_ordinal, 5);
-        assert_eq!(incidence.tag, [0x05, 0x10]);
-        assert_eq!(incidence.allocations, [1, 2, 5]);
+        assert_eq!(incidence.tag(), [0x05, 0x10]);
+        assert_eq!(incidence.allocations.as_slice(), &[1, 2, 5]);
     }
 
     #[test]
@@ -2721,7 +2766,7 @@ mod tests {
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")
         };
-        assert_eq!(incidence.allocations, [105, 106, 107]);
+        assert_eq!(incidence.allocations.as_slice(), &[105, 106, 107]);
     }
 
     #[test]
@@ -2756,8 +2801,8 @@ mod tests {
         assert_eq!(face.record_ordinal, 3);
         assert_eq!(face.tag, [0x5f, 0x0c]);
         assert_eq!(face.allocations, [10, 3]);
-        assert_eq!(face.loop_terminals, [7]);
-        assert_eq!(face.terminal_control, 0x05);
+        assert_eq!(face.loop_terminals(), [7]);
+        assert_eq!(face.terminal_control, ZeroEntityFaceControl::Control05);
     }
 
     #[test]
@@ -2770,7 +2815,8 @@ mod tests {
                     .face
                     .as_ref()
                     .expect("admitted face")
-                    .terminal_control,
+                    .terminal_control
+                    .as_byte(),
                 control
             );
         }
@@ -2839,7 +2885,7 @@ mod tests {
             panic!("one support run")
         };
         let face = run.face.as_ref().expect("face");
-        let [loop_record] = face.loops.as_slice() else {
+        let [loop_record] = face.loops.as_deref().unwrap_or(&[]) else {
             panic!("one loop")
         };
         assert_eq!(loop_record.record_ordinal, 4);
@@ -2860,7 +2906,7 @@ mod tests {
         stream[loop_record.end - 3] = 0x50;
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops.is_empty());
+        assert!(face.loops.is_none());
     }
 
     #[test]
@@ -2922,7 +2968,10 @@ mod tests {
 
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert_eq!(face.loops[0].support_record_ordinals, [2]);
+        assert_eq!(
+            face.loops.as_ref().expect("aligned loops")[0].support_record_ordinals,
+            [2]
+        );
     }
 
     #[test]
@@ -2942,7 +2991,9 @@ mod tests {
 
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops[0].support_record_ordinals.is_empty());
+        assert!(face.loops.as_ref().expect("aligned loops")[0]
+            .support_record_ordinals
+            .is_empty());
     }
 
     #[test]
@@ -2951,6 +3002,6 @@ mod tests {
         *stream.last_mut().expect("loop terminator") = 0;
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops.is_empty());
+        assert!(face.loops.is_none());
     }
 }

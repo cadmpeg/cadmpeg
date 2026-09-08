@@ -115,7 +115,7 @@ fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let fem = &result.ir().native.namespace("iges").unwrap().arenas["fem_entities"];
+    let fem = &result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"];
     assert_eq!(fem.len(), topologies.len() + 1);
 
     for &(topology_type, node_count, element_type) in topologies {
@@ -141,8 +141,7 @@ fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
 fn assert_fem_namespace(global: &[u8]) {
     let result = decode_fem(global);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 6);
-    let fem = &native.arenas["fem_entities"];
+    let fem = &native.arenas()["fem_entities"];
     assert_eq!(fem.len(), 6);
 
     let node = fem
@@ -273,7 +272,7 @@ fn finite_element_missing_node_keeps_its_declared_slot() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let element = result.ir().native.namespace("iges").unwrap().arenas["fem_entities"]
+    let element = result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"]
         .iter()
         .find(|record| record.fields()["kind"] == "finite_element")
         .unwrap();
@@ -314,7 +313,7 @@ fn finite_element_additional_property_group_is_retained_on_generic_entity() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let entity = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|record| record.fields()["directory_sequence"] == 5)
         .unwrap();
@@ -339,7 +338,7 @@ fn incomplete_element_result_items_do_not_allocate_or_project_values() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let record = &result.ir().native.namespace("iges").unwrap().arenas["fem_entities"][0];
+    let record = &result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"][0];
     assert_eq!(record.fields()["kind"], "element_results");
     assert!(record.fields()["elements"].as_array().unwrap().is_empty());
 }

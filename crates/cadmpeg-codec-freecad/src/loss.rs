@@ -31,6 +31,10 @@ pub enum FreecadLossCode {
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
+    /// The declared persistence schema names no dialect this codec has a strategy for.
+    SourceDialectUnverified,
+    /// The GUI document used schema-1 vocabulary under another declaration.
+    SourceGuiSchemaUnverified,
 }
 
 impl FreecadLossCode {
@@ -42,6 +46,8 @@ impl FreecadLossCode {
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
+        Self::SourceDialectUnverified,
+        Self::SourceGuiSchemaUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -55,6 +61,8 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
         }
     }
 
@@ -66,7 +74,9 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::AppearanceTopologyColorCountMismatch => Severity::Warning,
+            Self::AppearanceTopologyColorCountMismatch
+            | Self::SourceDialectUnverified
+            | Self::SourceGuiSchemaUnverified => Severity::Warning,
         }
     }
 
@@ -79,13 +89,20 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
+        let strict_floor = match self {
+            Self::SourceGuiSchemaUnverified => None,
+            other => other.shared_taxonomy().strict_floor(),
+        };
         LossKind::namespaced("fcstd", self.code(), self.shared_taxonomy())
+            .with_strict_floor(strict_floor)
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -116,6 +133,8 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
+                "source.dialect-unverified",
+                "source.gui-schema-unverified",
             ]
         );
     }
@@ -146,5 +165,21 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn gui_schema_recovery_does_not_trigger_document_dialect_strictness() {
+        assert_eq!(
+            FreecadLossCode::SourceGuiSchemaUnverified
+                .kind()
+                .strict_floor(),
+            None
+        );
+        assert_eq!(
+            FreecadLossCode::SourceDialectUnverified
+                .kind()
+                .strict_floor(),
+            Some(cadmpeg_ir::report::Severity::Warning)
+        );
     }
 }

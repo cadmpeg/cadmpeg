@@ -2,11 +2,11 @@
 use super::*;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
@@ -16,7 +16,7 @@ use crate::test_support::{
     trimmed_plane_file, trimmed_plane_with_inner_loop_file,
 };
 use crate::writer::Entity;
-use crate::{IgesCodec, IgesEncoder, IgesVersion};
+use crate::{IgesCodec, IgesVersion};
 
 mod encode;
 mod quarantine;
@@ -43,17 +43,19 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
 
 #[test]
 fn rejects_mixed_unclassified_bounded_surface_representation() {
-    let mut decoded = IgesCodec
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
             &DecodeOptions::default(),
         )
         .expect("synthetic mixed-loop fixture decodes");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().model.faces[0].loops[0].clone();
     {
         let mut ir = decoded.ir_mut();
-        for loop_ in &mut ir.model.loops {
-            loop_.boundary_role = LoopBoundaryRole::Unspecified;
+        for face in &mut ir.model.faces {
+            let ids = face.loops.to_vec();
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir
             .model
@@ -61,8 +63,8 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .iter()
             .find(|loop_| loop_.id == model_only_loop_id)
             .expect("the first face loop resolves")
-            .coedges
-            .clone();
+            .coedges()
+            .to_vec();
         for coedge_id in coedge_ids {
             ir.model
                 .coedges
@@ -84,17 +86,19 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
 
-    let result = IgesEncoder::default().plan(EncodeInput {
-        ir: decoded.ir(),
-        fidelity: None,
-    });
+    let result = IgesCodec.plan(
+        EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+    );
     assert!(matches!(result, Err(CodecError::NotImplemented(_))));
 }
 
 #[test]
 fn type_508_requires_an_explicit_isoparametric_flag() {
     let pcurve = PcurveUse {
-        pcurve: "pcurve#type-508".into(),
+        pcurve: "test:model:pcurve#type-508"
+            .try_into()
+            .expect("valid identity"),
         isoparametric: Some(false),
         parameter_range: None,
     };
@@ -176,12 +180,12 @@ fn number_preserves_distinct_finite_values() {
 
 #[test]
 fn generated_resolution_covers_large_coordinate_endpoint_admission() {
-    let point_start = PointId("point#start".into());
-    let point_end = PointId("point#end".into());
-    let vertex_start = VertexId("vertex#start".into());
-    let vertex_end = VertexId("vertex#end".into());
-    let curve_id = CurveId("curve#line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let point_start = PointId::mint("test:model:point#start").expect("identity grammar");
+    let point_end = PointId::mint("test:model:point#end").expect("identity grammar");
+    let vertex_start = VertexId::mint("test:model:vertex#start").expect("identity grammar");
+    let vertex_end = VertexId::mint("test:model:vertex#end").expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
             id: point_start.clone(),
@@ -215,7 +219,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         source_object: None,
     });
     ir.model.edges.push(Edge {
-        id: EdgeId("edge#line".into()),
+        id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         curve: Some(curve_id),
         start: vertex_start,
         end: vertex_end,
@@ -229,18 +233,18 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
 #[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point#global-profile".into()),
+        id: PointId::mint("test:model:point#global-profile").expect("identity grammar"),
         source_object: None,
         position: Point3::new(123.0, -4.0, 5.0),
     });
 
-    let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let plan = crate::IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
         .expect("NURBS curve has a supported semantic writer profile");
     let mut written = Vec::new();
     plan.write_to(&mut written)
@@ -255,9 +259,13 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         global.native_file_name().as_deref(),
         Some(WRITER_NATIVE_FILE_NAME)
     );
-    assert_eq!(global.units_flag(), Some(WRITER_UNITS_FLAG));
     assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
-    assert_eq!(global.version(), "5.3");
+    assert_eq!(
+        global
+            .declared_version()
+            .and_then(crate::version::VersionFlag::verified_version),
+        Some(IgesVersion::V5_3)
+    );
     assert!(
         (global
             .length_context()
@@ -267,19 +275,10 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
             .abs()
             <= f64::EPSILON * 64.0
     );
-    assert!(
-        (global
-            .maximum_coordinate_mm()
-            .expect("generated Global declares a maximum coordinate")
-            - 123.0)
-            .abs()
-            <= f64::EPSILON * 64.0
-    );
 
     let global_text = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(crate::card::Section::Global))
+        .section(crate::card::Section::Global)
+        .map(|(_, line)| line)
         .flat_map(|line| line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
     let global_text = String::from_utf8(global_text)
@@ -288,6 +287,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     assert!(global_text.starts_with(
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
+    assert!(global_text.contains(",1.2300000000000000D2,"));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
 }
 
@@ -301,13 +301,18 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
-        assert_eq!(global.version(), name);
+        assert_eq!(
+            global
+                .declared_version()
+                .and_then(crate::version::VersionFlag::verified_version),
+            Some(version)
+        );
+        assert_eq!(global.version_name(), name);
         assert!(losses.is_empty(), "{name}: {losses:#?}");
 
         let global_text = scan
-            .lines
-            .iter()
-            .filter(|line| line.section == Some(crate::card::Section::Global))
+            .section(crate::card::Section::Global)
+            .map(|(_, line)| line)
             .flat_map(|line| line.payload.iter().take(72).copied())
             .collect::<Vec<_>>();
         let global_text = String::from_utf8(global_text)
@@ -326,19 +331,19 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 
 #[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.5;
     ir.model.points.push(Point {
-        id: PointId("point#resolution-floor".into()),
+        id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         source_object: None,
         position: Point3::new(1.0, 2.0, 3.0),
     });
 
-    let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let plan = crate::IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
         .expect("neutral tolerance floor is writable");
     let mut written = Vec::new();
     let report = plan
@@ -368,11 +373,11 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
         .expect("source resolution witness decodes");
     assert_eq!(decoded.ir().tolerances.linear, 0.001);
 
-    let plan = crate::IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let plan = crate::IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
         .expect("source resolution witness is writable");
     let mut written = Vec::new();
     let report = plan
@@ -430,7 +435,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         type_code,
         form,
         label: "TEST",
-        status: "00000000",
+        status: super::EntityStatus::Independent,
         parameters: Vec::new(),
         transform: None,
     };
@@ -481,7 +486,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         type_code: 102,
         form: 0,
         label: "TEST",
-        status: "00000000",
+        status: super::EntityStatus::Independent,
         parameters: b"102,1,@R0@;".to_vec(),
         transform: None,
     };
@@ -501,11 +506,11 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("fixture decodes");
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
+        let plan = IgesCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            )
             .expect("fixture has a semantic writer profile");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("writer succeeds");
@@ -517,7 +522,7 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         ir.native
             .namespace("iges")
             .expect("generated document has the IGES namespace")
-            .arenas["entities"]
+            .arenas()["entities"]
             .iter()
             .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
             .map(|entity| {
@@ -759,9 +764,9 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let error = curve_entity(&geometry, Some(&span), IgesVersion::V5_3)
-        .err()
-        .expect("zero-length span must not become a full revolution");
+    let Err(error) = curve_entity(&geometry, Some(&span), IgesVersion::V5_3) else {
+        panic!("zero-length span must not become a full revolution");
+    };
     assert!(error.to_string().contains("non-zero ordered span"));
 }
 
@@ -775,36 +780,48 @@ fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
-    use cadmpeg_ir::units::Units;
 
-    let face_id = FaceId::from("face");
-    let inner_id = LoopId::from("inner");
-    let outer_id = LoopId::from("outer");
+    let face_id = FaceId::mint("test:model:face#face").expect("valid identity");
+    let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
+    let outer_id = LoopId::mint("test:model:loop#outer").expect("valid identity");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("shell"),
-        surface: SurfaceId::from("surface"),
+        shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
+        surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
-        loops: vec![inner_id.clone(), outer_id.clone()],
+        loops: cadmpeg_ir::topology::FaceLoops::classified(
+            Some(outer_id.clone()),
+            vec![inner_id.clone()],
+        ),
         name: None,
         color: None,
         tolerance: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary_role: LoopBoundaryRole::Inner,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
         Loop {
             id: outer_id.clone(),
             face: face_id,
-            boundary_role: LoopBoundaryRole::Outer,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
     ];
 
@@ -816,40 +833,52 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
 fn face_loop_order_does_not_promote_an_unclassified_loop() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
-    use cadmpeg_ir::units::Units;
 
-    let face_id = FaceId::from("face");
-    let inner_id = LoopId::from("inner");
-    let unclassified_id = LoopId::from("unclassified");
+    let face_id = FaceId::mint("test:model:face#face").expect("valid identity");
+    let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
+    let unclassified_id = LoopId::mint("test:model:loop#unclassified").expect("valid identity");
     let face = Face {
         id: face_id.clone(),
-        shell: ShellId::from("shell"),
-        surface: SurfaceId::from("surface"),
+        shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
+        surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
-        loops: vec![inner_id.clone(), unclassified_id.clone()],
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+            unclassified_id.clone(),
+            inner_id.clone(),
+        ]),
         name: None,
         color: None,
         tolerance: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary_role: LoopBoundaryRole::Inner,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
         Loop {
             id: unclassified_id.clone(),
             face: face_id,
-            boundary_role: LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#dummy")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         },
     ];
 
     let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
-    assert!(face_outer_loop(&ordered).is_none());
+    assert!(face_outer_loop(&face, &ordered).is_none());
 }

@@ -19,7 +19,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`StepLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
@@ -34,6 +33,12 @@ pub enum StepLossCode {
     MetadataStringInvalid,
     /// A `FILE_SCHEMA` object identifier component is out of range.
     SchemaObjectIdentifierOutOfRange,
+    /// The declared Part 21 implementation level has no implemented grammar.
+    ImplementationLevelUnverified,
+    /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
+    SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -304,6 +309,9 @@ impl StepLossCode {
         Self::OpaqueRecordPreserved,
         Self::MetadataStringInvalid,
         Self::SchemaObjectIdentifierOutOfRange,
+        Self::ImplementationLevelUnverified,
+        Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -447,6 +455,9 @@ impl StepLossCode {
             Self::SchemaObjectIdentifierOutOfRange => {
                 "metadata.schema-object-identifier-out-of-range"
             }
+            Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -662,6 +673,10 @@ impl StepLossCode {
             Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
                 LossTaxonomy::RecordNotTyped
             }
+            Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -833,6 +848,9 @@ mod tests {
                 "decode.opaque-record-preserved",
                 "metadata.string-invalid",
                 "metadata.schema-object-identifier-out-of-range",
+                "parse.implementation-level-unverified",
+                "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",

@@ -33,9 +33,14 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        pairs[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
     assert_eq!(
-        pairs[0].value_offsets,
+        pairs[0].value_offsets(),
         [discriminator.len(), discriminator.len() + 9]
     );
     let mut malformed = bytes;
@@ -58,11 +63,21 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 
     let short_pair = super::sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
-    assert_sketch_fixed_pair_values(short_pair[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        short_pair[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
 
     let extended_pair = super::sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
-    assert_sketch_fixed_pair_values(extended_pair[0].values, [0.5, 0.5]);
+    assert_sketch_fixed_pair_values(
+        extended_pair[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.5],
+    );
 
     let mut malformed = short;
     malformed[short_discriminator.len() + 8] = 0x31;
@@ -78,7 +93,12 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values, [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        pairs[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
 
     let mut malformed = bytes;
     malformed[14] = 0x02;
@@ -94,58 +114,12 @@ fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
     bytes.extend_from_slice(&shifted);
 
     let pairs = super::sketch_payload_mixed_pairs(&bytes);
-    assert!((pairs[0].fixed_value - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
-    assert!((pairs[0].binary32_value - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.fixed.value() - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.binary32.value() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
 
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
     assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
-    const EPS_SKETCH_SCALAR: f64 = 1e-12;
-
-    let mut bytes = vec![0xaa, 0x00];
-    let discriminator_offset = bytes.len();
-    bytes.extend_from_slice(&[
-        0x14, 0x14, 0x41, 0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x03,
-    ]);
-    let first_offset = bytes.len();
-    bytes.extend_from_slice(&shifted_f64_bytes(10.0));
-    let second_offset = bytes.len();
-    bytes.extend_from_slice(&shifted_f64_bytes(-20.0));
-
-    let pairs = sketch_payload_scalar_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, discriminator_offset);
-    assert_eq!(pairs[0].value_offsets, [first_offset, second_offset]);
-    assert!((pairs[0].values[0] - 10.0).abs() < EPS_SKETCH_SCALAR);
-    assert!((pairs[0].values[1] + 20.0).abs() < EPS_SKETCH_SCALAR);
-    assert_eq!(
-        pairs[0].discriminator,
-        bytes[discriminator_offset..first_offset].to_vec()
-    );
-    assert!(object_payload_scalar_pairs(&bytes).is_empty());
-
-    bytes[discriminator_offset + 1] = 0x15;
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
-    bytes[discriminator_offset + 1] = 0x14;
-    bytes.truncate(second_offset + 7);
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn om_sketch_scalar_pairs_reject_non_binary64_atoms() {
-    let mut bytes = vec![0x00, 0x21, 0x21, 0x41, 0x00];
-    bytes.extend_from_slice(&[
-        0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ]);
-    bytes.extend_from_slice(&[0x30, 0x42, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    bytes.extend_from_slice(&[0xd0, 0x29, 0x33, 0x32, 0x50, 0x20, 0x00, 0x00]);
-
-    assert!(sketch_payload_scalar_pairs(&bytes).is_empty());
 }
 
 #[test]
@@ -165,15 +139,30 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
 
     let lanes = sketch_payload_scalar_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 0);
-    assert_eq!(lanes[0].discriminator, discriminator);
-    assert_eq!(lanes[0].values, [1.5, 3.25]);
+    assert_eq!(lanes[0].offset(), 0);
+    assert_eq!(lanes[0].form().discriminator(), discriminator);
     assert_eq!(
-        lanes[0].raw_values,
+        lanes[0]
+            .iter()
+            .map(|(_, scalar, ())| scalar.value())
+            .collect::<Vec<_>>(),
+        [1.5, 3.25]
+    );
+    assert_eq!(
+        lanes[0]
+            .iter()
+            .map(|(_, scalar, ())| scalar.raw().to_vec())
+            .collect::<Vec<_>>(),
         [shifted_f64.to_vec(), shifted_f32.to_vec()]
     );
-    assert_eq!(lanes[0].value_offsets, [18, 26]);
-    assert_eq!(lanes[0].terminator_offset, 30);
+    assert_eq!(
+        lanes[0]
+            .iter()
+            .map(|(offset, _, ())| offset)
+            .collect::<Vec<_>>(),
+        [18, 26]
+    );
+    assert_eq!(lanes[0].end(), 30);
 
     let long_discriminator = vec![
         0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86, 0x81,
@@ -186,10 +175,22 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
 
     let long_lanes = sketch_payload_scalar_lanes(&long_bytes);
     assert_eq!(long_lanes.len(), 1);
-    assert_eq!(long_lanes[0].discriminator, long_discriminator);
-    assert_eq!(long_lanes[0].values, [1.5, 3.25]);
-    assert_eq!(long_lanes[0].value_offsets, [19, 27]);
-    assert_eq!(long_lanes[0].terminator_offset, 31);
+    assert_eq!(long_lanes[0].form().discriminator(), long_discriminator);
+    assert_eq!(
+        long_lanes[0]
+            .iter()
+            .map(|(_, scalar, ())| scalar.value())
+            .collect::<Vec<_>>(),
+        [1.5, 3.25]
+    );
+    assert_eq!(
+        long_lanes[0]
+            .iter()
+            .map(|(offset, _, ())| offset)
+            .collect::<Vec<_>>(),
+        [19, 27]
+    );
+    assert_eq!(long_lanes[0].end(), 31);
 
     let mut missing_terminator = bytes[..bytes.len() - 1].to_vec();
     assert!(sketch_payload_scalar_lanes(&missing_terminator).is_empty());

@@ -11,7 +11,7 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -32,11 +32,7 @@ pub(super) fn decode(
             if !has_entity(record, "COORDINATES_LIST") {
                 return None;
             }
-            let scale = geometry
-                .length_scales
-                .get(&id)
-                .copied()
-                .unwrap_or(geometry.length_scale);
+            let scale = geometry.units.length([id]);
             super::geometry::coordinate_rows(record, scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
@@ -78,9 +74,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: false,
-            declare_containers: true,
-            claim_containers: true,
+            mode: AssociationMode::BodyItems,
             active: BTreeSet::new(),
         };
         for item in item_ids {
@@ -130,9 +124,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: false,
-            declare_containers: false,
-            claim_containers: true,
+            mode: AssociationMode::Placements,
             active: BTreeSet::new(),
         };
         for item in items {
@@ -160,9 +152,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: true,
-            declare_containers: false,
-            claim_containers: false,
+            mode: AssociationMode::DetachedAnnotation,
             active: BTreeSet::new(),
         };
         associator.visit(item, 0, None);
@@ -366,17 +356,17 @@ pub(super) fn decode(
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
-            let surface_id = StepIdentity::data("surface", surface_step);
+            let surface_id = ids::data("surface", surface_step);
             if let Some(surface) = ir
                 .model
                 .surfaces
                 .iter_mut()
-                .find(|surface| surface.id.0 == surface_id)
+                .find(|surface| surface.id.as_str() == surface_id)
             {
                 surface
                     .source_object
                     .get_or_insert_with(|| SourceObjectAssociation {
-                        format: "step".into(),
+                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
                         object_id: format!("#{id}"),
                         name: None,
                         color: None,
@@ -393,37 +383,39 @@ pub(super) fn decode(
             warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
-        ir.model.tessellations.push(Tessellation {
-            faces: Vec::new(),
-            chordal_deflection: None,
-            id: StepIdentity::tessellation("mesh", id),
-            body: (!unresolved_items.contains(&id))
-                .then(|| item_bodies.get(&id))
-                .flatten()
-                .filter(|bodies| bodies.len() == 1)
-                .and_then(|bodies| bodies.iter().next().cloned()),
-            source_object: (!declared_items.contains(&id)
-                || unresolved_items.contains(&id)
-                || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
-            .then(|| SourceObjectAssociation {
-                format: "step".into(),
-                object_id: format!("#{id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-            vertices: local_vertices,
-            triangles: local_triangles,
-            feature_edges: Vec::new(),
-            strip_lengths,
-            normals,
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+        ir.model.tessellations.push(
+            Tessellation::from_decoded(
+                ids::tessellation("mesh", id),
+                local_vertices,
+                local_triangles,
+                strip_lengths,
+                normals,
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("decoded STEP tessellation is valid")
+            .with_body(
+                (!unresolved_items.contains(&id))
+                    .then(|| item_bodies.get(&id))
+                    .flatten()
+                    .filter(|bodies| bodies.len() == 1)
+                    .and_then(|bodies| bodies.iter().next().cloned()),
+            )
+            .with_source_object(
+                (!declared_items.contains(&id)
+                    || unresolved_items.contains(&id)
+                    || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
+                .then(|| SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+                    object_id: format!("#{id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            ),
+        );
         typed.extend([id, coordinate_id]);
     }
     if !ir.model.tessellations.is_empty() {
@@ -452,6 +444,13 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .and_then(ValueExt::reference)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AssociationMode {
+    BodyItems,
+    Placements,
+    DetachedAnnotation,
+}
+
 struct TessellationItemAssociator<'a> {
     bodies: &'a [BodyId],
     exchange: &'a Exchange,
@@ -463,9 +462,7 @@ struct TessellationItemAssociator<'a> {
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
-    detached_annotation: bool,
-    declare_containers: bool,
-    claim_containers: bool,
+    mode: AssociationMode,
     active: BTreeSet<u64>,
 }
 
@@ -501,7 +498,7 @@ impl TessellationItemAssociator<'_> {
         )
         .is_some()
         {
-            if !self.detached_annotation {
+            if self.mode != AssociationMode::DetachedAnnotation {
                 self.body_context_items.insert(id);
             }
             self.declared_items.insert(id);
@@ -520,14 +517,14 @@ impl TessellationItemAssociator<'_> {
                 "TESSELLATED_GEOMETRIC_SET",
             ],
         ) {
-            if self.declare_containers {
+            if self.mode == AssociationMode::BodyItems {
                 self.declared_items.insert(id);
                 self.item_bodies
                     .entry(id)
                     .or_default()
                     .extend(self.bodies.iter().cloned());
             }
-            if self.claim_containers {
+            if self.mode != AssociationMode::DetachedAnnotation {
                 self.typed.insert(id);
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
@@ -546,7 +543,7 @@ impl TessellationItemAssociator<'_> {
             for item in item_ids {
                 self.visit(item, depth + 1, placement);
             }
-        } else if self.declare_containers {
+        } else if self.mode == AssociationMode::BodyItems {
             self.declared_items.insert(id);
             self.item_bodies
                 .entry(id)
@@ -836,9 +833,7 @@ trait RecordExt {
 }
 impl RecordExt for RawRecord {
     fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials
-            .first()
-            .and_then(|partial| partial.parameters.get(index))
+        self.partials.first().parameters.get(index)
     }
 }
 trait ValueExt {

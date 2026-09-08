@@ -5,7 +5,7 @@ use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
-    Length, ParameterId, ParameterValue, PatternForm,
+    Length, ParameterId, ParameterValue,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -20,6 +20,7 @@ use crate::history::literals::{
 };
 use crate::history::project::{
     neutral_feature_id, neutral_parameter_id, pattern_form, projected_parameter_names,
+    NativePatternClass,
 };
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
@@ -180,7 +181,7 @@ pub(crate) fn global_parameter_owners(
         .iter()
         .filter(|feature| match &feature.definition {
             FeatureDefinition::Native { kind, .. } => {
-                kind.eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
+                kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
             }
             FeatureDefinition::TreeNode { role, .. } => *role == FeatureTreeNodeRole::Equations,
             _ => false,
@@ -275,7 +276,7 @@ pub(crate) fn native_parameter_is_length(
         }
         "D3" if matches!(
             pattern_form(feature),
-            Some(PatternForm::Linear | PatternForm::CurveDriven)
+            Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
         ) =>
         {
             true
@@ -423,7 +424,11 @@ impl ParameterAliases {
             feature_local: HashMap::new(),
         };
         for parameter in parameters {
-            insert_parameter_alias(&mut aliases.exact, parameter.id.0.clone(), &parameter.id);
+            insert_parameter_alias(
+                &mut aliases.exact,
+                parameter.id.as_str().to_owned(),
+                &parameter.id,
+            );
             let mut unqualified = vec![parameter.name.clone()];
             if let Some(equation_id) = parameter
                 .properties

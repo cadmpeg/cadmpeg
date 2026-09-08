@@ -34,8 +34,7 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = entity("center", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
     let points = [
@@ -102,8 +101,7 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let circle = entity(
         "circle",
@@ -163,8 +161,7 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("center", 1, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -216,8 +213,7 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("circle", 0, SketchInputKind::LineOrCircle, None),
@@ -275,8 +271,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity(
@@ -392,8 +387,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let center = entity("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
     let radial = entity("radial", 20, SketchInputKind::Point, Some([3.0, 4.0]));
@@ -472,13 +466,12 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("center", 0, SketchInputKind::Point, Some([0.0, 0.0])),
         entity("radial", 100, SketchInputKind::Point, Some([0.0, 12.0])),
-        entity("handle", 200, SketchInputKind::Native(1), None),
+        entity("handle", 200, SketchInputKind::from_handle_code(1), None),
         entity(
             "terminal-radial",
             300,
@@ -592,8 +585,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("center", 0, SketchInputKind::Point, Some([0.03, 0.005])),
@@ -702,8 +694,7 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("point-0", 0, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -756,8 +747,7 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let circle = marker("circle", 0, None, SketchInputKind::Arc);
     let points = [
@@ -815,8 +805,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let circle = marker("circle", 0, None, SketchInputKind::Arc);
     let points = [
@@ -894,8 +883,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("unrelated", 1, SketchInputKind::Point, Some([9.0, 9.0])),
@@ -1007,8 +995,7 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("center", 1, SketchInputKind::LineOrCircle, Some([0.0, 0.0])),
@@ -1058,8 +1045,7 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let ellipse = entity("ellipse", 0, 0, SketchInputKind::Arc, Some([2.0, 3.0]));
     let points = [

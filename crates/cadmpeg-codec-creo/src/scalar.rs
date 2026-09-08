@@ -23,8 +23,6 @@ pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
 pub struct DoubleXarTable {
     /// Offset of the `double_xar` label in the expanded section.
     pub offset: usize,
-    /// Stored array extent.
-    pub count: u32,
     /// Entries in stored order, including an explicit terminal null slot.
     pub entries: Vec<DoubleXarEntry>,
 }
@@ -32,14 +30,43 @@ pub struct DoubleXarTable {
 /// One stored slot in a `double_xar` dictionary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleXarEntry {
-    /// Zero-based array index.
-    pub index: u32,
     /// Exact bytes occupying the slot.
     pub raw: Vec<u8>,
-    /// Scalar value when the slot uses a defined literal form.
-    pub value: Option<f64>,
-    /// Structural token family.
-    pub kind: &'static str,
+    /// Structural token family and its scalar value, when defined.
+    pub slot: DoubleXarSlot,
+}
+
+/// Defined value forms of a dictionary slot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DoubleXarSlot {
+    StockZero,
+    StockOne,
+    Literal(f64),
+    TerminalNull,
+    RecursivePlaceholder1,
+    RecursivePlaceholder3,
+}
+
+impl DoubleXarSlot {
+    pub fn value(self) -> Option<f64> {
+        match self {
+            Self::StockZero => Some(0.0),
+            Self::StockOne => Some(1.0),
+            Self::Literal(value) => Some(value),
+            Self::TerminalNull | Self::RecursivePlaceholder1 | Self::RecursivePlaceholder3 => None,
+        }
+    }
+
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::StockZero => "stock_zero",
+            Self::StockOne => "stock_one",
+            Self::Literal(_) => "literal",
+            Self::TerminalNull => "terminal_null",
+            Self::RecursivePlaceholder1 => "recursive_placeholder_1",
+            Self::RecursivePlaceholder3 => "recursive_placeholder_3",
+        }
+    }
 }
 
 /// Decode every complete counted `double_xar` dictionary in one expanded section.
@@ -60,24 +87,24 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
             continue;
         }
         let mut entries = Vec::new();
-        for index in 0..count {
+        for _ in 0..count {
             let start = cursor;
             let Some(head) = data.get(cursor).copied() else {
                 entries.clear();
                 break;
             };
-            let (value, end, kind) = match head {
-                0x0b => (Some(0.0), cursor + 1, "stock_zero"),
-                0x10 => (Some(1.0), cursor + 1, "stock_one"),
-                0xe0 => (None, cursor + 1, "terminal_null"),
+            let (slot, end) = match head {
+                0x0b => (DoubleXarSlot::StockZero, cursor + 1),
+                0x10 => (DoubleXarSlot::StockOne, cursor + 1),
+                0xe0 => (DoubleXarSlot::TerminalNull, cursor + 1),
                 0xe5 if data.get(cursor..cursor + 5) == Some(&[0xe5, 0x07, 0x23, 0x11, 0x2e]) => {
-                    (None, cursor + 5, "recursive_placeholder_1")
+                    (DoubleXarSlot::RecursivePlaceholder1, cursor + 5)
                 }
                 0xe8 if data.get(cursor..cursor + 4) == Some(&[0xe8, 0x26, 0xd6, 0x95]) => {
-                    (None, cursor + 4, "recursive_placeholder_3")
+                    (DoubleXarSlot::RecursivePlaceholder3, cursor + 4)
                 }
                 _ => match decode(data, cursor) {
-                    Some((value, end)) => (Some(value), end, "literal"),
+                    Some((value, end)) => (DoubleXarSlot::Literal(value), end),
                     None => {
                         entries.clear();
                         break;
@@ -89,23 +116,17 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                 break;
             };
             entries.push(DoubleXarEntry {
-                index,
                 raw: raw.to_vec(),
-                value,
-                kind,
+                slot,
             });
             cursor = end;
         }
         if entries.len() == usize::try_from(count).unwrap_or(usize::MAX)
             && entries
                 .last()
-                .is_some_and(|entry| entry.kind == "terminal_null")
+                .is_some_and(|entry| matches!(entry.slot, DoubleXarSlot::TerminalNull))
         {
-            tables.push(DoubleXarTable {
-                offset,
-                count,
-                entries,
-            });
+            tables.push(DoubleXarTable { offset, entries });
         }
         search = count_offset + 1;
     }
@@ -115,22 +136,17 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
 /// Section-local dictionary formed by distinct raw `0x46` token images.
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
-    entries: Vec<CacheEntry>,
+    entries: Vec<f64>,
     /// Unique leading payload byte for each paired-form tail. `None` marks a
     /// tail shared by distinct cache images.
     paired_byte_1_by_tail: BTreeMap<[u8; 6], Option<u8>>,
-}
-
-#[derive(Debug, Clone)]
-struct CacheEntry {
-    value: f64,
 }
 
 impl ScalarCache {
     /// Build the dictionary in first-appearance order from every complete
     /// eight-byte sequence beginning with `0x46` in one section.
     pub fn from_section(section: &[u8]) -> Self {
-        let mut entries = Vec::<CacheEntry>::new();
+        let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = BTreeMap::new();
         for offset in 0..section.len() {
@@ -153,9 +169,7 @@ impl ScalarCache {
                     *paired_byte_1 = None;
                 }
             }
-            entries.push(CacheEntry {
-                value: f64::from_be_bytes(ieee),
-            });
+            entries.push(f64::from_be_bytes(ieee));
         }
         Self {
             entries,
@@ -164,9 +178,7 @@ impl ScalarCache {
     }
 
     fn value(&self, index: u32) -> Option<f64> {
-        self.entries
-            .get(usize::try_from(index).ok()?)
-            .map(|entry| entry.value)
+        self.entries.get(usize::try_from(index).ok()?).copied()
     }
 
     fn paired_byte_1(&self, tail: &[u8]) -> Option<u8> {
@@ -2300,7 +2312,7 @@ mod tests {
     #[test]
     fn complete_local_system_rejects_a_nonfinite_slot() {
         let cache = ScalarCache {
-            entries: vec![CacheEntry { value: 1.0 }, CacheEntry { value: f64::NAN }],
+            entries: vec![1.0, f64::NAN],
             paired_byte_1_by_tail: BTreeMap::new(),
         };
         let mut body = Vec::new();
@@ -2660,14 +2672,14 @@ mod tests {
         let [table] = tables.as_slice() else {
             panic!("complete dictionary");
         };
-        assert_eq!(table.count, 7);
-        assert_eq!(table.entries[0].value, Some(1.0));
-        assert_eq!(table.entries[1].kind, "recursive_placeholder_1");
-        assert_eq!(table.entries[2].value, Some(0.0));
-        assert_eq!(table.entries[3].kind, "recursive_placeholder_3");
-        assert_eq!(table.entries[4].value, Some(3.0));
-        assert_eq!(table.entries[5].value, Some(0.0));
-        assert_eq!(table.entries[6].kind, "terminal_null");
+        assert_eq!(table.entries.len(), 7);
+        assert_eq!(table.entries[0].slot.value(), Some(1.0));
+        assert_eq!(table.entries[1].slot.kind(), "recursive_placeholder_1");
+        assert_eq!(table.entries[2].slot.value(), Some(0.0));
+        assert_eq!(table.entries[3].slot.kind(), "recursive_placeholder_3");
+        assert_eq!(table.entries[4].slot.value(), Some(3.0));
+        assert_eq!(table.entries[5].slot.value(), Some(0.0));
+        assert_eq!(table.entries[6].slot.kind(), "terminal_null");
     }
 
     #[test]

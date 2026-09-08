@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -43,26 +43,23 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "external_references": [
-              {
-                "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#0",
-                "ordinal": 0,
-                "path": "child.prt",
-                "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 106
-              },
-              {
-                "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
-                "ordinal": 1,
-                "path": "nested/b.prt",
-                "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 117
-              }
-            ],
-            "unknowns": []
-          },
-          "version": 189
+          "external_references": [
+            {
+              "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#0",
+              "ordinal": 0,
+              "path": "child.prt",
+              "source_entry": "/Root/UG_PART/ExternalReferences",
+              "source_offset": 106
+            },
+            {
+              "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
+              "ordinal": 1,
+              "path": "nested/b.prt",
+              "source_entry": "/Root/UG_PART/ExternalReferences",
+              "source_offset": 117
+            }
+          ],
+          "unknowns": []
         }
       },
       "source": {
@@ -80,6 +77,17 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
+        },
         "format": "nx"
       },
       "tolerances": {
@@ -92,6 +100,17 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -106,7 +125,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
       ]
@@ -128,12 +147,22 @@
         "streams": [
           "nx:container"
         ]
-      },
-      "version": "3"
+      }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -149,7 +178,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 129, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
     ]

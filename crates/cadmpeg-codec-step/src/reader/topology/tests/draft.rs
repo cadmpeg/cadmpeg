@@ -10,7 +10,6 @@ use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
-use cadmpeg_ir::units::Units;
 use std::collections::HashSet;
 use std::io::Cursor;
 
@@ -20,7 +19,7 @@ fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
         .insert(Surface {
-            id: SurfaceId(id.into()),
+            id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -36,7 +35,7 @@ fn surface_draft(id: &str) -> ModelDraft {
 fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut session = CommitSession::new(&ir);
 
     session
@@ -49,8 +48,12 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
         .insert(Vertex {
-            id: "step:data:vertex#rejected".into(),
-            point: "step:data:point#missing".into(),
+            id: "step:data:vertex#rejected"
+                .try_into()
+                .expect("valid identity"),
+            point: "step:data:point#missing"
+                .try_into()
+                .expect("valid identity"),
             tolerance: None,
         })
         .expect("insert invalid root reference");
@@ -63,13 +66,14 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 
 #[test]
 fn trimmed_pcurve_fit_uses_declared_endpoints() {
-    let surface_id = SurfaceId("step:data:surface#trimmed-endpoints".into());
+    let surface_id =
+        SurfaceId::mint("step:data:surface#trimmed-endpoints").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
@@ -107,13 +111,14 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 
 #[test]
 fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
-    let surface_id = SurfaceId("step:data:surface#bounded-search-witness".into());
+    let surface_id =
+        SurfaceId::mint("step:data:surface#bounded-search-witness").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
@@ -368,6 +373,26 @@ fn a_discarded_topology_root_counts_no_admitted_relation() {
 }
 
 #[test]
+fn single_pcurve_with_unresolved_vertex_carrier_reports_loss() {
+    let source = std::str::from_utf8(include_bytes!("data/tp09_divergent_interior.p21"))
+        .expect("fixture is UTF-8")
+        .replace("#7=VERTEX_POINT('',#4);", "#7=VERTEX_POINT('',#9);");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode unresolved vertex carrier");
+
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveCandidatesCarrierUnresolved.kind()
+            && loss.message.contains("coedge use #22")
+    }));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::PcurveAssociationAmbiguous.kind() }));
+}
+
+#[test]
 fn divergent_interior_pcurve_is_omitted_from_coedge() {
     let decoded = crate::StepCodec::default()
         .decode(
@@ -394,7 +419,7 @@ fn divergent_interior_pcurve_is_omitted_from_coedge() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -429,10 +454,10 @@ fn competing_same_surface_pcurves_remain_detached() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -463,10 +488,10 @@ fn assert_tp09_competing_pcurves_are_order_independent(source: &[u8]) {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -615,7 +640,7 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 #[test]
 fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
-        id: SurfaceId("step:data:surface#shared".into()),
+        id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -623,8 +648,8 @@ fn shared_surface_carrier_is_staged_once() {
         },
         source_object: None,
     };
-    let body_id = BodyId("step:data:body#shared-surface".into());
-    let region_id = RegionId("step:data:region#shared-surface".into());
+    let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
+    let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
         HashSet::new(),
         Vec::new(),

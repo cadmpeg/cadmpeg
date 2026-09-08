@@ -3,9 +3,9 @@
 use super::super::*;
 use super::marker;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputRelationFamily, FeatureInputRelationInstance,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputRelationInstance,
 };
 use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
@@ -26,7 +26,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal: 0,
         name: name.into(),
         kind: String::new(),
@@ -374,7 +373,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 0,
             offset: line_ref_offset as u64,
             name: "moLineRef_w".into(),
-            role: FeatureInputClassRole::Reference,
         }],
         names: vec![
             name(50, 5, "SeedFeature"),
@@ -393,11 +391,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         sketch_entities: Vec::new(),
     };
     let model_feature = |id: &str, native_ref: &str, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -425,8 +422,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             "path",
             "path-native",
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         ),
         model_feature(
@@ -435,7 +431,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             FeatureDefinition::Native {
                 kind: "Extrude".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         ),
     ];
@@ -456,8 +451,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ));
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
     features[1].definition = FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
-        sketch: Some(sketch.clone()),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
     };
     bind_pattern_inputs(
         &mut features,
@@ -620,7 +614,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 1,
             offset: 200,
             name: "moNumberDim_c".into(),
-            role: FeatureInputClassRole::Dimension,
         },
         FeatureInputClass {
             id: "spacing-dimension".into(),
@@ -628,7 +621,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ordinal: 2,
             offset: 300,
             name: "ParallelPlaneDistanceDim_c".into(),
-            role: FeatureInputClassRole::Dimension,
         },
     ]);
     derived_lane
@@ -637,9 +629,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Linear),
-        },
+        pattern: PatternKind::UnresolvedLinear,
     };
     bind_pattern_inputs(
         &mut features,
@@ -704,9 +694,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-        },
+        pattern: PatternKind::UnresolvedMirror,
     };
     bind_pattern_inputs(
         &mut features,
@@ -753,9 +741,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-        },
+        pattern: PatternKind::UnresolvedMirror,
     };
     bind_pattern_inputs(
         &mut features,
@@ -766,9 +752,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].definition,
         FeatureDefinition::Pattern {
             ref seeds,
-            pattern: PatternKind::Unresolved {
-                form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-            },
+            pattern: PatternKind::UnresolvedMirror,
         } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
     ));
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
@@ -778,8 +762,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     sweep_history.features[1].input_class = Some("moSweep_c".into());
     let path_sketch = SketchId("sweep-path".into());
     features[2].definition = FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
-        sketch: Some(path_sketch.clone()),
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path_sketch.clone())),
     };
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Sweep {
@@ -787,7 +770,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         sections: Vec::new(),
         path: Some(PathRef::Native("curve-reference".into())),
         mode: SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
         },
         orientation: None,
         transition: None,
@@ -920,11 +903,10 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -932,8 +914,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -965,17 +946,14 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .take(3)
         .map(|marker| {
             let [u, v] = marker.coordinates_m.unwrap();
-            SketchEntity {
-                id: SketchEntityId(format!("bound-{}", marker.id)),
-                sketch: sketch.clone(),
-                construction: false,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
+            SketchEntity::new(
+                SketchEntityId(format!("bound-{}", marker.id)),
+                sketch.clone(),
+                SketchGeometry::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
                 },
-            }
+            )
+            .with_native_ref(Some(marker.id.clone()))
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
@@ -994,9 +972,12 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: vec![scalar.into()],
-            parameter_scalar_ref: Some(scalar.into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec![scalar.into()],
+                Some(scalar.into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(offset + 1, first), operand(offset + 2, second)],
         }
     };
@@ -1020,7 +1001,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         sketch_entities: markers,
     };
     let parameter = |id: &str, scalar: &str| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.into(),
@@ -1061,7 +1042,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 
     let solver_lines = entities
         .iter()
-        .filter(|entity| entity.id.0.contains("#solver-line:"))
+        .filter(|entity| entity.id().0.contains("#solver-line:"))
         .collect::<Vec<_>>();
     assert_eq!(solver_lines.len(), 4);
     assert_eq!(
@@ -1106,11 +1087,10 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 fn roster_point_line_distance_materializes_one_solver_line() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1118,8 +1098,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -1146,16 +1125,16 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .into_iter()
         .take(3)
         .enumerate()
-        .map(|(index, [u, v])| SketchEntity {
-            id: SketchEntityId(format!("bound-point-{index}")),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some(format!("point-{index}")),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u * 1000.0, v * 1000.0),
-            },
+        .map(|(index, [u, v])| {
+            SketchEntity::new(
+                SketchEntityId(format!("bound-point-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u * 1000.0, v * 1000.0),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(format!("point-{index}")))
         })
         .collect::<Vec<_>>();
     let relation = FeatureInputRelationInstance {
@@ -1166,9 +1145,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 101,
@@ -1203,7 +1185,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1231,7 +1213,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         SketchGeometry::Line { start, end }
             if start == Point2::new(36.0, -5.0) && end == Point2::new(36.0, -150.0)
     ));
-    let solver_line_id = solver_line.id.clone();
+    let solver_line_id = solver_line.id().clone();
 
     let mut constraints = Vec::new();
     project_relation_bindings(
@@ -1278,11 +1260,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1290,39 +1271,34 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
-    let line = |id: &str, start: [f64; 2], end: [f64; 2]| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        },
+    let line = |id: &str, start: [f64; 2], end: [f64; 2]| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch_id.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+        )
     };
     let mut entities = vec![
         line("profile-bottom", [0.0, -20.0], [70.0, -20.0]),
         line("profile-top", [0.0, 0.0], [70.0, 0.0]),
         line("profile-left", [0.0, -20.0], [0.0, 0.0]),
         line("profile-right", [70.0, 0.0], [70.0, -20.0]),
-        SketchEntity {
-            id: SketchEntityId("resolved-point".into()),
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some("point-4".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        SketchEntity::new(
+            SketchEntityId("resolved-point".into()),
+            sketch_id.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(85.0, -10.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some("point-4".into())),
     ];
     let coordinates_m = [
         [0.0, 0.0],
@@ -1348,9 +1324,12 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 101,
@@ -1385,7 +1364,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1437,7 +1416,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         &constraint.definition,
         SketchConstraintDefinition::DistanceLoci { first, second, .. }
             if first == &SketchLocus::Entity(SketchEntityId("resolved-point".into()))
-                && second == &SketchLocus::Entity(solver_line.id.clone())
+                && second == &SketchLocus::Entity(solver_line.id().clone())
     ));
 }
 
@@ -1445,11 +1424,10 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1457,21 +1435,19 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
-    let point = |id: &str, marker: Option<&str>, u: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: marker.map(str::to_owned),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, 0.0),
-        },
+    let point = |id: &str, marker: Option<&str>, u: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        )
+        .with_native_ref(marker.map(str::to_owned))
     };
     let mut entities = vec![
         point("origin", Some("known-a"), 0.0),
@@ -1498,9 +1474,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
                 family,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: vec![scalar.into()],
-                parameter_scalar_ref: Some(scalar.into()),
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    vec![scalar.into()],
+                    Some(scalar.into()),
+                    None,
+                )
+                .unwrap(),
                 operands: vec![operand(0, known), operand(1, "missing")],
             }
         };
@@ -1544,7 +1523,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         sketch_entities: vec![known_a, known_b, missing],
     };
     let parameter = |id: &str, scalar: &str, distance: f64| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.into(),
@@ -1578,7 +1557,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
 
     let solved = entities
         .iter()
-        .filter(|entity| entity.id.0.contains("dimension-point:"))
+        .filter(|entity| entity.id().0.contains("dimension-point:"))
         .collect::<Vec<_>>();
     assert_eq!(solved.len(), 3);
     assert!(matches!(
@@ -1623,6 +1602,6 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
             ) => second,
             other => panic!("unexpected relation definition: {other:?}"),
         };
-        assert_eq!(second, SketchLocus::Entity(solved[index].id.clone()));
+        assert_eq!(second, SketchLocus::Entity(solved[index].id().clone()));
     }
 }

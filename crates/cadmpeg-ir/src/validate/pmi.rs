@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::document::CadIr;
-use crate::pmi::{PmiDefinition, PmiTarget};
+use crate::pmi::{DimensionTolerance, PmiDefinition, PmiTarget};
 use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -100,17 +100,14 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             "unresolved datum reference",
                         );
                     }
-                    if reference.precedence == 0 {
-                        invalid(findings, annotation.id.as_str(), "invalid datum precedence");
-                    }
                     compartments
-                        .entry(reference.precedence)
+                        .entry(reference.precedence.get())
                         .or_default()
                         .push(reference);
                     if let Some(group) = reference.common_group {
                         if common_groups
-                            .insert(group, reference.precedence)
-                            .is_some_and(|precedence| precedence != reference.precedence)
+                            .insert(group, reference.precedence.get())
+                            .is_some_and(|precedence| precedence != reference.precedence.get())
                         {
                             invalid(
                                 findings,
@@ -156,16 +153,22 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             PmiDefinition::Dimension {
-                nominal,
-                lower_deviation,
-                upper_deviation,
-                ..
+                nominal, tolerance, ..
             } => {
-                if [nominal, lower_deviation, upper_deviation]
-                    .into_iter()
-                    .flatten()
-                    .any(|value| !value.value.is_finite())
-                {
+                let deviations = match tolerance {
+                    Some(
+                        DimensionTolerance::PlusMinus { lower, upper }
+                        | DimensionTolerance::PlusMinusFit { lower, upper, .. },
+                    ) => Some((lower, upper)),
+                    Some(DimensionTolerance::Fit(_)) | None => None,
+                };
+                let non_finite = nominal
+                    .as_ref()
+                    .is_some_and(|value| !value.value.is_finite())
+                    || deviations.is_some_and(|(lower, upper)| {
+                        !lower.value.is_finite() || !upper.value.is_finite()
+                    });
+                if non_finite {
                     invalid(
                         findings,
                         annotation.id.as_str(),
@@ -173,18 +176,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            PmiDefinition::Presentation {
-                semantics,
-                placement,
-                ..
-            } => {
-                if placement.is_some_and(|transform| !transform.is_finite()) {
-                    invalid(
-                        findings,
-                        annotation.id.as_str(),
-                        "presentation placement contains a non-finite coefficient",
-                    );
-                }
+            PmiDefinition::Presentation { semantics, .. } => {
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
                     invalid(
                         findings,

@@ -1,4 +1,4 @@
-use crate::decode::analytic::{
+use crate::decode::analytic::vertices::{
     conic_conic_intersections, incident_analytic_vertex_domain, line_conic_intersections,
     line_line_intersection, model_points_agree,
 };

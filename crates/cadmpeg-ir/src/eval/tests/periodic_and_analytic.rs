@@ -3,17 +3,18 @@ use super::*;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let nurbs = crate::geometry::NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: true,
-    };
+        None,
+        true,
+    )
+    .unwrap();
     let geometry = CurveGeometry::Nurbs(nurbs.clone());
     assert_eq!(
         crate::eval::curve_point(&geometry, 0.5),
@@ -50,7 +51,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     else {
         unreachable!()
     };
-    nurbs.periodic = false;
+    nurbs.set_periodic(false);
     ir.model.edges[0].param_range = Some([0.5, 2.5]);
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -146,14 +147,13 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
 
 #[test]
 fn transformed_carriers_preserve_basis_parameters() {
-    let transform = crate::transform::Transform {
-        rows: [
-            [-2.0, 0.0, 0.0, 4.0],
-            [0.0, 2.0, 0.0, 5.0],
-            [0.0, 0.0, 2.0, 6.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = crate::transform::Transform::from_rows([
+        [-2.0, 0.0, 0.0, 4.0],
+        [0.0, 2.0, 0.0, 5.0],
+        [0.0, 0.0, 2.0, 6.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let curve = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Line {
             origin: Point3::new(1.0, 0.0, 0.0),
@@ -182,21 +182,27 @@ fn transformed_carriers_preserve_basis_parameters() {
 
 #[test]
 fn polyline_carriers_evaluate_in_both_parameter_directions() {
-    let increasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![1.0, 3.0]),
-        chordal_deflection: 0.01,
-    };
+    let increasing = CurveGeometry::Polyline(
+        crate::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            Some(vec![1.0, 3.0]),
+            0.01,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         crate::eval::curve_point(&increasing, 2.0),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 
-    let decreasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![3.0, 1.0]),
-        chordal_deflection: 0.01,
-    };
+    let decreasing = CurveGeometry::Polyline(
+        crate::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            Some(vec![3.0, 1.0]),
+            0.01,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         crate::eval::curve_point(&decreasing, 2.5),
         Some(Point3::new(0.5, 0.0, 0.0))

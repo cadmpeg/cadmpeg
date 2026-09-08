@@ -22,33 +22,6 @@ pub(crate) fn decode_exact_scalars(
     (cursor.pos() == payload.len()).then_some(values)
 }
 
-pub(crate) fn decode_optional_scalars(
-    payload: &[u8],
-    count: usize,
-    cache: &scalar::ScalarCache,
-) -> (Vec<Option<f64>>, Vec<Vec<u8>>) {
-    let mut values = Vec::with_capacity(count);
-    let mut bodies = Vec::with_capacity(count);
-    let mut cursor = 0;
-    for _ in 0..count {
-        if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
-            values.push(None);
-            bodies.push(Vec::new());
-            continue;
-        }
-        let start = cursor;
-        if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
-            values.push(Some(value));
-            cursor = next;
-        } else {
-            values.push(None);
-            cursor += 1;
-        }
-        bodies.push(payload[start..cursor].to_vec());
-    }
-    (values, bodies)
-}
-
 pub(crate) fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
     cadmpeg_core::bytes::find_in(payload, needle, start, end)
 }

@@ -4,14 +4,11 @@
 use std::collections::HashSet;
 
 use cadmpeg_core::decode::View;
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::value_block;
 /// One source-schema selector in a complete `7C06` definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DefinitionSchemaSelector {
     /// Stored zero-based source-schema ordinal following `0x32`.
     pub value: u32,
@@ -21,7 +18,6 @@ pub struct DefinitionSchemaSelector {
 
 /// One fully consumed nullable numeric-pair production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NumericPair {
     /// Two one-byte compact atoms preceding the nested value frame.
     pub prefix_atoms: [u32; 2],
@@ -31,7 +27,6 @@ pub struct NumericPair {
 
 /// One slot in a complete [`NumericPair`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NumericPairSlot {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
@@ -49,7 +44,6 @@ pub enum NumericPairSlot {
 
 /// Prefix atom of one complete schema-selected `Range` interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum RangeIntervalPrefix {
     /// One compact atom with its exact serialized width.
     Compact {
@@ -67,7 +61,6 @@ pub enum RangeIntervalPrefix {
 
 /// One slot in a complete schema-selected `Range` interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum RangeIntervalSlot {
     /// `E6` followed by one finite IEEE-754 binary64 value.
     Binary64 {
@@ -85,7 +78,6 @@ pub enum RangeIntervalSlot {
 
 /// Complete encoded value selected by a source-schema entry named `Range`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RangeInterval {
     /// Atom preceding the fixed range type frame.
     pub prefix: RangeIntervalPrefix,
@@ -97,7 +89,6 @@ pub struct RangeInterval {
 
 /// One item in an embedded numeric value packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NumericPacketItem {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
@@ -117,7 +108,6 @@ pub enum NumericPacketItem {
 
 /// Symbol in a reference-signature descriptor program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignatureSymbol {
     /// Symbol `E`.
     E,
@@ -129,7 +119,6 @@ pub enum ReferenceSignatureSymbol {
 
 /// Variable prefix form of a complete reference-signature packet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignaturePrefix {
     /// Compact atom `2`.
     #[default]
@@ -140,7 +129,6 @@ pub enum ReferenceSignaturePrefix {
 
 /// One instruction in a complete reference-signature descriptor program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignatureInstruction {
     /// One descriptor symbol: `E`, `S`, or `T`.
     Symbol {
@@ -189,26 +177,209 @@ pub enum ReferenceSignatureInstruction {
 
 /// One fully consumed reference-signature production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ReferenceSignatureWire", into = "ReferenceSignatureWire")]
 pub struct ReferenceSignature {
+    references: ConsecutiveReferences,
+    prefix: ReferenceSignaturePrefix,
+    tokens: Vec<ReferenceSignatureToken>,
+    signature_offset: usize,
+    second_reference_offset: usize,
+}
+
+/// Consecutive fixed-width reference identities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConsecutiveReferences(u32);
+
+impl ConsecutiveReferences {
+    /// Consecutive references starting at the supplied identity.
+    pub(crate) fn new(first: u32) -> Option<Self> {
+        first.checked_add(1).map(|_| Self(first))
+    }
+    /// First reference identity.
+    pub(crate) fn first(self) -> u32 {
+        self.0
+    }
+    /// Second reference identity.
+    pub(crate) fn second(self) -> u32 {
+        self.0 + 1
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReferenceSignatureToken {
+    Symbol(ReferenceSignatureSymbol),
+    Decimal(String),
+    OpenCall,
+    Comma,
+    CloseCall,
+    Qualifier(u8),
+    Difference,
+}
+
+impl From<ReferenceSignatureInstruction> for ReferenceSignatureToken {
+    fn from(value: ReferenceSignatureInstruction) -> Self {
+        match value {
+            ReferenceSignatureInstruction::Symbol { symbol, .. } => Self::Symbol(symbol),
+            ReferenceSignatureInstruction::Decimal { digits, .. } => Self::Decimal(digits),
+            ReferenceSignatureInstruction::OpenCall { .. } => Self::OpenCall,
+            ReferenceSignatureInstruction::Comma { .. } => Self::Comma,
+            ReferenceSignatureInstruction::CloseCall { .. } => Self::CloseCall,
+            ReferenceSignatureInstruction::Qualifier { selector, .. } => Self::Qualifier(selector),
+            ReferenceSignatureInstruction::Difference { .. } => Self::Difference,
+        }
+    }
+}
+
+impl ReferenceSignatureToken {
+    fn text(&self) -> String {
+        match self {
+            Self::Symbol(ReferenceSignatureSymbol::E) => "E".to_owned(),
+            Self::Symbol(ReferenceSignatureSymbol::S) => "S".to_owned(),
+            Self::Symbol(ReferenceSignatureSymbol::T) => "T".to_owned(),
+            Self::Decimal(digits) => digits.clone(),
+            Self::OpenCall => "(".to_owned(),
+            Self::Comma => ",".to_owned(),
+            Self::CloseCall => ")".to_owned(),
+            Self::Qualifier(selector) => format!("#{selector:X}"),
+            Self::Difference => "-".to_owned(),
+        }
+    }
+
+    fn instruction(&self, offset: usize) -> ReferenceSignatureInstruction {
+        match self {
+            Self::Symbol(symbol) => ReferenceSignatureInstruction::Symbol {
+                symbol: *symbol,
+                offset,
+            },
+            Self::Decimal(digits) => ReferenceSignatureInstruction::Decimal {
+                digits: digits.clone(),
+                offset,
+            },
+            Self::OpenCall => ReferenceSignatureInstruction::OpenCall { offset },
+            Self::Comma => ReferenceSignatureInstruction::Comma { offset },
+            Self::CloseCall => ReferenceSignatureInstruction::CloseCall { offset },
+            Self::Qualifier(selector) => ReferenceSignatureInstruction::Qualifier {
+                selector: *selector,
+                hash_offset: offset,
+                selector_offset: offset + 1,
+            },
+            Self::Difference => ReferenceSignatureInstruction::Difference { offset },
+        }
+    }
+}
+
+impl ReferenceSignature {
+    /// Consecutive reference identities.
+    pub(crate) fn references(&self) -> ConsecutiveReferences {
+        self.references
+    }
+    /// First reference identity.
+    pub fn first_reference(&self) -> u32 {
+        self.references.first()
+    }
+    /// Second reference identity.
+    pub fn second_reference(&self) -> u32 {
+        self.references.second()
+    }
+    /// Exact signature text.
+    pub fn signature(&self) -> String {
+        self.tokens
+            .iter()
+            .map(ReferenceSignatureToken::text)
+            .collect()
+    }
+    /// Variable compact atom preceding the nested signature frame.
+    pub fn prefix(&self) -> ReferenceSignaturePrefix {
+        self.prefix
+    }
+    /// Offset of the first signature byte.
+    #[cfg(test)]
+    pub fn signature_offset(&self) -> usize {
+        self.signature_offset
+    }
+    /// Byte offset of the second reference marker within the value payload.
+    pub fn second_reference_offset(&self) -> usize {
+        self.second_reference_offset
+    }
+    /// Source-ordered signature instructions.
+    pub fn signature_program(&self) -> Vec<ReferenceSignatureInstruction> {
+        let mut offset = self.signature_offset;
+        self.tokens
+            .iter()
+            .map(|token| {
+                let instruction = token.instruction(offset);
+                offset += token.text().len();
+                instruction
+            })
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ReferenceSignatureWire {
     /// First fixed-width reference.
-    pub first_reference: u32,
+    first_reference: u32,
     /// Variable compact atom preceding the nested signature frame.
     #[serde(default)]
-    pub prefix: ReferenceSignaturePrefix,
+    prefix: ReferenceSignaturePrefix,
     /// Printable signature bytes between `0x81` and the first terminator.
-    pub signature: String,
+    signature: String,
     /// Source-ordered instruction program spanning the complete signature.
     #[serde(default)]
-    pub signature_program: Vec<ReferenceSignatureInstruction>,
+    signature_program: Vec<ReferenceSignatureInstruction>,
     /// Byte offset of the first signature byte within the `7C07` payload.
     #[serde(default)]
-    pub signature_offset: usize,
+    signature_offset: usize,
     /// Second fixed-width reference.
-    pub second_reference: u32,
+    second_reference: u32,
     /// Byte offset of the second reference marker within the `7C07` payload.
     #[serde(default)]
-    pub second_reference_offset: usize,
+    second_reference_offset: usize,
+}
+
+impl From<ReferenceSignature> for ReferenceSignatureWire {
+    fn from(value: ReferenceSignature) -> Self {
+        Self {
+            first_reference: value.first_reference(),
+            second_reference: value.second_reference(),
+            prefix: value.prefix(),
+            signature: value.signature(),
+            signature_program: value.signature_program(),
+            signature_offset: value.signature_offset,
+            second_reference_offset: value.second_reference_offset(),
+        }
+    }
+}
+impl TryFrom<ReferenceSignatureWire> for ReferenceSignature {
+    type Error = &'static str;
+    fn try_from(wire: ReferenceSignatureWire) -> Result<Self, Self::Error> {
+        let references = ConsecutiveReferences::new(wire.first_reference)
+            .ok_or("first_reference has no consecutive successor")?;
+        if wire.second_reference != references.second() {
+            return Err("second_reference must follow first_reference");
+        }
+        wire.signature_offset
+            .checked_add(wire.signature.len())
+            .ok_or("signature_offset overflows the signature extent")?;
+        let program = reference_signature_program(&wire.signature, wire.signature_offset)
+            .ok_or("signature is not a complete instruction program")?;
+        if !reference_signature_has_one_outer_call(&program) {
+            return Err("signature requires one outer call");
+        }
+        if wire.signature_program != program {
+            return Err("signature_program disagrees with signature and signature_offset");
+        }
+        Ok(Self {
+            references,
+            prefix: wire.prefix,
+            tokens: program
+                .into_iter()
+                .map(ReferenceSignatureToken::from)
+                .collect(),
+            signature_offset: wire.signature_offset,
+            second_reference_offset: wire.second_reference_offset,
+        })
+    }
 }
 
 fn reference_signature_program(
@@ -337,7 +508,6 @@ fn reference_signature_has_one_outer_call(program: &[ReferenceSignatureInstructi
 
 /// One exact packet in a tokenized `7C07` value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum EntityValuePacket {
     /// `<compact_atom> <compact_atom> E8 <selector:u16le> 37 <atom> <atom>
     /// (<E6:f64>|<E7..E9>)+ FE+`.
@@ -605,33 +775,54 @@ fn parse_numeric_value_packet(
 pub struct EntityRecord {
     /// Byte offset of the `7C05` marker.
     pub pos: usize,
-    /// Total framed byte length.
-    pub total_len: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
-    /// Complete alternate inline body, including its lead byte, when nested
-    /// `7C06` and `7C07` frames are absent.
-    pub inline_body: Option<Vec<u8>>,
-    /// Stored nested `7C06` length.
-    pub definition_len: u32,
-    /// Exact definition prefix before the `0xEA` identity delimiter.
-    pub definition_prefix: Vec<u8>,
-    /// Source-schema selectors decoded from the complete definition prefix.
-    pub definition_schema_selectors: Vec<DefinitionSchemaSelector>,
     /// Stored entity identity.
     pub entity_id: u32,
-    /// Exact definition bytes after the identity.
-    pub definition_suffix: Vec<u8>,
-    /// Stored nested `7C07` total length.
-    pub value_len: u32,
-    /// Exact nested `7C07` payload.
-    pub value_payload: Vec<u8>,
-    /// Complete numeric-pair view when the entire value payload has that production.
-    pub numeric_pair: Option<NumericPair>,
+    /// Inline body or nested definition/value frames.
+    pub body: EntityBody,
+}
+
+/// Body of a length-closed `7C05` entity-table record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntityBody {
+    /// Complete alternate inline body, including its lead byte.
+    Inline(Vec<u8>),
+    /// Nested `7C06` definition and `7C07` value frames.
+    Nested {
+        /// Exact definition prefix before the `0xEA` identity delimiter.
+        prefix: Vec<u8>,
+        /// Exact definition bytes after the identity.
+        suffix: Vec<u8>,
+        /// Exact nested `7C07` payload.
+        value_payload: Vec<u8>,
+        /// Exact bytes after the nested `7C07` frame.
+        record_suffix: Vec<u8>,
+    },
+}
+
+impl EntityRecord {
+    /// Total framed byte length.
+    pub fn total_len(&self) -> usize {
+        match &self.body {
+            EntityBody::Inline(bytes) => 6 + bytes.len(),
+            EntityBody::Nested {
+                prefix,
+                suffix,
+                value_payload,
+                record_suffix,
+            } => 24 + prefix.len() + suffix.len() + value_payload.len() + record_suffix.len(),
+        }
+    }
+
     /// Complete reference-signature view when the entire value payload has that production.
-    pub reference_signature: Option<ReferenceSignature>,
-    /// Exact bytes after the nested `7C07` frame.
-    pub record_suffix: Vec<u8>,
+    #[must_use]
+    pub fn reference_signature(&self) -> Option<ReferenceSignature> {
+        match &self.body {
+            EntityBody::Nested { value_payload, .. } => parse_reference_signature(value_payload),
+            EntityBody::Inline(_) => None,
+        }
+    }
 }
 
 /// Parse every maximal contiguous run of length-closed `7C05` records.
@@ -708,9 +899,7 @@ struct EntityRecordCandidates {
 #[derive(Clone, Copy)]
 enum EntityRecordLayout {
     Nested {
-        definition_len: u32,
         definition_end: usize,
-        value_len: u32,
         value_end: usize,
     },
     Inline,
@@ -831,9 +1020,7 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
         total_len,
         lead,
         layout: EntityRecordLayout::Nested {
-            definition_len,
             definition_end,
-            value_len,
             value_end,
         },
         identities,
@@ -891,52 +1078,31 @@ fn materialize_record(
     identity: EntityIdentityCandidate,
 ) -> Option<EntityRecord> {
     let record_end = candidate.pos.checked_add(candidate.total_len)?;
-    if matches!(candidate.layout, EntityRecordLayout::Inline) {
-        return Some(EntityRecord {
-            pos: candidate.pos,
-            total_len: candidate.total_len,
-            lead: candidate.lead,
-            inline_body: Some(data.get(candidate.pos + 6..record_end)?.to_vec()),
-            definition_len: 0,
-            definition_prefix: Vec::new(),
-            definition_schema_selectors: Vec::new(),
-            entity_id: identity.entity_id,
-            definition_suffix: Vec::new(),
-            value_len: 0,
-            value_payload: Vec::new(),
-            numeric_pair: None,
-            reference_signature: None,
-            record_suffix: Vec::new(),
-        });
-    }
-    let EntityRecordLayout::Nested {
-        definition_len,
-        definition_end,
-        value_len,
-        value_end,
-    } = candidate.layout
-    else {
-        unreachable!("inline entity returned before nested materialization")
+    let body = match candidate.layout {
+        EntityRecordLayout::Inline => {
+            EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec())
+        }
+        EntityRecordLayout::Nested {
+            definition_end,
+            value_end,
+        } => {
+            let definition_start = candidate.pos.checked_add(13)?;
+            let identity_end = identity.delimiter.checked_add(5)?;
+            let value_payload = data.get(definition_end + 6..value_end)?;
+            let prefix = data.get(definition_start..identity.delimiter)?;
+            EntityBody::Nested {
+                prefix: prefix.to_vec(),
+                suffix: data.get(identity_end..definition_end)?.to_vec(),
+                value_payload: value_payload.to_vec(),
+                record_suffix: data.get(value_end..record_end)?.to_vec(),
+            }
+        }
     };
-    let definition_start = candidate.pos.checked_add(13)?;
-    let identity_end = identity.delimiter.checked_add(5)?;
-    let value_payload = data.get(definition_end + 6..value_end)?;
-    let prefix = data.get(definition_start..identity.delimiter)?;
     Some(EntityRecord {
         pos: candidate.pos,
-        total_len: candidate.total_len,
         lead: candidate.lead,
-        inline_body: None,
-        definition_len,
-        definition_prefix: prefix.to_vec(),
-        definition_schema_selectors: parse_definition_schema_selectors(prefix),
         entity_id: identity.entity_id,
-        definition_suffix: data.get(identity_end..definition_end)?.to_vec(),
-        value_len,
-        value_payload: value_payload.to_vec(),
-        numeric_pair: parse_numeric_pair(value_payload),
-        reference_signature: parse_reference_signature(value_payload),
-        record_suffix: data.get(value_end..record_end)?.to_vec(),
+        body,
     })
 }
 
@@ -1059,7 +1225,8 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let second_reference = u32_le(payload, at + 1)?;
-    if first_reference.checked_add(1) != Some(second_reference) {
+    let references = ConsecutiveReferences::new(first_reference)?;
+    if references.second() != second_reference {
         return None;
     }
     let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
@@ -1091,12 +1258,13 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     (at + 5 == payload.len()).then_some(ReferenceSignature {
-        first_reference,
+        references,
         prefix,
-        signature,
-        signature_program,
+        tokens: signature_program
+            .into_iter()
+            .map(ReferenceSignatureToken::from)
+            .collect(),
         signature_offset,
-        second_reference,
         second_reference_offset,
     })
 }
@@ -1198,6 +1366,38 @@ mod tests {
     use super::*;
     use crate::value_block;
 
+    // The tuple carries one coupled result; a separate alias would add no invariant.
+    #[allow(clippy::type_complexity)]
+    fn nested_body(
+        record: &EntityRecord,
+    ) -> (
+        usize,
+        &[u8],
+        Vec<DefinitionSchemaSelector>,
+        &[u8],
+        usize,
+        &[u8],
+        &[u8],
+    ) {
+        match &record.body {
+            EntityBody::Nested {
+                prefix,
+                suffix,
+                value_payload,
+                record_suffix,
+            } => (
+                prefix.len() + suffix.len() + 11,
+                prefix.as_slice(),
+                parse_definition_schema_selectors(prefix),
+                suffix.as_slice(),
+                value_payload.len() + 6,
+                value_payload.as_slice(),
+                record_suffix.as_slice(),
+            ),
+            EntityBody::Inline(_) => panic!("expected nested entity body"),
+        }
+    }
+
     fn record_with_definition_suffix(
         prefix: &[u8],
         entity_id: u32,
@@ -1243,19 +1443,21 @@ mod tests {
             panic!("one entity-table run");
         };
 
-        assert_eq!(run[0].definition_prefix, prefix);
+        let (_, prefix_bytes, selectors, suffix, value_len, value_payload, record_suffix) =
+            nested_body(&run[0]);
+        assert_eq!(prefix_bytes, prefix);
         assert_eq!(
-            run[0].definition_schema_selectors,
+            selectors,
             [DefinitionSchemaSelector {
                 value: 0x0000_00ea,
                 offset: 0,
             }]
         );
         assert_eq!(run[0].entity_id, 37);
-        assert_eq!(run[0].definition_suffix, [0xaa]);
-        assert_eq!(run[0].value_len, 7);
-        assert_eq!(run[0].value_payload, [0xfe]);
-        assert_eq!(run[0].record_suffix, [0xbb]);
+        assert_eq!(suffix, [0xaa]);
+        assert_eq!(value_len, 7);
+        assert_eq!(value_payload, [0xfe]);
+        assert_eq!(record_suffix, [0xbb]);
     }
 
     #[test]
@@ -1274,7 +1476,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [89, 90, 91]
         );
-        assert_eq!(run[1].definition_prefix, [0xe9, 0xea]);
+        assert_eq!(nested_body(&run[1]).1, [0xe9, 0xea]);
     }
 
     #[test]
@@ -1299,8 +1501,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [1, 2]
         );
-        assert_eq!(run[0].definition_suffix, first_frame);
-        assert_eq!(run[1].definition_suffix, second_frame);
+        assert_eq!(nested_body(&run[0]).3, first_frame);
+        assert_eq!(nested_body(&run[1]).3, second_frame);
     }
 
     #[test]
@@ -1316,7 +1518,7 @@ mod tests {
             panic!("one inline entity-table run");
         };
         assert_eq!(run[0].entity_id, 37);
-        assert_eq!(run[0].inline_body.as_deref(), Some(&bytes[6..]));
+        assert_eq!(run[0].body, EntityBody::Inline(bytes[6..].to_vec()));
     }
 
     #[test]
@@ -1338,8 +1540,9 @@ mod tests {
         };
         assert_eq!(run.len(), 1);
         assert_eq!(run[0].entity_id, 89);
-        assert_eq!(run[0].record_suffix.first(), Some(&0xbb));
-        assert_eq!(&run[0].record_suffix[1..], nested);
+        let record_suffix = nested_body(&run[0]).6;
+        assert_eq!(record_suffix.first(), Some(&0xbb));
+        assert_eq!(&record_suffix[1..], nested);
     }
 
     #[test]
@@ -1499,6 +1702,46 @@ mod tests {
         );
     }
 
+    /// The complete reference-signature production the fixture payload carries.
+    fn complete_reference_signature_wire() -> ReferenceSignatureWire {
+        ReferenceSignatureWire {
+            first_reference: 207,
+            prefix: ReferenceSignaturePrefix::Atom2,
+            signature: "2(E,0(E,4))".to_owned(),
+            signature_program: vec![
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "2".to_owned(),
+                    offset: 12,
+                },
+                ReferenceSignatureInstruction::OpenCall { offset: 13 },
+                ReferenceSignatureInstruction::Symbol {
+                    symbol: ReferenceSignatureSymbol::E,
+                    offset: 14,
+                },
+                ReferenceSignatureInstruction::Comma { offset: 15 },
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "0".to_owned(),
+                    offset: 16,
+                },
+                ReferenceSignatureInstruction::OpenCall { offset: 17 },
+                ReferenceSignatureInstruction::Symbol {
+                    symbol: ReferenceSignatureSymbol::E,
+                    offset: 18,
+                },
+                ReferenceSignatureInstruction::Comma { offset: 19 },
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "4".to_owned(),
+                    offset: 20,
+                },
+                ReferenceSignatureInstruction::CloseCall { offset: 21 },
+                ReferenceSignatureInstruction::CloseCall { offset: 22 },
+            ],
+            signature_offset: 12,
+            second_reference: 208,
+            second_reference_offset: 24,
+        }
+    }
+
     #[test]
     fn reference_signature_requires_one_complete_nested_production() {
         let payload = [
@@ -1509,42 +1752,11 @@ mod tests {
 
         assert_eq!(
             parse_reference_signature(&payload),
-            Some(ReferenceSignature {
-                first_reference: 207,
-                prefix: ReferenceSignaturePrefix::Atom2,
-                signature: "2(E,0(E,4))".to_owned(),
-                signature_program: vec![
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "2".to_owned(),
-                        offset: 12,
-                    },
-                    ReferenceSignatureInstruction::OpenCall { offset: 13 },
-                    ReferenceSignatureInstruction::Symbol {
-                        symbol: ReferenceSignatureSymbol::E,
-                        offset: 14,
-                    },
-                    ReferenceSignatureInstruction::Comma { offset: 15 },
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "0".to_owned(),
-                        offset: 16,
-                    },
-                    ReferenceSignatureInstruction::OpenCall { offset: 17 },
-                    ReferenceSignatureInstruction::Symbol {
-                        symbol: ReferenceSignatureSymbol::E,
-                        offset: 18,
-                    },
-                    ReferenceSignatureInstruction::Comma { offset: 19 },
-                    ReferenceSignatureInstruction::Decimal {
-                        digits: "4".to_owned(),
-                        offset: 20,
-                    },
-                    ReferenceSignatureInstruction::CloseCall { offset: 21 },
-                    ReferenceSignatureInstruction::CloseCall { offset: 22 },
-                ],
-                signature_offset: 12,
-                second_reference: 208,
-                second_reference_offset: 24,
-            })
+            Some(
+                complete_reference_signature_wire()
+                    .try_into()
+                    .expect("reference signature fixture has matching references and instructions")
+            )
         );
 
         let mut nonconsecutive = payload;
@@ -1569,8 +1781,35 @@ mod tests {
         assert_eq!(
             parse_reference_signature(&alternate_prefix)
                 .expect("alternate reference-signature prefix")
-                .prefix,
+                .prefix(),
             ReferenceSignaturePrefix::Atom35
+        );
+    }
+
+    #[test]
+    fn reference_signature_wire_rejects_a_second_reference_that_does_not_follow_the_first() {
+        let mut wire = complete_reference_signature_wire();
+        wire.second_reference += 1;
+        assert_eq!(
+            ReferenceSignature::try_from(wire),
+            Err("second_reference must follow first_reference")
+        );
+    }
+
+    #[test]
+    fn reference_signature_wire_rejects_a_program_disagreeing_with_the_signature() {
+        let mut wire = complete_reference_signature_wire();
+        wire.signature_program.pop();
+        assert_eq!(
+            ReferenceSignature::try_from(wire),
+            Err("signature_program disagrees with signature and signature_offset")
+        );
+
+        let mut shifted = complete_reference_signature_wire();
+        shifted.signature_offset += 1;
+        assert_eq!(
+            ReferenceSignature::try_from(shifted),
+            Err("signature_program disagrees with signature and signature_offset")
         );
     }
 

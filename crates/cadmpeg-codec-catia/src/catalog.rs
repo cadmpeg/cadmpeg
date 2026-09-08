@@ -2,29 +2,23 @@
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
 use cadmpeg_core::decode::View;
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 const PREFIX: [&str; 4] = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
 
 /// One exact `7C02` string catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Catalog {
     /// Byte offset of the `7C02` marker.
     pub pos: usize,
     /// Total framed byte length.
     pub total_len: usize,
-    /// Stored count, equal to the entry population plus one.
-    pub declared_count: u32,
     /// Catalog entries in serialized order.
     pub entries: Vec<CatalogEntry>,
 }
 
 /// One inclusive-length ASCII catalog entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatalogEntry {
     /// Zero-based serialized entry ordinal.
     pub ordinal: u32,
@@ -111,7 +105,6 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     Some(Catalog {
         pos,
         total_len,
-        declared_count,
         entries,
     })
 }

@@ -11,8 +11,7 @@ use crate::mesh::MeshExpand;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
-use crate::objects::parse_class_wrapper;
-use crate::objects::UserdataDescriptor;
+use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{Plane, Point3, Vector3};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
@@ -212,11 +211,11 @@ pub(crate) fn decode(
         let mut loop_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            wrapper_offset..wrapper.next_offset,
+            wrapper_offset..wrapper.next_offset(),
             archive,
             &mut loop_warnings,
         )?;
-        body.skip(wrapper.next_offset - wrapper_offset)
+        body.skip(wrapper.next_offset() - wrapper_offset)
             .ok_or_else(|| GeometryError::malformed(body.position(), "hatch loop overruns body"))?;
         let decoded =
             crate::curves::decode_2d(data, class.class_uuid, class.class_data_range, archive)?;
@@ -277,6 +276,7 @@ pub(crate) fn apply_userdata(
     let mut first_gradient = None;
     for extra in userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
     {
         match parse_userdata(data, extra, archive, scale) {
@@ -288,6 +288,7 @@ pub(crate) fn apply_userdata(
     }
     for extra in userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
     {
         match parse_gradient_userdata(data, extra, scale, archive) {
@@ -315,7 +316,7 @@ pub(crate) fn apply_userdata(
 
 fn parse_gradient_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Gradient, GeometryError> {
@@ -326,13 +327,13 @@ fn parse_gradient_userdata(
         archive,
         false,
     )?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(GeometryError::malformed(
             outer.header_start,
             "gradient userdata payload is not an anonymous chunk",
         ));
     }
-    let mut reader = crate::chunks::BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut reader = crate::chunks::BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version_offset = reader.position();
     let major = reader.i32()?;
     let _minor = reader.i32()?;
@@ -378,15 +379,15 @@ fn parse_gradient_userdata(
         .map_err(|_| GeometryError::malformed(count_offset, "gradient color allocation refused"))?;
     for index in 0..count {
         let stop_offset = reader.position();
-        let stop = chunk_at(data, stop_offset, outer.body.end, archive, false)?;
-        if stop.typecode != ANONYMOUS || stop.short {
+        let stop = chunk_at(data, stop_offset, outer.body().end, archive, false)?;
+        if stop.typecode != ANONYMOUS || stop.short() {
             return Err(GeometryError::malformed(
                 stop_offset,
                 format!("gradient color stop {index} is not an anonymous chunk"),
             ));
         }
         let mut stop_reader =
-            crate::chunks::BoundedReader::new(data, stop.body.start, stop.body.end)?;
+            crate::chunks::BoundedReader::new(data, stop.body().start, stop.body().end)?;
         let stop_version_offset = stop_reader.position();
         let stop_major = stop_reader.i32()?;
         let _stop_minor = stop_reader.i32()?;
@@ -406,7 +407,7 @@ fn parse_gradient_userdata(
             ));
         }
         stop_reader.skip_remaining()?;
-        reader.skip(stop.next_offset - reader.position())?;
+        reader.skip(stop.next_offset() - reader.position())?;
         colors.push(GradientColorStop { color, position });
     }
     reader.skip_remaining()?;
@@ -460,7 +461,7 @@ pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
 
 fn parse_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<[f64; 2], GeometryError> {
@@ -471,18 +472,19 @@ fn parse_userdata(
         archive,
         false,
     )?;
-    if payload.typecode != ANONYMOUS || payload.short {
+    if payload.typecode != ANONYMOUS || payload.short() {
         return Err(GeometryError::malformed(
             payload.header_start,
             "V5 hatch userdata payload is not an anonymous chunk",
         ));
     }
-    let mut reader = crate::chunks::BoundedReader::new(data, payload.body.start, payload.body.end)?;
+    let mut reader =
+        crate::chunks::BoundedReader::new(data, payload.body().start, payload.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::malformed(
-            payload.body.start,
+            payload.body().start,
             "unsupported V5 hatch-extra version",
         ));
     }
@@ -571,7 +573,7 @@ pub(crate) mod tests {
     }
 
     fn gradient_descriptor(payload: &[u8]) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known(ClassUserdata {
             range: 0..payload.len(),
             version: (2, 2),
             class_uuid: GRADIENT_COLOR_DATA,
@@ -579,12 +581,9 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..payload.len(),
-            unknown_version: false,
-        }
+        })
     }
 
     #[test]
@@ -601,7 +600,7 @@ pub(crate) mod tests {
             body.extend(3.0_f64.to_le_bytes());
             let extra =
                 crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V5, 0, &body);
-            let descriptor = UserdataDescriptor {
+            let descriptor = UserdataDescriptor::Known(ClassUserdata {
                 range: 0..extra.len(),
                 version: (2, 2),
                 class_uuid: V5_HATCH_EXTRA,
@@ -609,12 +608,9 @@ pub(crate) mod tests {
                 copy_count: 0,
                 transform_range: 0..0,
                 application_uuid: None,
-                last_saved_as_goo: None,
-                archive_version: None,
-                writer_version: None,
+                save_context: None,
                 payload_range: 0..extra.len(),
-                unknown_version: false,
-            };
+            });
             apply_userdata(
                 &extra,
                 std::slice::from_ref(&descriptor),
@@ -626,7 +622,12 @@ pub(crate) mod tests {
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
-            wrong_item_descriptor.item_uuid = Uuid::nil();
+            let UserdataDescriptor::Known(ClassUserdata { item_uuid, .. }) =
+                &mut wrong_item_descriptor
+            else {
+                panic!("expected known userdata");
+            };
+            *item_uuid = Uuid::nil();
             let mut wrong_item_hatch =
                 decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
             apply_userdata(
@@ -652,8 +653,16 @@ pub(crate) mod tests {
             let mut combined = extra.clone();
             combined.extend(second);
             let mut second_descriptor = descriptor.clone();
-            second_descriptor.range = second_start..combined.len();
-            second_descriptor.payload_range = second_start..combined.len();
+            let UserdataDescriptor::Known(ClassUserdata {
+                range,
+                payload_range,
+                ..
+            }) = &mut second_descriptor
+            else {
+                panic!("expected known userdata");
+            };
+            *range = second_start..combined.len();
+            *payload_range = second_start..combined.len();
             apply_userdata(
                 &combined,
                 &[descriptor, second_descriptor],
@@ -680,7 +689,7 @@ pub(crate) mod tests {
         assert_eq!(hatch.loops.len(), 1);
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
         assert!(matches!(
-            hatch.loops[0].curve.geometry,
+            hatch.loops[0].curve.reported_geometry(),
             cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
         ));
     }

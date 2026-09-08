@@ -10,9 +10,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -49,22 +52,21 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let mut replay = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: result.ir(),
-            fidelity: Some(result.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut replay))
         .expect("mesh-surface native replay");
     assert_eq!(replay, source);
 
     let mut edited = result.ir().clone();
-    f3d_native_mut(&mut edited).mesh_surface_sentinels[0].id =
-        "f3d:asm:mesh-surface-sentinel#edited".into();
+    f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &edited,
-            fidelity: Some(result.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(&edited, Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("mesh-surface structural metadata is immutable");
     assert!(error.to_string().contains("edits beyond supported"));
@@ -74,10 +76,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Unknown { record: None };
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("mesh-surface sentinel requires retained ASM bytes");
     assert!(error
@@ -123,21 +122,21 @@ fn nurbs_surface_block_decodes_to_carrier() {
     }
 
     let s = decode_surface_cache(&b).expect("surface block decodes");
-    assert_eq!((s.u_degree, s.v_degree), (1, 1));
-    assert_eq!((s.u_count, s.v_count), (2, 2));
-    assert_eq!(s.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.control_points.len(), 4);
-    assert!(s.weights.is_none());
+    assert_eq!((s.u_degree(), s.v_degree()), (1, 1));
+    assert_eq!((s.u_count(), s.v_count()), (2, 2));
+    assert_eq!(s.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.control_points().len(), 4);
+    assert!(s.weights().is_none());
     // Transposed to u-major: index u*v_count+v. Pole (u1,v0) sits at index 2,
     // and coordinates are cm→mm scaled (×10).
-    assert_eq!(s.control_points[2].x, 10.0);
-    assert_eq!(s.control_points[2].y, 0.0);
+    assert_eq!(s.control_points()[2].x, 10.0);
+    assert_eq!(s.control_points()[2].y, 0.0);
 }
 
 #[test]
 fn generated_exact_spline_surfaces_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+    use cadmpeg_ir::geometry::{ExactSpline, ProceduralSurfaceDefinition};
 
     for name in ["exact_spl_sur", "exactsur"] {
         let result = F3dCodec
@@ -147,15 +146,14 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("exact spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        assert_eq!(procedural.cache_fit_tolerance, Some(0.015));
+        assert_eq!(procedural.cache_fit_tolerance(), Some(0.015));
         assert_eq!(
-            procedural.definition,
-            ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
+            procedural.definition(),
+            &ProceduralSurfaceDefinition::Exact {
+                spline: ExactSpline::Legacy {
                     ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                    extension: 7,
                 },
-                extension: 7,
-                revision_form: None,
             }
         );
 
@@ -164,23 +162,19 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less exact spline surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less exact spline surface round trip");
         assert_eq!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
-            ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
+            round_trip.ir().model.procedural_surfaces[0].definition(),
+            &ProceduralSurfaceDefinition::Exact {
+                spline: ExactSpline::Legacy {
                     ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                    extension: 7,
                 },
-                extension: 7,
-                revision_form: None,
             }
         );
     }
@@ -198,8 +192,8 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("ruled spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        assert_eq!(procedural.cache_fit_tolerance, Some(0.025));
-        let ProceduralSurfaceDefinition::Ruled { first, second } = &procedural.definition else {
+        assert_eq!(procedural.cache_fit_tolerance(), Some(0.025));
+        let ProceduralSurfaceDefinition::Ruled { first, second } = procedural.definition() else {
             panic!("expected ruled surface construction")
         };
         assert!(result
@@ -233,17 +227,14 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less ruled surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less ruled surface round trip");
         let ProceduralSurfaceDefinition::Ruled { first, second } =
-            &round_trip.ir().model.procedural_surfaces[0].definition
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip ruled surface")
         };
@@ -257,7 +248,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                     .find(|curve| curve.id == *profile)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
     }
@@ -280,7 +271,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             second,
             basepoint,
             revision_form: None,
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected sum surface construction")
         };
@@ -319,17 +310,14 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less sum surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less sum surface round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Sum {
                 basepoint: cadmpeg_ir::math::Vector3 {
                     x: 10.0,
@@ -362,9 +350,9 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
             .procedural_surfaces
             .first()
             .expect("cacheless procedural surface");
-        assert!(procedural.cache_fit_tolerance.is_none());
+        assert!(procedural.cache_fit_tolerance().is_none());
         assert!(matches!(
-            procedural.definition,
+            procedural.definition(),
             ProceduralSurfaceDefinition::Ruled { .. } | ProceduralSurfaceDefinition::Sum { .. }
         ));
         assert!(matches!(
@@ -373,9 +361,12 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == procedural.surface)
+                .find(|surface| {
+                    result.ir().model.procedural_surface_owner(&procedural.id)
+                        == Some(&surface.id)
+                })
                 .map(|surface| &surface.geometry),
-            Some(SurfaceGeometry::Procedural { construction })
+            Some(SurfaceGeometry::Procedural { construction, .. })
                 if construction == &procedural.id
         ));
 
@@ -384,17 +375,14 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("cacheless exact surface source-less encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("cacheless exact surface source-less round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Ruled { .. } | ProceduralSurfaceDefinition::Sum { .. }
         ));
     }
@@ -421,7 +409,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             parameter_interval,
             transposed,
             revision_form: None,
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected revolution surface construction")
         };
@@ -460,24 +448,21 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less revolution surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less revolution surface round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Revolution {
                 transposed: false,
                 ..
             }
         ));
         let ProceduralSurfaceDefinition::Revolution { directrix, .. } =
-            &round_trip.ir().model.procedural_surfaces[0].definition
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             unreachable!()
         };
@@ -490,9 +475,9 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 .find(|curve| curve.id == *directrix)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
                         cadmpeg_ir::math::Point3::new(7.0, 1.0, 5.0),
                     ]
@@ -514,19 +499,21 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Offset {
             support,
-            revision_form: _,
             distance,
             u_sense,
             v_sense,
             support_extension: _,
-            extension_flags,
-        } = &procedural.definition
+            extension,
+        } = procedural.definition()
         else {
             panic!("expected offset surface construction")
         };
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
-        assert_eq!(*extension_flags, expected_flags);
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+            panic!("expected legacy offset extension")
+        };
+        assert_eq!(flags.wire_values(), expected_flags);
         assert!(result
             .ir()
             .model
@@ -539,10 +526,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less offset surface encode");
         let round_trip = F3dCodec
@@ -552,14 +536,17 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             distance,
             u_sense,
             v_sense,
-            extension_flags,
+            extension,
             ..
-        } = &round_trip.ir().model.procedural_surfaces[0].definition
+        } = &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip offset surface")
         };
         assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
-        assert_eq!(*extension_flags, expected_flags);
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+            panic!("expected legacy offset extension")
+        };
+        assert_eq!(flags.wire_values(), expected_flags);
     }
 }
 
@@ -574,36 +561,40 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         )
         .expect("compound spline surface decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Compound {
-        parameters,
-        components,
-    } = &procedural.definition
-    else {
+    let ProceduralSurfaceDefinition::Compound { components } = procedural.definition() else {
         panic!("expected compound surface construction")
     };
-    assert_eq!(parameters, &[-0.5, 1.5]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.parameter)
+            .collect::<Vec<_>>(),
+        [-0.5, 1.5]
+    );
     assert_eq!(components.len(), 2);
     let solved = result
         .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| {
+            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("compound solved surface");
-    let SurfaceGeometry::Nurbs(solved) = &solved.geometry else {
+    let Some(SurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
         panic!("expected solved NURBS surface")
     };
-    assert!(solved.weights.is_none());
+    assert!(solved.weights().is_none());
     let rational_component = result
         .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == components[1])
+        .find(|surface| surface.id == components[1].component)
         .expect("compound rational component");
     assert!(matches!(
         rational_component.geometry,
-        SurfaceGeometry::Nurbs(ref surface) if surface.weights.is_some()
+                SurfaceGeometry::Nurbs(ref surface) if surface.weights().is_some()
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -611,19 +602,16 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
-        ProceduralSurfaceDefinition::Compound { ref parameters, ref components }
-            if parameters == &[-0.5, 1.5] && components.len() == 2
+        round_trip.ir().model.procedural_surfaces[0].definition(),
+        ProceduralSurfaceDefinition::Compound { components }
+            if components.iter().map(|item| item.parameter).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2
     ));
 }
 
@@ -657,7 +645,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             pcurve,
             parameter,
             taper,
-        } = &result.ir().model.procedural_surfaces[0].definition
+        } = &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected taper surface")
         };
@@ -702,17 +690,14 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less taper encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less taper round trip");
         let ProceduralSurfaceDefinition::Taper { reference, .. } =
-            &round_trip.ir().model.procedural_surfaces[0].definition
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip taper")
         };
@@ -725,9 +710,9 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 .find(|curve| curve.id == *reference)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                         cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
                     ]
@@ -756,7 +741,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             singularities,
             mode,
             bridge,
-        } = &result.ir().model.procedural_surfaces[0].definition
+        } = &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected loft surface")
         };
@@ -781,19 +766,19 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         );
         assert!(sections.iter().all(|section| section.entries.len() == 1));
         assert_eq!(
-            sections[0].entries[0].profile[0].data.subdata.type_code,
+            sections[0].entries[0].profile[0].form.subdata().type_code(),
             211
         );
         assert_eq!(
-            sections[0].entries[0].profile[0].data.direction,
+            sections[0].entries[0].profile[0].form.direction().copied(),
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
-        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        assert!(sections[1].entries[0].profile[0].form.direction().is_none());
         assert!(sections
             .iter()
             .flat_map(|section| &section.entries)
             .all(|entry| entry.path.auxiliaries.len() == 1));
-        let line_profile = sections[0].entries[0].profile[0].curve.clone();
+        let line_profile = sections[0].entries[0].profile[0].curve.id.clone();
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
@@ -810,10 +795,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less loft encode");
         let round_trip = F3dCodec
@@ -827,7 +809,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             singularities,
             mode,
             bridge,
-        } = &round_trip.ir().model.procedural_surfaces[0].definition
+        } = &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip loft surface")
         };
@@ -845,10 +827,10 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 && section.entries[0].path.auxiliaries.len() == 1
         }));
         assert_eq!(
-            sections[0].entries[0].profile[0].data.direction,
+            sections[0].entries[0].profile[0].form.direction().copied(),
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
-        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        assert!(sections[1].entries[0].profile[0].form.direction().is_none());
         let profile = &sections[0].entries[0].profile[0].curve;
         assert!(matches!(
             round_trip
@@ -856,12 +838,12 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *profile)
+                .find(|curve| curve.id == profile.id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [-1.0, -1.0, 2.0, 2.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
                         cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
                     ]
@@ -880,7 +862,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
         )
         .expect("net surface decode");
     let ProceduralSurfaceDefinition::Net { construction } =
-        &decoded.ir().model.procedural_surfaces[0].definition
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected net surface")
     };
@@ -894,7 +876,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     assert!(construction
         .formulas
         .iter()
-        .all(|formula| formula.name == "null_law"));
+        .all(|formula| matches!(formula, cadmpeg_ir::geometry::LawFormula::Null)));
     assert_eq!(construction.discontinuities[0], [0.25]);
 
     let (mut source_less, _, _) = decoded.into_parts();
@@ -902,17 +884,14 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less net surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less net surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Net { .. }
     ));
 }
@@ -930,7 +909,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     let ProceduralSurfaceDefinition::Sweep {
         native: Some(native),
         ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition
+    } = &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
@@ -949,7 +928,9 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     assert_eq!(directions[2].z, 1.0);
     assert_eq!(origin.z, 30.0);
     assert_eq!(*parameters, [0.1, 0.2, 0.3, 0.4]);
-    assert!(formulas.iter().all(|formula| formula.name == "null_law"));
+    assert!(formulas
+        .iter()
+        .all(|formula| matches!(formula, cadmpeg_ir::geometry::LawFormula::Null)));
     assert_eq!(native.discontinuities[0], [0.25]);
 
     let (mut source_less, _, _) = decoded.into_parts();
@@ -957,17 +938,14 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less profile-first sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less profile-first sweep round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Sweep {
             native: Some(_),
             ..
@@ -994,7 +972,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
             &DecodeOptions::default(),
         )
         .expect("T-spline surface decode");
-    let native = construction(&decoded.ir().model.procedural_surfaces[0].definition).clone();
+    let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
     assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
     assert_eq!((native.type_code, native.trailing_value), (7, 9));
     let TSplineSubtransform::Inline {
@@ -1008,35 +986,26 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     assert!(program.contains("v 1 0 0 0"));
     assert_eq!(*separator, Some(false));
     assert_eq!(values, "100verts 1 2\n");
-    let graph = native
-        .program_graph
-        .as_ref()
-        .expect("parsed T-spline graph");
+    let graph = native.program_graph().expect("parsed T-spline graph");
     assert_eq!(graph.headers.len(), 2);
     assert_eq!(graph.records.len(), 3);
     assert_eq!(graph.records[0].kind, "v");
     assert!(graph.unparsed_lines.is_empty());
-    assert_eq!(
-        native.values_graph.as_ref().unwrap().records[0].kind,
-        "100verts"
-    );
+    assert_eq!(native.values_graph().unwrap().records[0].kind, "100verts");
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less T-spline encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less T-spline round trip");
     assert_eq!(
-        construction(&round_trip.ir().model.procedural_surfaces[0].definition),
+        construction(round_trip.ir().model.procedural_surfaces[0].definition()),
         &native
     );
 }
@@ -1053,7 +1022,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             )
             .expect("helix surface decode");
         let ProceduralSurfaceDefinition::Helix { construction } =
-            &decoded.ir().model.procedural_surfaces[0].definition
+            &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected helix surface")
         };
@@ -1065,7 +1034,12 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             matches!(construction.profile, HelixSurfaceProfile::Circle { .. })
         );
 
-        let surface_id = decoded.ir().model.procedural_surfaces[0].surface.clone();
+        let surface_id = decoded
+            .ir()
+            .model
+            .procedural_surface_owner(&decoded.ir().model.procedural_surfaces[0].id)
+            .expect("helix surface owner")
+            .clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -1078,7 +1052,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         assert!(
             matches!(
                 &surface.geometry,
-                SurfaceGeometry::Procedural { construction }
+                SurfaceGeometry::Procedural { construction, .. }
                     if *construction == source_less.model.procedural_surfaces[0].id
             ),
             "unexpected helix carrier: {:?}",
@@ -1086,17 +1060,14 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         );
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less helix surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less helix surface round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition,
+            round_trip.ir().model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Helix { .. }
         ));
     }

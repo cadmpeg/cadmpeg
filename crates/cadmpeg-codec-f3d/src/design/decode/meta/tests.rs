@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -76,7 +75,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
             panic!("expected one component naming space");
         };
         assert_eq!(space.component_record_index, 17);
-        assert_eq!(space.context_uuid, CONTEXT_UUID);
+        assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
         assert_eq!(space.byte_offset, marker as u64);
         assert_eq!(
             space.context_uuid_offset,
@@ -95,7 +94,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         panic!("expected one typed component naming space");
     };
     assert_eq!(space.component_record_index, 17);
-    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
     assert_eq!(space.byte_offset, typed_marker as u64);
 
     let mut overlapping_reference = vec![1];
@@ -113,7 +112,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     let [space] = decoded.as_slice() else {
         panic!("expected one component naming space");
     };
-    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
 
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);
@@ -189,31 +188,31 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         let [timeline] = decoded.as_slice() else {
             panic!("expected one timeline record");
         };
-        assert_eq!(timeline.record_index, 35);
-        assert_eq!(timeline.context_record_index, 17);
-        assert_eq!(timeline.item_record_indices, [101, 102]);
-        assert_eq!(timeline.frame_length, bulk.len() as u64);
+        assert_eq!(timeline.record_index.get(), 35);
+        assert_eq!(timeline.context_record_index.get(), 17);
         assert_eq!(
-            timeline.item_record_index_offsets.len(),
-            timeline.item_record_indices.len()
+            timeline
+                .frame
+                .items()
+                .iter()
+                .map(|item| item.value)
+                .collect::<Vec<_>>(),
+            [101, 102]
         );
-        for (record_index, offset) in timeline
-            .item_record_indices
-            .iter()
-            .zip(&timeline.item_record_index_offsets)
-        {
+        assert_eq!(timeline.frame.frame_length(), bulk.len() as u64);
+        for item in timeline.frame.items() {
             assert_eq!(
                 u64::from_le_bytes(
-                    bulk[*offset as usize..*offset as usize + 8]
+                    bulk[item.offset as usize..item.offset as usize + 8]
                         .try_into()
                         .expect("timeline target")
                 ),
-                *record_index
+                item.value
             );
         }
 
         let mut duplicate = bulk.clone();
-        let second_offset = timeline.item_record_index_offsets[1] as usize;
+        let second_offset = timeline.frame.items()[1].offset as usize;
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
             crate::design::decode::meta::decode_feature_timelines(scan)

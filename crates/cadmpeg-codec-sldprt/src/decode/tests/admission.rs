@@ -22,7 +22,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit SLDPRT container entities"
         ),
@@ -42,7 +42,7 @@ fn decode_refuses_when_max_entities_is_below_container_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"
@@ -74,7 +74,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit SLDPRT entities"
         ),
@@ -100,6 +100,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
+    use crate::loss::SldprtLossCode;
     use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let fixture = synthetic_sldprt();
@@ -107,7 +108,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage decode keeps the partial result");
-    assert!(!salvaged.report().geometry_transferred);
+    assert!(!salvaged.report().geometry_transferred());
     assert!(salvaged
         .report()
         .losses
@@ -124,12 +125,18 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .iter()
         .any(|note| note.strict_consequence() == StrictConsequence::Reject));
 
+    // Name the code rather than the `sldprt/` prefix: this fixture also
+    // declares no `swVersion`, so `source.dialect-unverified` rejects under
+    // strict too, and a prefix test would pass on either. The invariant here
+    // is that unrepresentable *geometry* is what refuses.
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => {
-            assert!(
-                loss_code.starts_with("sldprt/"),
-                "unexpected loss code: {loss_code}"
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            assert_eq!(
+                rejection.loss().code,
+                SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+                "unexpected loss code: {}",
+                rejection.loss().code
             );
         }
         other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),
@@ -140,16 +147,53 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
     use cadmpeg_ir::report::StrictConsequence;
 
-    let fixture = sldprt_with_body_and_history(&triangle_body());
+    // The fixture declares a `swVersion` so this test keeps asserting what it
+    // is about. A part that declares nothing classifies as `sldprt:unknown`
+    // and charges `source.dialect-unverified`, whose strict floor rejects; the
+    // invariant here is that a *gauge substitution* stays tolerable, which a
+    // missing version declaration would mask.
+    let mut fixture = sldprt_with_body_and_history(&triangle_body());
+    add_solidworks_version(&mut fixture, 13100);
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect("strict decode accepts a tolerable-loss geometry result");
-    assert!(strict.report().geometry_transferred);
+    assert!(strict.report().geometry_transferred());
     assert!(strict
         .report()
         .losses
         .iter()
         .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
+}
+
+#[test]
+fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
+    use crate::loss::SldprtLossCode;
+
+    let mut fixture = outer_header();
+    fixture.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_TEST_1_9999", &triangle_body()),
+    ));
+    add_solidworks_version(&mut fixture, 13100);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage decode admits the residual kernel layer");
+    assert!(salvaged.report().geometry_transferred());
+    assert!(salvaged.report().losses.iter().any(|note| {
+        note.code == SldprtLossCode::KernelDialectUnverified.kind()
+            && note.message.contains("SCH_TEST_1_9999")
+    }));
+
+    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
+    match strict {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => assert_eq!(
+            rejection.loss().code,
+            SldprtLossCode::KernelDialectUnverified.kind()
+        ),
+        other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
+    }
 }
 
 /// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.

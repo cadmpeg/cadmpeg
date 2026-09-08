@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section carrier intersection, trim vertices, and coordinate reconciliation.
 
+use super::axis::SectionAxis;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Angle, Length};
@@ -16,7 +18,6 @@ use super::geometry::{
 use super::radii::{
     resolved_section_radii, section_arc_carrier,
     section_segment_intersection_carrier_with_missing_line, trim_segment_id,
-    SectionIntersectionCarrier,
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
@@ -211,26 +212,24 @@ pub(crate) fn intersect_tangent_section_arcs(
 }
 
 pub(crate) fn intersect_section_carriers(
-    first: &SectionIntersectionCarrier,
-    second: &SectionIntersectionCarrier,
+    first: &SketchGeometry,
+    second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
     let line_arc_is_bounded = matches!(
-        (&first.geometry, &second.geometry),
+        (first, second),
         (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. })
             | (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. })
     );
-    intersect_section_lines(&first.geometry, &second.geometry)
+    intersect_section_lines(first, second)
         .or_else(|| {
             line_arc_is_bounded
-                .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
+                .then(|| intersect_section_line_arc(first, second))
                 .flatten()
         })
-        .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
+        .or_else(|| intersect_tangent_section_arcs(first, second))
 }
 
-pub(crate) fn intersect_incident_section_carriers(
-    carriers: &[SectionIntersectionCarrier],
-) -> Option<[f64; 2]> {
+pub(crate) fn intersect_incident_section_carriers(carriers: &[SketchGeometry]) -> Option<[f64; 2]> {
     (carriers.len() >= 2).then_some(())?;
     let mut candidates = Vec::new();
     for first in 0..carriers.len() {
@@ -403,7 +402,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
         let common_points = entities
             .iter()
             .filter_map(|external_id| segments.unique_segment(*external_id))
-            .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
+            .map(|segment| segment.point_ids().into_iter().collect::<BTreeSet<_>>())
             .reduce(|common, points| common.intersection(&points).copied().collect());
         if let Some(common_points) = common_points {
             let common_points = common_points.into_iter().collect::<Vec<_>>();
@@ -616,8 +615,12 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
             definition,
             segment.external_id,
         ) {
-            Some(0) => (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
-            Some(1) => (start[1] - end[1]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
+            Some(SectionAxis::U) => {
+                (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+            }
+            Some(SectionAxis::V) => {
+                (start[1] - end[1]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+            }
             _ => false,
         };
         orientation_matches.then_some(())?;
@@ -653,6 +656,8 @@ pub(crate) fn section_xyz_in_model(
 
 #[cfg(test)]
 mod tests {
+    mod trimmed_carriers;
+
     use super::{
         resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
     };
@@ -663,9 +668,8 @@ mod tests {
     #[test]
     fn trim_vertex_requires_exact_trim_entity_incidence() {
         let segment = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -676,8 +680,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 1,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -686,14 +692,10 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![segment(42, [1, 2]), segment(43, [3, 4])],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                rows: (vec![segment(42, [1, 2]), segment(43, [3, 4])])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: Some(crate::feature::FeatureTrimEntityTable {
@@ -705,7 +707,6 @@ mod tests {
                     external_id: 42,
                     mode: None,
                     vertices: [1, 2],
-                    center_vertex: None,
                     kind: crate::feature::TrimEntityKind::Line,
                     offset: 0,
                 }],
@@ -748,7 +749,12 @@ mod tests {
 
         let mut shared_point = definition.clone();
         shared_point.trim_vertices = None;
-        shared_point.segments.as_mut().expect("segments").rows[1].point_ids = [2, 3];
+        shared_point
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .edit_ordinary(|rows| rows[1].kind = crate::feature::FeatureSegmentKind::Line([2, 3]));
         shared_point
             .trim_entities
             .as_mut()
@@ -758,7 +764,6 @@ mod tests {
                 external_id: 43,
                 mode: None,
                 vertices: [2, 3],
-                center_vertex: None,
                 kind: crate::feature::TrimEntityKind::Line,
                 offset: 0,
             });
@@ -771,9 +776,8 @@ mod tests {
     #[test]
     fn incomplete_unique_trim_line_uses_stored_orientation() {
         let segment = crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: Some(1),
@@ -784,8 +788,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 2,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(2),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -794,14 +800,10 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![segment.clone()],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                rows: (vec![segment.clone()])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: Some(crate::feature::FeatureTrimEntityTable {
@@ -813,7 +815,6 @@ mod tests {
                     external_id: 10,
                     mode: None,
                     vertices: [3, 4],
-                    center_vertex: None,
                     kind: crate::feature::TrimEntityKind::Line,
                     offset: 1,
                 }],
@@ -844,21 +845,25 @@ mod tests {
         );
 
         let mut duplicate = definition;
-        duplicate
-            .segments
-            .as_mut()
-            .expect("segments")
-            .rows
-            .push(crate::feature::FeatureSegment {
+        duplicate.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
                 offset: 2,
                 ..segment
-            });
+            }),
+        );
         assert_eq!(
             trimmed_section_segment_geometry_with_missing_line(
                 &duplicate,
                 &BTreeMap::new(),
                 &trim_vertices,
-                &duplicate.segments.as_ref().expect("segments").rows[0],
+                &duplicate
+                    .segments
+                    .as_ref()
+                    .expect("segments")
+                    .rows
+                    .ordinary()
+                    .cloned()
+                    .collect::<Vec<_>>()[0],
                 None,
             ),
             None

@@ -6,8 +6,14 @@ Protein, external-reference, presentation, and design-record layers. Supported
 part kernel carriers transfer through [`cadmpeg-asm`][asm]. The codec is
 read-only: it has no Inventor writer, replay path, or patch path.
 
-Support level: **L1** (CFB v3, RSe schema 31, Meta Stream 8). ACIS 217/218
-part carriers show as extras. The finite support claims and extras are
+<!-- generated: capability inventor -->
+
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
+
+<!-- /generated: capability inventor -->
+
+The primary structural envelope is CFB v3, RSe schema 31, Meta Stream 8. ACIS
+217/218 part carriers show as extras. The finite support claims and extras are
 maintained in the [format-support profile][support].
 
 ## Install
@@ -49,8 +55,8 @@ metadata, and native records are required; container-only decoding does not
 inflate bulk geometry streams.
 
 `InventorCodec::inspect` returns the complete compound hierarchy and bounded
-container facts without transferring geometry. The public
-[`validate_native`][validate-native] function validates the typed
+container facts without transferring geometry.
+[`Codec::validate_native`][validate-native] validates the typed
 `inventor` native namespace; the CLI also runs shared IR validation on decoded
 geometry.
 
@@ -70,6 +76,12 @@ The primary semantic envelope is:
 - exact zlib framing for paired `M<token>` and `B<token>` streams;
 - versioned RSe metadata tables and B-record trailers;
 - part and assembly document kinds.
+
+These are the grammars the codec implements, not an admission gate. A document
+declaring another `RSeDb` schema, metadata marker, or metadata version is read
+with them anyway; a stream they cannot frame degrades to an unavailable stream
+with its own issue record, and the declaration makes the document
+`inventor:unknown` with a `source.dialect-unverified` charge.
 
 The parser enumerates database candidates, registry and revision records, exact
 M/B token pairs, metadata type and block tables, and every typed bulk record.
@@ -104,8 +116,11 @@ The active part path selects one typed kernel-carrier record in the sole
 carrier-specific footer and kernel header, then transfers through the shared
 ASM/ACIS decoder with segment- and carrier-qualified identities.
 
-ACIS binary save-format majors 217 and 218 use the supported 32-bit ACIS
-header and SAB grammar. The embedded carrier and the exact extracted carrier
+ACIS binary carriers use the 32-bit ACIS header and SAB grammar at every save
+format. Majors 217 and 218 are the verified bands; a carrier outside them is
+framed and decoded the same way, reports the non-primary `acis:` layer as
+`Admission::Unverified` naming the nearer verified band, and charges
+`source.dialect-unverified`. The embedded carrier and the exact extracted carrier
 use the same decoder and must produce equal normalized geometry and validation
 findings. Other ACIS save-format bands remain retained carriers and produce a
 blocking `geometry_not_transferred` loss.
@@ -182,4 +197,4 @@ the [clean-room and legal policy][legal].
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/inventor.md
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md
-[validate-native]: https://docs.rs/cadmpeg-codec-inventor/latest/cadmpeg_codec_inventor/fn.validate_native.html
+[validate-native]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html#tymethod.validate_native

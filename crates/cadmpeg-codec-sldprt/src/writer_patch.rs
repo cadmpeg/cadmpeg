@@ -40,11 +40,20 @@ fn patch_partition_inner(
     }
     let source = retained_records
         .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data?;
     let scan = crate::container::scan_bytes(source);
-    let (block, header) = crate::container::select_active_parasolid(&scan)?;
-    if block.ps_stream.as_deref() != Some(block.payload.as_slice()) {
+    let selected = crate::container::select_active_parasolid_site(&scan)?;
+    let crate::container::Section::Block(block) = selected.section else {
+        return None;
+    };
+    let header = selected.header;
+    if block
+        .ps_streams
+        .first()
+        .map(|stream| stream.payload.as_slice())
+        != Some(block.payload.as_slice())
+    {
         return None;
     }
     let site = site_key(block);
@@ -53,9 +62,12 @@ fn patch_partition_inner(
         .iter()
         .filter(|candidate| site_key(candidate) == site)
         .flat_map(|candidate| {
-            candidate.ps_streams.iter().filter_map(move |payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((candidate, payload, header))
+            candidate.ps_streams.iter().filter_map(move |stream| {
+                crate::parasolid::is_body_stream(&stream.header).then_some((
+                    candidate,
+                    &stream.payload,
+                    &stream.header,
+                ))
             })
         })
         .collect::<Vec<_>>();
@@ -75,7 +87,7 @@ fn patch_partition_inner(
     });
     let bodies = streams
         .iter()
-        .map(|(_, payload, header)| (payload.as_slice(), header))
+        .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
     let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline");
     if !same_graph(ir, &native) {
@@ -176,14 +188,7 @@ fn annotation_offset(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
     })?;
-    let stream = usize::try_from(provenance.stream)
-        .ok()
-        .and_then(|index| annotations.streams.get(index))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "SLDPRT mutation provenance for {id} references a missing stream"
-            ))
-        })?;
+    let stream = provenance.stream();
     if stream != section {
         return Err(CodecError::malformed(format_args!(
             "SLDPRT mutation provenance for {id} references {stream}, not {section}"
@@ -255,8 +260,8 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
             .model
             .loops
             .iter()
-            .map(|v| (&v.id, &v.face, &v.coedges))
-            .eq(native.loops.iter().map(|v| (&v.id, &v.face, &v.coedges)))
+            .map(|v| (&v.id, &v.face, v.coedges()))
+            .eq(native.loops.iter().map(|v| (&v.id, &v.face, v.coedges())))
         && ir
             .model
             .coedges
@@ -266,8 +271,6 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.id,
                     &v.owner_loop,
                     &v.edge,
-                    &v.next,
-                    &v.previous,
                     &v.radial_next,
                     v.sense,
                     &v.pcurves,
@@ -278,8 +281,6 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.id,
                     &v.owner_loop,
                     &v.edge,
-                    &v.next,
-                    &v.previous,
                     &v.radial_next,
                     v.sense,
                     &v.pcurves,
@@ -337,7 +338,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Unknown { .. } => 6,
         SurfaceGeometry::Procedural { .. } => 7,
         SurfaceGeometry::Transformed { .. } => 7,
-        SurfaceGeometry::Polygonal { .. } => 8,
+        SurfaceGeometry::Polygonal(_) => 8,
     }
 }
 
@@ -353,7 +354,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Unknown { .. } => 7,
         CurveGeometry::Procedural { .. } => 8,
         CurveGeometry::Transformed { .. } => 8,
-        CurveGeometry::Polyline { .. } => 9,
+        CurveGeometry::Polyline(_) => 9,
         CurveGeometry::Composite { .. } => 10,
     }
 }
@@ -383,7 +384,7 @@ fn patch_points(
             .points
             .values()
             .find(|point| point.offset == offset)?;
-        let values = body_start.checked_add(point.xyz_offset?)?;
+        let values = body_start.checked_add(point.xyz_offset)?;
         let old_xyz_m = [
             old.position.x * 0.001,
             old.position.y * 0.001,
@@ -489,7 +490,11 @@ fn patch_curves(
 
 fn patch_compact(payload: &mut [u8], body_start: usize, offset: u64, values: &[f64]) -> Option<()> {
     let carrier = crate::brep::parse_carrier(payload.get(body_start..)?, offset as usize)?;
-    let start = body_start.checked_add(carrier.end.checked_sub(values.len() * 8)?)?;
+    let end = match carrier {
+        crate::brep::Carrier::Curve(carrier) => carrier.end,
+        crate::brep::Carrier::Surface(carrier) => carrier.end,
+    };
+    let start = body_start.checked_add(end.checked_sub(values.len() * 8)?)?;
     for (index, value) in values.iter().enumerate() {
         payload
             .get_mut(start + index * 8..start + (index + 1) * 8)?

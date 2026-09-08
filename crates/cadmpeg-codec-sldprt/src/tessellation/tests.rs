@@ -17,7 +17,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex,
 };
 
 fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
@@ -254,9 +254,12 @@ fn add_face(
     geometry: SurfaceGeometry,
     corners: [Point3; 4],
 ) -> FaceId {
-    let face_id = FaceId(format!("face-{name}"));
-    let loop_id = LoopId(format!("loop-{name}"));
-    let surface_id = SurfaceId(format!("surface-{name}"));
+    let face_id =
+        FaceId::mint(format!("synthetic:test:face#face-{name}")).expect("identity grammar");
+    let loop_id =
+        LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
+        .expect("identity grammar");
     model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry,
@@ -264,11 +267,16 @@ fn add_face(
     });
 
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("synthetic:test:coedge#coedge-{name}-{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     for (index, corner) in corners.iter().copied().enumerate() {
-        let point_id = PointId(format!("point-{name}-{index}"));
-        let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+        let point_id = PointId::mint(format!("synthetic:test:point#point-{name}-{index}"))
+            .expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+            .expect("identity grammar");
         model.points.push(Point {
             id: point_id.clone(),
             position: corner,
@@ -282,8 +290,10 @@ fn add_face(
     }
     for (index, origin) in corners.iter().copied().enumerate() {
         let next = (index + 1) % 4;
-        let curve_id = CurveId(format!("curve-{name}-{index}"));
-        let edge_id = EdgeId(format!("edge-{name}-{index}"));
+        let curve_id = CurveId::mint(format!("synthetic:test:curve#curve-{name}-{index}"))
+            .expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
+            .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
         model.curves.push(Curve {
             id: curve_id.clone(),
@@ -293,8 +303,10 @@ fn add_face(
         model.edges.push(Edge {
             id: edge_id.clone(),
             curve: Some(curve_id),
-            start: VertexId(format!("vertex-{name}-{index}")),
-            end: VertexId(format!("vertex-{name}-{next}")),
+            start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
+                .expect("identity grammar"),
             param_range: None,
             tolerance: None,
         });
@@ -302,28 +314,25 @@ fn add_face(
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: coedge_ids[next].clone(),
-            previous: coedge_ids[(index + 3) % 4].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids,
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+        ),
     });
     model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId("shell".into()),
+        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: vec![loop_id].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -354,26 +363,31 @@ fn test_nurbs_surface() -> NurbsSurface {
     let control_points = (0..3)
         .flat_map(|u| (0..3).map(move |v| Point3::new(u as f64, v as f64, heights[u * 3 + v])))
         .collect();
-    NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
+    NurbsSurface::new(
+        2,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        3,
+        3,
         control_points,
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid test NURBS surface")
 }
 
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
-    for point in &mut surface.control_points {
-        point.z = 0.0;
-    }
+    surface
+        .edit_control_points(|points| {
+            for point in points {
+                point.z = 0.0;
+            }
+        })
+        .unwrap();
     surface
 }
 
@@ -405,9 +419,12 @@ fn add_cylindrical_patch_face(
         point_at(angles[1], max_z),
         point_at(angles[0], max_z),
     ];
-    let face_id = FaceId(format!("face-{name}"));
-    let loop_id = LoopId(format!("loop-{name}"));
-    let surface_id = SurfaceId(format!("surface-{name}"));
+    let face_id =
+        FaceId::mint(format!("synthetic:test:face#face-{name}")).expect("identity grammar");
+    let loop_id =
+        LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
+        .expect("identity grammar");
     model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -423,8 +440,10 @@ fn add_cylindrical_patch_face(
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let point_id = PointId(format!("point-{name}-{index}"));
-            let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+            let point_id = PointId::mint(format!("synthetic:test:point#point-{name}-{index}"))
+                .expect("identity grammar");
+            let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                .expect("identity grammar");
             model.points.push(Point {
                 id: point_id.clone(),
                 position: *point,
@@ -439,7 +458,10 @@ fn add_cylindrical_patch_face(
         })
         .collect::<Vec<_>>();
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("synthetic:test:coedge#coedge-{name}-{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_geometries = [
         CurveGeometry::Circle {
@@ -465,8 +487,10 @@ fn add_cylindrical_patch_face(
     ];
     for (index, geometry) in curve_geometries.into_iter().enumerate() {
         let next = (index + 1) % 4;
-        let curve_id = CurveId(format!("curve-{name}-{index}"));
-        let edge_id = EdgeId(format!("edge-{name}-{index}"));
+        let curve_id = CurveId::mint(format!("synthetic:test:curve#curve-{name}-{index}"))
+            .expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
+            .expect("identity grammar");
         model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -484,28 +508,25 @@ fn add_cylindrical_patch_face(
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: coedge_ids[next].clone(),
-            previous: coedge_ids[(index + 3) % 4].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids,
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
+        ),
     });
     model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId("shell".into()),
+        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: vec![loop_id].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -514,53 +535,58 @@ fn add_cylindrical_patch_face(
 }
 
 fn model_with_body() -> cadmpeg_ir::document::Model {
-    cadmpeg_ir::document::Model {
-        bodies: vec![Body {
-            id: BodyId("body".into()),
-            kind: BodyKind::Solid,
-            regions: vec![RegionId("region".into())],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }],
-        regions: vec![Region {
-            id: RegionId("region".into()),
-            body: BodyId("body".into()),
-            shells: vec![ShellId("shell".into())],
-        }],
-        shells: vec![Shell {
-            id: ShellId("shell".into()),
-            region: RegionId("region".into()),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
-        ..Default::default()
-    }
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.bodies = vec![Body {
+        id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    model.regions = vec![Region {
+        id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
+        body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+    }];
+    model.shells = vec![Shell {
+        id: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
+        region: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    }];
+    model
 }
 
 fn persistent_mesh(id: &str) -> Tessellation {
-    Tessellation {
-        id: id.into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
+    mesh_from(
+        id,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
         ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    }
+        vec![[0, 1, 2]],
+    )
+}
+
+fn mesh_from(
+    id: impl Into<String>,
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
+) -> Tessellation {
+    Tessellation::from_decoded(
+        id,
+        vertices,
+        triangles,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("valid tessellation")
 }
 
 fn persistent_identity(source: u32, local: u32, trailing_fields: &[u32]) -> PersistentFaceIdentity {
@@ -617,7 +643,6 @@ fn opaque_surface_suffix_remains_source_only() {
     );
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table_index: 0,
         table: ByteRange { start: 0, end: 1 },
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: references,
@@ -630,7 +655,6 @@ fn opaque_surface_suffix_remains_source_only() {
 fn persistent_surface_identity_requires_agreeing_duplicates() {
     let face = DisplayFace {
         mesh: Mesh::default(),
-        table_index: 0,
         table: ByteRange { start: 0, end: 1 },
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: vec![
@@ -659,7 +683,7 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     model.shells[0].faces.push(face.clone());
     model.tessellations.push(persistent_mesh("mesh"));
 
-    let face_identities = vec![(face.0.clone(), persistent_identity(7, 3, &[]))];
+    let face_identities = vec![(face.clone(), persistent_identity(7, 3, &[]))];
     let bindings = vec![PersistentFaceBinding {
         tessellation: "mesh".into(),
         identity: persistent_identity(7, 3, &[]),
@@ -670,7 +694,10 @@ fn persistent_surface_identity_binds_one_face_and_body() {
         vec!["mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -681,8 +708,8 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.0.clone(), persistent_identity(7, 3, &[])),
-        (second.0.clone(), persistent_identity(7, 3, &[])),
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(7, 3, &[])),
     ];
     let binding = PersistentFaceBinding {
         tessellation: "mesh".into(),
@@ -697,8 +724,8 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.0.clone(), persistent_identity(7, 3, &[])),
-        (second.0.clone(), persistent_identity(8, 4, &[])),
+        (first.clone(), persistent_identity(7, 3, &[])),
+        (second.clone(), persistent_identity(8, 4, &[])),
     ];
     let bindings = vec![
         PersistentFaceBinding {
@@ -722,8 +749,8 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(persistent_mesh("mesh"));
     let face_identities = vec![
-        (first.0.clone(), persistent_identity(266, 2, &[0])),
-        (second.0.clone(), persistent_identity(266, 2, &[1])),
+        (first.clone(), persistent_identity(266, 2, &[0])),
+        (second.clone(), persistent_identity(266, 2, &[1])),
     ];
     let binding = PersistentFaceBinding {
         tessellation: "mesh".into(),
@@ -743,30 +770,29 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     let first = add_square_face(&mut model, "first", -4.0);
     let second = add_square_face(&mut model, "second", 2.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
-    model.tessellations.push(Tessellation {
-        id: "mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(2.25, -0.75, 0.0),
-            Point3::new(3.75, -0.75, 0.0),
-            Point3::new(3.0, 0.75, 0.0),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "mesh",
+            vec![
+                Point3::new(2.25, -0.75, 0.0),
+                Point3::new(3.75, -0.75, 0.0),
+                Point3::new(3.0, 0.75, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![second]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
 
     model
         .faces
@@ -787,30 +813,29 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     let lower = add_cylindrical_patch_face(&mut model, "lower", 0.0, 1.0);
     let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
     model.shells[0].faces = vec![lower.clone(), upper.clone()];
-    model.tessellations.push(Tessellation {
-        id: "lower-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(5.0, 0.0, 0.25),
-            Point3::new(0.0, 5.0, 0.25),
-            Point3::new(5.0, 0.0, 0.75),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "lower-mesh",
+            vec![
+                Point3::new(5.0, 0.0, 0.25),
+                Point3::new(0.0, 5.0, 0.25),
+                Point3::new(5.0, 0.0, 0.75),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["lower-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![lower]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -819,30 +844,26 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     let face = add_cylindrical_patch_face(&mut model, "chordal", 0.0, 1.0);
     model.shells[0].faces.push(face.clone());
     let deflection = 0.1;
-    model.tessellations.push(Tessellation {
-        id: "chordal-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(5.0 - deflection, 0.0, 0.25),
-            Point3::new(0.0, 5.0 - deflection, 0.25),
-            Point3::new(5.0 - deflection, 0.0, 0.75),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: vec![
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "chordal-mesh",
+            vec![
+                Point3::new(5.0 - deflection, 0.0, 0.25),
+                Point3::new(0.0, 5.0 - deflection, 0.25),
+                Point3::new(5.0 - deflection, 0.0, 0.75),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(
         assign_unique_surface_owners(&mut model),
@@ -860,30 +881,26 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     let face = add_cylindrical_patch_face(&mut model, "inconsistent-normals", 0.0, 1.0);
     model.shells[0].faces.push(face.clone());
     let deflection = 0.1;
-    model.tessellations.push(Tessellation {
-        id: "inconsistent-normals-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(5.0 - deflection, 0.0, 0.25),
-            Point3::new(0.0, 5.0 - deflection, 0.25),
-            Point3::new(5.0 - deflection, 0.0, 0.75),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: vec![
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "inconsistent-normals-mesh",
+            vec![
+                Point3::new(5.0 - deflection, 0.0, 0.25),
+                Point3::new(0.0, 5.0 - deflection, 0.25),
+                Point3::new(5.0 - deflection, 0.0, 0.75),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(
         assign_unique_surface_owners(&mut model),
@@ -900,30 +917,26 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "off-surface", 0.0);
     model.shells[0].faces.push(face);
-    model.tessellations.push(Tessellation {
-        id: "off-surface-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(0.25, -0.75, 0.1),
-            Point3::new(1.75, -0.75, 0.1),
-            Point3::new(1.0, 0.75, 0.1),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: vec![
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "off-surface-mesh",
+            vec![
+                Point3::new(0.25, -0.75, 0.1),
+                Point3::new(1.75, -0.75, 0.1),
+                Point3::new(1.0, 0.75, 0.1),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].body.is_none());
@@ -1000,30 +1013,29 @@ fn cone_support_binds_display_list_face() {
         ],
     );
     model.shells[0].faces.push(face.clone());
-    model.tessellations.push(Tessellation {
-        id: "cone-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(local_radius, 0.0, v),
-            Point3::new(0.0, local_radius * 0.5, v),
-            Point3::new(-local_radius, 0.0, v),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "cone-mesh",
+            vec![
+                Point3::new(local_radius, 0.0, v),
+                Point3::new(0.0, local_radius * 0.5, v),
+                Point3::new(-local_radius, 0.0, v),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -1061,29 +1073,28 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         .iter()
         .map(|point| analytic_surface_normal(&cone, *point).unwrap())
         .collect();
-    model.tessellations.push(Tessellation {
-        id: "cone-cache-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices,
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals,
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "cone-cache-mesh",
+            vertices,
+            vec![[0, 1, 2]],
+            Vec::new(),
+            normals,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(
         assign_unique_surface_owners(&mut model),
         vec!["cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
     assert!(model.tessellations[0]
         .chordal_deflection
         .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
@@ -1103,21 +1114,17 @@ fn conical_trim_uses_scaled_angular_coordinate() {
         angular_start: 0.0,
         angular_span: std::f64::consts::FRAC_PI_2,
     };
-    let mesh = |point: Point3, id: &str| Tessellation {
-        id: id.into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![point],
-        triangles: Vec::new(),
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
+    let mesh = |point: Point3, id: &str| {
+        Tessellation::from_decoded(
+            id,
+            vec![point],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation")
     };
     let point_at = |angle: f64| {
         let local_radius = 4.0;
@@ -1154,29 +1161,19 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
         .to_vec();
-    model.tessellations.push(Tessellation {
-        id: "nurbs-exact-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices,
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model
+        .tessellations
+        .push(mesh_from("nurbs-exact-mesh", vertices, vec![[0, 1, 2]]));
 
     assert_eq!(
         assign_unique_surface_owners(&mut model),
         vec!["nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
     assert!(model.tessellations[0].chordal_deflection.is_none());
 }
 
@@ -1194,25 +1191,21 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
     let samples =
         [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
     let deflection = 0.02;
-    model.tessellations.push(Tessellation {
-        id: "nurbs-cache-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: samples
-            .iter()
-            .map(|(point, normal)| point.translated(*normal, deflection))
-            .collect(),
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: samples.iter().map(|(_, normal)| *normal).collect(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "nurbs-cache-mesh",
+            samples
+                .iter()
+                .map(|(point, normal)| point.translated(*normal, deflection))
+                .collect(),
+            vec![[0, 1, 2]],
+            Vec::new(),
+            samples.iter().map(|(_, normal)| *normal).collect(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
@@ -1238,24 +1231,20 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         corners,
     );
     model.shells[0].faces.extend([first, second]);
-    model.tessellations.push(Tessellation {
-        id: "nurbs-ambiguous-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
-            .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
-            .to_vec(),
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "nurbs-ambiguous-mesh",
+            [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+                .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+                .to_vec(),
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
@@ -1284,24 +1273,20 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         corners,
     );
     model.shells[0].faces.extend([nurbs_face, plane_face]);
-    model.tessellations.push(Tessellation {
-        id: "nurbs-plane-ambiguous-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
-            .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
-            .to_vec(),
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "nurbs-plane-ambiguous-mesh",
+            [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+                .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+                .to_vec(),
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
@@ -1329,22 +1314,7 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
         })],
         boundary_tolerance: 0.0,
     };
-    let mesh = |vertices, triangle| Tessellation {
-        id: "mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices,
-        triangles: vec![triangle],
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        feature_edges: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    };
+    let mesh = |vertices, triangle| mesh_from("mesh", vertices, vec![triangle]);
     let boundary_chord = mesh(
         vec![
             Point3::new(1.0, 0.0, 0.0),
@@ -1401,22 +1371,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
         .unwrap()],
         boundary_tolerance: 0.0,
     };
-    let mesh = |vertices, triangles| Tessellation {
-        id: "mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices,
-        triangles,
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    };
+    let mesh = |vertices, triangles| mesh_from("mesh", vertices, triangles);
     let inner_face = mesh(
         vec![
             Point3::new(-2.0, -2.0, 0.0),
@@ -1586,15 +1541,15 @@ fn decode_reports_display_list_geometry() {
         Some("1")
     );
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir().model.tessellations[0].vertices[1].x, 1000.0);
+    assert_eq!(result.ir().model.tessellations[0].vertices().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].vertices()[1].x, 1000.0);
     assert_eq!(
-        result.ir().model.tessellations[0].triangles,
+        result.ir().model.tessellations[0].triangles(),
         vec![[0, 1, 2]]
     );
-    assert_eq!(result.ir().model.tessellations[0].strip_lengths, vec![3]);
-    assert_eq!(result.ir().model.tessellations[0].normals.len(), 3);
-    assert_eq!(result.ir().model.tessellations[0].channels.len(), 6);
+    assert_eq!(result.ir().model.tessellations[0].strip_lengths(), vec![3]);
+    assert_eq!(result.ir().model.tessellations[0].normals().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
         result.ir().model.tessellations[0].faces,
         [result.ir().model.faces[0].id.clone()]
@@ -1617,13 +1572,13 @@ fn decode_reports_display_list_geometry() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&record.id.0)
+                .get(record.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("displaylist_tessellation")
                 && result
                     .source_fidelity()
-                    .retained_record(&record.id.0)
-                    .is_some_and(|source| source.data.is_some())
+                    .retained_record(record.id.as_str())
+                    .is_some_and(|source| source.data().is_some())
         }));
 }
 
@@ -1639,7 +1594,7 @@ fn decode_reports_extended_header_display_list_geometry() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
 }
 
 #[test]
@@ -1796,13 +1751,13 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         ],
     );
     for (curve_id, radius) in [
-        ("curve-arc-competitor-0", 2.0),
-        ("curve-arc-competitor-2", 1.0),
+        ("synthetic:test:curve#curve-arc-competitor-0", 2.0),
+        ("synthetic:test:curve#curve-arc-competitor-2", 1.0),
     ] {
         model
             .curves
             .iter_mut()
-            .find(|curve| curve.id.0 == curve_id)
+            .find(|curve| curve.id.as_str() == curve_id)
             .unwrap()
             .geometry = CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -1812,33 +1767,32 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         };
     }
     model.shells[0].faces = vec![target.clone(), competitor];
-    model.tessellations.push(Tessellation {
-        id: "arc-trim-mesh".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(0.25, -0.75, 0.0),
-            Point3::new(1.75, -0.75, 0.0),
-            Point3::new(1.0, -0.25, 0.0),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    model.tessellations.push(
+        Tessellation::from_decoded(
+            "arc-trim-mesh",
+            vec![
+                Point3::new(0.25, -0.75, 0.0),
+                Point3::new(1.75, -0.75, 0.0),
+                Point3::new(1.0, -0.25, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
 
     assert_eq!(
         assign_unique_surface_owners(&mut model),
         vec!["arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
 }
 
 #[test]

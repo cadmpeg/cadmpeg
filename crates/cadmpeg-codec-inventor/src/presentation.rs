@@ -10,6 +10,9 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
+use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+use crate::record_identity::Located;
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -30,18 +33,16 @@ const GRAPHICS_PRIMARY_COLOR_STYLE_TYPE: [u8; 16] = [
 
 #[derive(Debug)]
 pub(crate) struct PresentationInventory<'a> {
-    pub(crate) default_styles: Vec<PmAppDefaultStyle<'a>>,
-    pub(crate) rendering_styles: Vec<PmAppRenderingStyle<'a>>,
-    pub(crate) graphics_faces: Vec<PmGraphicsFace>,
-    pub(crate) graphics_style_collections: Vec<PmGraphicsStyleCollection>,
-    pub(crate) graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyle>,
-    pub(crate) issues: Vec<PresentationRecordIssue>,
+    pub(crate) default_styles: Vec<Located<PmAppDefaultStyle<'a>>>,
+    pub(crate) rendering_styles: Vec<Located<PmAppRenderingStyle<'a>>>,
+    pub(crate) graphics_faces: Vec<Located<PmGraphicsFace>>,
+    pub(crate) graphics_style_collections: Vec<Located<PmGraphicsStyleCollection>>,
+    pub(crate) graphics_primary_color_styles: Vec<Located<PmGraphicsPrimaryColorStyle>>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsPrimaryColorStyle {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
@@ -55,32 +56,21 @@ pub(crate) struct PmGraphicsPrimaryColorStyle {
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsStyleCollection {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<u32>,
-    pub(crate) style_reference_qualifiers: Vec<bool>,
-    pub(crate) list_metadata: Option<[u32; 2]>,
+    pub(crate) style_references: PmDcPairedReferenceList<[u32; 2]>,
 }
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsFace {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
     pub(crate) flags: u32,
-    pub(crate) styles_reference: u32,
-    pub(crate) styles_reference_qualified: bool,
-    pub(crate) surface_reference: u32,
-    pub(crate) surface_reference_qualified: bool,
-    pub(crate) parent_reference: u32,
-    pub(crate) parent_reference_qualified: bool,
+    pub(crate) styles: PmDcReference,
+    pub(crate) surface: PmDcReference,
+    pub(crate) parent: PmDcReference,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<u32>,
-    pub(crate) edge_reference_qualifiers: Vec<bool>,
-    pub(crate) edge_list_metadata: Option<[u32; 2]>,
+    pub(crate) edge_references: PmDcPairedReferenceList<[u32; 2]>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -89,8 +79,6 @@ pub(crate) struct PmGraphicsFace {
 
 #[derive(Debug)]
 pub(crate) struct PmAppDefaultStyle<'a> {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -104,8 +92,6 @@ pub(crate) struct PmAppDefaultStyle<'a> {
 
 #[derive(Debug)]
 pub(crate) struct PmAppRenderingStyle<'a> {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -118,21 +104,19 @@ pub(crate) struct PmAppRenderingStyle<'a> {
     pub(crate) name: String,
     pub(crate) comment: String,
     pub(crate) long_name: String,
-    pub(crate) style_state: Option<u16>,
-    pub(crate) style_label: Option<String>,
-    pub(crate) asset_guid: Option<String>,
-    pub(crate) material_id: Option<String>,
-    pub(crate) asset_library_id: Option<String>,
-    pub(crate) style_values: Option<[u16; 2]>,
-    pub(crate) guid: Option<String>,
+    pub(crate) extension: Option<RenderingStyleExtension>,
     pub(crate) suffix: View<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PresentationRecordIssue {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
+pub(crate) struct RenderingStyleExtension {
+    pub(crate) style_state: u16,
+    pub(crate) style_label: String,
+    pub(crate) asset_guid: String,
+    pub(crate) material_id: String,
+    pub(crate) asset_library_id: String,
+    pub(crate) style_values: [u16; 2],
+    pub(crate) guid: String,
 }
 
 pub(crate) struct PresentationProjection {
@@ -175,7 +159,8 @@ fn project_default_bindings(
             .rendering_styles
             .iter()
             .filter(|style| {
-                style.segment_token == default.segment_token && style.record_ordinal == ordinal
+                style.identity.segment_token == default.identity.segment_token
+                    && style.identity.record_ordinal == ordinal
             })
             .collect::<Vec<_>>();
         if matches.len() == 1 {
@@ -183,12 +168,18 @@ fn project_default_bindings(
         }
     }
     selected.sort_by(|left, right| {
-        left.segment_token
-            .cmp(&right.segment_token)
-            .then_with(|| left.record_ordinal.cmp(&right.record_ordinal))
+        left.identity
+            .segment_token
+            .cmp(&right.identity.segment_token)
+            .then_with(|| {
+                left.identity
+                    .record_ordinal
+                    .cmp(&right.identity.record_ordinal)
+            })
     });
     selected.dedup_by(|left, right| {
-        left.segment_token == right.segment_token && left.record_ordinal == right.record_ordinal
+        left.identity.segment_token == right.identity.segment_token
+            && left.identity.record_ordinal == right.identity.record_ordinal
     });
     if selected.len() != 1 {
         return PresentationProjection {
@@ -200,8 +191,9 @@ fn project_default_bindings(
     }
     let style = selected[0];
     let Some(asset_guid) = style
-        .asset_guid
-        .as_deref()
+        .extension
+        .as_ref()
+        .map(|extension| extension.asset_guid.as_str())
         .filter(|value| !value.is_empty())
     else {
         return PresentationProjection {
@@ -211,6 +203,10 @@ fn project_default_bindings(
             unresolved_face_overrides: 0,
         };
     };
+    let library_id = style
+        .extension
+        .as_ref()
+        .map(|extension| extension.asset_library_id.as_str());
     let matches = appearances
         .iter()
         .filter(|appearance| {
@@ -219,7 +215,7 @@ fn project_default_bindings(
                 .as_deref()
                 .is_some_and(|value| value.eq_ignore_ascii_case(asset_guid))
         })
-        .filter(|appearance| match style.asset_library_id.as_deref() {
+        .filter(|appearance| match library_id {
             Some(value) if !value.is_empty() => appearance
                 .library_id
                 .as_deref()
@@ -241,13 +237,15 @@ fn project_default_bindings(
         .map(|body| AppearanceBinding {
             id: format!(
                 "inventor:presentation:body-default#{}",
-                &sha256_hex(body.0.as_bytes())[..16]
-            ),
+                &sha256_hex(body.as_str().as_bytes())[..16]
+            )
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Body(body.clone()),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
-                style.segment_token, style.record_ordinal
+                style.identity.segment_token, style.identity.record_ordinal
             )),
             object_type: Some("Body".into()),
             visible: None,
@@ -273,7 +271,7 @@ fn project_face_bindings(
     }
     let mut appearance_ids = std::collections::HashMap::new();
     let mut ordered_face_keys = face_keys.iter().collect::<Vec<_>>();
-    ordered_face_keys.sort_by(|(left, _), (right, _)| left.0.cmp(&right.0));
+    ordered_face_keys.sort_by_key(|(left, _)| *left);
     for (face_id, key) in ordered_face_keys {
         let matching_faces = inventory
             .graphics_faces
@@ -285,18 +283,18 @@ fn project_face_bindings(
         }
         if matching_faces.len() != 1 {
             projection.unresolved_face_overrides +=
-                usize::from(matching_faces.iter().any(|face| face.styles_reference != 0));
+                usize::from(matching_faces.iter().any(|face| face.styles.index != 0));
             continue;
         }
         let graphics_face = matching_faces[0];
-        if graphics_face.styles_reference == 0 {
+        if graphics_face.styles.index == 0 {
             continue;
         }
         if key_counts.get(key) != Some(&1) {
             projection.unresolved_face_overrides += 1;
             continue;
         }
-        let Some(collection_ordinal) = graphics_face.styles_reference.checked_sub(1) else {
+        let Some(collection_ordinal) = graphics_face.styles.index.checked_sub(1) else {
             projection.unresolved_face_overrides += 1;
             continue;
         };
@@ -304,8 +302,8 @@ fn project_face_bindings(
             .graphics_style_collections
             .iter()
             .filter(|collection| {
-                collection.segment_token == graphics_face.segment_token
-                    && collection.record_ordinal == collection_ordinal
+                collection.identity.segment_token == graphics_face.identity.segment_token
+                    && collection.identity.record_ordinal == collection_ordinal
             })
             .collect::<Vec<_>>();
         if collections.len() != 1 {
@@ -315,15 +313,16 @@ fn project_face_bindings(
         let collection = collections[0];
         let color_styles = collection
             .style_references
+            .references()
             .iter()
-            .filter_map(|reference| reference.checked_sub(1))
+            .filter_map(|reference| reference.index.checked_sub(1))
             .flat_map(|ordinal| {
                 inventory
                     .graphics_primary_color_styles
                     .iter()
                     .filter(move |style| {
-                        style.segment_token == collection.segment_token
-                            && style.record_ordinal == ordinal
+                        style.identity.segment_token == collection.identity.segment_token
+                            && style.identity.record_ordinal == ordinal
                     })
             })
             .collect::<Vec<_>>();
@@ -341,12 +340,16 @@ fn project_face_bindings(
             continue;
         }
         let appearance_id = appearance_ids
-            .entry((style.segment_token.as_str(), style.record_ordinal))
+            .entry((
+                style.identity.segment_token.as_str(),
+                style.identity.record_ordinal,
+            ))
             .or_insert_with(|| {
-                let id = AppearanceId(format!(
+                let id = AppearanceId::mint(format!(
                     "inventor:presentation:face-color#{}-{}",
-                    style.segment_token, style.record_ordinal
-                ));
+                    style.identity.segment_token, style.identity.record_ordinal
+                ))
+                .expect("identity grammar");
                 projection.appearances.push(Appearance {
                     id: id.clone(),
                     name: None,
@@ -366,13 +369,15 @@ fn project_face_bindings(
         projection.bindings.push(AppearanceBinding {
             id: format!(
                 "inventor:presentation:face-override#{}",
-                &sha256_hex(face_id.0.as_bytes())[..16]
-            ),
+                &sha256_hex(face_id.as_str().as_bytes())[..16]
+            )
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Face(face_id.clone()),
             appearance: appearance_id,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
-                graphics_face.segment_token, graphics_face.record_ordinal
+                graphics_face.identity.segment_token, graphics_face.identity.record_ordinal
             )),
             object_type: Some("Face".into()),
             visible: None,
@@ -395,7 +400,7 @@ pub(crate) fn inventory<'a>(
         if !matches!(segment.kind, SegmentKind::PmApp | SegmentKind::PmGraphics) {
             continue;
         }
-        let Some(version) = segment.registry_version_major else {
+        let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -405,48 +410,64 @@ pub(crate) fn inventory<'a>(
             continue;
         };
         for record in &table.records {
+            let token = segment.pair.token.as_str();
+            let ordinal = record.ordinal;
             let parsed = match record.type_id {
                 DEFAULT_STYLE_TYPE => {
-                    parse_default_style(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        default_styles.push(value);
+                    parse_default_style(ctx, record.payload, version).map(|value| {
+                        default_styles.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            token,
+                            ordinal,
+                        ));
                     })
                 }
                 RENDERING_STYLE_TYPE => {
-                    parse_rendering_style(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        rendering_styles.push(value);
+                    parse_rendering_style(ctx, record.payload, version).map(|value| {
+                        rendering_styles.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            token,
+                            ordinal,
+                        ));
                     })
                 }
                 GRAPHICS_FACE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_face(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        graphics_faces.push(value);
+                    parse_graphics_face(ctx, record.payload, version).map(|value| {
+                        graphics_faces.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            token,
+                            ordinal,
+                        ));
                     })
                 }
                 GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_style_collection(ctx, record.payload, version).map(
-                        |mut value| {
-                            value.segment_token = segment.pair.token.as_str().into();
-                            value.record_ordinal = record.ordinal;
-                            graphics_style_collections.push(value);
-                        },
-                    )
+                    parse_graphics_style_collection(ctx, record.payload, version).map(|value| {
+                        graphics_style_collections.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            token,
+                            ordinal,
+                        ));
+                    })
                 }
                 GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_primary_color_style(record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        graphics_primary_color_styles.push(value);
+                    parse_graphics_primary_color_style(record.payload, version).map(|value| {
+                        graphics_primary_color_styles.push(Located::new(
+                            value,
+                            type_id_string(record.type_id),
+                            token,
+                            ordinal,
+                        ));
                     })
                 }
                 _ => continue,
             };
             if let Err(error) = parsed {
-                issues.push(PresentationRecordIssue {
+                issues.push(RecordIssue {
+                    family: RecordIssueFamily::Presentation,
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
@@ -537,8 +558,6 @@ fn parse_graphics_primary_color_style(
         )));
     }
     Ok(PmGraphicsPrimaryColorStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         controls,
@@ -561,11 +580,7 @@ fn parse_graphics_style_collection(
         legacy_block_len(version),
         "graphics-style collection legacy prefix",
     )?;
-    let ReferenceList {
-        references: style_references,
-        qualifiers: style_reference_qualifiers,
-        metadata: list_metadata,
-    } = cursor.reference_list(ctx, "graphics-style collection")?;
+    let style_references = cursor.reference_list(ctx, "graphics-style collection")?;
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
         return Err(CodecError::malformed(format_args!(
@@ -574,12 +589,8 @@ fn parse_graphics_style_collection(
         )));
     }
     Ok(PmGraphicsStyleCollection {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         style_references,
-        style_reference_qualifiers,
-        list_metadata,
     })
 }
 
@@ -596,22 +607,15 @@ fn parse_graphics_face(
         "graphics-face legacy header padding",
     )?;
     let flags = cursor.u32("graphics-face flags")?;
-    let (styles_reference, styles_reference_qualified) =
-        cursor.node_reference("graphics-face styles reference")?;
-    let (surface_reference, surface_reference_qualified) =
-        cursor.node_reference("graphics-face surface reference")?;
-    let (parent_reference, parent_reference_qualified) =
-        cursor.node_reference("graphics-face parent reference")?;
+    let styles = cursor.node_reference("graphics-face styles reference")?;
+    let surface = cursor.node_reference("graphics-face surface reference")?;
+    let parent = cursor.node_reference("graphics-face parent reference")?;
     let state = cursor.u32("graphics-face state")?;
     cursor.skip(
         legacy_block_len(version),
         "graphics-face legacy object padding",
     )?;
-    let ReferenceList {
-        references: edge_references,
-        qualifiers: edge_reference_qualifiers,
-        metadata: edge_list_metadata,
-    } = cursor.reference_list(ctx, "graphics-face edge list")?;
+    let edge_references = cursor.reference_list(ctx, "graphics-face edge list")?;
     let visibility_state = cursor.u8("graphics-face visibility state")?;
     cursor.skip(
         legacy_block_len(version) * 2,
@@ -638,22 +642,15 @@ fn parse_graphics_face(
         )));
     }
     Ok(PmGraphicsFace {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
         flags,
-        styles_reference,
-        styles_reference_qualified,
-        surface_reference,
-        surface_reference_qualified,
-        parent_reference,
-        parent_reference_qualified,
+        styles,
+        surface,
+        parent,
         state,
         edge_references,
-        edge_reference_qualifiers,
-        edge_list_metadata,
         visibility_state,
         bounds,
         key,
@@ -699,8 +696,6 @@ fn parse_default_style<'a>(
         )));
     }
     Ok(PmAppDefaultStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
@@ -750,36 +745,31 @@ fn parse_rendering_style<'a>(
         legacy_block_len(version),
         "rendering-style legacy name padding",
     )?;
-    let (style_state, style_fields, style_values, guid) = if version > 16 {
+    let extension = if version > 16 {
         let style_state = cursor.u16("rendering-style style state")?;
-        let mut text_values = Vec::with_capacity(4);
-        for index in 0..4 {
-            text_values.push(cursor.utf16(ctx, &format!("rendering-style text {index}"))?);
-        }
+        let style_label = cursor.utf16(ctx, "rendering-style text 0")?;
+        let asset_guid = cursor.utf16(ctx, "rendering-style text 1")?;
+        let material_id = cursor.utf16(ctx, "rendering-style text 2")?;
+        let asset_library_id = cursor.utf16(ctx, "rendering-style text 3")?;
         let style_values = [
             cursor.u16("rendering-style style value 0")?,
             cursor.u16("rendering-style style value 1")?,
         ];
         let guid = cursor.guid("rendering-style guid")?;
-        (
-            Some(style_state),
-            text_values,
-            Some(style_values),
-            Some(guid),
-        )
+        Some(RenderingStyleExtension {
+            style_state,
+            style_label,
+            asset_guid,
+            material_id,
+            asset_library_id,
+            style_values,
+            guid,
+        })
     } else {
-        (None, Vec::new(), None, None)
-    };
-    let [style_label, asset_guid, material_id, asset_library_id] = if style_fields.is_empty() {
-        [None, None, None, None]
-    } else {
-        let mut fields = style_fields.into_iter();
-        [fields.next(), fields.next(), fields.next(), fields.next()]
+        None
     };
     let suffix = cursor.remainder()?;
     Ok(PmAppRenderingStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
@@ -792,13 +782,7 @@ fn parse_rendering_style<'a>(
         name,
         comment,
         long_name,
-        style_state,
-        style_label,
-        asset_guid,
-        material_id,
-        asset_library_id,
-        style_values,
-        guid,
+        extension,
         suffix,
     })
 }
@@ -813,12 +797,6 @@ const fn legacy_block_len(version: u8) -> usize {
 
 struct Cursor<'a> {
     source: View<'a>,
-}
-
-struct ReferenceList {
-    references: Vec<u32>,
-    qualifiers: Vec<bool>,
-    metadata: Option<[u32; 2]>,
 }
 
 impl<'a> Cursor<'a> {
@@ -873,16 +851,19 @@ impl<'a> Cursor<'a> {
         Ok(value & 0x7fff_ffff)
     }
 
-    fn node_reference(&mut self, field: &str) -> Result<(u32, bool), CodecError> {
+    fn node_reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
         let value = self.u32(field)?;
-        Ok((value & 0x7fff_ffff, value & 0x8000_0000 != 0))
+        Ok(PmDcReference {
+            index: value & 0x7fff_ffff,
+            qualified: value & 0x8000_0000 != 0,
+        })
     }
 
     fn reference_list(
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &str,
-    ) -> Result<ReferenceList, CodecError> {
+    ) -> Result<PmDcPairedReferenceList<[u32; 2]>, CodecError> {
         let marker = [
             self.u16(&format!("{field} marker 0"))?,
             self.u16(&format!("{field} marker 1"))?,
@@ -894,26 +875,21 @@ impl<'a> Cursor<'a> {
         }
         let count = self.u32(&format!("{field} count"))? as usize;
         ctx.charge_collection_items(count as u64, "admit Inventor PmGraphics references")?;
-        let metadata = if count == 0 {
-            None
-        } else {
-            Some([
-                self.u32(&format!("{field} metadata 0"))?,
-                self.u32(&format!("{field} metadata 1"))?,
-            ])
-        };
-        let mut references = Vec::with_capacity(count);
-        let mut qualifiers = Vec::with_capacity(count);
-        for index in 0..count {
-            let (reference, qualified) =
-                self.node_reference(&format!("{field} reference {index}"))?;
-            references.push(reference);
-            qualifiers.push(qualified);
+        if count == 0 {
+            return Ok(PmDcPairedReferenceList::default());
         }
-        Ok(ReferenceList {
-            references,
-            qualifiers,
-            metadata,
+        let metadata = [
+            self.u32(&format!("{field} metadata 0"))?,
+            self.u32(&format!("{field} metadata 1"))?,
+        ];
+        let mut references = Vec::with_capacity(count);
+        for index in 0..count {
+            references.push(self.node_reference(&format!("{field} reference {index}"))?);
+        }
+        PmDcPairedReferenceList::new(Some(metadata), references).ok_or_else(|| {
+            CodecError::Malformed(
+                "Inventor graphics reference list metadata disagrees with length".into(),
+            )
         })
     }
 
@@ -1028,15 +1004,16 @@ mod tests {
         let style = parse_rendering_style(&ctx, root, 26).expect("rendering style parses");
 
         assert_eq!(style.name, "Steel");
-        assert_eq!(style.style_label.as_deref(), Some("1:Steel"));
+        let extension = style
+            .extension
+            .as_ref()
+            .expect("version 26 stores the rendering-style extension");
+        assert_eq!(extension.style_label, "1:Steel");
+        assert_eq!(extension.asset_guid, "d3c6130d-6c0f-4525-b268-53517ab46a78");
+        assert_eq!(extension.material_id, "InvGen-066");
         assert_eq!(
-            style.asset_guid.as_deref(),
-            Some("d3c6130d-6c0f-4525-b268-53517ab46a78")
-        );
-        assert_eq!(style.material_id.as_deref(), Some("InvGen-066"));
-        assert_eq!(
-            style.asset_library_id.as_deref(),
-            Some("afefc330-5e61-4e24-814f-ae810148b79d")
+            extension.asset_library_id,
+            "afefc330-5e61-4e24-814f-ae810148b79d"
         );
         assert_eq!(style.suffix.window(), &[0xaa, 0x55]);
     }
@@ -1052,21 +1029,28 @@ mod tests {
         let (_, style_root) =
             DecodeContext::from_root_bytes(&style_bytes, &arena, &DecodePolicy::default())
                 .expect("synthetic rendering style fits policy");
-        let mut default = parse_default_style(&ctx, default_root, 26).expect("default parses");
-        default.segment_token = "segment".into();
-        let mut style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
-        style.segment_token = "segment".into();
-        style.record_ordinal = 8;
+        let default = parse_default_style(&ctx, default_root, 26).expect("default parses");
+        let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
         let inventory = PresentationInventory {
-            default_styles: vec![default],
-            rendering_styles: vec![style],
+            default_styles: vec![Located::new(
+                default,
+                type_id_string(DEFAULT_STYLE_TYPE),
+                "segment",
+                0,
+            )],
+            rendering_styles: vec![Located::new(
+                style,
+                type_id_string(RENDERING_STYLE_TYPE),
+                "segment",
+                8,
+            )],
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
             issues: Vec::new(),
         };
         let appearance = Appearance {
-            id: AppearanceId("appearance".into()),
+            id: AppearanceId::mint("inventor:test:appearance#1").expect("identity grammar"),
             name: None,
             asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),
             library_id: Some("afefc330-5e61-4e24-814f-ae810148b79d".into()),
@@ -1079,17 +1063,23 @@ mod tests {
             textures: Vec::new(),
         };
 
-        let projection =
-            project_default_bindings(&inventory, &[appearance], &[BodyId("body".into())]);
+        let projection = project_default_bindings(
+            &inventory,
+            &[appearance],
+            &[BodyId::mint("inventor:test:body#1").expect("identity grammar")],
+        );
 
         assert_eq!(projection.unresolved_defaults, 0);
         let [binding] = projection.bindings.as_slice() else {
             panic!("one body binding must be projected");
         };
-        assert_eq!(binding.appearance, AppearanceId("appearance".into()));
+        assert_eq!(
+            binding.appearance,
+            AppearanceId::mint("inventor:test:appearance#1").expect("identity grammar")
+        );
         assert_eq!(
             binding.target,
-            AppearanceTarget::Body(BodyId("body".into()))
+            AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
         );
     }
 
@@ -1136,15 +1126,26 @@ mod tests {
 
         let face = parse_graphics_face(&ctx, root, 26).expect("graphics face parses");
 
-        assert_eq!(face.styles_reference, 7);
-        assert!(face.styles_reference_qualified);
-        assert_eq!(face.surface_reference, 8);
-        assert!(face.surface_reference_qualified);
-        assert_eq!(face.parent_reference, 9);
-        assert!(face.parent_reference_qualified);
-        assert_eq!(face.edge_references, [13, 14]);
-        assert_eq!(face.edge_reference_qualifiers, [true, true]);
-        assert_eq!(face.edge_list_metadata, Some([11, 12]));
+        assert_eq!(face.styles.index, 7);
+        assert!(face.styles.qualified);
+        assert_eq!(face.surface.index, 8);
+        assert!(face.surface.qualified);
+        assert_eq!(face.parent.index, 9);
+        assert!(face.parent.qualified);
+        assert_eq!(
+            face.edge_references.references(),
+            [
+                PmDcReference {
+                    index: 13,
+                    qualified: true
+                },
+                PmDcReference {
+                    index: 14,
+                    qualified: true
+                }
+            ]
+        );
+        assert_eq!(face.edge_references.metadata().copied(), Some([11, 12]));
         assert_eq!(face.bounds, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         assert_eq!(face.key, 15);
         assert_eq!(face.values, [16, 17]);
@@ -1167,9 +1168,20 @@ mod tests {
         let styles = parse_graphics_style_collection(&ctx, root, 26)
             .expect("graphics style collection parses");
 
-        assert_eq!(styles.style_references, [23, 24]);
-        assert_eq!(styles.style_reference_qualifiers, [true, false]);
-        assert_eq!(styles.list_metadata, Some([21, 22]));
+        assert_eq!(
+            styles.style_references.references(),
+            [
+                PmDcReference {
+                    index: 23,
+                    qualified: true
+                },
+                PmDcReference {
+                    index: 24,
+                    qualified: false
+                }
+            ]
+        );
+        assert_eq!(styles.style_references.metadata().copied(), Some([21, 22]));
     }
 
     #[test]
@@ -1194,49 +1206,67 @@ mod tests {
 
     #[test]
     fn projects_face_override_through_native_key_and_style_graph() {
-        let face = PmGraphicsFace {
-            segment_token: "graphics".into(),
-            record_ordinal: 2,
-            segment_version_major: 26,
-            header_value: 0,
-            header_id: 0,
-            flags: 0,
-            styles_reference: 5,
-            styles_reference_qualified: true,
-            surface_reference: 0,
-            surface_reference_qualified: false,
-            parent_reference: 0,
-            parent_reference_qualified: false,
-            state: 0,
-            edge_references: Vec::new(),
-            edge_reference_qualifiers: Vec::new(),
-            edge_list_metadata: None,
-            visibility_state: 0,
-            bounds: [0.0; 6],
-            key: 42,
-            values: [0; 2],
-        };
-        let collection = PmGraphicsStyleCollection {
-            segment_token: "graphics".into(),
-            record_ordinal: 4,
-            segment_version_major: 26,
-            style_references: vec![7],
-            style_reference_qualifiers: vec![true],
-            list_metadata: Some([1, 2]),
-        };
-        let style = PmGraphicsPrimaryColorStyle {
-            segment_token: "graphics".into(),
-            record_ordinal: 6,
-            segment_version_major: 26,
-            header_value: 0,
-            controls: [0; 7],
-            color_header: [0; 2],
-            colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]],
-            color_tail: [0; 2],
-            state: 0,
-            values: [0; 2],
-            terminal_state: 0,
-        };
+        let face = Located::new(
+            PmGraphicsFace {
+                segment_version_major: 26,
+                header_value: 0,
+                header_id: 0,
+                flags: 0,
+                styles: PmDcReference {
+                    index: 5,
+                    qualified: true,
+                },
+                surface: PmDcReference {
+                    index: 0,
+                    qualified: false,
+                },
+                parent: PmDcReference {
+                    index: 0,
+                    qualified: false,
+                },
+                state: 0,
+                edge_references: PmDcPairedReferenceList::default(),
+                visibility_state: 0,
+                bounds: [0.0; 6],
+                key: 42,
+                values: [0; 2],
+            },
+            type_id_string(GRAPHICS_FACE_TYPE),
+            "graphics",
+            2,
+        );
+        let collection = Located::new(
+            PmGraphicsStyleCollection {
+                segment_version_major: 26,
+                style_references: PmDcPairedReferenceList::new(
+                    Some([1, 2]),
+                    vec![PmDcReference {
+                        index: 7,
+                        qualified: true,
+                    }],
+                )
+                .expect("valid reference list"),
+            },
+            type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
+            "graphics",
+            4,
+        );
+        let style = Located::new(
+            PmGraphicsPrimaryColorStyle {
+                segment_version_major: 26,
+                header_value: 0,
+                controls: [0; 7],
+                color_header: [0; 2],
+                colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]],
+                color_tail: [0; 2],
+                state: 0,
+                values: [0; 2],
+                terminal_state: 0,
+            },
+            type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
+            "graphics",
+            6,
+        );
         let inventory = PresentationInventory {
             default_styles: Vec::new(),
             rendering_styles: Vec::new(),
@@ -1245,7 +1275,7 @@ mod tests {
             graphics_primary_color_styles: vec![style],
             issues: Vec::new(),
         };
-        let face_id = FaceId("face".into());
+        let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
 
         let projection = project_bindings(&inventory, &[], &[], &face_keys);

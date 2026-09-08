@@ -15,21 +15,19 @@ fn finds_one_byte_and_two_byte_surface_rows() {
         vec![
             SurfaceRow {
                 id: 7,
-                type_byte: 0x22,
                 kind: SurfaceKind::Plane,
                 feature_id: 4,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 128,
                 offset: 0,
             },
             SurfaceRow {
                 id: 128,
-                type_byte: 0x24,
                 kind: SurfaceKind::Cylinder,
                 feature_id: 257,
                 reversed: true,
-                boundary_type: 6,
+                boundary_type: crate::surface::BoundaryType::Code06,
                 next_surface: 7,
                 offset: 7,
             },
@@ -53,7 +51,7 @@ fn accepts_type24_row_with_boundary_type_eight() {
     assert_eq!(decoded[0].id, 11_889);
     assert_eq!(decoded[0].kind, SurfaceKind::Cylinder);
     assert_eq!(decoded[0].feature_id, 11_866);
-    assert_eq!(decoded[0].boundary_type, 0x08);
+    assert_eq!(decoded[0].boundary_type.code(), 0x08);
 }
 
 #[test]
@@ -121,7 +119,7 @@ fn cross_section_filters_boundary_one_body_candidate() {
     let rows = cross_section_rows(payload);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 7);
-    assert_eq!(rows[0].boundary_type, 0x06);
+    assert_eq!(rows[0].boundary_type.code(), 0x06);
     let parameters = cross_section_parameter_records(payload);
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].surface_id, 7);
@@ -193,14 +191,14 @@ fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_heade
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].surface_id, 7);
     assert_eq!(
-        systems[0].origin,
+        systems[0].frame().origin,
         Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
     );
     assert_eq!(
-        systems[0].u_axis,
+        systems[0].frame().u_axis,
         Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
     );
-    assert_eq!(systems[0].normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(systems[0].frame().normal, Some([1.0, 0.0, 0.0]));
     assert_eq!(systems[0].body.len(), 52);
 }
 
@@ -248,11 +246,10 @@ fn rejects_duplicate_surface_ids() {
 fn unique_surface_projection_excludes_every_collided_identity() {
     let row = |id, offset| SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };
@@ -321,7 +318,7 @@ fn signed_surface_dict_scalar_owns_its_tail() {
         ]))
     );
     assert_eq!(tokens[0].offset, 0);
-    assert_eq!(tokens[0].length, 7);
+    assert_eq!(tokens[0].raw.len(), 7);
     assert_eq!(tokens[0].raw, body);
 }
 
@@ -335,27 +332,7 @@ fn rejects_rows_without_the_fixed_discriminators() {
 fn decodes_named_prototype_scalars_without_promoting_them_to_instances() {
     let payload = b"srf_prim_ptr\0geom_type\0\x24radius\0\x2a\xf4\0\
                     srf_prim_ptr\0geom_type\0\x25half_angle\0\x74\x21\xfb\x54\x44\x2d\x23";
-    assert_eq!(
-        prototypes(payload),
-        vec![
-            SurfacePrototype {
-                kind: SurfaceKind::Cylinder,
-                radius: Some(1.25),
-                radius2: None,
-                half_angle: None,
-                offset: 0
-            },
-            SurfacePrototype {
-                kind: SurfaceKind::Cone,
-                radius: None,
-                radius2: None,
-                half_angle: Some(f64::from_be_bytes([
-                    0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23,
-                ])),
-                offset: 34
-            },
-        ]
-    );
+    assert_eq!(prototype_count(payload), 2);
 }
 
 #[test]
@@ -441,16 +418,7 @@ fn summarizes_parenthesized_analytic_prototypes() {
     let payload =
         b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
 
-    assert_eq!(
-        prototypes(payload),
-        vec![SurfacePrototype {
-            kind: SurfaceKind::TorusOrSphere,
-            radius: Some(0.0),
-            radius2: Some(2.65),
-            half_angle: None,
-            offset: 0,
-        }]
-    );
+    assert_eq!(prototype_count(payload), 1);
 }
 
 #[test]
@@ -459,15 +427,15 @@ fn distinguishes_spline_and_fillet_surface_families() {
     let records = named_prototype_records(payload);
 
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
-    assert_eq!(records[1].family, SurfacePrototypeFamily::Fillet);
     assert_eq!(
-        prototypes(payload)
-            .into_iter()
-            .map(|prototype| prototype.kind)
-            .collect::<Vec<_>>(),
-        [SurfaceKind::Spline, SurfaceKind::Fillet]
+        records[0].family,
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf)
     );
+    assert_eq!(
+        records[1].family,
+        SurfacePrototypeFamily::Fillet(crate::surface::FilletLabel::FilletSrf)
+    );
+    assert_eq!(prototype_count(payload), 2);
 }
 
 #[test]
@@ -479,14 +447,17 @@ fn retains_named_spline_point_and_tangent_arrays() {
     let records = named_prototype_records(payload);
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
+    assert_eq!(
+        records[0].family,
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf)
+    );
     assert_eq!(
         records[0].field("i_points").map(|field| &field.value),
         Some(&SurfaceNamedValue::ScalarArray {
             dimensions: 2,
             count: 2,
             values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
-            tokens: vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]],
+            tokens: Some(vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]]),
         })
     );
     assert_eq!(
@@ -495,7 +466,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
             dimensions: 1,
             count: 2,
             values: vec![Some(0.0), Some(1.0)],
-            tokens: vec![vec![0x0f], vec![0xe4]],
+            tokens: Some(vec![vec![0x0f], vec![0xe4]]),
         })
     );
     assert_eq!(
@@ -512,7 +483,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
 fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
     let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
     let slots = named_spline_scalar_slots(
-        &SurfacePrototypeFamily::Spline,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
         "tangts",
         &body,
         2,
@@ -533,7 +504,7 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
     let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
     for name in ["i_pnts", "i_points"] {
         let slots = named_spline_scalar_slots(
-            &SurfacePrototypeFamily::Spline,
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
             name,
             &body,
             6,
@@ -562,7 +533,7 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
     ];
     for name in ["end_v_tangts", "end_tangts"] {
         let slots = named_spline_scalar_slots(
-            &SurfacePrototypeFamily::Spline,
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
             name,
             &body,
             3,
@@ -704,7 +675,7 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
 
     assert_eq!(
         surface_body_compound_close(
-            SurfaceKind::Extrusion,
+            SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
             &body,
             &scalar::ScalarCache::default(),
         ),

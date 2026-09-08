@@ -6,33 +6,29 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
-use crate::design::{
-    DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
-};
+use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
-    FeatureRecordIssue, PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
+    PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
     PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform, SketchRecordIssue,
+    PmDcSketchEntityKind, PmDcTransform,
 };
 
+use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
+use crate::native::ufrx::UfrxRecord;
 use crate::native::{
-    ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
-    EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
-    PresentationRecordIssueRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
-    ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateRecord,
-    UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
-    INVENTOR_NATIVE_VERSION,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
+    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
+    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
+use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
@@ -109,18 +105,8 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("inventor") else {
         return Vec::new();
     };
-    if namespace.version != INVENTOR_NATIVE_VERSION {
-        return vec![finding(
-            Check::Version,
-            format!(
-                "unsupported Inventor native namespace version {}",
-                namespace.version
-            ),
-            None,
-        )];
-    }
     let actual_arenas = namespace
-        .arenas
+        .arenas()
         .keys()
         .map(String::as_str)
         .collect::<HashSet<_>>();
@@ -139,7 +125,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         return vec![finding(
             Check::NativeLinks,
             format!(
-                "Inventor native namespace version {INVENTOR_NATIVE_VERSION} has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
+                "Inventor native namespace has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
             ),
             None,
         )];
@@ -149,9 +135,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => {
             return vec![finding(
                 Check::NativeLinks,
-                format!(
-                    "Inventor native arenas do not match namespace version {INVENTOR_NATIVE_VERSION}: {error}"
-                ),
+                format!("Inventor native arenas are invalid: {error}"),
                 None,
             )];
         }
@@ -166,7 +150,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_features(ir, &data, &mut findings);
     unique(
         &mut findings,
-        data.unknowns.iter().map(|record| record.id.0.as_str()),
+        data.unknowns.iter().map(|record| record.id.as_str()),
         "ASM unknown-record id",
     );
     validate_properties(&data, &mut findings);
@@ -215,44 +199,55 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     };
     unique(
         findings,
-        data.pm_dc_parameters
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_parameters.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc parameter",
     );
     unique(
         findings,
-        data.pm_dc_expressions
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_expressions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc expression",
     );
     unique(
         findings,
-        data.pm_dc_units
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_units.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc unit",
     );
     for parameter in &data.pm_dc_parameters {
         let references = [
-            parameter.next.index,
-            parameter.context.index,
+            parameter.header.next.index,
+            parameter.header.context.index,
             parameter.unit.index,
             parameter.formula.index,
         ];
-        if raw.get(&(parameter.segment_token.as_str(), parameter.record_ordinal))
-            != Some(&parameter.type_id.as_str())
+        if raw.get(&(
+            parameter.identity.segment_token.as_str(),
+            parameter.identity.record_ordinal,
+        )) != Some(&parameter.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&parameter.segment_token, reference))
+                .any(|reference| !resolves(&parameter.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc parameter record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:parameter#{}-{}",
-                    parameter.segment_token, parameter.record_ordinal
+                    parameter.identity.segment_token, parameter.identity.record_ordinal
                 )),
             ));
         }
@@ -268,18 +263,20 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 references.push(right.index);
             }
         }
-        if raw.get(&(expression.segment_token.as_str(), expression.record_ordinal))
-            != Some(&expression.type_id.as_str())
+        if raw.get(&(
+            expression.identity.segment_token.as_str(),
+            expression.identity.record_ordinal,
+        )) != Some(&expression.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&expression.segment_token, reference))
+                .any(|reference| !resolves(&expression.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc expression record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:expression#{}-{}",
-                    expression.segment_token, expression.record_ordinal
+                    expression.identity.segment_token, expression.identity.record_ordinal
                 )),
             ));
         }
@@ -292,25 +289,28 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 derived,
                 ..
             } => numerators
+                .references()
                 .iter()
-                .chain(denominators)
+                .chain(denominators.references())
                 .map(|reference| reference.index)
                 .chain(std::iter::once(derived.index))
                 .collect::<Vec<_>>(),
             PmDcUnitKind::Base { .. } => Vec::new(),
         };
-        if raw.get(&(unit.segment_token.as_str(), unit.record_ordinal))
-            != Some(&unit.type_id.as_str())
+        if raw.get(&(
+            unit.identity.segment_token.as_str(),
+            unit.identity.record_ordinal,
+        )) != Some(&unit.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&unit.segment_token, reference))
+                .any(|reference| !resolves(&unit.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc unit record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:unit#{}-{}",
-                    unit.segment_token, unit.record_ordinal
+                    unit.identity.segment_token, unit.identity.record_ordinal
                 )),
             ));
         }
@@ -321,7 +321,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|record| {
             format!(
                 "inventor:pmdc:parameter#{}-{}",
-                record.segment_token, record.record_ordinal
+                record.identity.segment_token, record.identity.record_ordinal
             )
         })
         .collect::<HashSet<_>>();
@@ -334,7 +334,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral parameter does not resolve to its PmDc source record".into(),
-                Some(parameter.id.0.clone()),
+                Some(parameter.id.as_str().to_owned()),
             ));
         }
     }
@@ -371,37 +371,52 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     };
     unique(
         findings,
-        data.pm_dc_sketches
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketches.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch",
     );
     unique(
         findings,
-        data.pm_dc_sketch_entities
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketch_entities.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch entity",
     );
     unique(
         findings,
-        data.pm_dc_transforms
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_transforms.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc transform",
     );
     unique(
         findings,
-        data.pm_dc_sketch_constraints
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketch_constraints.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch constraint",
     );
     unique(
         findings,
-        data.pm_dc_directions
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_directions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc direction",
     );
     for sketch in &data.pm_dc_sketches {
@@ -415,7 +430,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         .chain(
             sketch
                 .entities
-                .references
+                .references()
                 .iter()
                 .map(|reference| reference.index),
         )
@@ -423,20 +438,20 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             sketch
                 .auxiliary
                 .iter()
-                .flat_map(|list| &list.references)
+                .flat_map(super::pmdc::PmDcReferenceList::references)
                 .map(|reference| reference.index),
         )
         .collect::<Vec<_>>();
         if !record_is_exact(
-            &sketch.segment_token,
-            sketch.record_ordinal,
-            &sketch.type_id,
-        ) || !references_resolve(&sketch.segment_token, &references)
+            &sketch.identity.segment_token,
+            sketch.identity.record_ordinal,
+            &sketch.identity.type_id,
+        ) || !references_resolve(&sketch.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch record or reference does not resolve".into(),
-                Some(sketch.id.clone()),
+                Some(sketch.id()),
             ));
         }
     }
@@ -447,7 +462,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             entity.sketch.index,
         ];
         let mut add_list = |list: &PmDcReferenceList| {
-            references.extend(list.references.iter().map(|reference| reference.index));
+            references.extend(list.references().iter().map(|reference| reference.index));
         };
         match &entity.kind {
             PmDcSketchEntityKind::Point {
@@ -490,31 +505,31 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &entity.segment_token,
-            entity.record_ordinal,
-            &entity.type_id,
-        ) || !references_resolve(&entity.segment_token, &references)
+            &entity.identity.segment_token,
+            entity.identity.record_ordinal,
+            &entity.identity.type_id,
+        ) || !references_resolve(&entity.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch-entity record or reference does not resolve".into(),
-                Some(entity.id.clone()),
+                Some(entity.id()),
             ));
         }
     }
     for transform in &data.pm_dc_transforms {
         if !record_is_exact(
-            &transform.segment_token,
-            transform.record_ordinal,
-            &transform.type_id,
+            &transform.identity.segment_token,
+            transform.identity.record_ordinal,
+            &transform.identity.type_id,
         ) || !references_resolve(
-            &transform.segment_token,
+            &transform.identity.segment_token,
             &[transform.header.next.index, transform.header.context.index],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc transform record or reference does not resolve".into(),
-                Some(transform.id.clone()),
+                Some(transform.id()),
             ));
         }
     }
@@ -526,10 +541,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             header.group.index,
             header.parameter.index,
         ];
-        for (key, _) in &header.scalar_map.entries {
+        for (key, _) in header.scalar_map.entries() {
             references.push(key.index);
         }
-        for (key, value) in &header.reference_map.entries {
+        for (key, value) in header.reference_map.entries() {
             references.extend([key.index, value.index]);
         }
         match constraint.kind {
@@ -569,48 +584,48 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &constraint.segment_token,
-            constraint.record_ordinal,
-            &constraint.type_id,
-        ) || !references_resolve(&constraint.segment_token, &references)
+            &constraint.identity.segment_token,
+            constraint.identity.record_ordinal,
+            &constraint.identity.type_id,
+        ) || !references_resolve(&constraint.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch-constraint record or reference does not resolve".into(),
-                Some(constraint.id.clone()),
+                Some(constraint.id()),
             ));
         }
     }
     for direction in &data.pm_dc_directions {
         if !record_is_exact(
-            &direction.segment_token,
-            direction.record_ordinal,
-            &direction.type_id,
+            &direction.identity.segment_token,
+            direction.identity.record_ordinal,
+            &direction.identity.type_id,
         ) || !references_resolve(
-            &direction.segment_token,
+            &direction.identity.segment_token,
             &[direction.header.next.index, direction.header.context.index],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc direction record or reference does not resolve".into(),
-                Some(direction.id.clone()),
+                Some(direction.id()),
             ));
         }
     }
     let native_sketches = data
         .pm_dc_sketches
         .iter()
-        .map(|record| record.id.as_str())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(|record| record.id.as_str())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(|record| record.id.as_str())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     for sketch in &ir.model.sketches {
         if sketch
@@ -638,7 +653,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
-                Some(entity.id.0.clone()),
+                Some(entity.id().0.clone()),
             ));
         }
     }
@@ -660,7 +675,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor sketch record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -681,37 +696,52 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     };
     unique(
         findings,
-        data.pm_dc_features
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_features.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature",
     );
     unique(
         findings,
-        data.pm_dc_feature_terminators
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_terminators.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature terminator",
     );
     unique(
         findings,
-        data.pm_dc_pattern_features
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_pattern_features.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc pattern feature",
     );
     unique(
         findings,
-        data.pm_dc_feature_properties
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_properties.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature property",
     );
     unique(
         findings,
-        data.pm_dc_feature_labels
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_labels.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature label",
     );
     for feature in &data.pm_dc_features {
@@ -720,20 +750,22 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .chain(
                 feature
                     .properties
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             );
-        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
-            != Some(&feature.type_id.as_str())
+        if raw.get(&(
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.segment_token, reference))
+                .any(|reference| !resolves(&feature.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature record or reference does not resolve".into(),
-                Some(feature.id.clone()),
+                Some(feature.id()),
             ));
         }
     }
@@ -743,14 +775,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .chain(
                 feature
                     .properties
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             )
             .chain(
                 feature
                     .participants
-                    .references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             )
@@ -760,16 +792,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     .iter()
                     .map(|reference| reference.index),
             );
-        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
-            != Some(&feature.type_id.as_str())
+        if raw.get(&(
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.segment_token, reference))
+                .any(|reference| !resolves(&feature.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc pattern-feature record or reference does not resolve".into(),
-                Some(feature.id.clone()),
+                Some(feature.id()),
             ));
         }
     }
@@ -777,7 +811,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         let mut references = vec![property.header.next.index, property.header.context.index];
         match &property.kind {
             PmDcFeaturePropertyKind::References { items, .. } => {
-                references.extend(items.references.iter().map(|reference| reference.index));
+                references.extend(items.references().iter().map(|reference| reference.index));
             }
             PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index),
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
@@ -800,16 +834,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
         }
-        if raw.get(&(property.segment_token.as_str(), property.record_ordinal))
-            != Some(&property.type_id.as_str())
+        if raw.get(&(
+            property.identity.segment_token.as_str(),
+            property.identity.record_ordinal,
+        )) != Some(&property.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&property.segment_token, reference))
+                .any(|reference| !resolves(&property.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-property record or reference does not resolve".into(),
-                Some(property.id.clone()),
+                Some(property.id()),
             ));
         }
     }
@@ -819,16 +855,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             link.header.parent.index,
             link.header.next.index,
         ];
-        if raw.get(&(link.segment_token.as_str(), link.record_ordinal))
-            != Some(&link.type_id.as_str())
+        if raw.get(&(
+            link.identity.segment_token.as_str(),
+            link.identity.record_ordinal,
+        )) != Some(&link.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&link.segment_token, reference))
+                .any(|reference| !resolves(&link.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc entity-style-link record or reference does not resolve".into(),
-                Some(link.id.clone()),
+                Some(link.id()),
             ));
         }
     }
@@ -842,22 +880,24 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .chain(
             label
                 .participants
-                .references
+                .references()
                 .iter()
                 .map(|reference| reference.index),
         );
-        if raw.get(&(label.segment_token.as_str(), label.record_ordinal))
-            != Some(&label.type_id.as_str())
+        if raw.get(&(
+            label.identity.segment_token.as_str(),
+            label.identity.record_ordinal,
+        )) != Some(&label.identity.type_id.as_str())
             || label.name.is_empty()
             || label.class_id.len() != 32
             || references
                 .into_iter()
-                .any(|reference| !resolves(&label.segment_token, reference))
+                .any(|reference| !resolves(&label.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-label record or reference does not resolve".into(),
-                Some(label.id.clone()),
+                Some(label.id()),
             ));
         }
     }
@@ -866,23 +906,25 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             terminator.header.next.index,
             terminator.header.context.index,
         ];
-        if raw.get(&(terminator.segment_token.as_str(), terminator.record_ordinal))
-            != Some(&terminator.type_id.as_str())
+        if raw.get(&(
+            terminator.identity.segment_token.as_str(),
+            terminator.identity.record_ordinal,
+        )) != Some(&terminator.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&terminator.segment_token, reference))
+                .any(|reference| !resolves(&terminator.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-terminator record or reference does not resolve".into(),
-                Some(terminator.id.clone()),
+                Some(terminator.id()),
             ));
         }
     }
     let raw_features = data
         .pm_dc_features
         .iter()
-        .map(|feature| (feature.id.as_str(), feature))
+        .map(|feature| (feature.id(), feature))
         .collect::<HashMap<_, _>>();
     let labels = data
         .pm_dc_feature_labels
@@ -890,7 +932,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .filter_map(|label| {
             Some((
                 (
-                    label.segment_token.as_str(),
+                    label.identity.segment_token.as_str(),
                     label.header.owner.index.checked_sub(1)?,
                 ),
                 label,
@@ -900,14 +942,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     let properties = data
         .pm_dc_feature_properties
         .iter()
-        .map(|property| (property.id.as_str(), property))
+        .map(|property| (property.id(), property))
         .collect::<HashMap<_, _>>();
     let properties_by_record = data
         .pm_dc_feature_properties
         .iter()
         .map(|property| {
             (
-                (property.segment_token.as_str(), property.record_ordinal),
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
                 property,
             )
         })
@@ -927,7 +972,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature does not resolve to its PmDc source record".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
             continue;
         };
@@ -949,37 +994,37 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         if expected_class.is_empty()
             || labels
                 .get(&(
-                    raw_feature.segment_token.as_str(),
-                    raw_feature.record_ordinal,
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
                 ))
                 .is_none_or(|label| label.class_id != expected_class)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature family does not match its PmDc label".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
         }
         let expected_collection = raw_feature
             .properties
-            .references
+            .references()
             .get(output_slot)
             .and_then(|reference| reference.index.checked_sub(1))
             .and_then(|ordinal| {
                 properties_by_record
-                    .get(&(raw_feature.segment_token.as_str(), ordinal))
+                    .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
                     .copied()
             });
         if expected_collection.is_none_or(|collection| {
             results
                 .get(&feature.id)
                 .and_then(|result| result.native_ref.as_deref())
-                != Some(collection.id.as_str())
+                != Some(collection.id().as_str())
         }) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature result does not match its PmDc output slot".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
         }
     }
@@ -992,7 +1037,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result does not resolve to its PmDc object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
             continue;
         };
@@ -1004,30 +1049,30 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result native reference is not an object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
             continue;
         };
         let expected_bodies = items
-            .references
+            .references()
             .iter()
             .filter_map(|reference| {
                 let ordinal = reference.index.checked_sub(1)?;
                 properties_by_record
-                    .get(&(collection.segment_token.as_str(), ordinal))
+                    .get(&(collection.identity.segment_token.as_str(), ordinal))
                     .filter(|property| {
                         matches!(property.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
                     })
-                    .map(|property| property.id.as_str())
+                    .map(|property| property.id())
             })
             .collect::<Vec<_>>();
-        if expected_bodies.len() != items.references.len()
+        if expected_bodies.len() != items.references().len()
             || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor feature result bodies do not match its PmDc object collection".into(),
-                Some(result.id.0.clone()),
+                Some(result.id.as_str().to_owned()),
             ));
         }
     }
@@ -1035,7 +1080,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor feature record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -1115,7 +1160,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings,
         data.face_native_keys
             .iter()
-            .map(|record| record.id.as_str()),
+            .map(cadmpeg_asm::brep::records::FaceNativeKey::id),
         "ASM face-native-key id",
     );
     unique(
@@ -1136,7 +1181,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor ASM face-native-key record does not resolve to a neutral face".into(),
-                Some(record.id.clone()),
+                Some(record.id()),
             ));
         }
     }
@@ -1197,16 +1242,15 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        if record.edge_references.len() != record.edge_reference_qualifiers.len() {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor PmGraphics face edge-reference qualifier count differs from its reference count".into(),
-                Some(record.id.clone()),
-            ));
-        }
-        for reference in std::iter::once(record.surface_reference)
-            .chain(std::iter::once(record.parent_reference))
-            .chain(record.edge_references.iter().copied())
+        for reference in std::iter::once(record.surface.index)
+            .chain(std::iter::once(record.parent.index))
+            .chain(
+                record
+                    .edge_references
+                    .references()
+                    .iter()
+                    .map(|reference| reference.index),
+            )
             .filter(|reference| *reference != 0)
         {
             let Some(ordinal) = reference.checked_sub(1) else {
@@ -1220,8 +1264,8 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 ));
             }
         }
-        if record.styles_reference != 0 {
-            let target = record.styles_reference - 1;
+        if record.styles.index != 0 {
+            let target = record.styles.index - 1;
             if raw_records.get(&(record.segment_token.as_str(), target))
                 != Some(&"0786eb48d2110c076000f99ac5361ab0")
             {
@@ -1243,22 +1287,18 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        if record.style_references.len() != record.style_reference_qualifiers.len() {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor PmGraphics style-reference qualifier count differs from its reference count"
-                    .into(),
-                Some(record.id.clone()),
-            ));
-        }
-        for reference in &record.style_references {
-            if *reference == 0
-                || !raw_keys.contains(&(record.segment_token.as_str(), reference.saturating_sub(1)))
+        for reference in record.style_references.references() {
+            if reference.index == 0
+                || !raw_keys.contains(&(
+                    record.segment_token.as_str(),
+                    reference.index.saturating_sub(1),
+                ))
             {
                 findings.push(finding(
                     Check::NativeLinks,
                     format!(
-                        "Inventor PmGraphics style-collection reference {reference} does not resolve"
+                        "Inventor PmGraphics style-collection reference {} does not resolve",
+                        reference.index
                     ),
                     Some(record.id.clone()),
                 ));
@@ -1279,7 +1319,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
 }
@@ -1297,61 +1337,23 @@ fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
         return;
     }
     let carrier = &data.active_carrier[0];
-    let selected_fields = carrier.segment_token.is_some()
-        && carrier.record_ordinal.is_some()
-        && carrier.segment_version_major.is_some()
-        && matches!(carrier.family.as_deref(), Some("asm" | "acis"))
-        && carrier.header_state.is_some()
-        && carrier.header_kind.is_some()
-        && carrier.header_value.is_some()
-        && carrier.schema.is_some()
-        && carrier.carrier_len.is_some_and(|length| length != 0)
-        && carrier.carrier_offset.is_some()
-        && carrier.carrier_sha256.is_some()
-        && carrier.selected_key.is_some()
-        && carrier.enabled.is_some()
-        && carrier.delta_state.is_some()
-        && carrier.history_reference.is_some()
-        && carrier.detail.is_none();
-    let empty_fields = carrier.segment_token.is_none()
-        && carrier.record_ordinal.is_none()
-        && carrier.segment_version_major.is_none()
-        && carrier.family.is_none()
-        && carrier.header_state.is_none()
-        && carrier.header_kind.is_none()
-        && carrier.header_value.is_none()
-        && carrier.schema.is_none()
-        && carrier.carrier_len.is_none()
-        && carrier.carrier_offset.is_none()
-        && carrier.carrier_sha256.is_none()
-        && carrier.selected_key.is_none()
-        && carrier.enabled.is_none()
-        && carrier.delta_state.is_none()
-        && carrier.history_reference.is_none();
-    let valid = match carrier.state {
-        ActiveCarrierRecordState::Selected => selected_fields,
-        ActiveCarrierRecordState::NotApplicable => empty_fields && carrier.detail.is_none(),
-        ActiveCarrierRecordState::NotExpanded => empty_fields && carrier.detail.is_none(),
-        ActiveCarrierRecordState::Unavailable => empty_fields && carrier.detail.is_some(),
-    };
-    if !valid {
-        findings.push(finding(
-            Check::NativeLinks,
-            "Inventor active-carrier state fields are inconsistent".into(),
-            Some(carrier.id.clone()),
-        ));
-    }
-    if carrier.state == ActiveCarrierRecordState::Selected {
+    if let ActiveCarrierRecord::Selected {
+        id,
+        segment_token,
+        record_ordinal,
+        ..
+    } = carrier
+    {
         let resolves = data.records.iter().any(|record| {
-            Some(record.token.as_str()) == carrier.segment_token.as_deref()
-                && Some(record.ordinal) == carrier.record_ordinal
+            record.token.as_str() == segment_token
+                && record.ordinal == *record_ordinal
                 && record.type_id == "5c5945f6d5113313100060a6bba647b5"
         });
         if !resolves {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor active carrier does not resolve to its typed RSe record".into(),
-                Some(carrier.id.clone()),
+                Some(id.clone()),
             ));
         }
     }
@@ -1377,42 +1379,37 @@ struct NativeData {
     property_sections: Vec<PropertySectionRecord>,
     properties: Vec<PropertyRecord>,
     property_issues: Vec<PropertySetIssueRecord>,
-    protein: Vec<ProteinRecord>,
+    protein: ProteinRecord,
     protein_assets: Vec<ProteinAssetRecord>,
-    protein_entries: Vec<ProteinEntryRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
-    ufrx: Vec<UfrxRecord>,
-    ufrx_model_states: Vec<UfrxModelStateRecord>,
-    ufrx_occurrences: Vec<UfrxOccurrenceRecord>,
-    embedded_references: Vec<EmbeddedReferenceRecord>,
-    external_references: Vec<ExternalReferenceRecord>,
+    ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
-    assembly_record_issues: Vec<AssemblyRecordIssueRecord>,
+    assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
     pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
-    presentation_record_issues: Vec<PresentationRecordIssueRecord>,
+    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
-    design_record_issues: Vec<DesignRecordIssue>,
+    design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
-    sketch_record_issues: Vec<SketchRecordIssue>,
+    sketch_record_issues: Vec<RecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
-    feature_record_issues: Vec<FeatureRecordIssue>,
+    feature_record_issues: Vec<RecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -1441,15 +1438,10 @@ impl NativeData {
             property_sections: namespace.arena_as("property_sections")?,
             properties: namespace.arena_as("properties")?,
             property_issues: namespace.arena_as("property_set_issues")?,
-            protein: namespace.arena_as("protein")?,
+            protein: ProteinRecord::read(namespace)?,
             protein_assets: namespace.arena_as("protein_assets")?,
-            protein_entries: namespace.arena_as("protein_entries")?,
             protein_rejections: namespace.arena_as("protein_rejections")?,
-            ufrx: namespace.arena_as("ufrx")?,
-            ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
-            ufrx_occurrences: namespace.arena_as("ufrx_occurrences")?,
-            embedded_references: namespace.arena_as("embedded_references")?,
-            external_references: namespace.arena_as("external_references")?,
+            ufrx: UfrxRecord::read(namespace)?,
             assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
             assembly_placements: namespace.arena_as("assembly_placements")?,
             assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
@@ -1515,18 +1507,6 @@ fn validate_databases(data: &NativeData, findings: &mut Vec<Finding>) {
             "Inventor database states do not cover the storage bands exactly".into(),
             None,
         ));
-    }
-    for database in &data.databases {
-        if database.schema != 31 {
-            findings.push(finding(
-                Check::Version,
-                format!(
-                    "Inventor database {} has schema {}",
-                    database.id, database.schema
-                ),
-                Some(database.id.clone()),
-            ));
-        }
     }
     for issue in &data.database_issues {
         findings.push(finding(
@@ -1674,7 +1654,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
                 *counts.entry(record.token.as_str()).or_default() += 1;
                 if !type_keys.contains(&(
                     record.token.as_str(),
-                    record.type_index,
+                    record.type_index(),
                     record.type_id.as_str(),
                 )) {
                     findings.push(finding(
@@ -1693,61 +1673,32 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         "segment record ordinal",
     );
     for bulk in &data.bulk {
-        if bulk.record_state == "framed" {
-            if bulk.record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0)
-                || bulk.stream_trailer_len.is_none()
-                || bulk.stream_trailer_sha256.is_none()
-                || bulk.record_detail.is_some()
-                || bulk.expanded_len.is_none()
-                || bulk.expanded_sha256.is_none()
-            {
+        match &bulk.records {
+            crate::native::SegmentBulkFrame::Framed { record_count, .. } => {
+                if *record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0) {
+                    findings.push(finding(
+                        Check::NativeLinks,
+                        "Inventor bulk record summary does not match its record arena".into(),
+                        Some(bulk.id.clone()),
+                    ));
+                }
+            }
+            crate::native::SegmentBulkFrame::Unavailable { detail } => {
                 findings.push(finding(
                     Check::NativeLinks,
-                    "Inventor bulk record summary does not match its record arena".into(),
+                    format!("Inventor bulk records are unavailable: {detail}"),
                     Some(bulk.id.clone()),
                 ));
             }
-        } else if bulk.record_state == "unavailable" {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!(
-                    "Inventor bulk records are unavailable: {}",
-                    bulk.record_detail.as_deref().unwrap_or("no detail")
-                ),
-                Some(bulk.id.clone()),
-            ));
-        } else if bulk.record_state == "not_expanded" {
-            if bulk.expanded_len.is_some()
-                || bulk.expanded_sha256.is_some()
-                || bulk.record_count != 0
-                || bulk.stream_trailer_len.is_some()
-                || bulk.stream_trailer_sha256.is_some()
-                || bulk.record_detail.is_some()
-            {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    "Inventor unexpanded bulk state fields are inconsistent".into(),
-                    Some(bulk.id.clone()),
-                ));
-            }
-        } else {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor bulk record state is invalid".into(),
-                Some(bulk.id.clone()),
-            ));
         }
     }
     let expanded_lengths = data
         .bulk
         .iter()
-        .filter_map(|bulk| {
-            bulk.expanded_len
-                .map(|length| (bulk.token.as_str(), length))
-        })
+        .map(|bulk| (bulk.token.as_str(), bulk.expanded_len))
         .collect::<HashMap<_, _>>();
     for record in &data.records {
-        let end = record.payload_offset.checked_add(record.payload_len);
+        let end = record.payload_offset.checked_add(record.payload_len());
         if end.is_none_or(|end| {
             end > expanded_lengths
                 .get(record.token.as_str())
@@ -1842,72 +1793,17 @@ fn validate_properties(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.protein.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} Protein state records",
-                data.protein.len()
-            ),
-            None,
-        ));
-        return;
-    }
     unique(
         findings,
-        data.protein_entries.iter().map(|record| record.ordinal),
+        data.protein.entries().iter().map(|record| record.ordinal),
         "Protein entry ordinal",
     );
-    let record = &data.protein[0];
-    let valid = match record.state {
-        ProteinRecordState::Absent => {
-            record.directory_id.is_none()
-                && record.declared_len.is_none()
-                && record.entry_count == 0
-                && record.detail.is_none()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-        ProteinRecordState::Empty => {
-            record.directory_id.is_some()
-                && record.declared_len == Some(0)
-                && record.entry_count == 0
-                && record.detail.is_none()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-        ProteinRecordState::Package => {
-            record.directory_id.is_some()
-                && record.declared_len.is_some_and(|length| length != 0)
-                && record.entry_count == data.protein_entries.len() as u64
-                && record.detail.is_none()
-        }
-        ProteinRecordState::Malformed => {
-            record.directory_id.is_some()
-                && record.entry_count == 0
-                && record.detail.is_some()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-    };
-    if !valid {
+    let record = &data.protein;
+    if let ProteinRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor Protein state fields are inconsistent".into(),
-            Some(record.id.clone()),
-        ));
-    }
-    if record.state == ProteinRecordState::Malformed {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor Protein stream is malformed: {}",
-                record.detail.as_deref().unwrap_or("no detail")
-            ),
-            Some(record.id.clone()),
+            format!("Inventor Protein stream is malformed: {detail}"),
+            Some(id.clone()),
         ));
     }
 }
@@ -1921,7 +1817,8 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         "Protein decoded-record position",
     );
     let entry_names = data
-        .protein_entries
+        .protein
+        .entries()
         .iter()
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
@@ -1956,7 +1853,8 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
         "Protein rejected-record position",
     );
     let entry_names = data
-        .protein_entries
+        .protein
+        .entries()
         .iter()
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
@@ -2016,122 +1914,42 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
 }
 
 fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.ufrx.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} UFRxDoc state records",
-                data.ufrx.len()
-            ),
-            None,
-        ));
-        return;
-    }
     unique(
         findings,
-        data.external_references.iter().map(|record| record.ordinal),
+        data.ufrx
+            .external_references()
+            .iter()
+            .map(|record| record.ordinal),
         "external reference ordinal",
     );
     unique(
         findings,
-        data.ufrx_model_states.iter().map(|record| record.ordinal),
+        data.ufrx.model_states().iter().map(|record| record.ordinal),
         "UFRxDoc model-state ordinal",
     );
     unique(
         findings,
-        data.external_references
+        data.ufrx
+            .external_references()
             .iter()
             .map(|record| record.reference_id),
         "external reference id",
     );
-    let record = &data.ufrx[0];
-    let valid = match record.state {
-        UfrxRecordState::Absent => {
-            record.directory_id.is_none()
-                && record.schema.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.detail.is_none()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-        UfrxRecordState::ParsedPrefix => {
-            record.directory_id.is_some()
-                && record
-                    .schema
-                    .is_some_and(|schema| (11..=15).contains(&schema))
-                && record.section_versions.len() >= 5
-                && record.original_file_name.is_some()
-                && record.caption.is_some()
-                && record.model_state_count == data.ufrx_model_states.len() as u64
-                && (record.schema == Some(15)) == record.representation.is_some()
-                && record.reference_count == data.external_references.len() as u64
-                && record.embedded_reference_count == data.embedded_references.len() as u64
-                && record.occurrence_count == data.ufrx_occurrences.len() as u64
-                && record.tail_sha256.is_some()
-                && record.detail.is_none()
-        }
-        UfrxRecordState::Unsupported => {
-            record.directory_id.is_some()
-                && record.schema.is_some()
-                && !record.section_versions.is_empty()
-                && record.original_file_name.is_none()
-                && record.caption.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.tail_sha256.is_some()
-                && record.detail.is_some()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-        UfrxRecordState::Malformed => {
-            record.directory_id.is_some()
-                && record.schema.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.detail.is_some()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-    };
-    if !valid {
+    let record = &data.ufrx;
+    if let UfrxRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor UFRxDoc state fields are inconsistent".into(),
-            Some(record.id.clone()),
-        ));
-    }
-    if record.state == UfrxRecordState::Malformed {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor UFRxDoc stream is malformed: {}",
-                record.detail.as_deref().unwrap_or("no detail")
-            ),
-            Some(record.id.clone()),
+            format!("Inventor UFRxDoc stream is malformed: {detail}"),
+            Some(id.clone()),
         ));
     }
     let model_state_ordinals = data
-        .ufrx_model_states
+        .ufrx
+        .model_states()
         .iter()
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
-    for state in &data.ufrx_model_states {
+    for state in data.ufrx.model_states() {
         if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
             findings.push(finding(
                 Check::NativeLinks,
@@ -2140,8 +1958,9 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    if model_state_ordinals.len() != data.ufrx_model_states.len()
-        || model_state_ordinals != (0..data.ufrx_model_states.len() as u32).collect::<HashSet<_>>()
+    if model_state_ordinals.len() != data.ufrx.model_states().len()
+        || model_state_ordinals
+            != (0..data.ufrx.model_states().len() as u32).collect::<HashSet<_>>()
     {
         findings.push(finding(
             Check::NativeLinks,
@@ -2149,32 +1968,34 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    if let Some(representation) = &record.representation {
-        let representation_pair_present = match (
-            &representation.active_representation,
-            &representation.active_representation_kind,
-        ) {
-            (Some(name), Some(kind)) if !name.is_empty() && !kind.is_empty() => Some(true),
-            (None, None) => Some(false),
-            _ => None,
-        };
+    if let UfrxRecord::ParsedPrefix {
+        id,
+        representation: Some(representation),
+        ..
+    } = record
+    {
+        let representation_pair_present = representation.active_representation.is_some();
+        let empty_representation = representation
+            .active_representation
+            .as_ref()
+            .is_some_and(|(name, kind)| name.is_empty() || kind.is_empty());
         let expected_pair = document_kind(ir).and_then(|kind| match kind {
             "assembly" => Some(true),
             "part" => Some(false),
             _ => None,
         });
-        if representation_pair_present.is_none()
-            || expected_pair.is_some_and(|expected| representation_pair_present != Some(expected))
+        if empty_representation
+            || expected_pair.is_some_and(|expected| representation_pair_present != expected)
             || representation.active_model_state.is_empty()
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc representation state is inconsistent".into(),
-                Some(record.id.clone()),
+                Some(id.clone()),
             ));
         }
     }
-    for reference in &data.external_references {
+    for reference in data.ufrx.external_references() {
         if reference.path.is_empty()
             && reference
                 .document_id
@@ -2190,10 +2011,13 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     unique(
         findings,
-        data.embedded_references.iter().map(|record| record.ordinal),
+        data.ufrx
+            .embedded_references()
+            .iter()
+            .map(|record| record.ordinal),
         "embedded reference ordinal",
     );
-    for reference in &data.embedded_references {
+    for reference in data.ufrx.embedded_references() {
         if reference.record_len == 0 || reference.record_sha256.len() != 64 {
             findings.push(finding(
                 Check::NativeLinks,
@@ -2204,13 +2028,15 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     unique(
         findings,
-        data.ufrx_occurrences
+        data.ufrx
+            .occurrences()
             .iter()
             .map(|occurrence| occurrence.occurrence_id),
         "UFRxDoc occurrence id",
     );
     let reference_ids = data
-        .external_references
+        .ufrx
+        .external_references()
         .iter()
         .map(|reference| reference.reference_id)
         .collect::<HashSet<_>>();
@@ -2221,7 +2047,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .collect::<HashSet<_>>();
     let mut actual_counts = HashMap::<u32, u64>::new();
     let assembly_document = is_assembly_document(ir);
-    for occurrence in &data.ufrx_occurrences {
+    for occurrence in data.ufrx.occurrences() {
         *actual_counts
             .entry(occurrence.file_reference_id)
             .or_default() += 1;
@@ -2239,7 +2065,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    for reference in &data.external_references {
+    for reference in data.ufrx.external_references() {
         if actual_counts
             .get(&reference.reference_id)
             .copied()
@@ -2292,9 +2118,10 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
-    if is_assembly_document(ir) && !data.external_references.is_empty() {
+    if is_assembly_document(ir) && !data.ufrx.external_references().is_empty() {
         let declared = data
-            .external_references
+            .ufrx
+            .external_references()
             .iter()
             .map(|reference| u64::from(reference.occurrence_count))
             .sum::<u64>();
@@ -2316,18 +2143,18 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 "Inventor assembly record {}:{} is unavailable: {}",
                 issue.segment_token, issue.record_ordinal, issue.detail
             ),
-            Some(issue.id.clone()),
+            Some(issue.id()),
         ));
     }
     let mut projected = crate::assembly::project_occurrences(
-        &data.ufrx_occurrences,
-        &data.external_references,
+        data.ufrx.occurrences(),
+        data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
     );
     projected
         .occurrences
-        .sort_by(|left, right| left.id.0.cmp(&right.id.0));
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,

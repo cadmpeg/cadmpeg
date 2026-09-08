@@ -10,9 +10,29 @@
 //! components before `#`). Use [`is_valid_identity`] / [`format_identity`] at
 //! mint time; validation repeats the same grammar.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+pub(crate) fn deserialize_entity_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if is_valid_identity(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
+    }
+}
+
+pub(crate) fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
+    } else {
+        Ok(value)
+    }
+}
 use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
@@ -107,22 +127,38 @@ impl std::error::Error for IdentityError {}
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(pub String);
+        pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_entity_id")] String);
 
-        impl Serialize for $name {
+        impl serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
-                crate::schema::serialize_reference_id(&self.0, serializer)
+                $crate::schema::serialize_reference_id(&self.0, serializer)
             }
         }
 
         impl $name {
+            /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
+            pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
+                let value = value.into();
+                if !$crate::ids::is_valid_identity(&value) {
+                    return Err($crate::ids::IdentityError::InvalidId { value });
+                }
+                Ok(Self(value))
+            }
+
+            /// Return the underlying id string.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+
             /// Borrow the underlying id string.
+            #[must_use]
             pub fn as_str(&self) -> &str {
                 &self.0
             }
@@ -134,9 +170,19 @@ macro_rules! id_type {
             }
         }
 
-        impl<S: Into<String>> From<S> for $name {
-            fn from(value: S) -> Self {
-                $name(value.into())
+        impl TryFrom<String> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::mint(value)
             }
         }
     };
@@ -145,13 +191,31 @@ macro_rules! id_type {
 macro_rules! local_id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(pub String);
+        pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
 
         impl $name {
+            /// Mint a non-empty identity that has no whitespace.
+            pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
+                let value = value.into();
+                if value.is_empty() || value.chars().any(char::is_whitespace) {
+                    return Err($crate::ids::IdentityError::InvalidId { value });
+                }
+                Ok(Self(value))
+            }
+
+            /// Return the underlying id string.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+
             /// Borrow the underlying id string.
+            #[must_use]
             pub fn as_str(&self) -> &str {
                 &self.0
             }
@@ -163,13 +227,91 @@ macro_rules! local_id_type {
             }
         }
 
-        impl<S: Into<String>> From<S> for $name {
-            fn from(value: S) -> Self {
-                $name(value.into())
+        impl TryFrom<String> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::mint(value)
             }
         }
     };
 }
+
+pub(crate) use local_id_type;
+
+macro_rules! reference_id_type {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+        #[serde(transparent)]
+        pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
+
+        impl serde::Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                $crate::schema::serialize_reference_id(&self.0, serializer)
+            }
+        }
+
+        impl $name {
+            /// Mint a non-empty identity that has no whitespace.
+            pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
+                let value = value.into();
+                if value.is_empty() || value.chars().any(char::is_whitespace) {
+                    return Err($crate::ids::IdentityError::InvalidId { value });
+                }
+                Ok(Self(value))
+            }
+
+            /// Return the underlying id string.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+
+            /// Borrow the underlying id string.
+            #[must_use]
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = $crate::ids::IdentityError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+    };
+}
+
+pub(crate) use reference_id_type;
 
 id_type!(
     /// Identifies a [`crate::topology::Body`].
@@ -262,6 +404,10 @@ id_type!(
 id_type!(
     /// Identifies a decoded [`crate::appearance::Appearance`] asset.
     AppearanceId
+);
+id_type!(
+    /// Identifies an [`crate::appearance::AppearanceBinding`] assignment.
+    AppearanceBindingId
 );
 id_type!(
     /// Identifies a linked [`crate::attributes::SourceAttribute`] record.

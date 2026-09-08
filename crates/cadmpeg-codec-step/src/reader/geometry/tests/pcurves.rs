@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
-use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
 use crate::loss::StepLossCode;
@@ -74,13 +74,13 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#33"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#33"));
     assert!(decoded
         .ir()
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#36"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#36"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -152,12 +152,20 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
-            && matches!(curve.geometry, CurveGeometry::Line { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Line { .. }
+            )
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
-        curve.curve.as_str() == "step:data:curve#70"
+        decoded
+            .ir()
+            .model
+            .procedural_curve_owner(&curve.id)
+            .map(CurveId::as_str)
+            == Some("step:data:curve#70")
             && matches!(
-                &curve.definition,
+                curve.definition(),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
                     if source.as_str() == "step:data:curve#16"
             )
@@ -214,7 +222,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode stale pcurve trim");
-    let pcurve = cadmpeg_ir::ids::PcurveId("step:data:pcurve#56".into());
+    let pcurve = cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#56").expect("identity grammar");
     let use_ = decoded
         .ir()
         .model
@@ -256,7 +264,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("cylindrical pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
     ));
@@ -382,9 +390,14 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
         .procedural_surfaces
         .iter()
         .any(|surface| {
-            surface.surface.as_str() == "step:data:surface#28"
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#28")
                 && matches!(
-                    surface.definition,
+                    surface.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { .. }
                 )
         }));
@@ -418,13 +431,11 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
 
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            weights: None,
-            periodic: false,
-            ..
-        } if control_points == &[
+        PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
+                && nurbs.control_points() == [
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 2.0),
             Point2::new(3.0, 2.0),
@@ -451,7 +462,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("planar pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if (direction.u - 10.0).abs() < 1.0e-12
     ));
@@ -517,7 +528,7 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
         .expect("surface-chart pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
             if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
                 && origin.v.abs() < 1.0e-12
@@ -583,7 +594,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -896,13 +907,12 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         matches!(
             &pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                knots,
-                control_points,
-                weights: None,
-                periodic: false,
-            } if knots == &[0.0, 0.0, 1.0, 1.0] && control_points.len() == 2
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+                if nurbs.degree() == 1
+                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.control_points().len() == 2
+                    && nurbs.weights().is_none()
+                    && !nurbs.periodic()
         )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -937,7 +947,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .find(|curve| curve.id.as_str() == "step:data:curve#9")
             .expect("boundary curve carrier");
         assert!(matches!(
-            &boundary.geometry,
+            boundary.geometry.solved_cache().unwrap_or(&boundary.geometry),
             CurveGeometry::Composite { segments, .. }
                 if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
         ));
@@ -950,9 +960,9 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .find(|surface| surface.id.as_str() == "step:construction:curve_bounded_surface#11")
             .expect("curve-bounded surface");
         assert!(matches!(
-            &bounded.definition,
+            bounded.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
-                if boundaries == &[CurveId("step:data:curve#9".to_owned())]
+                if boundaries == &[CurveId::mint("step:data:curve#9".to_owned()).expect("identity grammar")]
         ));
         assert!(!result.report().losses.iter().any(|loss| {
             loss.message
@@ -984,7 +994,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         .model
         .procedural_surfaces
         .iter()
-        .find_map(|surface| match &surface.definition {
+        .find_map(|surface| match surface.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
                 boundaries,
                 boundary_pcurves,
@@ -995,7 +1005,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         .expect("curve-bounded surface");
     assert_eq!(
         boundaries,
-        &[cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
+        &[cadmpeg_ir::ids::CurveId::mint("step:data:curve#34").expect("identity grammar")]
     );
     assert!(
         decoded
@@ -1010,7 +1020,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
     );
     assert_eq!(
         boundary_pcurves,
-        &[cadmpeg_ir::ids::PcurveId("step:data:pcurve#44".into())]
+        &[cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#44").expect("identity grammar")]
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1036,7 +1046,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#83")
+        .find(|curve| curve.id.as_str() == "step:data:curve#83")
         .expect("surface-curve basis");
     assert_eq!(
         basis

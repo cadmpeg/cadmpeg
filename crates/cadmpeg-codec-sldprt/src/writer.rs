@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
+pub(crate) mod target;
+
 use crate::native::SldprtNative;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
@@ -29,24 +31,22 @@ pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
+/// Writes a semantic document and returns the dialect it wrote.
+///
+/// The returned id is classified from the final section payloads through the
+/// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
+/// these bytes classifies exactly what the caller reports as
+/// `ExportReport::target`.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
-) -> Result<(), CodecError> {
+) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
     let mut native = ir
         .native
         .namespace("sldprt")
-        .map(|namespace| {
-            if !crate::native::native_version_supported(namespace.version) {
-                let version = namespace.version;
-                return Err(CodecError::malformed(format_args!(
-                    "unsupported SLDPRT native namespace version {version}"
-                )));
-            }
-            SldprtNative::load(namespace).map_err(Into::into)
-        })
+        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
         .transpose()?;
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);
@@ -68,7 +68,8 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
-    let retained_partition = retained_partition(&normalized, retained_records);
+    let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
+    let retained_partition = retained_partition(&normalized, source_scan.as_ref());
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());
@@ -178,11 +179,7 @@ pub(crate) fn write_semantic_with_records(
         true
     };
     if replay_swobjects {
-        sections.extend(
-            retained_swobjects
-                .into_iter()
-                .map(|(_, section, payload)| (section, payload)),
-        );
+        sections.extend(retained_swobjects);
     } else {
         if !materials.is_empty() {
             sections.push(("SWObjects".into(), materials));
@@ -205,24 +202,19 @@ pub(crate) fn write_semantic_with_records(
         .flat_map(|native| &native.feature_histories)
         .enumerate()
     {
-        let section = annotations
-            .provenance
-            .get(&history.id)
-            .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
-            .cloned()
-            .unwrap_or_else(|| format!("Contents/Keywords-{index}"));
+        let section = annotations.provenance.get(&history.id).map_or_else(
+            || format!("Contents/Keywords-{index}"),
+            |provenance| provenance.stream().to_owned(),
+        );
         sections.push((section, history_payload(history)?));
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = lane.configuration.as_ref().map_or_else(
             || {
-                annotations
-                    .provenance
-                    .get(&lane.id)
-                    .and_then(|provenance| {
-                        annotations.streams.get(provenance.stream as usize).cloned()
-                    })
-                    .unwrap_or_else(|| "Contents/ResolvedFeatures".into())
+                annotations.provenance.get(&lane.id).map_or_else(
+                    || "Contents/ResolvedFeatures".into(),
+                    |provenance| provenance.stream().to_owned(),
+                )
             },
             |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
         );
@@ -238,19 +230,14 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
-    if let Some(active) = ir
-        .model
-        .configurations
-        .iter()
-        .find(|value| value.active.is_active())
-    {
+    let document_envelope = crate::container::first_solidworks_envelope(
+        opaque.iter().map(|(_, payload)| payload.as_slice()),
+    );
+    if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.resolved().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
-        let has_document_envelope = opaque
-            .iter()
-            .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
-        if !has_document_envelope {
+        if document_envelope.is_none() {
             sections.push((
                 "Contents/SolidWorks".into(),
                 generated_solidworks_xml(ir, active_name),
@@ -260,19 +247,22 @@ pub(crate) fn write_semantic_with_records(
     for (section, payload) in opaque {
         sections.push((section, payload));
     }
+    let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
+    let written_dialect =
+        crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    let type_ids = section_type_ids(retained_records, &sections)?;
+    let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     writer.write_all(&outer_header(retained_records))?;
     for ((section, payload), type_id) in sections.iter().zip(&type_ids) {
         writer.write_all(&block(payload, section, *type_id)?)?;
     }
-    for cell in retained_cache_cells(retained_records, &sections) {
+    for cell in retained_cache_cells(source_scan.as_ref(), &sections) {
         writer.write_all(&cell)?;
     }
-    for entry in section_directory_entries(retained_records, &sections, &type_ids)? {
+    for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    Ok(())
+    Ok(written_dialect)
 }
 
 fn assign_configuration_indices(
@@ -358,7 +348,7 @@ fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
         return;
     };
     for configuration in &mut ir.model.configurations {
-        if configuration.id.0 == id {
+        if configuration.id.as_str() == id {
             configuration.feature_states.clear();
             configuration.parameter_values.clear();
         }
@@ -387,24 +377,22 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model.attributes.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model
         .appearance_bindings
-        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
+        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.as_str()));
 }
 
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
     records
         .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")?
+        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data
 }
 
 fn section_directory_entries(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let source = source_image(records);
-    let source_scan = source.map(crate::container::scan_bytes);
-    let source_trailer = if let Some(scan) = source_scan.as_ref() {
+    let source_trailer = if let Some(scan) = source_scan {
         let mut trailers = scan.directory.iter().map(|entry| entry.trailer);
         if let Some(first) = trailers.next() {
             if trailers.any(|trailer| trailer != first) {
@@ -425,14 +413,15 @@ fn section_directory_entries(
         .map(|((section, payload), type_id)| {
             let size = u32::try_from(payload.len())
                 .map_err(|_| CodecError::Malformed("SLDPRT section exceeds 4 GiB".into()))?;
-            let source_entry = source_scan.as_ref().and_then(|scan| {
+            let source_entry = source_scan.and_then(|scan| {
                 scan.directory
                     .iter()
                     .find(|entry| entry.name == *section && entry.type_id == *type_id)
             });
-            if let (Some(entry), Some(source)) =
-                (source_entry.filter(|entry| entry.size == size), source)
-            {
+            if let (Some(entry), Some(source)) = (
+                source_entry.filter(|entry| entry.size == size),
+                source_scan.map(|scan| scan.source_image),
+            ) {
                 let end = entry
                     .offset
                     .checked_add(46 + entry.name.len())
@@ -455,13 +444,12 @@ fn section_directory_entries(
 }
 
 fn retained_cache_cells(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Vec<Vec<u8>> {
-    let Some(source) = source_image(records) else {
+    let Some(scan) = source_scan else {
         return Vec::new();
     };
-    let scan = crate::container::scan_bytes(source);
     scan.cache_cells
         .iter()
         .filter(|cell| {
@@ -475,7 +463,7 @@ fn retained_cache_cells(
         })
         .filter_map(|cell| {
             let end = cell.offset.checked_add(26 + cell.name.len())?;
-            source.get(cell.offset..end).map(<[u8]>::to_vec)
+            scan.source_image.get(cell.offset..end).map(<[u8]>::to_vec)
         })
         .collect()
 }
@@ -488,21 +476,20 @@ fn retained_cache_cells(
 /// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
 /// synthesized rather than decoded, or decoded by a binary that named the
 /// attribute differently — has no partition to replay and is written out in full.
-fn retained_partition(ir: &CadIr, records: &[SourceRecord<'_>]) -> Option<(String, Vec<u8>)> {
+fn retained_partition(
+    ir: &CadIr,
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
+) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
     let expected = source.attributes.get("brep_local_sha256")?;
     if crate::decode::brep_local_sha256(ir) != *expected {
         return None;
     }
-    let source_image = source_image(records)?;
-    let scan = crate::container::scan_bytes(source_image);
-    let (block, _) = crate::container::select_active_parasolid(&scan)?;
-    let original_section = block
-        .section
-        .clone()
-        .unwrap_or_else(|| format!("block@{}", block.offset));
+    let scan = source_scan?;
+    let site = crate::container::select_active_parasolid_site(scan)?;
+    let original_section = site.name();
     let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
-    Some((section, block.payload.clone()))
+    Some((section, site.section.payload().to_vec()))
 }
 
 fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
@@ -537,15 +524,15 @@ fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
 }
 
 fn section_type_ids(
-    records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Result<Vec<u32>, CodecError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
-    if let Some(source) = source_image(records) {
-        for block in crate::container::scan_bytes(source).blocks {
-            if let Some(section) = block.section {
+    if let Some(scan) = source_scan {
+        for block in &scan.blocks {
+            if let Some(section) = &block.section {
                 source_ids
-                    .entry(section)
+                    .entry(section.clone())
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -594,7 +581,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         .model
         .configurations
         .iter()
-        .all(|configuration| !configuration.active.is_active())
+        .all(|configuration| !configuration.active)
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writing requires an active partition identity for a multi-partition source"
@@ -606,7 +593,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             .model
             .configurations
             .iter()
-            .filter(|configuration| configuration.active.is_active())
+            .filter(|configuration| configuration.active)
             .count()
             != 1
     {
@@ -627,20 +614,20 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
                 if *ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
-                        surface.id.0, ratio
+                        surface.id.as_str(), ratio
                     )));
                 }
                 if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
-                        surface.id.0, half_angle
+                        surface.id.as_str(), half_angle
                     )));
                 }
             }
             SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
-                    surface.id.0, radius
+                    surface.id.as_str(), radius
                 )));
             }
             SurfaceGeometry::Torus {
@@ -650,7 +637,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
-                    surface.id.0, major_radius, minor_radius
+                    surface.id.as_str(), major_radius, minor_radius
                 )));
             }
             _ => {}
@@ -671,9 +658,9 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     if ir.model.edges.iter().any(|edge| {
         edge.param_range.is_some()
             && annotations
-                .exactness
-                .get(&edge.id.0)
-                .is_none_or(|note| note.entity != cadmpeg_ir::Exactness::Derived)
+                .exactness()
+                .get(edge.id.as_str())
+                .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
@@ -725,7 +712,7 @@ fn configuration_partitions(
     {
         return Err(CodecError::malformed(format_args!(
             "SLDPRT body {} belongs to no configuration",
-            body.id.0
+            body.id.as_str()
         )));
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
@@ -740,7 +727,7 @@ fn configuration_partitions(
             let index = configuration.source_index.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT configuration {} has no assigned source index",
-                    configuration.id.0
+                    configuration.id.as_str()
                 ))
             })?;
             let subset = body_subset(ir, bodies)?;
@@ -789,7 +776,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
-            id.0
+            id.as_str()
         )));
     }
     let mut subset = ir.clone();
@@ -835,7 +822,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .loops
         .iter()
-        .flat_map(|loop_| loop_.coedges.iter().cloned())
+        .flat_map(|loop_| loop_.coedges().iter().cloned())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -918,13 +905,10 @@ fn opaque_blocks(
     let mut seen = HashSet::new();
     records
         .iter()
-        .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
+        .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(&record.id.0)?;
-            let section = annotations
-                .streams
-                .get(usize::try_from(provenance.stream).ok()?)?
-                .as_str();
+            let provenance = annotations.provenance.get(record.id.as_str())?;
+            let section = provenance.stream();
             let lower = section.to_ascii_lowercase();
             if section == active_partition {
                 return None;
@@ -951,16 +935,12 @@ fn opaque_blocks(
             }
             let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
-                if let Err(error) = crate::pmi::patch_payload(ir, &record.id.0, &mut payload) {
+                if let Err(error) = crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)
+                {
                     return Some(Err(error));
                 }
             }
-            if let Some(active) = ir
-                .model
-                .configurations
-                .iter()
-                .find(|value| value.active.is_active())
-            {
+            if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
                 let Some(active_name) = active.name.resolved() else {
                     return Some(Err(CodecError::Malformed(
                         "active SLDPRT configuration has no resolved name".into(),
@@ -981,34 +961,31 @@ fn opaque_blocks(
 fn retained_swobjects_sections(
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-) -> Result<Vec<(u32, String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut sections = records
         .iter()
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(&record.id.0)?;
-            let section = annotations
-                .streams
-                .get(usize::try_from(provenance.stream).ok()?)?
-                .as_str();
+            let provenance = annotations.provenance.get(record.id.as_str())?;
+            let section = provenance.stream();
             section
                 .to_ascii_lowercase()
                 .contains("swobjects")
-                .then_some((provenance.stream, section, record))
+                .then_some((section, record))
         })
         .collect::<Vec<_>>();
-    sections.sort_by_key(|(stream, _, _)| *stream);
+    sections.sort_by_key(|(section, _)| *section);
     let mut seen = HashSet::new();
     sections
         .into_iter()
-        .filter_map(|(stream, section, record)| {
+        .filter_map(|(section, record)| {
             seen.insert((section, record.sha256))
-                .then_some((stream, section, record))
+                .then_some((section, record))
         })
-        .map(|(stream, section, record)| {
+        .map(|(section, record)| {
             let data = record.data.ok_or_else(|| {
                 CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
             })?;
-            Ok((stream, section.to_string(), data.to_vec()))
+            Ok((section.to_string(), data.to_vec()))
         })
         .collect()
 }
@@ -1016,7 +993,7 @@ fn retained_swobjects_sections(
 fn patch_retained_swobjects_metadata(
     ir: &CadIr,
     annotations: &Annotations,
-    sections: &mut [(u32, String, Vec<u8>)],
+    sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeValue;
@@ -1026,21 +1003,24 @@ fn patch_retained_swobjects_metadata(
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| {
-            let provenance = annotations.provenance.get(&attribute.id.0).ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT metadata attribute {} has no retained record provenance",
-                    attribute.id
-                ))
-            })?;
-            Ok((provenance.stream, provenance.offset, attribute))
+            let provenance = annotations
+                .provenance
+                .get(attribute.id.as_str())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT metadata attribute {} has no retained record provenance",
+                        attribute.id
+                    ))
+                })?;
+            Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    attributes.sort_by_key(|(stream, offset, _)| (*stream, Reverse(*offset)));
+    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
 
     for (stream, offset, attribute) in attributes {
         let payload = sections
             .iter_mut()
-            .find_map(|(candidate, _, payload)| (*candidate == stream).then_some(payload))
+            .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT metadata attribute {} references a missing SWObjects section",
@@ -1255,13 +1235,12 @@ fn patch_active_configuration_xml(
     payload: &[u8],
     name: &str,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    if !payload.windows(12).any(|window| window == b"swSolidWorks") {
+    let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
-    }
-    let text = std::str::from_utf8(payload)
-        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
-    let document = roxmltree::Document::parse(text)
-        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
+    };
+    let Ok(document) = roxmltree::Document::parse(&text) else {
+        return Ok(None);
+    };
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return Ok(None);
     }
@@ -1387,7 +1366,6 @@ fn resolved_feature_payload(
             || usize::try_from(entity.offset) != Ok(*expected_offset)
             || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
-            || entity.link_selector != expected_entity.link_selector
             || entity.object_index
                 != crate::resolved_features::markers::marker_object_index(
                     &lane.native_payload,
@@ -1521,10 +1499,10 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.starts_with("sldprt:"))
+        .filter(|attribute| attribute.id.as_str().starts_with("sldprt:"))
         .collect::<Vec<_>>();
     attributes.sort_by_key(|attribute| {
-        let position = metadata_source_position(&attribute.id.0);
+        let position = metadata_source_position(attribute.id.as_str());
         (position.is_none(), position)
     });
     attributes
@@ -1765,7 +1743,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     let mut roots = history
         .features
         .iter()
-        .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
+        .filter(|feature| feature.tree_parent.is_none())
         .collect::<Vec<_>>();
     roots.sort_by_key(|feature| feature.ordinal);
     let mut emitted_configurations = HashSet::new();
@@ -1837,7 +1815,7 @@ pub(crate) fn validate_feature_graph(
     }
     for feature in features {
         let mut seen = HashSet::new();
-        let mut parent = feature.parent_source_id.as_deref();
+        let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
@@ -1845,10 +1823,10 @@ pub(crate) fn validate_feature_graph(
             let node = by_id
                 .get(id)
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
-            parent = node.parent_source_id.as_deref();
+            parent = node.parent_source_id();
         }
         let mut seen = HashSet::new();
-        let mut parent = feature.tree_parent.as_deref();
+        let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
@@ -1856,7 +1834,7 @@ pub(crate) fn validate_feature_graph(
             let node = by_record.get(id).ok_or_else(|| {
                 CodecError::Malformed("feature references missing tree parent".into())
             })?;
-            parent = node.tree_parent.as_deref();
+            parent = node.tree_parent_record_id();
         }
     }
     Ok(())
@@ -1905,9 +1883,9 @@ fn write_feature_xml(
     let mut children = features
         .iter()
         .filter(|child| {
-            child.tree_parent.as_deref() == Some(feature.id.as_str())
-                || (child.tree_parent.is_none()
-                    && child.parent_source_id.as_deref() == feature.source_id.as_deref()
+            child.tree_parent_record_id() == Some(feature.id.as_str())
+                || (child.tree_parent_record_id().is_none()
+                    && child.parent_source_id() == feature.source_id.as_deref()
                     && feature.source_id.is_some())
         })
         .collect::<Vec<_>>();
@@ -1997,10 +1975,10 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(b"uoTempFaceTessData_c");
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
-            u32::try_from(mesh.triangles.len()).map_err(|_| {
+            u32::try_from(mesh.triangles().len()).map_err(|_| {
                 CodecError::Malformed("tessellation triangle count overflow".into())
             })?,
-            u32::try_from(mesh.strip_lengths.len())
+            u32::try_from(mesh.strip_lengths().len())
                 .map_err(|_| CodecError::Malformed("tessellation strip count overflow".into()))?,
         ),
         None => (0, 0),
@@ -2009,32 +1987,32 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(&strip_count.to_le_bytes());
     for mesh in &meshes {
         let strips = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths.len(), &strips);
-        let mut positions = Vec::with_capacity(mesh.vertices.len() * 12);
-        for point in &mesh.vertices {
+        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips);
+        let mut positions = Vec::with_capacity(mesh.vertices().len() * 12);
+        for point in mesh.vertices() {
             for value in [point.x, point.y, point.z] {
                 positions.extend_from_slice(
                     &tessellation_f32(value * length_scale, "position")?.to_le_bytes(),
                 );
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertices.len(), &positions);
-        let mut normals = Vec::with_capacity(mesh.normals.len() * 12);
-        for normal in &mesh.normals {
+        descriptor(&mut out, 12, 100, 2, mesh.vertices().len(), &positions);
+        let mut normals = Vec::with_capacity(mesh.normals().len() * 12);
+        for normal in mesh.normals() {
             for value in [normal.x, normal.y, normal.z] {
                 normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.normals.len(), &normals);
-        let auxiliary_start = usize::from(has_core_tessellation_channels(&mesh.channels)) * 3;
-        let auxiliary_count = mesh.channels.len().saturating_sub(auxiliary_start).min(3);
-        let auxiliary = &mesh.channels[auxiliary_start..auxiliary_start + auxiliary_count];
+        descriptor(&mut out, 12, 100, 2, mesh.normals().len(), &normals);
+        let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
+        let auxiliary_count = mesh.channels().len().saturating_sub(auxiliary_start).min(3);
+        let auxiliary = &mesh.channels()[auxiliary_start..auxiliary_start + auxiliary_count];
         let strip_lengths = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .map(|length| usize::try_from(*length))
             .collect::<Result<Vec<_>, _>>()
@@ -2049,15 +2027,15 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         for channel in auxiliary {
             descriptor(
                 &mut out,
-                channel.item_size,
-                channel.kind,
-                channel.flags,
-                channel.count as usize,
-                &channel.data,
+                channel.item_size(),
+                channel.kind(),
+                channel.flags(),
+                channel.count() as usize,
+                channel.data(),
             );
         }
         let list_c = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .map(|length| {
                 length
@@ -2090,88 +2068,101 @@ fn has_core_tessellation_channels(
     channels: &[cadmpeg_ir::tessellation::TessellationChannel],
 ) -> bool {
     matches!(channels, [strips, positions, normals, ..]
-        if (strips.item_size, strips.kind) == (4, 8)
-            && (positions.item_size, positions.kind) == (12, 100)
-            && (normals.item_size, normals.kind) == (12, 100))
+        if (strips.item_size(), strips.kind()) == (4, 8)
+            && (positions.item_size(), positions.kind()) == (12, 100)
+            && (normals.item_size(), normals.kind()) == (12, 100))
 }
 
 pub(super) fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups.is_empty() || !mesh.texture_assignments.is_empty() {
+    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT display tessellation triangle groups and texture assignments are not writable"
                 .into(),
         ));
     }
-    if !mesh.feature_edges.is_empty() {
+    if !mesh.feature_edges().is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
-    let expected = triangles_from_strips(&mesh.strip_lengths)?;
-    if expected == mesh.triangles
-        && mesh.strip_lengths.iter().sum::<u32>() as usize == mesh.vertices.len()
-        && mesh.corner_normals.is_empty()
+    let expected = triangles_from_strips(mesh.strip_lengths())?;
+    if expected == mesh.triangles()
+        && mesh.strip_lengths().iter().sum::<u32>() as usize == mesh.vertices().len()
+        && mesh.corner_normals().is_empty()
     {
         return Ok(mesh.clone());
     }
     let indices = mesh
-        .triangles
+        .triangles()
         .iter()
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
             usize::try_from(index)
                 .ok()
-                .filter(|index| *index < mesh.vertices.len())
+                .filter(|index| *index < mesh.vertices().len())
                 .ok_or_else(|| CodecError::Malformed("tessellation index is out of bounds".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let vertices = indices.iter().map(|index| mesh.vertices[*index]).collect();
-    let normals = if !mesh.corner_normals.is_empty() {
-        if mesh.corner_normals.len() != indices.len() {
+    let vertices = indices
+        .iter()
+        .map(|index| mesh.vertices()[*index])
+        .collect();
+    let normals = if !mesh.corner_normals().is_empty() {
+        if mesh.corner_normals().len() != indices.len() {
             return Err(CodecError::Malformed(
                 "tessellation corner normals are not parallel to triangle corners".into(),
             ));
         }
-        mesh.corner_normals.clone()
-    } else if mesh.normals.is_empty() {
+        mesh.corner_normals().to_vec()
+    } else if mesh.normals().is_empty() {
         Vec::new()
     } else {
-        if mesh.normals.len() != mesh.vertices.len() {
+        if mesh.normals().len() != mesh.vertices().len() {
             return Err(CodecError::Malformed(
                 "tessellation normals are not parallel to vertices".into(),
             ));
         }
-        indices.iter().map(|index| mesh.normals[*index]).collect()
+        indices.iter().map(|index| mesh.normals()[*index]).collect()
     };
-    let mut channels = mesh.channels.clone();
-    for channel in &mut channels {
-        if channel.count as usize != mesh.vertices.len() {
+    let mut channels = Vec::new();
+    for channel in mesh.channels() {
+        if channel.count() as usize != mesh.vertices().len() {
+            channels.push(channel.clone());
             continue;
         }
-        let item_size = usize::try_from(channel.item_size)
+        let item_size = usize::try_from(channel.item_size())
             .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let expected_len =
-            mesh.vertices.len().checked_mul(item_size).ok_or_else(|| {
-                CodecError::Malformed("tessellation channel size overflow".into())
-            })?;
-        if channel.data.len() != expected_len {
+        let expected_len = mesh
+            .vertices()
+            .len()
+            .checked_mul(item_size)
+            .ok_or_else(|| CodecError::Malformed("tessellation channel size overflow".into()))?;
+        if channel.data().len() != expected_len {
             return Err(CodecError::Malformed(
                 "tessellation channel payload length is inconsistent".into(),
             ));
         }
-        channel.data = indices
+        let data = indices
             .iter()
             .flat_map(|index| {
                 let start = index * item_size;
-                channel.data[start..start + item_size].iter().copied()
+                channel.data()[start..start + item_size].iter().copied()
             })
             .collect();
-        channel.count = u32::try_from(indices.len())
-            .map_err(|_| CodecError::Malformed("tessellation vertex count overflow".into()))?;
+        channels.push(
+            cadmpeg_ir::tessellation::TessellationChannel::new(
+                channel.addressing().clone(),
+                channel.item_size(),
+                channel.kind(),
+                channel.flags(),
+                data,
+            )
+            .map_err(|err| CodecError::Malformed(err.to_string()))?,
+        );
     }
-    let triangle_count = u32::try_from(mesh.triangles.len())
+    let triangle_count = u32::try_from(mesh.triangles().len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
     let strip_lengths = alloc_filled(
         triangle_count as usize,
@@ -2179,22 +2170,20 @@ pub(super) fn sequential_tessellation(
         "SLDPRT tessellation triangle strips",
     )?;
     let triangles = triangles_from_strips(&strip_lengths)?;
-    Ok(cadmpeg_ir::tessellation::Tessellation {
-        id: mesh.id.clone(),
-        body: mesh.body.clone(),
-        faces: mesh.faces.clone(),
-        chordal_deflection: mesh.chordal_deflection,
-        source_object: mesh.source_object.clone(),
+    Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
+        mesh.id.clone(),
         vertices,
         triangles,
-        feature_edges: Vec::new(),
         strip_lengths,
         normals,
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
+        Vec::new(),
         channels,
-    })
+    )
+    .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .with_body(mesh.body.clone())
+    .with_faces(mesh.faces.clone())
+    .with_chordal_deflection(mesh.chordal_deflection)
+    .with_source_object(mesh.source_object.clone()))
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
@@ -2364,7 +2353,7 @@ pub(crate) fn brep_body(
             matches!(curve.geometry, CurveGeometry::Degenerate { .. })
                 && curve
                     .id
-                    .0
+                    .as_str()
                     .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
         .map(|curve| curve.id.clone())
@@ -2427,7 +2416,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &surface.id.0,
+                surface.id.as_str(),
             )?;
             continue;
         }
@@ -2446,7 +2435,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &curve.id.0,
+                curve.id.as_str(),
             )?;
             continue;
         }
@@ -2526,11 +2515,18 @@ pub(crate) fn brep_body(
         } else {
             &edge.end
         };
+        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "coedge {} is absent from its owning loop ring",
+                    coedge.id
+                ))
+            })?;
         for value in [
             0,
             loops[&coedge.owner_loop],
-            coedges[&coedge.previous],
-            coedges[&coedge.next],
+            coedges[&previous],
+            coedges[&next],
             vertices[start],
             coedges[&coedge.radial_next],
             edges[&coedge.edge],
@@ -2564,7 +2560,7 @@ pub(crate) fn brep_body(
         for value in [
             0,
             coedges[lp
-                .coedges
+                .coedges()
                 .first()
                 .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
             faces[&lp.face],
@@ -2795,7 +2791,7 @@ fn write_typed_body_hierarchy(
             .model
             .regions
             .iter()
-            .find(|region| region.id.0 == body.regions[0].0)
+            .find(|region| region.id.as_str() == body.regions[0].as_str())
             .and_then(|region| region.shells.first())
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
@@ -3167,7 +3163,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => {
@@ -3187,7 +3183,7 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic {
+    if nurbs.periodic() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS curves".into(),
         ));
@@ -3196,13 +3192,13 @@ fn write_nurbs_curve(
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
     let knots = take_attr(next)?;
-    let degree = u16::try_from(nurbs.degree).map_err(|_| {
+    let degree = u16::try_from(nurbs.degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} degree {} exceeds the native u16 field",
-            nurbs.degree
+            nurbs.degree()
         ))
     })?;
-    let control_count = u32::try_from(nurbs.control_points.len()).map_err(|_| {
+    let control_count = u32::try_from(nurbs.control_points().len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
@@ -3215,20 +3211,16 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights.is_some() { 4 } else { 3 });
+    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
     be32(out, 2);
     out.push(0);
     be32(out, 0);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
+    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
     f64_array(out, 0x2d, control, &poles, entity)?;
-    let (unique, mult) = unique_knots(&nurbs.knots, entity)?;
+    let (unique, mult) = unique_knots(nurbs.knots(), entity)?;
     u16_array(out, multiplicity, &mult, entity)?;
     f64_array(out, 0x80, knots, &unique, entity)?;
     Ok(())
@@ -3242,17 +3234,17 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic || nurbs.v_periodic {
+    if nurbs.u_periodic() || nurbs.v_periodic() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
         ));
     }
-    let u_degree = u16::try_from(nurbs.u_degree).map_err(|_| {
+    let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
         ))
     })?;
-    let v_degree = u16::try_from(nurbs.v_degree).map_err(|_| {
+    let v_degree = u16::try_from(nurbs.v_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} v degree exceeds the native u16 field"
         ))
@@ -3262,64 +3254,22 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
-    let u_count = usize::try_from(nurbs.u_count).map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} u pole count exceeds the host address space"
-        ))
-    })?;
-    let v_count = usize::try_from(nurbs.v_count).map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} v pole count exceeds the host address space"
-        ))
-    })?;
-    let expected_poles = u_count.checked_mul(v_count).ok_or_else(|| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
-        ))
-    })?;
-    if nurbs.control_points.len() != expected_poles {
-        return Err(CodecError::Malformed(
-            "invalid NURBS surface pole count".into(),
-        ));
-    }
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
-    if u_count <= usize::from(u_degree) || v_count <= usize::from(v_degree) {
-        return Err(CodecError::Malformed(
-            "NURBS surface pole count must exceed its degree".into(),
-        ));
-    }
-    let expected_u_knots = u_count
-        .checked_add(usize::from(u_degree))
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("NURBS surface u knot count overflow".into()))?;
-    let expected_v_knots = v_count
-        .checked_add(usize::from(v_degree))
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("NURBS surface v knot count overflow".into()))?;
-    if nurbs.u_knots.len() != expected_u_knots || nurbs.v_knots.len() != expected_v_knots {
-        return Err(CodecError::Malformed(
-            "NURBS surface knot vector length does not match its stored shape".into(),
-        ));
-    }
+    let (u_unique, u_mult) = unique_knots(nurbs.u_knots(), entity)?;
+    let (v_unique, v_mult) = unique_knots(nurbs.v_knots(), entity)?;
     if !nurbs
-        .u_knots
+        .u_knots()
         .iter()
-        .chain(&nurbs.v_knots)
+        .chain(nurbs.v_knots())
         .all(|value| value.is_finite())
-        || !knots_nondecreasing(&nurbs.u_knots)
-        || !knots_nondecreasing(&nurbs.v_knots)
+        || !knots_nondecreasing(nurbs.u_knots())
+        || !knots_nondecreasing(nurbs.v_knots())
     {
         return Err(CodecError::Malformed(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
         ));
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
-    let dimension = if nurbs.weights.is_some() { 4 } else { 3 };
+    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
+    let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
@@ -3348,12 +3298,12 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[0, 0]);
     be16(out, u_degree);
     be16(out, v_degree);
-    be32(out, nurbs.u_count);
-    be32(out, nurbs.v_count);
+    be32(out, nurbs.u_count());
+    be32(out, nurbs.v_count());
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);
-    out.push(u8::from(nurbs.weights.is_some()));
+    out.push(u8::from(nurbs.weights().is_some()));
     out.extend_from_slice(&[0, 0]);
     out.push(0x0c);
     be16(out, dimension);
@@ -3538,7 +3488,7 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
-        CurveGeometry::Polyline { .. } => {
+        CurveGeometry::Polyline(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
@@ -3582,7 +3532,7 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
         } => *ref_direction,
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
@@ -3678,9 +3628,9 @@ mod nurbs_write_tests {
 
     #[test]
     fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
-            id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
+            id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
@@ -3691,13 +3641,14 @@ mod nurbs_write_tests {
             },
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
-        ir.source = Some(cadmpeg_ir::document::SourceMeta {
-            format: "sldprt".into(),
-            attributes: std::collections::BTreeMap::from([(
-                PMI_LOCAL_DIGEST_ATTRIBUTE.into(),
-                hash,
-            )]),
-        });
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+                ),
+            ),
+            std::collections::BTreeMap::from([(PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash)]),
+        ));
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
@@ -3720,19 +3671,20 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-        let surface = NurbsSurface {
-            u_degree: 9,
-            v_degree: 1,
-            u_knots: vec![0.0; 20],
-            v_knots: vec![0.0; 4],
-            u_count: 10,
-            v_count: 2,
-            control_points: vec![Point3::new(0.0, 0.0, 0.0); 20],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+        let surface = NurbsSurface::new(
+            9,
+            1,
+            vec![0.0; 20],
+            vec![0.0; 4],
+            10,
+            2,
+            vec![Point3::new(0.0, 0.0, 0.0); 20],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
         write_nurbs_surface(
@@ -3747,30 +3699,29 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
-            carrier.geometry
-        else {
+        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
             panic!("expected NURBS surface");
         };
-        assert_eq!((decoded.u_degree, decoded.v_degree), (9, 1));
-        assert_eq!((decoded.u_count, decoded.v_count), (10, 2));
+        assert_eq!((decoded.u_degree(), decoded.v_degree()), (9, 1));
+        assert_eq!((decoded.u_count(), decoded.v_count()), (10, 2));
     }
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-        let surface = NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
-            u_count: 3,
-            v_count: 4,
-            control_points: vec![Point3::new(0.0, 0.0, 0.0); 12],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+        let surface = NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+            3,
+            4,
+            vec![Point3::new(0.0, 0.0, 0.0); 12],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();
         write_nurbs_surface(
@@ -3785,17 +3736,15 @@ mod nurbs_write_tests {
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
             .remove(&2)
             .expect("surface carrier");
-        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
-            carrier.geometry
-        else {
+        let SurfaceGeometry::Nurbs(decoded) = carrier.geometry else {
             panic!("expected NURBS surface");
         };
         assert_eq!(
             (
-                decoded.u_count,
-                decoded.v_count,
-                decoded.u_degree,
-                decoded.v_degree
+                decoded.u_count(),
+                decoded.v_count(),
+                decoded.u_degree(),
+                decoded.v_degree()
             ),
             (3, 4, 2, 1)
         );
@@ -3822,35 +3771,13 @@ mod nurbs_write_tests {
     }
 
     #[test]
-    fn rejects_curve_degree_and_knot_multiplicity_overflow() {
-        let curve = NurbsCurve {
-            degree: u32::from(u16::MAX) + 1,
-            knots: Vec::new(),
-            control_points: Vec::new(),
-            weights: None,
-            periodic: false,
-        };
-        let degree_error = write_nurbs_curve(
-            &mut Vec::new(),
-            2,
-            &curve,
-            &mut 3,
-            0.001,
-            "test:curve#high-degree",
-        )
-        .expect_err("expected error");
+    fn rejects_knot_multiplicity_overflow() {
         let multiplicity_error = unique_knots(
             &vec![0.0; usize::from(u16::MAX) + 1],
             "test:curve#high-multiplicity",
         )
         .expect_err("expected error");
 
-        assert!(matches!(
-            degree_error,
-            CodecError::NotImplemented(message)
-                if message.contains("test:curve#high-degree")
-                    && message.contains("native u16 field")
-        ));
         assert!(matches!(
             multiplicity_error,
             CodecError::NotImplemented(message)

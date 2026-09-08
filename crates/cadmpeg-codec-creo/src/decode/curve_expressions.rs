@@ -130,21 +130,18 @@ fn curve_expression_helix_feature_definition(
         return None;
     };
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    axial_pitch
-        .is_finite()
-        .then_some(IrFeatureDefinition::Helix {
-            axis_origin: *center,
-            axis_direction: *axis,
-            radius: Length(helix.radius),
-            pitch: Length(axial_pitch),
-            revolutions: helix.revolutions,
-            start_angle: Angle(helix.start_angle),
-            clockwise: helix.clockwise,
-            radial_growth: None,
-            cone_angle: None,
-            segment_turns: None,
-            construction_style: None,
-        })
+    let pitch = cadmpeg_ir::features::HelixPitch::new(Length(axial_pitch))?;
+    Some(IrFeatureDefinition::Helix {
+        axis_origin: *center,
+        axis_direction: *axis,
+        radius: Length(helix.radius),
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+        revolutions: helix.revolutions,
+        start_angle: Angle(helix.start_angle),
+        clockwise: helix.clockwise,
+        segment_turns: None,
+        construction_style: None,
+    })
 }
 
 pub(crate) fn expression_dependency_reaches(
@@ -267,10 +264,11 @@ pub(crate) fn transfer_curve_expression_features(
     {
         let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + expression_ordinal as u64;
-        let feature_id = IrFeatureId(format!(
+        let feature_id = IrFeatureId::mint(format!(
             "creo:depdb:curve_expression_feature#{}-{}",
             record.entity_id, record.offset
-        ));
+        ))
+        .expect("identity grammar");
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
@@ -314,10 +312,11 @@ pub(crate) fn transfer_curve_expression_features(
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
             };
-            let parameter_id = ParameterId(format!(
+            let parameter_id = ParameterId::mint(format!(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
                 record.entity_id, record.offset, assignment_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             let mut dependencies = assignment
                 .dependencies
                 .iter()
@@ -331,10 +330,11 @@ pub(crate) fn transfer_curve_expression_features(
                     seen.insert(dependency).then_some(dependency)
                 })
                 .map(|dependency| {
-                    ParameterId(format!(
+                    ParameterId::mint(format!(
                         "creo:depdb:curve_expression_parameter#{}-{}-{}",
                         record.entity_id, record.offset, dependency
                     ))
+                    .expect("identity grammar")
                 })
                 .collect::<Vec<_>>();
             dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
@@ -452,7 +452,7 @@ pub(crate) fn transfer_curve_expression_features(
             }
             annotate(
                 annotations,
-                &parameter_id.0,
+                parameter_id.as_str(),
                 &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
@@ -490,7 +490,7 @@ pub(crate) fn transfer_curve_expression_features(
         }
         annotate(
             annotations,
-            &feature_id.0,
+            feature_id.as_str(),
             &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",
@@ -506,17 +506,19 @@ pub(crate) fn transfer_curve_expression_features(
                     curve_expression_helix_feature_definition(helix, procedural)
                 });
         if let Some(procedural_definition) = placed_helix {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:depdb:curve_expression_curve#{}-{}",
                 record.entity_id, record.offset
-            ));
-            let procedural_id = ProceduralCurveId(format!(
+            ))
+            .expect("identity grammar");
+            let procedural_id = ProceduralCurveId::mint(format!(
                 "creo:depdb:curve_expression_helix#{}-{}",
                 record.entity_id, record.offset
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
-                &curve_id.0,
+                curve_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_carrier",
@@ -524,7 +526,7 @@ pub(crate) fn transfer_curve_expression_features(
             );
             annotate(
                 annotations,
-                &procedural_id.0,
+                procedural_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_helix",
@@ -535,12 +537,10 @@ pub(crate) fn transfer_curve_expression_features(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: curve_id,
-                definition: procedural_definition,
-                cache_fit_tolerance: None,
-            });
+            let _attached = ir.model.add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(procedural_id, procedural_definition),
+            );
         }
         let definition = match helix {
             Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {
@@ -552,7 +552,7 @@ pub(crate) fn transfer_curve_expression_features(
                 clockwise: helix.clockwise,
             }),
             None => IrFeatureDefinition::Native {
-                kind: "CurveFromEquation".to_string(),
+                kind: "CurveFromEquation".into(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
                     (
@@ -560,7 +560,6 @@ pub(crate) fn transfer_curve_expression_features(
                         record.assignments.len().to_string(),
                     ),
                 ]),
-                properties: BTreeMap::new(),
             },
         };
         ir.model.features.push(Feature {
@@ -568,7 +567,6 @@ pub(crate) fn transfer_curve_expression_features(
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some("crv_fr_eqn".to_string()),

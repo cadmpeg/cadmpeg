@@ -2,10 +2,13 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::container;
@@ -33,8 +36,8 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
-    let expected = scrubbed_definition(&procedural.definition);
-    let kind = serde_json::to_value(&procedural.definition).expect("kind")["kind"]
+    let expected = scrubbed_definition(procedural.definition());
+    let kind = serde_json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
         .expect("kind string")
         .to_string();
@@ -44,23 +47,20 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less revision surface round trip");
     let actual = scrubbed_definition(
-        &round_trip
+        round_trip
             .ir()
             .model
             .procedural_surfaces
             .first()
             .expect("round-trip construction")
-            .definition,
+            .definition(),
     );
     assert_eq!(actual, expected);
 }
@@ -70,6 +70,18 @@ pub(crate) fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+/// The same archive as [`f3d_with_smbh`], with the top-level manifest
+/// declaring `version`. The two archives differ in the version field alone.
+pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests_with_version(&mut zip, stored, version);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
@@ -443,27 +455,6 @@ pub(crate) fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
 
     let cursor = zip.finish().unwrap();
     cursor.into_inner()
-}
-
-pub(crate) fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let folder = "FusionAssetName[Active]";
-    write_synthetic_manifests(&mut zip, stored);
-    for name in ["first", "second"] {
-        let mut smb = synthetic_smbh();
-        smb[39..47].copy_from_slice(&2u64.to_le_bytes());
-        smb.truncate(60);
-        zip.start_file(format!("{folder}/Breps.BlobParts/BREP.{name}.smb"), stored)
-            .unwrap();
-        zip.write_all(&smb).unwrap();
-    }
-    for stream in ["BulkStream.dat", "MetaStream.dat"] {
-        zip.start_file(format!("{folder}/Design1/{stream}"), stored)
-            .unwrap();
-        zip.write_all(b"legacy-design").unwrap();
-    }
-    zip.finish().unwrap().into_inner()
 }
 
 pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {

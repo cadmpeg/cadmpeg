@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular extrusion B-rep transfer.
 
-use super::super::analytic::dot;
 use super::super::feature_history::feature_allows_additive_linear_extrusion;
 use super::super::holes::circular_sweep_geometry;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::feature_is_first_material_operation;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -14,6 +12,8 @@ use super::extent::resolved_feature_extrusion_span;
 use super::pcurves::add_extrusion_pcurve;
 use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -69,12 +69,12 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let prefix = format!("creo:feature:extrusion#{feature_id}");
-        let body_id = BodyId(format!("{prefix}:body"));
+        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
-        let region_id = RegionId(format!("{prefix}:region"));
-        let shell_id = ShellId(format!("{prefix}:shell"));
+        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
+        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
@@ -83,26 +83,32 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut cap_coedges = Vec::new();
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
-            let cap_surface = SurfaceId(format!("{prefix}:surface:{side}"));
-            let cap_face = FaceId(format!("{prefix}:face:{side}"));
-            let cap_loop = LoopId(format!("{prefix}:loop:{side}"));
-            let curve_id = CurveId(format!("{prefix}:curve:{side}"));
-            let edge_id = EdgeId(format!("{prefix}:edge:{side}"));
-            let point_id = PointId(format!("{prefix}:point:{side}"));
-            let vertex_id = VertexId(format!("{prefix}:vertex:{side}"));
-            let cap_coedge = CoedgeId(format!("{prefix}:coedge:{side}:cap"));
-            let side_coedge = CoedgeId(format!("{prefix}:coedge:{side}:side"));
+            let cap_surface =
+                SurfaceId::mint(format!("{prefix}:surface:{side}")).expect("identity grammar");
+            let cap_face = FaceId::mint(format!("{prefix}:face:{side}")).expect("identity grammar");
+            let cap_loop = LoopId::mint(format!("{prefix}:loop:{side}")).expect("identity grammar");
+            let curve_id =
+                CurveId::mint(format!("{prefix}:curve:{side}")).expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("{prefix}:edge:{side}")).expect("identity grammar");
+            let point_id =
+                PointId::mint(format!("{prefix}:point:{side}")).expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("{prefix}:vertex:{side}")).expect("identity grammar");
+            let cap_coedge =
+                CoedgeId::mint(format!("{prefix}:coedge:{side}:cap")).expect("identity grammar");
+            let side_coedge =
+                CoedgeId::mint(format!("{prefix}:coedge:{side}:side")).expect("identity grammar");
             let cap_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId(format!("{prefix}:pcurve:{side}:cap")),
+                PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
                 transform.offset,
                 circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU),
             );
             let side_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId(format!("{prefix}:pcurve:{side}:side")),
+                PcurveId::mint(format!("{prefix}:pcurve:{side}:side")).expect("identity grammar"),
                 transform.offset,
                 line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]),
             );
@@ -174,16 +180,15 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                coedges: vec![cap_coedge.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![cap_coedge.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: cap_coedge.clone(),
                 owner_loop: cap_loop.clone(),
                 edge: edge_id.clone(),
-                next: cap_coedge.clone(),
-                previous: cap_coedge.clone(),
                 radial_next: side_coedge.clone(),
                 sense: if side_index == 0 {
                     Sense::Reversed
@@ -196,7 +201,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     parameter_range: None,
                 }],
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             ir.model.faces.push(Face {
                 id: cap_face.clone(),
@@ -207,7 +211,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 } else {
                     Sense::Forward
                 },
-                loops: vec![cap_loop],
+                loops: vec![cap_loop].into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -216,8 +220,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             cap_coedges.push(cap_coedge);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
-        let side_surface = SurfaceId(format!("{prefix}:surface:side"));
-        let side_face = FaceId(format!("{prefix}:face:side"));
+        let side_surface =
+            SurfaceId::mint(format!("{prefix}:surface:side")).expect("identity grammar");
+        let side_face = FaceId::mint(format!("{prefix}:face:side")).expect("identity grammar");
         let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
@@ -240,20 +245,20 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
-            let loop_id = LoopId(format!("{prefix}:loop:side:{side}"));
+            let loop_id =
+                LoopId::mint(format!("{prefix}:loop:side:{side}")).expect("identity grammar");
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(vec![coedge.clone()], Vec::new())
+                        .expect("valid loop ring"),
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),
                 owner_loop: loop_id.clone(),
                 edge,
-                next: coedge.clone(),
-                previous: coedge.clone(),
                 radial_next: cap_coedges[side_index].clone(),
                 sense: if side_index == 0 {
                     Sense::Forward
@@ -266,7 +271,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     parameter_range: None,
                 }],
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             side_loops.push(loop_id);
         }
@@ -275,7 +279,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shell: shell_id.clone(),
             surface: side_surface,
             sense: Sense::Forward,
-            loops: side_loops,
+            loops: side_loops.into(),
             name: None,
             color: None,
             tolerance: None,
@@ -324,7 +328,7 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
             if let [entity_use] = profile.as_slice() {
                 if let Some(SketchGeometry::Circle { center, radius }) =
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                        entity.id == entity_use.entity && entity.sketch == *sketch_id
+                        entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
                     .map(|entity| &entity.geometry)
                 {

@@ -10,14 +10,16 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::container::{self, role};
+use crate::container::{self};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -26,7 +28,7 @@ use crate::F3dCodec;
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
-    assert_eq!(h.width, 8);
+    assert_eq!(h.width.bytes(), 8);
     assert_eq!(h.save_format_version, Some(23100));
     assert_eq!(h.entity_count, Some(7));
     assert_eq!(h.flags, Some(3));
@@ -53,9 +55,8 @@ fn asm_header_parses_documented_fields() {
 #[test]
 fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
     let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
-        width: 8,
+        width: cadmpeg_asm::kernel_header::RefWidth::Eight,
         save_format_version: Some(22500),
-        record_count: None,
         entity_count: None,
         flags: Some(flags),
         product_family: None,
@@ -89,9 +90,9 @@ fn asm_header_parses_binaryfile4_fields() {
     let bytes = bf4_header_prefix(5);
     assert!(asm_header::has_asm_magic(&bytes));
     let h = asm_header::parse(&bytes).expect("magic present");
-    assert_eq!(h.width, 4);
+    assert_eq!(h.width.bytes(), 4);
     assert_eq!(h.save_format_version, Some(22700));
-    assert_eq!(h.record_count, Some(0));
+    assert_eq!(asm_header::record_count(&bytes), Some(0));
     assert_eq!(h.entity_count, Some(2));
     assert_eq!(h.flags, Some(5));
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
@@ -111,7 +112,7 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     // The ASM-227 `lump` head is emitted as the region record.
     assert_eq!(result.ir().model.regions.len(), 1);
@@ -160,8 +161,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let expected_face_sense = edited.model.faces[0].sense;
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("generated BinaryFile4 regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -193,29 +193,44 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
         .iter_mut()
         .find(|curve| {
             matches!(
-                curve.geometry,
-                cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+                curve.geometry.solved_cache(),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(_))
             )
         })
         .expect("generated BinaryFile4 NURBS curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Procedural {
+        cache: Some(cache), ..
+    } = &mut curve.geometry
+    else {
+        panic!("procedural carrier with a solved cache")
+    };
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut nurbs) = cache.as_geometry().clone() else {
         unreachable!()
     };
-    nurbs.degree = 1;
-    nurbs.periodic = true;
-    nurbs.knots = vec![-1.0, -1.0, 2.0, 2.0, 2.0];
-    nurbs.control_points[1].z = 4.5;
+    let mut control_points = nurbs.control_points().to_vec();
+    control_points[1].z = 4.5;
+    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0, 2.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        true,
+    )
+    .unwrap();
+    *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs.clone()),
+    )
+    .unwrap();
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("generated BinaryFile4 NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 NURBS decode");
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
-        matches!(&curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) if nurbs == &expected)
+        matches!(curve.geometry.solved_cache(), Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs)) if nurbs == &expected)
     }));
 }
 
@@ -282,7 +297,13 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 
     assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = cadmpeg_asm::sab::frame(&bytes, start, expected, 8).unwrap();
+    let solved = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        expected,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     assert_eq!(
         solved.last().map(|record| record.name.as_str()),
         Some("body")
@@ -313,25 +334,31 @@ fn decode_retains_generated_asm_history_graph() {
 
     assert_eq!(f3d_native(result.ir()).asm_histories.len(), 1);
     let history = &f3d_native(result.ir()).asm_histories[0];
-    assert_eq!(history.stream_size, Some(2));
-    assert_eq!(history.history_entry_count, Some(99));
+    assert_eq!(history.stream_size(), Some(2));
+    assert_eq!(history.history_entry_count(), Some(99));
     assert_eq!(history.states.len(), 2);
     assert_eq!(history.states[0].state_id, 2);
     assert_eq!(history.states[0].next_ref, Some(1));
     assert_eq!(history.states[0].bulletin_boards.len(), 1);
     assert_eq!(history.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(history.states[0].records.len(), 1);
-    assert_eq!(history.states[0].records[0].name, "history_payload");
+    assert_eq!(history.states[0].records[0].name(), "history_payload");
     assert_eq!(history.states[0].records[0].revision_id, Some(1830));
-    assert_eq!(history.states[0].records[0].entity_references, [1830, -1]);
+    let crate::history_records::AsmHistoryRecordFraming::Framed {
+        entity_references, ..
+    } = &history.states[0].records[0].framing
+    else {
+        panic!("framed history record");
+    };
+    assert_eq!(entity_references, &[1830, -1]);
     assert!(!history.states[0].records[0].raw_bytes.is_empty());
-    assert_eq!(
+    assert!(matches!(
         history.states[0].bulletin_boards[0].changes[1].kind,
-        crate::history_records::AsmEntityChangeKind::Insert
-    );
+        crate::history_records::AsmEntityChangeKind::Insert { .. }
+    ));
     assert_eq!(history.states[1].previous_ref, Some(0));
     assert_eq!(history.states[1].next_ref, None);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
 }
 
 #[test]
@@ -345,8 +372,10 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         let history = &mut native.asm_histories[0];
         assert!(history.byte_offset > 0);
         assert!(history.states[0].byte_offset > 0);
-        history.stream_size = Some(8);
-        history.history_entry_count = Some(120);
+        history.preamble = Some(crate::history_records::AsmPreamble {
+            stream_size: 8,
+            history_entry_count: 120,
+        });
         history.states[0].state_id = 8;
         history.states[0].version_flag = 4;
         history.states[0].state_flag = 6;
@@ -360,26 +389,23 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         board.owner_ref = 22;
         board.number = 24;
         assert!(board.changes[0].byte_offset > 0);
-        board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete;
-        board.changes[0].old_ref = Some(26);
-        board.changes[0].new_ref = None;
-        board.changes[1].new_ref = Some(28);
+        board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
+        board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("delta-state owner regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated history decode");
     let state = &f3d_native(round_trip.ir()).asm_histories[0].states[0];
     assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].stream_size,
+        f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
         Some(8)
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count,
+        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count(),
         Some(120)
     );
     assert_eq!(state.state_id, 8);
@@ -395,27 +421,36 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     assert_eq!(board.number, 24);
     assert_eq!(
         board.changes[0].kind,
-        crate::history_records::AsmEntityChangeKind::Delete
+        crate::history_records::AsmEntityChangeKind::Delete { old: 26 }
     );
-    assert_eq!(board.changes[0].old_ref, Some(26));
-    assert_eq!(board.changes[0].new_ref, None);
-    assert_eq!(board.changes[1].new_ref, Some(28));
+    assert_eq!(board.changes[0].old_ref(), Some(26));
+    assert_eq!(board.changes[0].new_ref(), None);
+    assert_eq!(board.changes[1].new_ref(), Some(28));
 }
 
 #[test]
 fn classify_matches_spec_families() {
-    assert_eq!(classify("a/Breps.BlobParts/x.smbh"), role::BREP_SMBH);
-    assert_eq!(classify("a/Breps.BlobParts/x.smb"), role::BREP_SMB);
+    assert_eq!(
+        classify("a/Breps.BlobParts/x.smbh"),
+        ContainerRole::BrepSmbh
+    );
+    assert_eq!(classify("a/Breps.BlobParts/x.smb"), ContainerRole::BrepSmb);
     assert_eq!(
         classify("a/ProteinAssets.BlobParts/y.protein"),
-        role::PROTEIN
+        ContainerRole::ProteinAssets
     );
-    assert_eq!(classify("a/Design1/BulkStream.dat"), role::BULKSTREAM);
-    assert_eq!(classify("a/Design1/MetaStream.dat"), role::METASTREAM);
-    assert_eq!(classify("Manifest.dat"), role::MANIFEST);
-    assert_eq!(classify("a/Previews/thumb.png"), role::PREVIEW);
-    assert_eq!(classify("a/x.paramesh"), role::PARAMESH);
-    assert_eq!(classify("a/b/"), role::DIRECTORY);
+    assert_eq!(
+        classify("a/Design1/BulkStream.dat"),
+        ContainerRole::Bulkstream
+    );
+    assert_eq!(
+        classify("a/Design1/MetaStream.dat"),
+        ContainerRole::Metastream
+    );
+    assert_eq!(classify("Manifest.dat"), ContainerRole::Manifest);
+    assert_eq!(classify("a/Previews/thumb.png"), ContainerRole::Preview);
+    assert_eq!(classify("a/x.paramesh"), ContainerRole::Paramesh);
+    assert_eq!(classify("a/b/"), ContainerRole::Directory);
 }
 
 use crate::container::classify;
@@ -447,15 +482,15 @@ fn inspect_enumerates_and_reads_headers() {
     let mut cur = Cursor::new(f3d);
     let summary = codec.inspect(&mut cur, &InspectOptions::default()).unwrap();
 
-    assert_eq!(summary.format, "f3d");
+    assert_eq!(summary.format(), "f3d");
     assert_eq!(summary.container_kind, "zip");
 
     let smbh = summary
         .entries
         .iter()
-        .find(|e| e.role == role::BREP_SMBH)
+        .find(|e| e.role == ContainerRole::BrepSmbh)
         .expect("smbh entry present");
-    assert_eq!(smbh.compression, "deflate");
+    assert_eq!(smbh.compression.as_str(), "deflate");
     assert_eq!(
         smbh.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")
@@ -483,7 +518,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.context.operation == "admit F3D archive entries"
         ),
@@ -503,7 +538,7 @@ fn decode_refuses_when_max_entities_is_below_archive_entry_cardinality() {
     assert!(
         matches!(
             error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
         ),
         "{error:?}"
@@ -517,7 +552,7 @@ fn decode_yields_metadata_and_honest_report() {
     let mut cur = Cursor::new(f3d);
     let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());
     assert!(result.report().error_count() >= 1);
     assert!(result.report().losses.iter().any(|l| matches!(
@@ -532,25 +567,24 @@ fn decode_yields_metadata_and_honest_report() {
         .source_fidelity()
         .retained_records
         .iter()
-        .all(|record| record.sha256.len() == 64));
+        .all(|record| record.sha256().len() == 64));
     assert!(result
         .source_fidelity()
         .retained_record("f3d:file:source-image#0")
         .is_some());
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.format, "f3d");
+    assert_eq!(source.format(), "f3d");
     assert_eq!(
         source.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")
     );
     // resabs/resnor were carried into tolerances.
     assert_eq!(result.ir().tolerances.linear, 1.0e-6);
-    assert_f3d_native_parity(result.ir());
     assert!(result
         .source_fidelity()
         .annotations
         .provenance
-        .contains_key(&unknowns[0].id.0));
+        .contains_key(unknowns[0].id.as_str()));
 }
 
 #[test]
@@ -558,26 +592,15 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
         let fallback = container::select_fallback_brep(scan).unwrap();
-        assert!(!fallback.is_smbh);
+        assert_eq!(
+            fallback.name,
+            "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
+        );
         assert!(container::select_history_brep(scan).is_none());
-        assert!(container::legacy_design_model_breps(scan).is_none());
-        let summary = container::summarize(scan);
-        assert!(summary
-            .notes
+        let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
+        assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
-    });
-}
-
-#[test]
-fn legacy_design_segment_selects_its_complete_brep_set() {
-    let f3d = synthetic_legacy_multi_brep_f3d();
-    with_scan(&f3d, |scan| {
-        assert!(container::select_fallback_brep(scan).is_none());
-        let selected = container::legacy_design_model_breps(scan).unwrap();
-        assert_eq!(selected.len(), 2);
-        assert!(selected[0].name.ends_with("BREP.first.smb"));
-        assert!(selected[1].name.ends_with("BREP.second.smb"));
     });
 }
 
@@ -598,7 +621,7 @@ fn manifest_selects_design_asset_independently_of_brep_order() {
         let streams = scan
             .entries
             .iter()
-            .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+            .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
             .map(|entry| entry.name.as_str())
             .collect::<Vec<_>>();
         assert_eq!(
@@ -628,7 +651,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.report().geometry_transferred());
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(
         decoded
@@ -644,7 +667,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
         .model
         .bodies
         .iter()
-        .all(|body| !body.id.0.contains("BREP.sibling")));
+        .all(|body| !body.id.as_str().contains("BREP.sibling")));
 }
 
 #[test]
@@ -689,16 +712,22 @@ fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
     let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
     assert_eq!(records[0].index, 0);
-    assert_eq!(records[0].head, "asmheader");
-    assert_eq!(records[1].head, "body");
-    assert_eq!(records[4].head, "face");
+    assert_eq!(records[0].head(), "asmheader");
+    assert_eq!(records[1].head(), "body");
+    assert_eq!(records[4].head(), "face");
     assert_eq!(records[4].name, "face");
     assert_eq!(records[6].name, "plane-surface");
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
-    assert!(records.iter().all(|r| r.head != "delta_state"));
+    assert!(records.iter().all(|r| r.head() != "delta_state"));
 }

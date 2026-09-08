@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -108,22 +108,19 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "drawing_targets": [
-            {
-              "id": "step:data:annotation_plane#9",
-              "source_id": "#9",
-              "source_type": "ANNOTATION_PLANE"
-            },
-            {
-              "id": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2",
-              "source_id": "#2",
-              "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
-            }
-          ],
-          "unknowns": []
-        },
-        "version": 1
+        "drawing_targets": [
+          {
+            "id": "step:data:annotation_plane#9",
+            "source_id": "#9",
+            "source_type": "ANNOTATION_PLANE"
+          },
+          {
+            "id": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2",
+            "source_id": "#2",
+            "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {
@@ -135,6 +132,18 @@
         "data_sections": "1",
         "entity_instances": "10",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -148,6 +157,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [
@@ -166,7 +187,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

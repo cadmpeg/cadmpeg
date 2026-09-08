@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural curve embedded types, decoders, resolving-ref walkers, and writer-facing patch layouts.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
     optional_rolling_ball_surface, surface_ranges,
@@ -9,7 +10,7 @@ use crate::nurbs::core::{
     curve_block, decode_curve_block, decode_surface_block, owned_curve_cache_resolving_refs,
     owned_surface_cache_resolving_refs, surface_block,
 };
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, ellipse_to_nurbs, law_formula, nullable_embedded_pcurve,
     EmbeddedLawFormula,
@@ -24,26 +25,36 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
-pub type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
+pub type VectorOffsetDefinition = (
+    NurbsCurve,
+    [f64; 2],
+    Vector3,
+    cadmpeg_ir::geometry::VectorOffsetRoles,
+);
 
 /// Parent curve and retained range decoded from a `subset_int_cur` construction.
 pub type SubsetDefinition = (NurbsCurve, [f64; 2]);
 
 /// Parameter arrays and child curves decoded from a `comp_int_cur` construction.
-pub type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
+pub struct CompoundDefinition {
+    /// Leading native parameter array.
+    pub parameters: Vec<f64>,
+    /// Ordered child curves and their construction scalars.
+    pub components: Vec<cadmpeg_ir::geometry::CompoundComponent<NurbsCurve>>,
+}
 
 /// Embedded freeform support carriers and tail fields of an `off_int_cur`.
 pub struct EmbeddedTwoSidedOffset {
     /// Two ordered embedded support surfaces.
     pub surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -54,21 +65,91 @@ pub struct EmbeddedTwoSidedOffset {
     pub offsets: [f64; 2],
 }
 
+/// Native support presence and its optional standalone geometry cache.
+pub enum SupportSlot {
+    /// The native slot has no support.
+    Absent,
+    /// A valid native support has no standalone geometry cache.
+    DeclaredOnly,
+    /// The support has a standalone geometry cache.
+    Surface(SurfaceGeometry),
+}
+
+impl SupportSlot {
+    fn from_parsed(surface: Option<SurfaceGeometry>, declared: bool) -> Self {
+        match surface {
+            Some(surface) => Self::Surface(surface),
+            None if declared => Self::DeclaredOnly,
+            None => Self::Absent,
+        }
+    }
+
+    pub(crate) fn into_surface(self) -> Option<SurfaceGeometry> {
+        match self {
+            Self::Surface(surface) => Some(surface),
+            Self::Absent | Self::DeclaredOnly => None,
+        }
+    }
+}
+
 /// Embedded support carriers and shared fields of an `int_int_cur`.
 pub struct EmbeddedIntersection {
-    /// Two ordered embedded support surfaces.
-    pub surfaces: [Option<SurfaceGeometry>; 2],
-    /// Whether each native support slot contains a valid non-null support.
-    ///
-    /// A procedural support can be valid without a standalone
-    /// `SurfaceGeometry` cache, so this is distinct from `surfaces`.
-    pub support_present: [bool; 2],
+    /// Two ordered native support slots.
+    pub surfaces: [SupportSlot; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
     pub discontinuities: [Vec<f64>; 3],
+}
+
+/// Embedded support context and family-specific cache-first tail of a native
+/// surface curve.
+pub enum EmbeddedSurfaceCurve {
+    /// Blend family.
+    Blend {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Surface-constrained family.
+    SurfaceConstrained {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Parametric family with its optional second tail flag.
+    Parametric {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and parametric-family flags.
+        tail: Option<
+            cadmpeg_ir::geometry::SurfaceCurveCacheFirst<
+                cadmpeg_ir::geometry::ParametricSurfaceCurveFlags,
+            >,
+        >,
+    },
+    /// Skin family.
+    Skin {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+}
+
+impl EmbeddedSurfaceCurve {
+    fn context(&self) -> &EmbeddedIntersection {
+        match self {
+            Self::Blend { context, .. }
+            | Self::SurfaceConstrained { context, .. }
+            | Self::Parametric { context, .. }
+            | Self::Skin { context, .. } => context,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -112,23 +193,32 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
     }
 }
 
-fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve) {
+fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs) -> Option<()> {
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
-            for point in &mut pcurve.control_points {
-                point.u *= LEN_TO_MM;
-                point.v *= -LEN_TO_MM;
-            }
+            pcurve
+                .edit_control_points(|points| {
+                    for point in points {
+                        point.u *= LEN_TO_MM;
+                        point.v *= -LEN_TO_MM;
+                    }
+                })
+                .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
-            for point in &mut pcurve.control_points {
-                let native = *point;
-                point.u = native.v;
-                point.v = native.u * axial_scale;
-            }
+            pcurve
+                .edit_control_points(|points| {
+                    for point in points {
+                        let native = *point;
+                        point.u = native.v;
+                        point.v = native.u * axial_scale;
+                    }
+                })
+                .ok()?;
         }
     }
+    Some(())
 }
 
 /// Convert a pcurve stored in a standalone analytic surface's native chart to
@@ -136,8 +226,8 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve)
 pub(crate) fn normalize_pcurve_for_surface_record(
     surface_head: &str,
     surface_tokens: &[Token],
-    pcurve: &mut NurbsPcurve,
-) {
+    pcurve: &mut PcurveNurbs,
+) -> Option<()> {
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
@@ -148,24 +238,21 @@ pub(crate) fn normalize_pcurve_for_surface_record(
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            let Some((&sine, &cosine, &u_scale)) = values
+            let (&sine, &cosine, &u_scale) = values
                 .get(1)
                 .zip(values.get(2))
                 .zip(values.get(3))
-                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))
-            else {
-                return;
-            };
+                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))?;
             NativeSupportChart::Cone {
                 axial_scale: cone_axial_scale(sine, cosine, u_scale),
             }
         }
-        _ => return,
+        _ => return Some(()),
     };
-    normalize_support_pcurve(chart, pcurve);
+    normalize_support_pcurve(chart, pcurve)
 }
 
-fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
+fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [PcurveNurbs; 2])> {
     let first_surface_start = cur.pos();
     let first_surface = embedded_surface(cur)?;
     let second_surface_start = cur.pos();
@@ -177,11 +264,11 @@ fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [Nu
     normalize_support_pcurve(
         native_support_chart(cur.toks(), first_surface_start),
         &mut first_pcurve,
-    );
+    )?;
     normalize_support_pcurve(
         native_support_chart(cur.toks(), second_surface_start),
         &mut second_pcurve,
-    );
+    )?;
     Some((
         [first_surface, second_surface],
         [first_pcurve, second_pcurve],
@@ -193,7 +280,7 @@ pub struct EmbeddedThreeSurfaceIntersection {
     /// Three ordered embedded support surfaces.
     pub surfaces: [SurfaceGeometry; 3],
     /// Three ordered embedded NURBS parameter curves.
-    pub pcurves: [NurbsPcurve; 3],
+    pub pcurves: [PcurveNurbs; 3],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -207,7 +294,7 @@ pub struct EmbeddedProjection {
     /// Two ordered embedded support surfaces.
     pub surfaces: [SurfaceGeometry; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [NurbsPcurve; 2],
+    pub pcurves: [PcurveNurbs; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -258,24 +345,54 @@ pub struct EmbeddedSurfaceOffset {
     pub scale: f64,
 }
 
-/// Spring support context, conditional null-carrier ranges, and direction enum.
+/// One context-first spring support slot.
+pub enum EmbeddedSpringSupport {
+    /// Embedded support surface.
+    Surface(SurfaceGeometry),
+    /// U/V ranges stored in place of a null support.
+    Ranges([[f64; 2]; 2]),
+}
+
+/// First context-first spring pcurve slot.
+pub enum EmbeddedSpringPcurve {
+    /// Embedded pcurve.
+    Pcurve(PcurveNurbs),
+    /// Parameter range stored in place of a null pcurve.
+    Range([f64; 2]),
+}
+
+/// Structurally selected spring layout.
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
+pub enum EmbeddedSpringLayout {
+    /// Context-first form with inline replacement ranges.
+    ContextFirst {
+        /// Ordered support slots.
+        supports: [EmbeddedSpringSupport; 2],
+        /// First pcurve slot.
+        first_pcurve: EmbeddedSpringPcurve,
+        /// Nullable second pcurve slot.
+        second_pcurve: Option<PcurveNurbs>,
+        /// Shared parameter interval.
+        parameter_range: [f64; 2],
+        /// Three discontinuity arrays.
+        discontinuities: [Vec<f64>; 3],
+        /// Boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
+    },
+    /// Cache-first form with no inline replacement ranges.
+    CacheFirst {
+        /// Shared embedded support context.
+        context: EmbeddedIntersection,
+        /// Cache-first serializer fields.
+        form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    },
+}
+
+/// Spring construction and direction enum.
 pub struct EmbeddedSpring {
-    /// Two ordered embedded support surfaces.
-    pub surfaces: [Option<SurfaceGeometry>; 2],
-    /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
-    /// UV parameter rectangles serialized in place of null surfaces.
-    pub surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-    /// Parameter interval serialized in place of a null first pcurve.
-    pub first_pcurve_parameter_range: Option<[f64; 2]>,
-    /// Shared native parameter interval.
-    pub parameter_range: [f64; 2],
-    /// Three discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
-    /// The boolean serialized after the discontinuity arrays.
-    pub discontinuity_flag: bool,
-    /// Layout form when the cache precedes the construction.
-    pub cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
+    /// Context-first or cache-first payload.
+    pub layout: EmbeddedSpringLayout,
     /// The direction enum serialized at the construction tail.
     pub direction: i64,
 }
@@ -348,7 +465,7 @@ pub struct EmbeddedDeformable {
     /// Two ordered embedded support surfaces.
     pub surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -374,48 +491,81 @@ pub enum EmbeddedDeformableSource {
     },
 }
 
-/// A procedural curve cache together with its native subtype and fit contract.
+/// Native helix construction without an approximation cache.
+pub struct HelixDefinition {
+    /// Native angular interval.
+    pub angle_range: [f64; 2],
+    /// Helix center in document length units.
+    pub center: Point3,
+    /// Major radial vector.
+    pub major: Vector3,
+    /// Minor radial vector.
+    pub minor: Vector3,
+    /// Pitch vector.
+    pub pitch: Vector3,
+    /// Apex factor.
+    pub apex_factor: f64,
+    /// Axis direction.
+    pub axis: Vector3,
+}
+
+impl HelixDefinition {
+    pub(crate) fn into_definition(self) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range: self.angle_range,
+            center: self.center,
+            major: self.major,
+            minor: self.minor,
+            pitch: self.pitch,
+            apex_factor: self.apex_factor,
+            axis: self.axis,
+        }
+    }
+}
+
+/// The single construction selected by a procedural curve's native subtype.
+pub enum ProceduralCurveConstruction {
+    /// An exact curve cache.
+    Exact,
+    /// Native helix parameters.
+    Helix(HelixDefinition),
+    /// Source curve and vector-offset fields.
+    VectorOffset(VectorOffsetDefinition),
+    /// Source curve and bounded subset interval.
+    Subset(SubsetDefinition),
+    /// Ordered child curves and their parameter arrays.
+    Compound(CompoundDefinition),
+    /// Two-sided offset support context.
+    TwoSidedOffset(EmbeddedTwoSidedOffset),
+    /// Intersection support context and discontinuity flag.
+    Intersection(EmbeddedIntersection, bool),
+    /// Three ordered surface-intersection supports.
+    ThreeSurface(EmbeddedThreeSurfaceIntersection),
+    /// A surface-constrained curve family.
+    SurfaceCurve(EmbeddedSurfaceCurve),
+    /// Silhouette support and projection fields.
+    Silhouette(EmbeddedSilhouette),
+    /// Support context and surface-offset fields.
+    SurfaceOffset(EmbeddedSurfaceOffset),
+    /// Spring support context and direction.
+    Spring(EmbeddedSpring),
+    /// Deformation source and fields.
+    Deformable(EmbeddedDeformable),
+    /// Projection support and source.
+    Projection(EmbeddedProjection),
+    /// Support context and recursive law formulas.
+    Law(EmbeddedLawCurve),
+    /// A retained native construction with no decoded payload.
+    Unknown(String),
+}
+
+/// A procedural curve cache and its selected native construction.
 pub struct DecodedProceduralCurve {
-    /// The cached B-spline curve (control points scaled centimetre→
-    /// millimetre; knots and weights unscaled).
+    /// The cached B-spline curve in document length units.
     pub curve: NurbsCurve,
-    /// The `intcurve` subtype record name (`exact_int_cur`, `off_int_cur`,
-    /// `proj_int_cur`, `int_int_cur`, `helix_int_cur`, `sss_int_cur`, ...).
-    pub native_kind: String,
-    /// Neutral construction fields decoded from the subtype tail.
-    pub definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
-    /// Source curve and tail fields of an `offset_int_cur` construction.
-    pub vector_offset: Option<VectorOffsetDefinition>,
-    /// Parent curve and retained range of a `subset_int_cur` construction.
-    pub subset: Option<SubsetDefinition>,
-    /// Parameter arrays and ordered child curves of a `comp_int_cur` construction.
-    pub compound: Option<CompoundDefinition>,
-    /// Non-null embedded NURBS support carriers of an `off_int_cur`.
-    pub embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
-    /// Embedded support context of an `int_int_cur`.
-    pub embedded_intersection: Option<(EmbeddedIntersection, bool)>,
-    /// Three embedded support pairs of an `sss_int_cur`.
-    pub embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
-    /// Prefix-only surface-curve family and support context.
-    pub embedded_surface_curve: Option<(
-        cadmpeg_ir::geometry::SurfaceCurveFamily,
-        EmbeddedIntersection,
-        Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-    )>,
-    /// Embedded silhouette support, cast surface, and light vector.
-    pub embedded_silhouette: Option<EmbeddedSilhouette>,
-    /// Embedded support context and base curve of an `off_surf_int_cur`.
-    pub embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
-    /// Modern non-null `spring_int_cur` construction.
-    pub embedded_spring: Option<EmbeddedSpring>,
-    /// Embedded bend curve and discriminator payload of a `defm_int_cur`.
-    pub embedded_deformable: Option<EmbeddedDeformable>,
-    /// Embedded support context and source of a `proj_int_cur`.
-    pub embedded_projection: Option<EmbeddedProjection>,
-    /// Embedded support context and recursive formulas of a `law_int_cur`.
-    pub embedded_law: Option<EmbeddedLawCurve>,
-    /// `surface_fit_tolerance` of the cached B-spline block, if present
-    /// ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
+    /// The layout-specific construction fields.
+    pub construction: ProceduralCurveConstruction,
+    /// The cached block's fit tolerance, when present.
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -437,7 +587,7 @@ pub fn pcurve_for_selector_resolving_refs(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     pcurve_for_selector_with_chart(toks, selector, table).map(|(pcurve, _)| pcurve)
 }
 
@@ -447,7 +597,7 @@ pub(crate) fn pcurve_for_selector_with_chart(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
-) -> Option<(NurbsPcurve, bool)> {
+) -> Option<(PcurveNurbs, bool)> {
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,
@@ -461,7 +611,7 @@ fn pcurve_for_selector_recursive(
     slot: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<(NurbsPcurve, bool)> {
+) -> Option<(PcurveNurbs, bool)> {
     // A record-level intcurve wrapper can carry only a compact `{ref N}`
     // scope. Follow that one construction reference before decoding the
     // wrapper. Typed constructions may contain support references, but their
@@ -481,7 +631,8 @@ fn pcurve_for_selector_recursive(
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
             return Some((pcurve, false));
         }
-        if decoded.native_kind != "intcurve" {
+        if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
+        {
             // Modern exact curves can carry the same cache-first support
             // context as the surface-related intcurve families. Their
             // construction remains exact, but the pcurve selector still
@@ -494,7 +645,7 @@ fn pcurve_for_selector_recursive(
                 let mut cur = Cur::at(toks, marker + 2);
                 if let Some(context) = cache_first_curve_context(&mut cur, &decoded.curve, table) {
                     if let Some(pcurve) =
-                        selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+                        selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
                     {
                         return Some((pcurve, false));
                     }
@@ -553,59 +704,86 @@ fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
     candidate
 }
 
+fn selected_support_pcurve(
+    surfaces: &[SupportSlot; 2],
+    pcurves: &[Option<PcurveNurbs>; 2],
+    slot: usize,
+) -> Option<PcurveNurbs> {
+    match surfaces.get(slot)? {
+        SupportSlot::Surface(_) => pcurves.get(slot)?.clone(),
+        SupportSlot::Absent | SupportSlot::DeclaredOnly => None,
+    }
+}
+
 fn selected_optional_pcurve(
     surfaces: &[Option<SurfaceGeometry>; 2],
-    pcurves: &[Option<NurbsPcurve>; 2],
+    pcurves: &[Option<PcurveNurbs>; 2],
     slot: usize,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     surfaces.get(slot)?.as_ref()?;
     pcurves.get(slot)?.clone()
 }
 
-fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<NurbsPcurve> {
-    if let Some(context) = decoded.embedded_two_sided_offset.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<PcurveNurbs> {
+    match &decoded.construction {
+        ProceduralCurveConstruction::TwoSidedOffset(context) => {
+            selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Intersection(context, _) => {
+            match context.surfaces.get(slot)? {
+                SupportSlot::Absent => return None,
+                SupportSlot::DeclaredOnly | SupportSlot::Surface(_) => {}
+            }
+            context.pcurves.get(slot)?.clone()
+        }
+        ProceduralCurveConstruction::ThreeSurface(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::SurfaceCurve(surface_curve) => {
+            let context = surface_curve.context();
+            selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Silhouette(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::SurfaceOffset(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Spring(context) => match &context.layout {
+            EmbeddedSpringLayout::CacheFirst { context, .. } => {
+                selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
+            }
+            EmbeddedSpringLayout::ContextFirst {
+                supports,
+                first_pcurve,
+                second_pcurve,
+                ..
+            } => matches!(supports.get(slot), Some(EmbeddedSpringSupport::Surface(_)))
+                .then(|| match slot {
+                    0 => match first_pcurve {
+                        EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve.clone()),
+                        EmbeddedSpringPcurve::Range(_) => None,
+                    },
+                    1 => second_pcurve.clone(),
+                    _ => None,
+                })
+                .flatten(),
+        },
+        ProceduralCurveConstruction::Deformable(context) => {
+            selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Projection(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::Law(context) => {
+            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+        }
+        ProceduralCurveConstruction::Exact
+        | ProceduralCurveConstruction::Helix(_)
+        | ProceduralCurveConstruction::VectorOffset(_)
+        | ProceduralCurveConstruction::Subset(_)
+        | ProceduralCurveConstruction::Compound(_)
+        | ProceduralCurveConstruction::Unknown(_) => None,
     }
-    if let Some((context, _)) = decoded.embedded_intersection.as_ref() {
-        // An intersection support may be a procedural surface with no
-        // standalone SurfaceGeometry carrier. The native pcurve slot remains
-        // a complete parameter-space carrier when its paired native support
-        // slot is present. Edge-domain validation runs after this function.
-        context
-            .support_present
-            .get(slot)
-            .copied()
-            .filter(|present| *present)?;
-        return context.pcurves.get(slot)?.clone();
-    }
-    if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
-        return context.pcurves.get(slot).cloned();
-    }
-    if let Some((_, context, _)) = decoded.embedded_surface_curve.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_silhouette.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_surface_offset.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_spring.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_deformable.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
-    }
-    if let Some(context) = decoded.embedded_projection.as_ref() {
-        return context.pcurves.get(slot).cloned();
-    }
-    if let Some(context) = decoded.embedded_law.as_ref() {
-        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
-    }
-    None
 }
 
-fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
+fn direct_pcurve_after_curve(toks: &[Token]) -> Option<PcurveNurbs> {
     let position = crate::nurbs::toks::owned_marker_positions(toks)
         .into_iter()
         .next()?;
@@ -617,7 +795,7 @@ fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
 pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+) -> Option<HelixDefinition> {
     cacheless_procedural_curve_recursive(toks, table, &mut Vec::new())
 }
 
@@ -625,9 +803,9 @@ fn cacheless_procedural_curve_recursive(
     toks: &[Token],
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+) -> Option<HelixDefinition> {
     if let Some(definition) = helix_definition(toks) {
-        return Some(("helix_int_cur".into(), definition));
+        return Some(definition);
     }
     for index in crate::nurbs::toks::subtype_refs(toks) {
         if seen.contains(&index) {
@@ -672,35 +850,53 @@ fn procedural_curve_recursive(
             Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
             _ => None,
         };
-        let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
-            .unwrap_or_else(|| "intcurve".to_string());
-        let definition = if native_kind == "exact_int_cur" {
-            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
-        } else {
-            helix_definition(toks).or_else(|| two_sided_offset(toks))
-        };
-        let embedded_intersection = embedded_intersection(toks, &curve, table);
-        let embedded_surface_curve = embedded_surface_curve(toks, &curve, table);
-        let embedded_surface_offset = embedded_surface_offset(toks, &curve, table);
-        let embedded_spring = embedded_spring(toks, &curve, table);
-        let embedded_deformable = embedded_deformable(toks, &curve, table);
+        let construction = vector_offset
+            .map(ProceduralCurveConstruction::VectorOffset)
+            .or_else(|| subset.map(ProceduralCurveConstruction::Subset))
+            .or_else(|| {
+                embedded_two_sided_offset(toks).map(ProceduralCurveConstruction::TwoSidedOffset)
+            })
+            .or_else(|| {
+                embedded_intersection(toks, &curve, table)
+                    .map(|(context, flag)| ProceduralCurveConstruction::Intersection(context, flag))
+            })
+            .or_else(|| {
+                embedded_three_surface_intersection(toks)
+                    .map(ProceduralCurveConstruction::ThreeSurface)
+            })
+            .or_else(|| {
+                embedded_surface_curve(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::SurfaceCurve)
+            })
+            .or_else(|| embedded_silhouette(toks).map(ProceduralCurveConstruction::Silhouette))
+            .or_else(|| {
+                embedded_surface_offset(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::SurfaceOffset)
+            })
+            .or_else(|| {
+                embedded_spring(toks, &curve, table).map(ProceduralCurveConstruction::Spring)
+            })
+            .or_else(|| {
+                embedded_deformable(toks, &curve, table)
+                    .map(ProceduralCurveConstruction::Deformable)
+            })
+            .or_else(|| embedded_projection(toks).map(ProceduralCurveConstruction::Projection))
+            .or_else(|| embedded_law_curve(toks).map(ProceduralCurveConstruction::Law))
+            .or_else(|| compound.map(ProceduralCurveConstruction::Compound))
+            .unwrap_or_else(|| {
+                let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
+                    .unwrap_or_else(|| "intcurve".to_string());
+                if native_kind == "exact_int_cur" {
+                    ProceduralCurveConstruction::Exact
+                } else {
+                    helix_definition(toks)
+                        .map(ProceduralCurveConstruction::Helix)
+                        .unwrap_or(ProceduralCurveConstruction::Unknown(native_kind))
+                }
+            });
         return Some(DecodedProceduralCurve {
             curve,
-            native_kind,
-            definition,
-            vector_offset,
-            subset,
-            compound,
-            embedded_two_sided_offset: embedded_two_sided_offset(toks),
-            embedded_intersection,
-            embedded_three_surface_intersection: embedded_three_surface_intersection(toks),
-            embedded_surface_curve,
-            embedded_silhouette: embedded_silhouette(toks),
-            embedded_surface_offset,
-            embedded_spring,
-            embedded_deformable,
-            embedded_projection: embedded_projection(toks),
-            embedded_law: embedded_law_curve(toks),
+            construction,
             cache_fit_tolerance,
         });
     }
@@ -748,8 +944,8 @@ fn embedded_deformable(
         }
     };
     let source_parameter_range = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     let mode = cur.take_long()?;
     let data = match mode {
@@ -819,7 +1015,7 @@ fn embedded_deformable(
     };
     matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(EmbeddedDeformable {
         form: context.form,
-        surfaces: context.surfaces,
+        surfaces: context.surfaces.map(SupportSlot::into_surface),
         pcurves: context.pcurves,
         parameter_range: context.parameter_range,
         discontinuities: context.discontinuities,
@@ -831,29 +1027,27 @@ fn embedded_deformable(
 
 /// Decode one law support surface, mapping the `null_surface` sentinel to an
 /// absent side.
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is a null carrier.
-fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Option<SurfaceGeometry>> {
+fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeometry>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
-        return Some(None);
+        return Some(Nullable::Null);
     }
     cur.set_pos(saved);
-    Some(Some(embedded_surface(cur)?))
+    Some(Nullable::Value(embedded_surface(cur)?))
 }
 
 /// Consume one version-form interval bound: a bare `false` unbounded sentinel
 /// or a `true`-prefixed double. Any other encoding fails the strict match so
 /// the record falls back to verbatim retention.
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unbounded bound.
-fn law_version_bound(cur: &mut Cur<'_>) -> Option<Option<f64>> {
+fn law_version_bound(cur: &mut Cur<'_>) -> Option<Nullable<f64>> {
     match cur.peek()? {
         Token::False => {
             cur.bump();
-            Some(None)
+            Some(Nullable::Null)
         }
         Token::True => {
             cur.bump();
-            cur.take_f64().map(Some)
+            cur.take_f64().map(Nullable::Value)
         }
         _ => None,
     }
@@ -883,24 +1077,27 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     cur.set_pos(solved_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_surface = nullable_law_surface(&mut cur)?;
+    let first_surface = nullable_law_surface(&mut cur)?.value();
     let second_surface_start = cur.pos();
-    let second_surface = nullable_law_surface(&mut cur)?;
+    let second_surface = nullable_law_surface(&mut cur)?.value();
     let surfaces = [first_surface, second_surface];
     let mut pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     for (pcurve, chart) in pcurves.iter_mut().zip([
         native_support_chart(toks, first_surface_start),
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
+            normalize_support_pcurve(chart, pcurve)?;
         }
     }
     let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
-        let bounds = [law_version_bound(&mut cur)?, law_version_bound(&mut cur)?];
+        let bounds = [
+            law_version_bound(&mut cur)?.value(),
+            law_version_bound(&mut cur)?.value(),
+        ];
         let domain = nurbs_curve_parameter_domain(&solved).unwrap_or([0.0, 0.0]);
         let parameter_range = [
             bounds[0].unwrap_or(domain[0]),
@@ -932,11 +1129,10 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     let additional = (0..count)
         .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
-    let support_present = [surfaces[0].is_some(), surfaces[1].is_some()];
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
-            surfaces,
-            support_present,
+            surfaces: surfaces
+                .map(|surface| surface.map_or(SupportSlot::Absent, SupportSlot::Surface)),
             pcurves,
             parameter_range,
             discontinuities,
@@ -959,46 +1155,48 @@ fn embedded_spring(
         let context = cache_first_curve_context(&mut cur, solved, table)?;
         let direction = cur.take_enum()?;
         return Some(EmbeddedSpring {
-            surfaces: context.surfaces,
-            pcurves: context.pcurves,
-            surface_parameter_ranges: [None, None],
-            first_pcurve_parameter_range: None,
-            parameter_range: context.parameter_range,
-            discontinuities: context.discontinuities,
-            discontinuity_flag: false,
-            cache_first: Some(context.form),
+            layout: EmbeddedSpringLayout::CacheFirst {
+                context: EmbeddedIntersection {
+                    surfaces: context.surfaces,
+                    pcurves: context.pcurves,
+                    parameter_range: context.parameter_range,
+                    discontinuities: context.discontinuities,
+                },
+                form: context.form,
+            },
             direction,
         });
     }
-    let mut surfaces = [None, None];
-    let mut surface_charts = [NativeSupportChart::Canonical; 2];
-    let mut surface_parameter_ranges = [None, None];
-    for side in 0..2 {
+    let mut take_support = || {
         let saved = cur.pos();
         if cur.take_ident() == Some("null_surface") {
-            surface_parameter_ranges[side] = Some([
-                [cur.take_range_value()?, cur.take_range_value()?],
-                [cur.take_range_value()?, cur.take_range_value()?],
-            ]);
+            Some((
+                EmbeddedSpringSupport::Ranges([
+                    [cur.take_range_value()?, cur.take_range_value()?],
+                    [cur.take_range_value()?, cur.take_range_value()?],
+                ]),
+                NativeSupportChart::Canonical,
+            ))
         } else {
             cur.set_pos(saved);
-            surface_charts[side] = native_support_chart(toks, cur.pos());
-            surfaces[side] = Some(embedded_surface(&mut cur)?);
+            let chart = native_support_chart(toks, cur.pos());
+            Some((
+                EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?),
+                chart,
+            ))
         }
-    }
-    let first_pcurve;
-    let first_pcurve_parameter_range;
+    };
+    let [(first_support, first_chart), (second_support, second_chart)] =
+        [take_support()?, take_support()?];
     let saved = cur.pos();
-    if cur.take_ident() == Some("nullbs") {
-        first_pcurve = None;
-        first_pcurve_parameter_range = Some([cur.take_range_value()?, cur.take_range_value()?]);
+    let mut first_pcurve = if cur.take_ident() == Some("nullbs") {
+        EmbeddedSpringPcurve::Range([cur.take_range_value()?, cur.take_range_value()?])
     } else {
         cur.set_pos(saved);
         let (pcurve, end) = pcurve_block_with_end(toks, cur.pos())?;
         cur.set_pos(end);
-        first_pcurve = Some(pcurve);
-        first_pcurve_parameter_range = None;
-    }
+        EmbeddedSpringPcurve::Pcurve(pcurve)
+    };
     let saved = cur.pos();
     let second_pcurve = if cur.take_ident() == Some("nullbs") {
         None
@@ -1008,11 +1206,12 @@ fn embedded_spring(
         cur.set_pos(end);
         Some(pcurve)
     };
-    let mut pcurves = [first_pcurve, second_pcurve];
-    for (pcurve, chart) in pcurves.iter_mut().zip(surface_charts) {
-        if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
-        }
+    if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
+        normalize_support_pcurve(first_chart, pcurve)?;
+    }
+    let mut second_pcurve = second_pcurve;
+    if let Some(pcurve) = &mut second_pcurve {
+        normalize_support_pcurve(second_chart, pcurve)?;
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -1023,14 +1222,14 @@ fn embedded_spring(
     let discontinuity_flag = cur.take_bool()?;
     let direction = cur.take_enum()?;
     Some(EmbeddedSpring {
-        surfaces,
-        pcurves,
-        surface_parameter_ranges,
-        first_pcurve_parameter_range,
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        cache_first: None,
+        layout: EmbeddedSpringLayout::ContextFirst {
+            supports: [first_support, second_support],
+            first_pcurve,
+            second_pcurve,
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+        },
         direction,
     })
 }
@@ -1048,7 +1247,7 @@ pub struct SpringPatchLayout {
 }
 
 /// Locate spring context fields by walking the subtype grammar at `int_width`.
-pub fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
+pub fn spring_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SpringPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"spring_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     for _ in 0..2 {
@@ -1145,7 +1344,7 @@ pub struct CompoundPatchLayout {
 }
 
 /// Locate both compound parameter arrays from their native counts.
-pub fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
+pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<CompoundPatchLayout> {
     let name = b"comp_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -1167,12 +1366,12 @@ pub fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundP
 }
 
 /// Locate the subset range by consuming the subtype-owned parent curve.
-pub fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
+pub fn subset_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let parameter_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -1183,14 +1382,14 @@ pub fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatch
 /// Locate vector-offset fields by consuming the wrapper flag and source curve.
 pub fn vector_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<VectorOffsetPatchLayout> {
     let name = b"offset_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let parameter_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -1204,7 +1403,7 @@ pub fn vector_offset_patch_layout(
 }
 
 /// Locate helix fields by consuming the subtype prefix grammar.
-pub fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
+pub fn helix_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -1242,7 +1441,7 @@ pub fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLa
 }
 
 /// Locate extrusion fields from the `cyl_spl_sur` subtype header.
-pub fn extrusion_patch_layout(bytes: &[u8], int_width: usize) -> Option<ExtrusionPatchLayout> {
+pub fn extrusion_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ExtrusionPatchLayout> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
     let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
         .map(|(start, name)| (start, name.len()))?;
@@ -1264,7 +1463,10 @@ pub fn extrusion_patch_layout(bytes: &[u8], int_width: usize) -> Option<Extrusio
 }
 
 /// Locate the rolling-ball radius pair by walking both supports and the slice curve.
-pub fn rolling_ball_patch_layout(bytes: &[u8], int_width: usize) -> Option<RollingBallPatchLayout> {
+pub fn rolling_ball_patch_layout(
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Option<RollingBallPatchLayout> {
     let names: [&[u8]; 6] = [
         b"rb_blend_spl_sur",
         b"rbblnsur",
@@ -1282,7 +1484,7 @@ pub fn rolling_ball_patch_layout(bytes: &[u8], int_width: usize) -> Option<Rolli
         take_tagged_int(span, &mut position, 0x04, int_width)?;
         decode_rolling_ball_side(span, &mut position, int_width, None)?;
         decode_rolling_ball_side(span, &mut position, int_width, None)?;
-        position = decode_curve_block(span, position, int_width)?.end;
+        position = decode_curve_block(span, position, int_width)?.end();
         Some([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
@@ -1296,9 +1498,9 @@ pub fn rolling_ball_patch_layout(bytes: &[u8], int_width: usize) -> Option<Rolli
             if !matches!(support_kind.as_str(), "plane" | "sphere" | "cone" | "torus") {
                 return None;
             }
-            position = decode_surface_block(span, position, int_width)?.end;
+            position = decode_surface_block(span, position, int_width)?.end();
         }
-        position = decode_curve_block(span, position, int_width)?.end;
+        position = decode_curve_block(span, position, int_width)?.end();
         Some([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
@@ -1347,13 +1549,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 (origin[1] + direction[1]) * LEN_TO_MM,
                 (origin[2] + direction[2]) * LEN_TO_MM,
             );
-            Some(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![start, end],
-                weights: None,
-                periodic: false,
-            })
+            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false).ok()
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -1369,13 +1565,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 point[1] * LEN_TO_MM,
                 point[2] * LEN_TO_MM,
             );
-            Some(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![at, at],
-                weights: None,
-                periodic: false,
-            })
+            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![at, at], None, false).ok()
         }
         "intcurve" => {
             cur.take_bool()?;
@@ -1421,26 +1611,25 @@ fn embedded_surface_offset(
     if matches!(cur.peek(), Some(Token::Long(_))) {
         let context = cache_first_curve_context(&mut cur, solved, table)?;
         let base_u_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         let base_v_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         let base = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let base_endpoints = [
-            cur.take_optional_range_value()?,
-            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?.value(),
+            cur.take_optional_range_value()?.value(),
         ];
         let base_range = [
-            cur.take_optional_range_value()??,
-            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()?.value()?,
+            cur.take_optional_range_value()?.value()?,
         ];
         return Some(EmbeddedSurfaceOffset {
             context: EmbeddedIntersection {
                 surfaces: context.surfaces,
-                support_present: context.support_present,
                 pcurves: context.pcurves,
                 parameter_range: context.parameter_range,
                 discontinuities: context.discontinuities,
@@ -1472,8 +1661,7 @@ fn embedded_surface_offset(
     let base_range = [cur.take_range_value()?, cur.take_range_value()?];
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1516,7 +1704,7 @@ pub struct SurfaceOffsetPatchLayout {
 /// Locate surface-offset fields by walking supports and the base curve.
 pub fn surface_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfaceOffsetPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"off_surf_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
@@ -1543,7 +1731,7 @@ pub fn surface_offset_patch_layout(
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
     ];
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let base_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -1598,8 +1786,7 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     }
     Some(EmbeddedSilhouette {
         context: EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1621,7 +1808,7 @@ pub struct SilhouettePatchLayout {
 /// Locate silhouette fields by walking its context and cast surface.
 pub fn silhouette_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
     silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
 ) -> Option<SilhouettePatchLayout> {
     use cadmpeg_ir::geometry::SilhouetteKind;
@@ -1661,29 +1848,25 @@ fn embedded_surface_curve(
     toks: &[Token],
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+) -> Option<EmbeddedSurfaceCurve> {
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names = [
-        ("blend_int_cur", SurfaceCurveFamily::Blend),
-        ("bldcur", SurfaceCurveFamily::Blend),
-        ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
-        ("surfcur", SurfaceCurveFamily::SurfaceConstrained),
-        ("par_int_cur", SurfaceCurveFamily::Parametric),
-        ("parcur", SurfaceCurveFamily::Parametric),
-        ("skin_int_cur", SurfaceCurveFamily::Skin),
-        ("d5c2_cur", SurfaceCurveFamily::Skin),
+        ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
+        ("bldcur", SurfaceCurveFamilyKind::Blend),
+        ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
+        ("surfcur", SurfaceCurveFamilyKind::SurfaceConstrained),
+        ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
+        ("parcur", SurfaceCurveFamilyKind::Parametric),
+        ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
+        ("d5c2_cur", SurfaceCurveFamilyKind::Skin),
     ];
     let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
     let (marker, name) = crate::nurbs::toks::find_owned_subtype_marker(toks, &candidates)?;
     let family = names
         .iter()
-        .find_map(|(candidate, family)| (*candidate == name).then(|| family.clone()))?;
+        .find_map(|(candidate, family)| (*candidate == name).then_some(*family))?;
     let position = marker + 2;
-    context_first_surface_curve(toks, position, family.clone())
+    context_first_surface_curve(toks, position, family)
         .or_else(|| cache_first_surface_curve(toks, position, family, solved, table))
 }
 
@@ -1701,7 +1884,7 @@ fn embedded_surface_curve(
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
 pub fn decode_par_int_cur_isoline(
     scope: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<NurbsCurve> {
     let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
@@ -1713,12 +1896,16 @@ pub fn decode_par_int_cur_isoline(
     take_range_value(scope, &mut position)?;
     take_tagged_int(scope, &mut position, 0x15, int_width)?;
     let supports = [
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+            .value()
+            .map(|support| support.surface),
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+            .value()
+            .map(|support| support.surface),
     ];
     let pcurves = [
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
-        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -1751,12 +1938,16 @@ pub(crate) fn par_int_cur_isoline(
     cur.take_range_value()?;
     cur.take_enum()?;
     let supports = [
-        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
-        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
+        optional_rolling_ball_surface(&mut cur, reference_context)?
+            .value()
+            .map(|support| support.surface),
+        optional_rolling_ball_surface(&mut cur, reference_context)?
+            .value()
+            .map(|support| support.surface),
     ];
     let pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -1778,16 +1969,16 @@ pub(crate) fn par_int_cur_isoline(
 /// isoline of the support's full domain.
 fn surface_isoline_along(
     support: &cadmpeg_ir::geometry::NurbsSurface,
-    pcurve: &NurbsPcurve,
+    pcurve: &PcurveNurbs,
 ) -> Option<NurbsCurve> {
     use cadmpeg_ir::eval::IsolineDirection;
-    (pcurve.degree == 1 && pcurve.control_points.len() == 2 && pcurve.weights.is_none())
+    (pcurve.degree() == 1 && pcurve.control_points().len() == 2 && pcurve.weights().is_none())
         .then_some(())?;
-    let start = *pcurve.control_points.first()?;
-    let end = *pcurve.control_points.last()?;
-    let domain = [*pcurve.knots.first()?, *pcurve.knots.last()?];
-    let u_domain = [*support.u_knots.first()?, *support.u_knots.last()?];
-    let v_domain = [*support.v_knots.first()?, *support.v_knots.last()?];
+    let start = *pcurve.control_points().first()?;
+    let end = *pcurve.control_points().last()?;
+    let domain = [*pcurve.knots().first()?, *pcurve.knots().last()?];
+    let u_domain = [*support.u_knots().first()?, *support.u_knots().last()?];
+    let v_domain = [*support.v_knots().first()?, *support.v_knots().last()?];
     let (direction, at, free_domain, travel) = if agree(start.u, end.u, width(u_domain)) {
         (
             IsolineDirection::ConstantU,
@@ -1832,9 +2023,8 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 /// solved-interval endpoints, three discontinuity arrays, and one extension.
 struct CacheFirstCurveContext {
     form: cadmpeg_ir::geometry::CacheFirstCurveForm,
-    surfaces: [Option<SurfaceGeometry>; 2],
-    support_present: [bool; 2],
-    pcurves: [Option<NurbsPcurve>; 2],
+    surfaces: [SupportSlot; 2],
+    pcurves: [Option<PcurveNurbs>; 2],
     parameter_range: [f64; 2],
     discontinuities: [Vec<f64>; 3],
 }
@@ -1852,20 +2042,23 @@ fn cache_first_curve_context(
     // has a defined grammar, so it fails and the containing record is retained
     // verbatim.
     let cache_enum = cur.take_enum()?;
-    let parameterization = match cache_enum {
+    let cache = match cache_enum {
         0 => {
             let (_, end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(end);
-            cur.take_f64()?;
-            None
+            cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
+                fit_tolerance: cur.take_f64()? * LEN_TO_MM,
+            }
         }
-        2 => Some(cadmpeg_ir::geometry::CacheFirstCurveParameterization {
-            interval: [
-                cur.take_optional_range_value()?,
-                cur.take_optional_range_value()?,
-            ],
-            closed_form: cur.take_enum()?,
-        }),
+        2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(
+            cadmpeg_ir::geometry::CacheFirstCurveParameterization {
+                interval: [
+                    cur.take_optional_range_value()?.value(),
+                    cur.take_optional_range_value()?.value(),
+                ],
+                closed_form: cur.take_enum()?,
+            },
+        ),
         _ => return None,
     };
     let first_surface_start = cur.pos();
@@ -1875,24 +2068,24 @@ fn cache_first_curve_context(
     let second_support_present = support_slot_present(cur, table);
     let (second_surface, second_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
     let mut pcurves = [
-        nullable_embedded_pcurve(cur)?,
-        nullable_embedded_pcurve(cur)?,
+        nullable_embedded_pcurve(cur)?.value(),
+        nullable_embedded_pcurve(cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
         normalize_support_pcurve(
             native_support_chart(cur.toks(), first_surface_start),
             pcurve,
-        );
+        )?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
         normalize_support_pcurve(
             native_support_chart(cur.toks(), second_surface_start),
             pcurve,
-        );
+        )?;
     }
     let solved_range = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?.value(),
+        cur.take_optional_range_value()?.value(),
     ];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
@@ -1908,14 +2101,15 @@ fn cache_first_curve_context(
     Some(CacheFirstCurveContext {
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
-            cache_enum,
-            parameterization,
+            cache,
             support_bounds: [first_bounds, second_bounds],
             solved_range,
             extension,
         },
-        surfaces: [first_surface, second_surface],
-        support_present: [first_support_present, second_support_present],
+        surfaces: [
+            SupportSlot::from_parsed(first_surface, first_support_present),
+            SupportSlot::from_parsed(second_surface, second_support_present),
+        ],
         pcurves,
         parameter_range,
         discontinuities,
@@ -1925,12 +2119,8 @@ fn cache_first_curve_context(
 fn context_first_surface_curve(
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+) -> Option<EmbeddedSurfaceCurve> {
     let mut cur = Cur::at(toks, position);
     let (surfaces, pcurves) = required_support_pair(&mut cur)?;
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -1939,56 +2129,86 @@ fn context_first_surface_curve(
         cur.take_float_array()?,
         cur.take_float_array()?,
     ];
-    Some((
+    embedded_surface_curve_from_parts(
         family,
         EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
         },
         None,
-    ))
+    )
 }
 
 fn cache_first_surface_curve(
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
+) -> Option<EmbeddedSurfaceCurve> {
     let mut cur = Cur::at(toks, position);
     let context = cache_first_curve_context(&mut cur, solved, table)?;
     let flag = cur.take_bool()?;
     let second_flag = matches!(cur.peek(), Some(Token::True | Token::False))
         .then(|| cur.take_bool())
         .flatten();
-    Some((
+    let tail = cadmpeg_ir::geometry::SurfaceCurveTail {
+        extension: context.form.extension,
+        revision: context.form.revision,
+        cache: context.form.cache,
+        support_bounds: context.form.support_bounds,
+        solved_range: context.form.solved_range,
+    };
+    embedded_surface_curve_from_parts(
         family,
         EmbeddedIntersection {
             surfaces: context.surfaces,
-            support_present: context.support_present,
             pcurves: context.pcurves,
             parameter_range: context.parameter_range,
             discontinuities: context.discontinuities,
         },
-        Some(cadmpeg_ir::geometry::SurfaceCurveTail {
-            extension: context.form.extension,
-            flag,
-            second_flag,
-            revision: context.form.revision,
-            cache_enum: context.form.cache_enum,
-            parameterization: context.form.parameterization,
-            support_bounds: context.form.support_bounds,
-            solved_range: context.form.solved_range,
+        Some((tail, flag, second_flag)),
+    )
+}
+
+fn embedded_surface_curve_from_parts(
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    context: EmbeddedIntersection,
+    tail: Option<(cadmpeg_ir::geometry::SurfaceCurveTail, bool, Option<bool>)>,
+) -> Option<EmbeddedSurfaceCurve> {
+    use cadmpeg_ir::geometry::{
+        ParametricSurfaceCurveFlags, SurfaceCurveCacheFirst, SurfaceCurveFamilyKind,
+    };
+    let single_tail = |tail| match tail {
+        None => Some(None),
+        Some((tail, flag, None)) => Some(Some(SurfaceCurveCacheFirst { tail, flags: flag })),
+        Some((_, _, Some(_))) => None,
+    };
+    match family {
+        SurfaceCurveFamilyKind::Blend => Some(EmbeddedSurfaceCurve::Blend {
+            context,
+            tail: single_tail(tail)?,
         }),
-    ))
+        SurfaceCurveFamilyKind::SurfaceConstrained => {
+            Some(EmbeddedSurfaceCurve::SurfaceConstrained {
+                context,
+                tail: single_tail(tail)?,
+            })
+        }
+        SurfaceCurveFamilyKind::Parametric => Some(EmbeddedSurfaceCurve::Parametric {
+            context,
+            tail: tail.map(|(tail, flag, second_flag)| SurfaceCurveCacheFirst {
+                tail,
+                flags: ParametricSurfaceCurveFlags { flag, second_flag },
+            }),
+        }),
+        SurfaceCurveFamilyKind::Skin => Some(EmbeddedSurfaceCurve::Skin {
+            context,
+            tail: single_tail(tail)?,
+        }),
+    }
 }
 
 /// Writable shared-context fields in a surface-related `intcurve` subtype.
@@ -2002,15 +2222,15 @@ pub struct SurfaceCurvePatchLayout {
 /// Locate a surface-curve context by walking its two ordered support pairs.
 pub fn surface_curve_patch_layout(
     bytes: &[u8],
-    int_width: usize,
-    family: &cadmpeg_ir::geometry::SurfaceCurveFamily,
+    int_width: RefWidth,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
 ) -> Option<SurfaceCurvePatchLayout> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names: &[&[u8]] = match family {
-        SurfaceCurveFamily::Blend => &[b"blend_int_cur", b"bldcur"],
-        SurfaceCurveFamily::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
-        SurfaceCurveFamily::Parametric => &[b"par_int_cur", b"parcur"],
-        SurfaceCurveFamily::Skin => &[b"skin_int_cur", b"d5c2_cur"],
+        SurfaceCurveFamilyKind::Blend => &[b"blend_int_cur", b"bldcur"],
+        SurfaceCurveFamilyKind::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
+        SurfaceCurveFamilyKind::Parametric => &[b"par_int_cur", b"parcur"],
+        SurfaceCurveFamilyKind::Skin => &[b"skin_int_cur", b"d5c2_cur"],
     };
     let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
     let mut position = marker + name.len() + 3;
@@ -2051,7 +2271,7 @@ fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSu
     normalize_support_pcurve(
         native_support_chart(toks, third_surface_start),
         &mut third_pcurve,
-    );
+    )?;
     Some(EmbeddedThreeSurfaceIntersection {
         surfaces: [first, second, third],
         pcurves: [first_pcurve, second_pcurve, third_pcurve],
@@ -2074,7 +2294,7 @@ pub struct ThreeSurfacePatchLayout {
 /// Locate three-surface intersection fields by walking all three support pairs.
 pub fn three_surface_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<ThreeSurfacePatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"sss_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
@@ -2122,7 +2342,7 @@ fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
         cadmpeg_ir::geometry::ProjectionTail::Ranged {
             flag,
             parameter_range: [cur.take_range_value()?, cur.take_range_value()?],
-            role: cur.take_str()?.to_string(),
+            role: cadmpeg_ir::geometry::ProjectionRole::parse(cur.take_str()?)?,
         }
     };
     Some(EmbeddedProjection {
@@ -2167,7 +2387,7 @@ pub struct ProjectionPatchLayout {
 }
 
 /// Locate projection fields by walking supports, source curve, and selected tail.
-pub fn projection_patch_layout(bytes: &[u8], int_width: usize) -> Option<ProjectionPatchLayout> {
+pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ProjectionPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"proj_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -2185,7 +2405,7 @@ pub fn projection_patch_layout(bytes: &[u8], int_width: usize) -> Option<Project
     ];
     let discontinuity_flag = position;
     take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let tail_flag = position;
     take_bool(bytes, &mut position)?;
     let tail = if bytes.get(position) == Some(&0x10) {
@@ -2240,8 +2460,7 @@ fn context_first_intersection(
     let discontinuity_flag = cur.take_bool()?;
     Some((
         EmbeddedIntersection {
-            surfaces: surfaces.map(Some),
-            support_present: [true, true],
+            surfaces: surfaces.map(SupportSlot::Surface),
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -2264,26 +2483,32 @@ fn cache_first_intersection(
     cur.take_f64()?;
     let first_surface_start = cur.pos();
     let first_support_present = support_slot_present(&cur, table);
-    let first_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
+    let first_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
     let second_surface_start = cur.pos();
     let second_support_present = support_slot_present(&cur, table);
-    let second_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
-    let surfaces = [first_surface, second_surface];
-    let support_present = [first_support_present, second_support_present];
+    let second_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
+    let surfaces = [
+        SupportSlot::from_parsed(first_surface, first_support_present),
+        SupportSlot::from_parsed(second_surface, second_support_present),
+    ];
     let mut pcurves = [
-        nullable_embedded_pcurve(&mut cur)?,
-        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?.value(),
+        nullable_embedded_pcurve(&mut cur)?.value(),
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve)?;
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve)?;
     }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
-        cur.take_optional_range_value()?.unwrap_or(domain[0]),
-        cur.take_optional_range_value()?.unwrap_or(domain[1]),
+        cur.take_optional_range_value()?
+            .value()
+            .unwrap_or(domain[0]),
+        cur.take_optional_range_value()?
+            .value()
+            .unwrap_or(domain[1]),
     ];
     let discontinuities = [
         cur.take_float_array()?,
@@ -2294,7 +2519,6 @@ fn cache_first_intersection(
     Some((
         EmbeddedIntersection {
             surfaces,
-            support_present,
             pcurves,
             parameter_range,
             discontinuities,
@@ -2316,7 +2540,7 @@ pub struct IntersectionPatchLayout {
 /// Locate an intersection context by walking both ordered support pairs.
 pub fn intersection_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<IntersectionPatchLayout> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
     let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
@@ -2359,7 +2583,7 @@ fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
         native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
+            normalize_support_pcurve(chart, pcurve)?;
         }
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -2392,7 +2616,7 @@ fn optional_embedded_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeomet
     embedded_surface(cur).map(Nullable::Value)
 }
 
-fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
+fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
     let start = cur.pos();
     if cur.take_ident()? == "nullbs" {
         return Some(Nullable::Null);
@@ -2469,7 +2693,7 @@ pub struct TwoSidedOffsetPatchLayout {
 /// Locates the fixed-width scalar payloads after variable embedded supports.
 pub fn two_sided_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<TwoSidedOffsetPatchLayout> {
     let name = b"off_int_cur";
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
@@ -2501,7 +2725,11 @@ pub fn two_sided_offset_patch_layout(
     })
 }
 
-fn skip_offset_support_surface(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+fn skip_offset_support_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: RefWidth,
+) -> Option<()> {
     let start = *position;
     if take_native_ident(bytes, position)?.as_str() == "null_surface" {
         return Some(());
@@ -2511,7 +2739,11 @@ fn skip_offset_support_surface(bytes: &[u8], position: &mut usize, int_width: us
     Some(())
 }
 
-fn skip_offset_support_pcurve(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+fn skip_offset_support_pcurve(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: RefWidth,
+) -> Option<()> {
     let start = *position;
     if take_native_ident(bytes, position)?.as_str() == "nullbs" {
         return Some(());
@@ -2523,7 +2755,7 @@ fn skip_offset_support_pcurve(bytes: &[u8], position: &mut usize, int_width: usi
 pub(crate) fn decode_embedded_surface(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfaceGeometry> {
     decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
 }
@@ -2685,7 +2917,7 @@ fn embedded_surface_fields(
 pub(crate) fn decode_embedded_surface_with_ranges(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     decode_embedded_surface_fields(bytes, position, int_width, true)
 }
@@ -2693,14 +2925,14 @@ pub(crate) fn decode_embedded_surface_with_ranges(
 fn decode_embedded_surface_fields(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     preserve_ranges: bool,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     let no_ranges = [[None, None], [None, None]];
     let kind = take_native_ident(bytes, position)?;
     if kind == "spline" {
         let decoded = decode_surface_block(bytes, *position, int_width)?;
-        *position = decoded.end;
+        *position = decoded.end();
         let ranges = if preserve_ranges {
             decode_surface_ranges(bytes, position)?
         } else {
@@ -2832,14 +3064,6 @@ fn decode_embedded_surface_fields(
     }
 }
 
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unresolved ref.
-fn optional_embedded_surface_resolving_ref(
-    cur: &mut Cur<'_>,
-    table: &SubtypeTable,
-) -> Option<Option<SurfaceGeometry>> {
-    optional_embedded_surface_with_bounds(cur, table).map(|(surface, _)| surface)
-}
-
 /// Optional embedded support surface plus its four optional U/V bound fields.
 #[allow(clippy::type_complexity)]
 pub(crate) fn optional_embedded_surface_with_bounds(
@@ -2873,7 +3097,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
                 .map(SurfaceGeometry::Nurbs);
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
             return Some((surface, bounds));
         }
@@ -2883,7 +3107,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         let mut bounds = [None; 4];
         if kind == Some("plane") || kind == Some("spline") {
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
         }
         return Some((Some(surface), bounds));
@@ -2913,58 +3137,13 @@ pub(crate) fn optional_embedded_surface_with_bounds(
             cur.set_pos(cur.pos() + scope.len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = cur.take_optional_range_value()?;
+                *bound = cur.take_optional_range_value()?.value();
             }
             return Some((surface, bounds));
         }
     }
     cur.set_pos(saved);
     None
-}
-
-fn two_sided_offset(toks: &[Token]) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
-    use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
-    };
-
-    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_int_cur")?;
-    let mut cur = Cur::at(toks, marker + 2);
-    for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-        if cur.take_ident()? != expected {
-            return None;
-        }
-    }
-    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
-    let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-    ];
-    let discontinuity_flag = cur.take_bool()?;
-    let offsets = [
-        cur.take_range_value()? * LEN_TO_MM,
-        cur.take_range_value()? * LEN_TO_MM,
-    ];
-    Some(ProceduralCurveDefinition::TwoSidedOffset {
-        context: IntcurveSupportContext {
-            sides: [
-                IntcurveSupportSide {
-                    surface: None,
-                    pcurve: None,
-                    pcurve_parameter_range: None,
-                },
-                IntcurveSupportSide {
-                    surface: None,
-                    pcurve: None,
-                    pcurve_parameter_range: None,
-                },
-            ],
-            parameter_range,
-            discontinuities,
-        },
-        discontinuity_flag,
-        offsets,
-    })
 }
 
 fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
@@ -2985,12 +3164,18 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     }
     cur.bump();
     let mut components = Vec::with_capacity(count);
-    for _ in 0..count {
+    for parameter in component_parameters {
         let (curve, end) = curve_block(toks, cur.pos())?;
-        components.push(curve);
+        components.push(cadmpeg_ir::geometry::CompoundComponent {
+            parameter,
+            component: curve,
+        });
         cur.set_pos(end);
     }
-    Some((parameters, component_parameters, components))
+    Some(CompoundDefinition {
+        parameters,
+        components,
+    })
 }
 
 fn subset_definition(toks: &[Token]) -> Option<SubsetDefinition> {
@@ -3015,10 +3200,13 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
     }
     let parameter_range = [cur.take_f64()?, cur.take_f64()?];
     let offset = cur.take_vector3()?;
-    let first_label = cur.take_str()?.to_string();
+    let first_label = cur.take_str()?;
     let first_code = cur.take_long()?;
-    let second_label = cur.take_str()?.to_string();
+    let second_label = cur.take_str()?;
     let second_code = cur.take_long()?;
+    if first_label != "source" || second_label != "offset" {
+        return None;
+    }
     Some((
         source,
         parameter_range,
@@ -3027,16 +3215,16 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
             offset[1] * LEN_TO_MM,
             offset[2] * LEN_TO_MM,
         ),
-        [first_label, second_label],
-        [first_code, second_code],
+        cadmpeg_ir::geometry::VectorOffsetRoles {
+            source_code: first_code,
+            offset_code: second_code,
+        },
     ))
 }
 
 /// Decode the `helix_int_cur` construction fields. Token-space counterpart of
 /// the byte helix walk retained by [`helix_patch_layout`].
-pub(crate) fn helix_definition(
-    toks: &[Token],
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+pub(crate) fn helix_definition(toks: &[Token]) -> Option<HelixDefinition> {
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["helix_int_cur"])
         .map(|(marker, _)| marker)?;
     let mut cur = Cur::at(toks, marker + 2);
@@ -3056,7 +3244,7 @@ pub(crate) fn helix_definition(
     let pitch = take_frame_vector(&mut cur)?;
     let apex_factor = cur.take_f64()?;
     let axis = cur.take_vector3()?;
-    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+    Some(HelixDefinition {
         angle_range: [lower, upper],
         center: Point3::new(
             center[0] * LEN_TO_MM,
@@ -3088,7 +3276,7 @@ pub(crate) fn helix_definition(
 pub(crate) fn take_optional_helix_revision(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<bool> {
     if bytes.get(*position) != Some(&0x04) {
         return Some(false);
@@ -3146,16 +3334,16 @@ pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]
     let mut cur = Cur::at(toks, position);
     let mut bounds = [None; 4];
     for bound in &mut bounds {
-        *bound = cur.take_optional_range_value()?;
+        *bound = cur.take_optional_range_value()?.value();
     }
     Some(bounds)
 }
 
 fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    let degree = usize::try_from(curve.degree).ok()?;
+    let degree = usize::try_from(curve.degree()).ok()?;
     Some([
-        *curve.knots.get(degree)?,
-        *curve.knots.get(curve.control_points.len())?,
+        *curve.knots().get(degree)?,
+        *curve.knots().get(curve.control_points().len())?,
     ])
 }
 
@@ -3164,31 +3352,39 @@ mod cache_form_tests {
     use super::*;
     use cadmpeg_ir::math::Point2;
 
-    fn linear_pcurve(points: [Point2; 2]) -> NurbsPcurve {
-        NurbsPcurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: points.into(),
-            weights: None,
-            periodic: false,
-        }
+    fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
+        PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
     }
 
     #[test]
     fn analytic_support_charts_map_to_neutral_surface_parameters() {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
-        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane);
+        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane).unwrap();
         assert_eq!(
-            plane.control_points,
+            plane.control_points(),
             [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
         );
 
         let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
-        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone);
+        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone)
+            .unwrap();
         assert_eq!(
-            cone.control_points,
+            cone.control_points(),
             [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
         );
+    }
+
+    #[test]
+    fn support_chart_overflow_refuses_projection_without_changing_the_pcurve() {
+        for chart in [
+            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::Cone { axial_scale: 2.0 },
+        ] {
+            let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
+            let original = pcurve.clone();
+            assert!(normalize_support_pcurve(chart, &mut pcurve).is_none());
+            assert_eq!(pcurve, original);
+        }
     }
 
     #[test]
@@ -3220,19 +3416,19 @@ mod cache_form_tests {
             Token::Double(2.0),
         ];
         let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
-        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve);
+        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve).unwrap();
         assert_eq!(
-            pcurve.control_points,
+            pcurve.control_points(),
             [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]
         );
     }
 
     /// A tagged integer field.
-    fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
+    fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: RefWidth) {
         bytes.push(tag);
         match int_width {
-            8 => bytes.extend_from_slice(&value.to_le_bytes()),
-            _ => bytes.extend_from_slice(&(value as i32).to_le_bytes()),
+            RefWidth::Eight => bytes.extend_from_slice(&value.to_le_bytes()),
+            RefWidth::Four => bytes.extend_from_slice(&(value as i32).to_le_bytes()),
         }
     }
 
@@ -3246,7 +3442,7 @@ mod cache_form_tests {
     /// The shared cache-first intcurve context after its leading enum: two null
     /// supports, two null pcurves, two absent solved-interval endpoints, three
     /// empty discontinuity arrays, and the ASM extension integer.
-    fn push_cache_first_remainder(bytes: &mut Vec<u8>, int_width: usize) {
+    fn push_cache_first_remainder(bytes: &mut Vec<u8>, int_width: RefWidth) {
         push_ident(bytes, "null_surface");
         push_ident(bytes, "null_surface");
         push_ident(bytes, "nullbs");
@@ -3260,13 +3456,14 @@ mod cache_form_tests {
 
     /// A degree-one solved curve whose parameter domain is `[0, 1]`.
     fn solved_curve() -> NurbsCurve {
-        NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }
+        NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap()
     }
 
     /// Cache form `2` stores no `bs3_curve` and no fit tolerance: the leading
@@ -3274,7 +3471,7 @@ mod cache_form_tests {
     /// enum, and the rest of the context continues unchanged.
     #[test]
     fn parameterized_cache_form_reads_the_interval_and_closed_form_enum() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
             push_int(&mut bytes, 0x15, 2, int_width);
@@ -3297,8 +3494,13 @@ mod cache_form_tests {
             // token of the ASM extension integer.
             assert_eq!(cur.pos(), toks.len());
             assert_eq!(context.form.revision, 23_100);
-            assert_eq!(context.form.cache_enum, 2);
-            let parameterization = context.form.parameterization.expect("parameterization");
+            assert_eq!(context.form.cache.selector(), 2);
+            let parameterization = match context.form.cache {
+                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(value) => value,
+                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { .. } => {
+                    panic!("parameterized cache-first context")
+                }
+            };
             assert_eq!(parameterization.interval, [Some(0.125), None]);
             assert_eq!(parameterization.closed_form, 1);
             assert_eq!(context.form.extension, 7);
@@ -3312,7 +3514,7 @@ mod cache_form_tests {
     /// retained verbatim rather than misparsed.
     #[test]
     fn undefined_cache_form_is_rejected_for_verbatim_retention() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
             push_int(&mut bytes, 0x15, 1, int_width);

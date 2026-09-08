@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Per-document field inventory for `cadmpeg query schema FILE ARENA`.
+//! Per-document field inventory for `cadmpeg query schema file FILE ARENA`.
 //!
 //! Native arena records have no compile-time JSON Schema in this binary.
 //! This view walks every record in the named arena and reports each dotted
@@ -15,9 +15,9 @@ use serde_json::Value;
 
 use cadmpeg_ir::ids::is_valid_identity;
 
-use super::document::CadirDocument;
+use super::document::{reject_non_cadir, CadirDocument};
 use super::item::{field_cell, ArenaTarget};
-use super::{cell, print_json, Artifact};
+use super::{cell, print_json};
 
 /// Cap on the example cell so a byte array does not flood the table.
 const EXAMPLE_MAX: usize = 80;
@@ -26,45 +26,23 @@ const EXAMPLE_MAX: usize = 80;
 pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let path = Path::new(file);
     let bytes = super::read_input(path)?;
-    let artifact = super::detect(&bytes, path)?;
-    match artifact {
-        Artifact::Cadir(_) => {}
-        Artifact::Report(_) => bail!(
-            "{} is a command report; reports have no arenas. Infer native fields \
-             from a decoded CADIR document: cadmpeg dump SOURCE -o doc.json && \
-             cadmpeg query schema doc.json native.<codec>.<arena>",
-            path.display()
-        ),
-        Artifact::Sidecar(_) => bail!(
-            "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query schema \
-             doc.json native.<codec>.<arena>`",
-            path.display()
-        ),
-    }
+    reject_non_cadir(&bytes, path, "schema")?;
 
     let doc = CadirDocument::from_bytes(&bytes, path)?;
 
     let Some(spec) = arena else {
-        bail!("{}", need_arena_message(&doc.addressable));
+        bail!("{}", need_arena_message(&doc.addressable()));
     };
 
     let target = ArenaTarget::parse(spec)?;
-    let Some(arena_rec) = doc
-        .arenas
-        .iter()
-        .find(|arena| arena.dotted == target.dotted())
-    else {
-        bail!("{}", unknown_arena_message(&target, &doc.addressable));
+    let Some(arena_rec) = doc.arenas().iter().find(|arena| arena.target == target) else {
+        bail!("{}", unknown_arena_message(&target, &doc.addressable()));
     };
 
     let entry_count = arena_rec.records.len() as u64;
     let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
-        print_json(
-            "schema",
-            &json_payload(&target.dotted(), entry_count, &rows),
-        );
+        print_json("schema", json_payload(&target.dotted(), entry_count, &rows));
         return Ok(());
     }
     println!("path\tpresence\ttype\texample\trelation");
@@ -76,7 +54,7 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
             entry_count,
             cell(&row.type_label),
             cell(&row.example),
-            row.relation.unwrap_or("")
+            row.relation.map_or("", Relation::as_str)
         );
     }
     if entry_count == 0 {
@@ -92,12 +70,29 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Relation {
+    Id,
+    Ref,
+    Refs,
+}
+
+impl Relation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Ref => "ref",
+            Self::Refs => "refs",
+        }
+    }
+}
+
 struct FieldRow {
     path: String,
     present: u64,
     type_label: String,
     example: String,
-    relation: Option<&'static str>,
+    relation: Option<Relation>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -165,16 +160,16 @@ fn infer_fields(records: &[Value], doc_ids: &BTreeSet<String>) -> Vec<FieldRow> 
         .collect()
 }
 
-fn relation_of(path: &str, stat: &PathStat, doc_ids: &BTreeSet<String>) -> Option<&'static str> {
+fn relation_of(path: &str, stat: &PathStat, doc_ids: &BTreeSet<String>) -> Option<Relation> {
     let is_ref = |s: &str| doc_ids.contains(s) || is_valid_identity(s);
     if path == "id" && stat.types.contains(&JsonType::String) {
-        return Some("id");
+        return Some(Relation::Id);
     }
     if stat.types.contains(&JsonType::Array) && stat.strings.iter().any(|s| is_ref(s)) {
-        return Some("refs");
+        return Some(Relation::Refs);
     }
     if stat.types.contains(&JsonType::String) && stat.strings.iter().any(|s| is_ref(s)) {
-        return Some("ref");
+        return Some(Relation::Ref);
     }
     None
 }
@@ -271,7 +266,7 @@ fn json_payload(arena: &str, records: u64, rows: &[FieldRow]) -> Value {
                 "records": records,
                 "type": row.type_label,
                 "example": row.example,
-                "relation": row.relation,
+                "relation": row.relation.map(Relation::as_str),
             })
         })
         .collect();
@@ -305,7 +300,7 @@ fn format_inventory(addressable: &[(String, u64)]) -> String {
 fn need_arena_message(addressable: &[(String, u64)]) -> String {
     format!(
         "`query schema` on a CADIR document needs an arena name. Addressable \
-         arenas in this document:\n{}example: cadmpeg query schema FILE \
+         arenas in this document:\n{}example: cadmpeg query schema file FILE \
          native.<codec>.<arena>",
         format_inventory(addressable)
     )
@@ -314,7 +309,7 @@ fn need_arena_message(addressable: &[(String, u64)]) -> String {
 fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     format!(
         "unknown arena {}; addressable arenas in this document:\n{}infer fields \
-         with `cadmpeg query schema FILE ARENA` using a name from the table",
+         with `cadmpeg query schema file FILE ARENA` using a name from the table",
         target.dotted(),
         format_inventory(addressable)
     )
@@ -408,16 +403,16 @@ mod tests {
         doc_ids.insert("nat#1".to_owned());
         doc_ids.insert("nat#2".to_owned());
         let rows = infer_fields(&records, &doc_ids);
-        let by_path: BTreeMap<&str, Option<&'static str>> = rows
+        let by_path: BTreeMap<&str, Option<Relation>> = rows
             .iter()
             .map(|row| (row.path.as_str(), row.relation))
             .collect();
-        assert_eq!(by_path["id"], Some("id"));
-        assert_eq!(by_path["native_ref"], Some("ref"));
-        assert_eq!(by_path["links"], Some("refs"));
+        assert_eq!(by_path["id"], Some(Relation::Id));
+        assert_eq!(by_path["native_ref"], Some(Relation::Ref));
+        assert_eq!(by_path["links"], Some(Relation::Refs));
         assert_eq!(by_path["numeric_links"], None);
         assert_eq!(by_path["name"], None);
-        assert_eq!(by_path["identity_shaped"], Some("ref"));
+        assert_eq!(by_path["identity_shaped"], Some(Relation::Ref));
         assert_eq!(by_path["child.id"], None);
         assert!(!by_path.contains_key("links.0"));
     }
@@ -444,7 +439,7 @@ mod tests {
         assert_eq!(by_path["pcurves"].relation, None);
         assert_eq!(by_path["pcurves.pcurve"].present, 1);
         assert_eq!(by_path["pcurves.pcurve"].type_label, "string");
-        assert_eq!(by_path["pcurves.pcurve"].relation, Some("ref"));
+        assert_eq!(by_path["pcurves.pcurve"].relation, Some(Relation::Ref));
         assert_eq!(by_path["pcurves.isoparametric"].present, 1);
         assert!(!by_path.contains_key("pcurves.0"));
         assert!(!by_path.contains_key("pcurves.0.pcurve"));

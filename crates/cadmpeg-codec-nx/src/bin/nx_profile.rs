@@ -11,7 +11,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_nx::{saved_body_census_evidence, BodyCensusEvidence, NxCodec};
+use cadmpeg_codec_nx::{
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
+};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
@@ -39,7 +41,6 @@ struct FixtureEvidence {
     filename: String,
     status: DecodeStatus,
     deterministic: bool,
-    native_namespace_version: Option<u32>,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -62,12 +63,64 @@ enum VerificationStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "RederivationBoundaryWire",
+    into = "RederivationBoundaryWire"
+)]
 struct RederivationBoundary {
+    feature: Option<FeatureBoundary>,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RederivationBoundaryWire {
     feature: Option<String>,
     feature_name: Option<String>,
     feature_family: Option<String>,
     feature_ordinal: Option<u64>,
     reason: String,
+}
+
+impl TryFrom<RederivationBoundaryWire> for RederivationBoundary {
+    type Error = String;
+
+    fn try_from(wire: RederivationBoundaryWire) -> Result<Self, Self::Error> {
+        let feature = match (wire.feature, wire.feature_ordinal) {
+            (Some(id), Some(ordinal)) => Some(FeatureBoundary {
+                id: cadmpeg_ir::features::FeatureId::mint(id).map_err(|error| format!("feature: {error}"))?,
+                name: wire.feature_name,
+                family: wire.feature_family,
+                ordinal,
+            }),
+            (None, None) if wire.feature_name.is_none() && wire.feature_family.is_none() => None,
+            _ => return Err("feature: identity and ordinal must be present together; name and family require identity".into()),
+        };
+        Ok(Self {
+            feature,
+            reason: wire.reason,
+        })
+    }
+}
+
+impl From<RederivationBoundary> for RederivationBoundaryWire {
+    fn from(value: RederivationBoundary) -> Self {
+        let (feature, feature_name, feature_family, feature_ordinal) = match value.feature {
+            Some(feature) => (
+                Some(feature.id.as_str().to_owned()),
+                feature.name,
+                feature.family,
+                Some(feature.ordinal),
+            ),
+            None => (None, None, None, None),
+        };
+        Self {
+            feature,
+            feature_name,
+            feature_family,
+            feature_ordinal,
+            reason: value.reason,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -145,7 +198,6 @@ struct Assertion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
     canonical_sha256: String,
-    native_namespace_version: Option<u32>,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -342,7 +394,6 @@ fn fixture_evidence(
         filename,
         status,
         deterministic,
-        native_namespace_version: decoded.native_namespace_version,
         all_bodies_colored: decoded.all_bodies_colored,
         all_faces_colored: decoded.all_faces_colored,
         rederivation: decoded.rederivation,
@@ -365,7 +416,6 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         filename,
         status,
         deterministic: false,
-        native_namespace_version: None,
         entities: EntityCounts::default(),
         losses: BTreeMap::new(),
         loss_codes: BTreeMap::new(),
@@ -376,9 +426,6 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         rederivation: VerificationStatus::Missing,
         rederivation_boundary: Some(RederivationBoundary {
             feature: None,
-            feature_name: None,
-            feature_family: None,
-            feature_ordinal: None,
             reason: reason.to_string(),
         }),
     }
@@ -392,7 +439,13 @@ fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<Rederivatio
         .filter_map(|fixture| fixture.rederivation_boundary.as_ref())
     {
         *counts
-            .entry((boundary.reason.clone(), boundary.feature_family.clone()))
+            .entry((
+                boundary.reason.clone(),
+                boundary
+                    .feature
+                    .as_ref()
+                    .and_then(|feature| feature.family.clone()),
+            ))
             .or_default() += 1;
     }
     counts
@@ -416,7 +469,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     for loss in &decoded.report().losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
-            *loss_codes.entry(loss.code.as_str()).or_insert(0) += 1;
+            *loss_codes.entry(loss.code.to_string()).or_insert(0) += 1;
             *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
@@ -437,11 +490,6 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     };
     Ok(DecodedFixtureEvidence {
         canonical_sha256: canonical_sha256(decoded.ir())?,
-        native_namespace_version: decoded
-            .ir()
-            .native
-            .namespace("nx")
-            .map(|namespace| namespace.version),
         entities: EntityCounts::from_ir(decoded.ir()),
         losses,
         loss_codes,
@@ -579,27 +627,29 @@ fn normalized_color(color: Color) -> bool {
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
-    let BodyCensusEvidence {
-        verified,
-        reason,
-        feature,
-        feature_name,
-        feature_family,
-        feature_ordinal,
-    } = saved_body_census_evidence(ir);
-    if verified {
-        (VerificationStatus::Verified, None)
-    } else {
-        (
+    match saved_body_census_evidence(ir) {
+        BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
+        BodyCensusEvaluation::Mismatch { .. } => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature,
-                feature_name,
-                feature_family,
-                feature_ordinal,
-                reason: reason.unwrap_or_else(|| "unknown_evaluation_boundary".to_string()),
+                feature: None,
+                reason: "saved_body_census_mismatch".to_string(),
             }),
-        )
+        ),
+        BodyCensusEvaluation::Unsupported { feature, reason } => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: Some(feature),
+                reason: reason.as_str().to_string(),
+            }),
+        ),
+        BodyCensusEvaluation::ConfigurationEvaluation => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: None,
+                reason: "configuration_evaluation".to_string(),
+            }),
+        ),
     }
 }
 
@@ -842,7 +892,6 @@ mod tests {
             filename: "fixture.prt".to_string(),
             status: DecodeStatus::Complete,
             deterministic: true,
-            native_namespace_version: Some(181),
             entities: EntityCounts::default(),
             losses: BTreeMap::new(),
             loss_codes: BTreeMap::new(),
@@ -857,7 +906,7 @@ mod tests {
 
     #[test]
     fn streaming_canonical_hash_matches_the_canonical_document() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         assert_eq!(
             canonical_sha256(&ir).expect("test IR must serialize through the profile writer"),
             cadmpeg_ir::hash::sha256_hex(
@@ -895,7 +944,7 @@ mod tests {
 
     #[test]
     fn empty_neutral_history_rederives_the_empty_saved_body_census() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let ir = CadIr::empty();
         assert_eq!(
             neutral_rederivation_evidence(&ir),
             (VerificationStatus::Verified, None)
@@ -907,8 +956,8 @@ mod tests {
         use cadmpeg_ir::features::{Feature, FeatureId};
         use cadmpeg_ir::topology::{Body, BodyKind};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let body = BodyId("body".to_string());
+        let mut ir = CadIr::empty();
+        let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
@@ -919,11 +968,10 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-            id: FeatureId("block".to_string()),
+            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -948,19 +996,20 @@ mod tests {
     fn rederivation_boundary_identifies_feature_family_and_history_position() {
         use cadmpeg_ir::features::{Feature, FeatureId};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId("block".to_string()),
+            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
-            outputs: vec![BodyId("body".to_string())],
+            outputs: vec![
+                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+            ],
             definition: FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
@@ -974,10 +1023,13 @@ mod tests {
         assert_eq!(
             boundary,
             Some(RederivationBoundary {
-                feature: Some("block".to_string()),
-                feature_name: Some("BLOCK".to_string()),
-                feature_family: Some("block".to_string()),
-                feature_ordinal: Some(17),
+                feature: Some(FeatureBoundary {
+                    id: cadmpeg_ir::features::FeatureId::mint("block")
+                        .expect("valid block fixture identity"),
+                    name: Some("BLOCK".to_string()),
+                    family: Some("block".to_string()),
+                    ordinal: 17
+                }),
                 reason: "incomplete_feature_definition".to_string(),
             })
         );
@@ -986,10 +1038,13 @@ mod tests {
     #[test]
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
-            feature: None,
-            feature_name: None,
-            feature_family: family.map(str::to_string),
-            feature_ordinal: None,
+            feature: family.map(|family| FeatureBoundary {
+                id: cadmpeg_ir::features::FeatureId::mint("feature")
+                    .expect("valid feature fixture identity"),
+                name: None,
+                family: Some(family.to_owned()),
+                ordinal: 0,
+            }),
             reason: reason.to_string(),
         };
         let mut fixtures = [fixture(), fixture(), fixture()];
@@ -1023,13 +1078,12 @@ mod tests {
     fn unresolved_body_neutral_state_does_not_block_rederivation() {
         use cadmpeg_ir::features::{Feature, FeatureId, FeatureTreeNodeRole};
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId("feature".to_string()),
+            id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -1080,9 +1134,9 @@ mod tests {
         use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
         use cadmpeg_ir::ids::AppearanceId;
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId("body".to_string()),
+            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1090,7 +1144,8 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId("appearance".to_string());
+        let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
+            .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1111,7 +1166,9 @@ mod tests {
             textures: Vec::new(),
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding".to_string(),
+            id: "test:model:binding#binding"
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Body(body.id.clone()),
             appearance: appearance_id,
             source_entity_id: None,
@@ -1167,9 +1224,9 @@ mod tests {
         use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
         use cadmpeg_ir::ids::AppearanceId;
 
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId("body".to_string()),
+            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1177,7 +1234,8 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId("appearance".to_string());
+        let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
+            .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1194,7 +1252,9 @@ mod tests {
         });
         let target = AppearanceTarget::Body(body.id.clone());
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-1".to_string(),
+            id: "test:model:binding#binding-1"
+                .try_into()
+                .expect("valid identity"),
             target: target.clone(),
             appearance: appearance_id.clone(),
             source_entity_id: None,
@@ -1211,7 +1271,9 @@ mod tests {
             a: 1.0,
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-2".to_string(),
+            id: "test:model:binding#binding-2"
+                .try_into()
+                .expect("valid identity"),
             target: target.clone(),
             appearance: appearance_id,
             source_entity_id: None,
@@ -1224,16 +1286,20 @@ mod tests {
 
     #[test]
     fn effective_color_accepts_absent_color_without_an_assignment() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        let ir = CadIr::empty();
+        let target = AppearanceTarget::Body(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+        );
 
         assert!(has_effective_color(&ir, None, &target));
     }
 
     #[test]
     fn effective_color_requires_normalized_direct_color() {
-        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        let ir = CadIr::empty();
+        let target = AppearanceTarget::Body(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+        );
         assert!(!has_effective_color(
             &ir,
             Some(Color {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, pattern, and helical-sweep write encoders.
 
-use super::super::{format_angle_rad, format_length_mm, pattern_form};
+use super::super::{format_angle_rad, format_length_mm, pattern_form, NativePatternClass};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     path_source, profile_source, require_count, require_direction, require_same_family,
@@ -10,7 +10,7 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BooleanOp, PatternForm, PatternKind, PatternSeed, RibConstruction, RibDraft, RibSide,
+    BooleanOp, PatternKind, PatternSeed, RibConstruction, RibDraft, RibSide,
 };
 
 #[allow(
@@ -105,23 +105,35 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         let parent_sources = self.parent_sources;
         Ok({
+            let unsupported_form = matches!(
+                pattern,
+                PatternKind::UnresolvedScale
+                    | PatternKind::UnresolvedComposite
+                    | PatternKind::Scale { .. }
+                    | PatternKind::Composite { .. }
+            );
             let expected_form = match pattern {
-                PatternKind::Unresolved { form } => *form,
+                PatternKind::Unresolved => None,
+                PatternKind::UnresolvedLinear => Some(NativePatternClass::Linear),
+                PatternKind::UnresolvedCircular => Some(NativePatternClass::Circular),
+                PatternKind::UnresolvedCurveDriven => Some(NativePatternClass::CurveDriven),
+                PatternKind::UnresolvedMirror => Some(NativePatternClass::Mirror),
+                PatternKind::UnresolvedScale | PatternKind::UnresolvedComposite => None,
                 PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
-                    Some(PatternForm::Linear)
+                    Some(NativePatternClass::Linear)
                 }
                 PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
-                    Some(PatternForm::Circular)
+                    Some(NativePatternClass::Circular)
                 }
-                PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
+                PatternKind::CurveDriven { .. } => Some(NativePatternClass::CurveDriven),
                 PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => {
-                    Some(PatternForm::Mirror)
+                    Some(NativePatternClass::Mirror)
                 }
-                PatternKind::Scale { .. } => Some(PatternForm::Scale),
-                PatternKind::Composite { .. } => Some(PatternForm::Composite),
+                PatternKind::Scale { .. } | PatternKind::Composite { .. } => None,
             };
             if existing.is_some_and(|record| {
-                expected_form.is_some_and(|form| pattern_form(record) != Some(form))
+                unsupported_form
+                    || expected_form.is_some_and(|form| pattern_form(record) != Some(form))
             }) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes pattern form",
@@ -157,9 +169,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if seed_sources.is_empty()
                 && (!matches!(
                     expected_form,
-                    Some(PatternForm::Linear | PatternForm::CurveDriven)
+                    Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
                 ) || existing.is_none())
-                && !matches!(pattern, PatternKind::Unresolved { .. })
+                && !pattern.is_unresolved()
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no pattern seeds",
@@ -174,7 +186,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.insert("Seeds".into(), seed_sources.join(","));
             }
             match pattern {
-                PatternKind::Unresolved { .. } => {
+                PatternKind::Unresolved
+                | PatternKind::UnresolvedLinear
+                | PatternKind::UnresolvedCircular
+                | PatternKind::UnresolvedCurveDriven
+                | PatternKind::UnresolvedMirror
+                | PatternKind::UnresolvedScale
+                | PatternKind::UnresolvedComposite => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved pattern construction",
@@ -337,11 +355,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let kind = existing.map_or_else(
                 || match expected_form {
-                    Some(PatternForm::Linear) => "LinearPattern".into(),
-                    Some(PatternForm::Circular) => "CircularPattern".into(),
-                    Some(PatternForm::CurveDriven) => "CrvPattern".into(),
-                    Some(PatternForm::Mirror) => "Mirror".into(),
-                    Some(PatternForm::Scale | PatternForm::Composite) => "Pattern".into(),
+                    Some(NativePatternClass::Linear) => "LinearPattern".into(),
+                    Some(NativePatternClass::Circular) => "CircularPattern".into(),
+                    Some(NativePatternClass::CurveDriven) => "CrvPattern".into(),
+                    Some(NativePatternClass::Mirror) => "Mirror".into(),
                     None => "Pattern".into(),
                 },
                 |record| record.kind.clone(),

@@ -899,7 +899,7 @@ fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
     parameters: &mut [BinaryParameter],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
     let directory_by_offset = directory
         .iter()
@@ -936,26 +936,10 @@ fn normalize_directory_and_parameters(
             )
             .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
     }
-    let mut parameter_starts = ctx.map_or_else(
-        || {
-            cadmpeg_core::decode::alloc_filled(
-                directory.len(),
-                0_u32,
-                "iges_binary_parameter_starts",
-            )
-        },
-        |ctx| ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts"),
-    )?;
-    let mut parameter_counts = ctx.map_or_else(
-        || {
-            cadmpeg_core::decode::alloc_filled(
-                directory.len(),
-                0_usize,
-                "iges_binary_parameter_counts",
-            )
-        },
-        |ctx| ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts"),
-    )?;
+    let mut parameter_starts =
+        ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
+    let mut parameter_counts =
+        ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     for (directory_index, directory_record) in directory.iter().enumerate() {
         let pointer = directory_record.parameter_pointer;
         if pointer < 0 {
@@ -1123,24 +1107,19 @@ fn render_parameter_line(
 }
 
 fn charge_normalization(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     source_len: usize,
     normalized_len: usize,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.charge_work(
-            u64::try_from(source_len.saturating_add(normalized_len)).unwrap_or(u64::MAX),
-            "iges_binary_normalization",
-        )
-    })
+    ctx.charge_work(
+        u64::try_from(source_len.saturating_add(normalized_len)).unwrap_or(u64::MAX),
+        "iges_binary_normalization",
+    )
 }
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
-pub(crate) fn normalize(
-    source: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
     let sections = parse_sections(source)?;
     let start_text = normalize_start(sections.start, sections.lengths)?;
     let global_values = read_global(sections.global, sections.lengths)?;
@@ -1184,6 +1163,14 @@ mod tests {
     use std::io::Cursor;
 
     const EPS_POINT: f64 = 1.0e-12;
+
+    fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
+        normalize(source, &ctx)
+    }
 
     #[derive(Debug, Default)]
     struct BitWriter {
@@ -1611,7 +1598,7 @@ mod tests {
     #[test]
     fn binary_point_normalizes_into_the_existing_typed_pipeline() {
         let source = binary_point_file();
-        let normalized = normalize(&source, None).expect("valid Binary fixture");
+        let normalized = normalize_for_test(&source).expect("valid Binary fixture");
         assert_eq!(normalized[72], b'S');
         assert!(normalized
             .chunks_exact(81)
@@ -1652,7 +1639,7 @@ mod tests {
 
     #[test]
     fn binary_start_carriage_returns_become_fixed_start_records() {
-        let normalized = normalize(&binary_file_with_start(b"first\rsecond\r\nthird"), None)
+        let normalized = normalize_for_test(&binary_file_with_start(b"first\rsecond\r\nthird"))
             .expect("valid Binary Start text");
         let cards = normalized
             .chunks_exact(81)
@@ -1666,6 +1653,6 @@ mod tests {
 
     #[test]
     fn binary_start_rejects_a_lone_line_feed() {
-        assert!(normalize(&binary_file_with_start(b"first\nsecond"), None).is_err());
+        assert!(normalize_for_test(&binary_file_with_start(b"first\nsecond")).is_err());
     }
 }

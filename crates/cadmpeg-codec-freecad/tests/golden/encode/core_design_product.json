@@ -131,9 +131,10 @@
     "format": "fcstd",
     "losses": [],
     "notes": [
-      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
       "unsupported retained entries and unedited XML records were preserved"
     ],
+    "target": "fcstd:schema-4",
     "write_path": "patched"
   }
 }

@@ -13,7 +13,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, LinearTermination};
 use cadmpeg_ir::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
@@ -37,8 +37,8 @@ fn harness() -> Harness {
 /// The branches this codec pins, in golden-directory order.
 fn branches() -> [Branch; 2] {
     [
-        Branch::new("inspect", inspect_snapshot),
-        Branch::new("decode", decode_snapshot),
+        Branch::named("inspect", inspect_snapshot),
+        Branch::named("decode", decode_snapshot),
     ]
 }
 
@@ -60,7 +60,8 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(mut result) => {
+            Ok(result) => {
+                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
                 if let Some(source) = result.ir_mut().source.as_mut() {
                     // The `native` lane digests cover retained source bytes and
                     // stay pinned; a `_local_sha256` digest covers decoded
@@ -194,7 +195,7 @@ fn neutral_document(bytes: &[u8]) -> String {
 fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
     let mut document = serde_json::json!({
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     let mut positions = BTreeSet::new();
@@ -288,7 +289,7 @@ fn fixtures_survive_the_semantic_write_path() {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
                 assert_eq!(
-                    report.write_path,
+                    report.write_path(),
                     WritePath::Patched,
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
@@ -326,7 +327,7 @@ fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
             return None;
         };
         match &mut side.termination {
-            Termination::Blind { length } => Some(length),
+            LinearTermination::Blind { length } => Some(length),
             _ => None,
         }
     }
@@ -366,11 +367,12 @@ fn an_edited_depth_survives_the_semantic_write_path() {
             },
             |outcome| match outcome {
                 MutationOutcome::Written { edited, bytes, .. } => {
-                    let mut written = SldprtCodec
+                    let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
                             panic!("fixture `{name}`: written container does not decode: {error}")
                         });
+                    let mut written = cadmpeg_test_support::EditableDecodeResult::from(written);
                     let mut expected = edited.clone();
                     let moved = depths(&mut expected);
                     let returned = depths(&mut written.ir_mut());

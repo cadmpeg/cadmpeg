@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
+use crate::decode::axis::{Axis, Sign};
+use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
+use crate::curve::CurveTopologyRow;
 
 use super::super::holes::plane_envelope_corners;
 use super::super::sketch::normalized;
@@ -17,10 +21,11 @@ use super::super::surfaces::{
 
 use super::edges::nurbs_intrinsic_parameter_range;
 use super::equations::{
-    cross, dot, intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
+    intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
 };
 use super::vertices::model_points_agree;
+use crate::vecmath::{cross, dot};
 
 const EPS_ON_CARRIER: f64 = 1.0e-7;
 const EPS_POINT_UNIQUE: f64 = 1.0e-7;
@@ -51,19 +56,19 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
-                (normalized(cone.axis), normalized(cone.ref_direction))
+                (normalized(cone.axis()), normalized(cone.ref_direction()))
             else {
                 return false;
             };
-            if cone.ratio <= 0.0 || !cone.ratio.is_finite() || dot(axis, x_axis).abs() > EPS_ORTHO {
+            if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return false;
             }
             let y_axis = cross(axis, x_axis);
-            let relative = std::array::from_fn(|index| point[index] - cone.origin[index]);
+            let relative = std::array::from_fn(|index| point[index] - cone.origin()[index]);
             let axial = dot(relative, axis);
-            let radius = cone.radius + axial * cone.half_angle.tan();
+            let radius = cone.radius() + axial * cone.half_angle().tan();
             let radial_x = dot(relative, x_axis);
-            let radial_y = dot(relative, y_axis) / cone.ratio;
+            let radial_y = dot(relative, y_axis) / cone.ratio();
             (radial_x.hypot(radial_y) - radius.abs()).abs()
                 <= EPS_ON_CARRIER * radius.abs().max(1.0)
         }
@@ -367,7 +372,8 @@ pub fn reconciled_model_plane(
     ir: &CadIr,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
-    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar");
     let model_surfaces = ir
         .model
         .surfaces
@@ -463,13 +469,7 @@ fn stored_parameter_normal_candidate(
     mirror_z: bool,
     mirror_origin_z: bool,
 ) -> Option<PlaneCandidate> {
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
@@ -554,13 +554,7 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     if frame.classification == crate::surface::LocalSystemClassification::Simple {
         return None;
     }
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
@@ -674,7 +668,11 @@ fn stored_frame_branch_constraints(
     domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
 ) -> Vec<PlaneBranchConstraint> {
     let mut constraints = Vec::new();
-    let mut add = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+    let mut add = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        let [Some(first), Some(second)] = faces else {
+            return;
+        };
+        let faces = [first.get(), second.get()];
         if faces[0] == faces[1] {
             return;
         }
@@ -719,14 +717,15 @@ fn stored_frame_branch_constraints(
         );
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
         };
         add(
-            pcurve.faces,
+            faces,
             super::pcurves::canonicalized_pcurve_endpoints(
                 scan,
-                pcurve.faces,
+                faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),
@@ -746,7 +745,7 @@ fn fc05_cylinder_branch_witnesses(
             let frame = fc05_cap_pair_model_frame(scan, pair)?;
             let legacy = super::equations::CylinderEquation {
                 origin: frame.origin,
-                axis: frame.axis,
+                axis: frame.unit_vector(),
                 ref_direction: frame.ref_direction,
                 radius: pair.radius_mm,
             };
@@ -769,8 +768,7 @@ fn fc05_cylinder_branch_witnesses(
             continue;
         };
         let planes = topology
-            .faces
-            .into_iter()
+            .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
@@ -781,8 +779,7 @@ fn fc05_cylinder_branch_witnesses(
             })
             .collect::<Vec<_>>();
         let cylinders = topology
-            .faces
-            .into_iter()
+            .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
@@ -791,24 +788,25 @@ fn fc05_cylinder_branch_witnesses(
         let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
             continue;
         };
-        let Some(axis_index) =
-            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_AXIS)
         else {
             continue;
         };
-        let (reference, axis_sign) = circle
-            .reference_direction_row_frame
-            .zip(circle.parameter_sign)
-            .map_or(
-                (
-                    circle.sample_direction_row_frame,
-                    cap.normal[axis_index].signum(),
-                ),
-                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
-            );
+        let (reference, axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                Sign::of_component(cap.normal[axis_index.index()]),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
+        };
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,
-            cap.origin[axis_index],
+            cap.origin[axis_index.index()],
             circle.center_row_frame,
             reference,
             axis_sign,
@@ -828,10 +826,9 @@ fn fc05_cylinder_branch_witnesses(
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
     for topology in &scan.curves.topology_rows {
-        let Some((cylinder_id, plane_id)) = topology.faces.into_iter().find_map(|first| {
+        let Some((cylinder_id, plane_id)) = topology.bounded_face_ids().find_map(|first| {
             let second = topology
-                .faces
-                .into_iter()
+                .bounded_face_ids()
                 .find(|candidate| *candidate != first)?;
             if cylinder_frames.contains_key(&first)
                 && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
@@ -872,17 +869,17 @@ pub(crate) fn fc05_cylinder_model_witness(
     cylinder_id: u32,
     legacy: super::equations::CylinderEquation,
 ) -> super::equations::CylinderEquation {
-    let curve_ids = scan
-        .curves
-        .fc05_circles
-        .iter()
-        .filter(|circle| {
-            scan.curves.topology_rows.iter().any(|topology| {
-                topology.id == circle.curve_id && topology.faces.contains(&cylinder_id)
+    let curve_ids =
+        scan.curves
+            .fc05_circles
+            .iter()
+            .filter(|circle| {
+                scan.curves.topology_rows.iter().any(|topology| {
+                    topology.id == circle.curve_id && topology.bounds_face(cylinder_id)
+                })
             })
-        })
-        .map(|circle| circle.curve_id)
-        .collect::<BTreeSet<_>>();
+            .map(|circle| circle.curve_id)
+            .collect::<BTreeSet<_>>();
     let circles = curve_ids
         .iter()
         .flat_map(|curve_id| {
@@ -970,8 +967,8 @@ fn fc05_tangent_plane_score(
     scan.curves
         .topology_rows
         .iter()
-        .filter(|topology| topology.faces.contains(&cylinder_id))
-        .flat_map(|topology| topology.faces.into_iter())
+        .filter(|topology| topology.bounds_face(cylinder_id))
+        .flat_map(CurveTopologyRow::bounded_face_ids)
         .filter(|face_id| *face_id != cylinder_id)
         .filter(|face_id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
@@ -1036,7 +1033,7 @@ fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, Ca
         .filter_map(|row| {
             let frame =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-                    .positional_cylinder_frame?;
+                    .positional_cylinder_frame()?;
             Some((
                 row.id,
                 CarrierEquation::Cylinder(super::equations::CylinderEquation {
@@ -1056,7 +1053,11 @@ fn select_stored_frame_carrier_pcurve_branches(
     domains: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
     let carriers = native_positional_cylinder_carriers(scan);
-    let mut apply = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+    let mut apply = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        let [Some(first), Some(second)] = faces else {
+            return;
+        };
+        let faces = [first.get(), second.get()];
         for face_index in 0..2 {
             let plane_id = faces[face_index];
             let Some(options) = variable_domains.get(&plane_id) else {
@@ -1104,14 +1105,15 @@ fn select_stored_frame_carrier_pcurve_branches(
         );
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
         };
         apply(
-            pcurve.faces,
+            faces,
             super::pcurves::canonicalized_pcurve_endpoints(
                 scan,
-                pcurve.faces,
+                faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),
@@ -1332,23 +1334,22 @@ fn round_edge_envelopes_for_plane(
     crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|topology| {
-            let cylinder_id = topology.faces.into_iter().find(|face_id| {
+            let cylinder_id = topology.bounded_face_ids().find(|face_id| {
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
-                            && row.type_byte == 0x24
-                            && crate::decode::sketch_transfer::feature_schema_class(
+                            && crate::decode::sketch_transfer::recipe::feature_schema_class(
                                 scan,
                                 row.feature_id,
-                            ) == Some(913)
+                            ) == Some(SchemaClass::Round)
                     })
             })?;
-            if !topology.faces.contains(&plane_id) {
+            if !topology.bounds_face(plane_id) {
                 return None;
             }
             let record =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
-            record.type24_round_edge_envelope(0x24)
+            record.type24_round_edge_envelope()
         })
         .collect()
 }
@@ -1358,14 +1359,18 @@ fn select_round_edge_origin_branches(
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
     for frame in &scan.planes.local_systems {
+        let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
             continue;
         }
         let Some(existing) = candidates.get(&frame.surface_id) else {
             continue;
         };
-        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
-        else {
+        let (Some(origin), Some(normal), Some(u_axis)) = (
+            decoded_frame.origin,
+            decoded_frame.normal,
+            decoded_frame.u_axis,
+        ) else {
             continue;
         };
         let base = PlaneCandidate {
@@ -1429,10 +1434,11 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
     );
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
-        let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
+        let decoded_frame = frame.frame();
+        let (Some(origin), Some(normal)) = (decoded_frame.origin, decoded_frame.normal) else {
             continue;
         };
-        let Some(u_axis) = frame.u_axis else {
+        let Some(u_axis) = decoded_frame.u_axis else {
             continue;
         };
         let frame_candidate = PlaneCandidate {
@@ -1468,7 +1474,12 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         .planes
         .local_systems
         .iter()
-        .filter(|frame| frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some())
+        .filter(|frame| {
+            let decoded_frame = frame.frame();
+            decoded_frame.origin.is_some()
+                && decoded_frame.normal.is_some()
+                && decoded_frame.u_axis.is_some()
+        })
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
     for outline in &scan.planes.outlines {
@@ -1548,13 +1559,14 @@ pub fn frame_bound_outline_plane_candidate(
     outline: &crate::surface::OutlinePlane,
 ) -> Option<PlaneCandidate> {
     (frame.surface_id == outline.surface_id).then_some(())?;
-    let frame_normal = normalized(frame.normal?)?;
-    let frame_u_axis = normalized(frame.u_axis?)?;
+    let decoded_frame = frame.frame();
+    let frame_normal = normalized(decoded_frame.normal?)?;
+    let frame_u_axis = normalized(decoded_frame.u_axis?)?;
     let outline_normal = normalized(outline.normal)?;
     let outline_u_axis = normalized(outline.u_axis)?;
     (dot(frame_normal, outline_normal) >= 1.0 - EPS_AGREE).then_some(())?;
     (dot(frame_u_axis, outline_u_axis) >= 1.0 - EPS_AGREE).then_some(())?;
-    let frame_origin = frame.origin?;
+    let frame_origin = decoded_frame.origin?;
     let displacement = dot(outline_normal, outline.origin) - dot(outline_normal, frame_origin);
     let chart_origin =
         std::array::from_fn(|axis| displacement.mul_add(outline_normal[axis], frame_origin[axis]));
@@ -1565,8 +1577,8 @@ pub fn frame_bound_outline_plane_candidate(
         },
         chart: Some(PlaneChart {
             origin: chart_origin,
-            normal: frame.normal?,
-            u_axis: frame.u_axis?,
+            normal: decoded_frame.normal?,
+            u_axis: decoded_frame.u_axis?,
         }),
         offset: frame.offset,
     })
@@ -1576,7 +1588,8 @@ pub fn envelope_reconciled_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     equation: PlaneEquation,
 ) -> Option<PlaneCandidate> {
-    let origin = frame.origin?;
+    let decoded_frame = frame.frame();
+    let origin = decoded_frame.origin?;
     let normal = normalized(equation.normal)?;
     let origin_scale = origin
         .iter()
@@ -1585,13 +1598,7 @@ pub fn envelope_reconciled_plane_candidate(
         .fold(1.0, f64::max);
     ((dot(normal, origin) - dot(normal, equation.origin)).abs() <= EPS_AGREE * origin_scale)
         .then_some(())?;
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     let supports = [
         <[f64; 3]>::try_from(&slots[0..3]).ok()?,
         <[f64; 3]>::try_from(&slots[3..6]).ok()?,
@@ -1751,7 +1758,7 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
             valid_positive_nurbs_curve(nurbs)?;
             let plane = topology_bound_plane(
                 nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| [point.x, point.y, point.z]),
             )?;
@@ -1775,20 +1782,20 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
             normalized([direction.x, direction.y, direction.z])?,
         ),
         CurveGeometry::Nurbs(nurbs) => {
-            (nurbs.degree == 1 && !nurbs.periodic).then_some(())?;
+            (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
             valid_positive_nurbs_curve(nurbs)?;
-            let first = *nurbs.control_points.first()?;
-            let last = *nurbs.control_points.last()?;
+            let first = *nurbs.control_points().first()?;
+            let last = *nurbs.control_points().last()?;
             let origin = [first.x, first.y, first.z];
             let direction = normalized([last.x - first.x, last.y - first.y, last.z - first.z])?;
             let scale = nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .flat_map(|point| [point.x, point.y, point.z])
                 .map(f64::abs)
                 .fold(1.0, f64::max);
             nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .map(|point| {
                     let relative = [
@@ -1811,8 +1818,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
 pub fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
     nurbs_intrinsic_parameter_range(nurbs)?;
     nurbs
-        .weights
-        .as_ref()
+        .weights()
         .is_none_or(|weights| {
             weights
                 .iter()

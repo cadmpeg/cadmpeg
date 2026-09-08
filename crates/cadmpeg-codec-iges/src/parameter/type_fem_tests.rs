@@ -2,13 +2,13 @@
 //! FEM Parameter Data boundary tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 
 use super::{
     analyze_trailing_pointer_groups, entity_primary_end, groups_for_candidate,
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
-use crate::directory::{DirectoryEntry, Status};
 
 fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
@@ -22,12 +22,7 @@ fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntr
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -117,10 +112,10 @@ fn fixed_and_counted_fem_boundaries_stop_before_pointer_groups() {
     for (case_index, (_entry, record, expected_end)) in cases.into_iter().enumerate() {
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
         let groups = analyze_trailing_pointer_groups(&record, &directory)
-            .groups
+            .groups()
             .unwrap_or_else(|| panic!("FEM trailing pointer groups case {case_index}"));
         assert_eq!(groups.token_start, expected_end);
-        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
     }
 }
 
@@ -168,17 +163,17 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end
                     && groups_for_candidate(&record, &directory, *candidate)
-                        .is_some_and(|groups| groups.fully_valid)
+                        .is_some_and(|groups| groups.fully_valid())
             }),
             "Type {entity_type} Form {form}"
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("FEM table boundary");
+        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(analysis.valid_candidate_count(), 1);
+        let groups = analysis.groups().expect("FEM table boundary");
         assert_eq!(groups.token_start, expected_end);
-        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
     }
 }
 
@@ -271,7 +266,7 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
         let record = token_record(sequence, &values);
         assert_eq!(entity_primary_end(&record, &directory), Some(values.len()));
         assert!(analyze_trailing_pointer_groups(&record, &directory)
-            .groups
+            .groups()
             .is_none());
     }
 }
@@ -287,6 +282,6 @@ fn element_results_boundary_rejects_an_incomplete_variable_item() {
         Some(record.tokens.len())
     );
     assert!(analyze_trailing_pointer_groups(&record, &directory)
-        .groups
+        .groups()
         .is_none());
 }

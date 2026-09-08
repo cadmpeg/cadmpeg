@@ -2,8 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::annotated_entity_json;
-use crate::annotations::{ExactnessNote, StreamProvenance};
-use crate::provenance::Exactness;
 use crate::report::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
@@ -13,48 +11,31 @@ use std::collections::HashSet;
 #[test]
 fn model_entity_wins_when_native_id_collides() {
     let mut ir = unit_cube();
-    let id = ir.model.points[0].id.0.clone();
-    ir.native.0.insert(
-        "collision".into(),
-        NativeNamespace {
-            version: 1,
-            arenas: [(
-                "records".into(),
-                vec![NativeRecord::new(
-                    id.clone(),
-                    Map::from_iter([("native_only".into(), Value::Bool(true))]),
-                )],
-            )]
-            .into(),
-        },
+    let id = ir.model.points[0].id.as_str().to_owned();
+    let mut namespace = NativeNamespace::default();
+    namespace.arenas_mut().insert(
+        "records".into(),
+        vec![NativeRecord::new(
+            id.clone(),
+            Map::from_iter([("native_only".into(), Value::Bool(true))]),
+        )
+        .expect("valid native identity")],
     );
+    ir.native.0.insert("collision".into(), namespace);
     let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
     assert!(entities[&id].get("position").is_some());
     assert!(entities[&id].get("native_only").is_none());
 }
 
 #[test]
-fn annotation_keys_streams_and_field_paths_are_checked() {
+fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube();
     let mut source_fidelity = crate::SourceFidelity::default();
-    source_fidelity.annotations.provenance.insert(
-        "missing".into(),
-        StreamProvenance {
-            stream: u32::MAX,
-            offset: 0,
-            tag: None,
-        },
-    );
-    source_fidelity.annotations.exactness.insert(
-        ir.model.edges[0].id.0.clone(),
-        ExactnessNote {
-            entity: Exactness::Derived,
-            fields: std::collections::BTreeMap::from([(
-                "not_a_serialized_field".into(),
-                Exactness::Derived,
-            )]),
-        },
-    );
+    let mut annotations = crate::AnnotationBuilder::new();
+    let stream = annotations.stream("test:source");
+    annotations.note("missing", stream, 0);
+    annotations.derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field");
+    source_fidelity.annotations = annotations.build();
     let findings =
         crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
@@ -68,12 +49,13 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
 #[test]
 fn native_topology_link_must_resolve() {
     let mut ir = unit_cube();
-    ir.native.namespace_mut("f3d").arenas.insert(
+    ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
-            "native:link#0",
+            "native:test:link#0",
             serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
-        )],
+        )
+        .expect("valid native identity")],
     );
     ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())
@@ -85,12 +67,14 @@ fn native_topology_link_must_resolve() {
 #[test]
 fn parameter_native_ref_must_resolve() {
     let mut ir = unit_cube();
-    let id = crate::features::ParameterId("synthetic:test:parameter#native-ref".into());
+    let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
+        .expect("identity grammar");
     ir.model.parameters.push(crate::features::DesignParameter {
         id: id.clone(),
-        owner: Some(crate::features::FeatureId(
-            "synthetic:test:feature#missing".into(),
-        )),
+        owner: Some(
+            crate::features::FeatureId::mint("synthetic:test:feature#missing")
+                .expect("identity grammar"),
+        ),
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
@@ -113,7 +97,7 @@ fn parameter_native_ref_must_resolve() {
         .findings
         .iter()
         .any(|finding| {
-            finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.0.as_str())
+            finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.as_str())
         }));
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -121,7 +105,7 @@ fn parameter_native_ref_must_resolve() {
         .any(|finding| {
             finding.check == Check::NativeLinks
                 && finding.message.contains("PMI native_ref")
-                && finding.entity.as_deref() == Some(id.0.as_str())
+                && finding.entity.as_deref() == Some(id.as_str())
         }));
 }
 
@@ -131,7 +115,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
     ir.set_native_unknowns(
         "test",
         &[crate::NativeUnknownRecord {
-            id: crate::ids::UnknownId("test:unknown#0".into()),
+            id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),
             links: vec!["test:missing#0".into()],
         }],
     )
@@ -145,5 +129,5 @@ fn unresolved_unknown_record_link_is_reported_once() {
         })
         .collect::<Vec<_>>();
     assert_eq!(reported.len(), 1);
-    assert_eq!(reported[0].entity.as_deref(), Some("test:unknown#0"));
+    assert_eq!(reported[0].entity.as_deref(), Some("test:model:unknown#0"));
 }

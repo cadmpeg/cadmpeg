@@ -5,12 +5,44 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn translation(x: f64, y: f64, z: f64) -> Transform {
+    Transform::affine([[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]])
+        .expect("translation is affine")
+}
+
+fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
+    match kind {
+        TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
+            tolerance: 0.0,
+            point: Point3::new(0.0, 0.0, 0.0),
+            representations: Vec::new(),
+        },
+        TextShapeKind::Edge => TextTShapeGeometry::Edge {
+            tolerance: 0.0,
+            same_parameter: false,
+            same_range: false,
+            degenerated: false,
+            representations: Vec::new(),
+        },
+        TextShapeKind::Face => TextTShapeGeometry::Face {
+            natural_restriction: false,
+            tolerance: 0.0,
+            surface: 0,
+            location: 0,
+            triangulation: None,
+        },
+        TextShapeKind::Wire => TextTShapeGeometry::Wire,
+        TextShapeKind::Shell => TextTShapeGeometry::Shell,
+        TextShapeKind::Solid => TextTShapeGeometry::Solid,
+        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
+        TextShapeKind::Compound => TextTShapeGeometry::Compound,
+    }
+}
+
 #[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
-    let mut positive = Transform::identity();
-    positive.rows[0][3] = 0.5e-12;
-    let mut negative = Transform::identity();
-    negative.rows[0][3] = -0.5e-12;
+    let positive = translation(0.5e-12, 0.0, 0.0);
+    let negative = translation(-0.5e-12, 0.0, 0.0);
 
     assert_ne!(
         OccurrenceKey::new(7, positive),
@@ -25,11 +57,8 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
         SourceOccurrenceKey::new(7, negative)
     );
 
-    let mut composed = Transform::identity();
-    composed.rows[0][3] = 258.75;
-    composed.rows[2][3] = -1.4e-14;
-    let mut direct = Transform::identity();
-    direct.rows[0][3] = 258.75;
+    let composed = translation(258.75, 0.0, -1.4e-14);
+    let mut direct = translation(258.75, 0.0, 0.0);
 
     assert_ne!(
         OccurrenceKey::new(14, composed),
@@ -40,7 +69,7 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
         SourceOccurrenceKey::new(14, direct)
     );
 
-    direct.rows[2][3] = 1.0e-8;
+    direct = translation(258.75, 0.0, 1.0e-8);
     assert_ne!(
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
@@ -52,16 +81,14 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
 
 #[test]
 fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
-    let mut translated = Transform::identity();
-    translated.rows[0][3] = 10.0;
+    let translated = translation(10.0, 0.0, 0.0);
     let locations = [TextLocation {
         factors: Vec::new(),
         transform: translated,
     }];
     let tshapes = [TextTShape {
         index: 1,
-        kind: TextShapeKind::Edge,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(TextShapeKind::Edge),
         flags: [false; 7],
         children: Vec::new(),
     }];
@@ -118,8 +145,7 @@ fn source_indices_follow_depth_first_topology_order() {
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
-        kind,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
@@ -182,8 +208,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
-        kind,
-        geometry: TextTShapeGeometry::Empty,
+        geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
@@ -315,17 +340,29 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
 
 #[test]
 fn edge_representation_selection_follows_family_rules() {
-    let representation = |kind, primary| TextEdgeRepresentation {
-        kind,
-        primary,
-        secondary: None,
-        surface: None,
-        second_surface: None,
-        location: 0,
-        second_location: None,
-        parameter_range: None,
-        continuity: None,
-        uv_endpoints: None,
+    let representation = |kind, primary| match kind {
+        1 => TextEdgeRepresentation::Curve3d {
+            curve: primary,
+            location: 0,
+            parameter_range: [0.0, 0.0],
+        },
+        2 => TextEdgeRepresentation::Pcurve {
+            curve: primary,
+            surface: 0,
+            location: 0,
+            parameter_range: [0.0, 0.0],
+            uv_endpoints: None,
+        },
+        5 => TextEdgeRepresentation::Polygon3d {
+            polygon: primary,
+            location: 0,
+        },
+        6 => TextEdgeRepresentation::PolygonOnTriangulation {
+            polygon: primary,
+            triangulation: 0,
+            location: 0,
+        },
+        _ => panic!("test helper kind {kind}"),
     };
     let curves = [
         TextCurve::Line {
@@ -371,8 +408,10 @@ fn edge_representation_selection_follows_family_rules() {
     ));
 
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
-    let selected = first_edge_representation(&matching_pcurves, |candidate| candidate.kind == 2)
-        .expect("first matching pcurve");
+    let selected = first_edge_representation(&matching_pcurves, |candidate| {
+        matches!(candidate, TextEdgeRepresentation::Pcurve { .. })
+    })
+    .expect("first matching pcurve");
     assert_eq!(selected.0, 0);
 
     let exact_precedes_polygon = [representation(5, 1), representation(1, 1)];
@@ -525,20 +564,19 @@ Co
 
 #[test]
 fn non_manifold_incidence_does_not_invent_a_radial_order() {
-    let edge = EdgeId("edge".into());
+    let edge = EdgeId::mint("fcstd:test:edge#1").expect("identity grammar");
     let mut coedges = (0..3)
         .map(|index| {
-            let id = CoedgeId(format!("coedge-{index}"));
+            let id =
+                CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId(format!("loop-{index}")),
+                owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}"))
+                    .expect("identity grammar"),
                 edge: edge.clone(),
-                next: id.clone(),
-                previous: id.clone(),
                 radial_next: id,
                 sense: Sense::Forward,
                 use_curve: None,
-                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             }
         })
@@ -548,17 +586,16 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
     let mut four = (0..4)
         .map(|index| {
-            let id = CoedgeId(format!("coedge-four-{index}"));
+            let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}"))
+                .expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId(format!("loop-four-{index}")),
+                owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}"))
+                    .expect("identity grammar"),
                 edge: edge.clone(),
-                next: id.clone(),
-                previous: id.clone(),
                 radial_next: id,
                 sense: Sense::Forward,
                 use_curve: None,
-                use_curve_parameter_range: None,
                 pcurves: Vec::new(),
             }
         })
@@ -575,17 +612,14 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         original_ids.iter().collect::<Vec<_>>()
     );
 
-    let id = CoedgeId("coedge-single".into());
+    let id = CoedgeId::mint("fcstd:test:coedge#single").expect("identity grammar");
     let mut singleton = vec![Coedge {
         id: id.clone(),
-        owner_loop: LoopId("loop-single".into()),
+        owner_loop: LoopId::mint("fcstd:test:loop#single").expect("identity grammar"),
         edge,
-        next: id.clone(),
-        previous: id.clone(),
         radial_next: id.clone(),
         sense: Sense::Forward,
         use_curve: None,
-        use_curve_parameter_range: None,
         pcurves: Vec::new(),
     }];
     close_radial_rings(&mut singleton);
@@ -635,14 +669,17 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 #[test]
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![2.0, 2.0, 4.0, 4.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![2.0, 2.0, 4.0, 4.0],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
     };
 
     assert_eq!(
@@ -784,7 +821,7 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.0.ends_with("3%3A2%3A1") }));
+        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A2%3A1") }));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -864,7 +901,6 @@ Co 1001000 +2 0 *
     assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
     assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
     let namespace = result.ir().native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 22);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -953,20 +989,16 @@ So 1001000 +2 0 *
         .expect("triangulation-only topology");
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices[0].x, 0.0);
+    assert_eq!(result.ir().model.tessellations[0].vertices()[0].x, 0.0);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal {
-            chordal_deflection: 0.02,
-            ..
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal(ref surface)
+            if (surface.chordal_deflection() - 0.02).abs() < f64::EPSILON
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Polyline {
-            chordal_deflection: 0.01,
-            ..
-        }
+        cadmpeg_ir::geometry::CurveGeometry::Polyline(ref polyline)
+            if (polyline.chordal_deflection() - 0.01).abs() < f64::EPSILON
     ));
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
     assert!(result.report().losses.is_empty());
@@ -1094,7 +1126,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
     assert!(result.ir().model.edges[0]
         .curve
         .as_ref()
-        .is_some_and(|curve| curve.0.ends_with(":1")));
+        .is_some_and(|curve| curve.as_str().ends_with(":1")));
 }
 
 #[test]
@@ -1280,8 +1312,8 @@ Co 1001000 +2 1 +2 3 *
         basis.as_ref(),
         cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
     ));
-    assert_eq!(transform.rows[0][0], -2.0);
-    assert_eq!(transform.rows[1][1], 2.0);
+    assert_eq!(transform.rows()[0][0], -2.0);
+    assert_eq!(transform.rows()[1][1], 2.0);
     let origin =
         cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);

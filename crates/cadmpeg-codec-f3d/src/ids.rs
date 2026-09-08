@@ -4,11 +4,11 @@
 //! Segment vocabulary, separators, ordering, escaping, and `#{len}:{key}`
 //! length-prefixes. Callers build IDs through the named functions below.
 
-use crate::records::{
+use crate::records::feature::{
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection,
-    DesignCombineExternalBodyIdentity, DesignParameter, DesignParameterScope,
-    DesignSketchPlacement,
+    DesignCombineExternalBodyIdentity, DesignParameterScope,
 };
+use crate::records::{DesignParameter, DesignSketchPlacement};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -115,25 +115,28 @@ pub(crate) fn neutral_xref_occurrence_id(
     reference_ordinal: u32,
     occurrence_ordinal: u32,
 ) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral local component definition projected from its stable Design GUID.
 pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
-    cadmpeg_ir::ids::ProductDefinitionId(format!(
+    cadmpeg_ir::ids::ProductDefinitionId::mint(format!(
         "f3d:model:component#{}",
         guid.to_ascii_lowercase()
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral local occurrence projected from its stable Design GUID.
 pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#{}",
         guid.to_ascii_lowercase()
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral occurrence identity for an external component-insert scope whose
@@ -142,26 +145,28 @@ pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#component-insert-{}:{}{}:{}",
         stream.len(),
         stream,
         scope.feature_ordinal,
         scope.record_index,
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
 pub(crate) fn neutral_assembly_joint_id(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::products::JointId(format!(
+    cadmpeg_ir::products::JointId::mint(format!(
         "f3d:model:joint#{}:{}{}",
         stream.len(),
         stream,
         scope.record_index
     ))
+    .expect("identity grammar")
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -178,7 +183,7 @@ pub(crate) fn neutral_face_appearance_binding_id(
     visual_guid: &str,
     face: &cadmpeg_ir::ids::FaceId,
 ) -> String {
-    let face = identity_key_component(&face.0);
+    let face = identity_key_component(face.as_str());
     format!(
         "f3d:appearance:face#{face_guid}:{visual_guid}:{}:{face}",
         face.len()
@@ -193,21 +198,22 @@ pub(crate) fn neutral_configuration_id(
 ) -> cadmpeg_ir::features::ConfigurationId {
     let entry_name = identity_key_component(entry_name);
     let variant_name = identity_key_component(variant_name);
-    cadmpeg_ir::features::ConfigurationId(format!(
+    cadmpeg_ir::features::ConfigurationId::mint(format!(
         "f3d:configuration:variant#{}:{}{}:{}",
         entry_name.len(),
         entry_name,
         variant_name.len(),
         variant_name,
     ))
+    .expect("identity grammar")
 }
 
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
-        &scope.kind,
-        scope.feature_ordinal,
+        scope.kind_name(),
+        scope.feature_ordinal.get(),
         scope.record_index,
     )
 }
@@ -222,7 +228,7 @@ pub(crate) fn neutral_feature_id_parts(
 ) -> cadmpeg_ir::features::FeatureId {
     let stream = identity_key_component(stream);
     let kind = identity_key_component(kind);
-    cadmpeg_ir::features::FeatureId(format!(
+    cadmpeg_ir::features::FeatureId::mint(format!(
         "f3d:model:feature#{}:{}{}:{}{}:{}",
         stream.len(),
         stream,
@@ -231,24 +237,27 @@ pub(crate) fn neutral_feature_id_parts(
         feature_ordinal,
         scope_record_index,
     ))
+    .expect("identity grammar")
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
 pub(crate) fn neutral_combine_external_body_id(
     identity: &DesignCombineExternalBodyIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(&identity.selector_asset_id);
-    let selector_context = identity_key_component(&identity.selector_context_id);
-    let external_asset = identity_key_component(&identity.external_asset_id);
+    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
+    let selector_context = identity_key_component(identity.selector_context_id.as_str());
+    let external_asset = identity_key_component(identity.external_asset_id.as_str());
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
-        .external_property_key
-        .as_deref()
+        .external_version
+        .as_ref()
+        .map(|version| version.property_key.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     let version_urn = identity
-        .external_version_urn
-        .as_deref()
+        .external_version
+        .as_ref()
+        .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -264,10 +273,10 @@ pub(crate) fn neutral_combine_external_body_id(
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_property_key.is_some()),
+        u8::from(identity.external_version.is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version_urn.is_some()),
+        u8::from(identity.external_version.is_some()),
         version_urn.len(),
         version_urn,
     )
@@ -277,19 +286,23 @@ pub(crate) fn neutral_combine_external_body_id(
 pub(crate) fn neutral_assembly_axial_object_id(
     identity: &DesignAssemblyAxialSelectorIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(&identity.selector_asset_id.to_ascii_lowercase());
+    let selector_asset =
+        identity_key_component(&identity.selector_asset_id.as_str().to_ascii_lowercase());
     let selector_context =
-        identity_key_component(&identity.selector_context_id.to_ascii_lowercase());
-    let external_asset = identity_key_component(&identity.external_asset_id.to_ascii_lowercase());
+        identity_key_component(&identity.selector_context_id.as_str().to_ascii_lowercase());
+    let external_asset =
+        identity_key_component(&identity.external_asset_id.as_str().to_ascii_lowercase());
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
-        .external_property_key
-        .as_deref()
+        .external_version
+        .as_ref()
+        .map(|version| version.property_key.value.as_str())
         .map(|value| identity_key_component(&value.to_ascii_lowercase()))
         .unwrap_or_default();
     let version_urn = identity
-        .external_version_urn
-        .as_deref()
+        .external_version
+        .as_ref()
+        .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -304,10 +317,10 @@ pub(crate) fn neutral_assembly_axial_object_id(
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_property_key.is_some()),
+        u8::from(identity.external_version.is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version_urn.is_some()),
+        u8::from(identity.external_version.is_some()),
         version_urn.len(),
         version_urn,
     )
@@ -318,8 +331,8 @@ pub(crate) fn neutral_assembly_axial_object_id(
 pub(crate) fn neutral_assembly_legacy_object_id(
     selection: &DesignAssemblyLegacySelection,
 ) -> String {
-    let asset = identity_key_component(&selection.asset_id.to_ascii_lowercase());
-    let context = identity_key_component(&selection.context_id.to_ascii_lowercase());
+    let asset = identity_key_component(&selection.asset_id.as_str().to_ascii_lowercase());
+    let context = identity_key_component(&selection.context_id.as_str().to_ascii_lowercase());
     let recipe = identity_key_component(&selection.recipe_id.to_ascii_lowercase());
     format!(
         "f3d:feature-input:connector#assembly-legacy:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -337,7 +350,8 @@ pub(crate) fn neutral_assembly_legacy_object_id(
 /// The neutral embedded-asset key for one exact archive entry.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = identity_key_component(entry_name);
-    cadmpeg_ir::assets::AssetId(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
+    cadmpeg_ir::assets::AssetId::mint(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
+        .expect("identity grammar")
 }
 
 /// The neutral parameter key for a design `parameter`.
@@ -357,12 +371,13 @@ pub(crate) fn neutral_parameter_id_parts(
     record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
     let stream = identity_key_component(stream);
-    cadmpeg_ir::features::ParameterId(format!(
+    cadmpeg_ir::features::ParameterId::mint(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
         stream,
         record_index,
     ))
+    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch key for a sketch `placement`.
@@ -385,7 +400,10 @@ pub(crate) fn neutral_spatial_sketch_id(
 /// identical between the planar and spatial variants.
 fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> String {
     let stream = identity_key_component(native_stream(&placement.id).unwrap_or(DEFAULT_STREAM));
-    format!("f3d:model:{segment}#{stream}@{}", placement.entity_suffix)
+    format!(
+        "f3d:model:{segment}#{stream}@{}",
+        placement.entity_id.suffix()
+    )
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.
@@ -541,9 +559,9 @@ pub(crate) fn neutral_dimension_constraint_id(
     form: &str,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
     let parameter_key = parameter
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(parameter.0.as_str(), |(_, key)| key);
+        .map_or(parameter.as_str(), |(_, key)| key);
     let form = identity_key_component(form);
     cadmpeg_ir::sketches::SketchConstraintId(format!(
         "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
@@ -573,7 +591,8 @@ pub(crate) fn history_input_prefix(
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
 pub(crate) fn history_input_state_id(prefix: &str) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    cadmpeg_ir::ids::FeatureInputTopologyId(format!("f3d:history-input:state#{prefix}"))
+    cadmpeg_ir::ids::FeatureInputTopologyId::mint(format!("f3d:history-input:state#{prefix}"))
+        .expect("identity grammar")
 }
 
 /// The history-input edge key for `slot` under a `prefix`.
@@ -581,7 +600,8 @@ pub(crate) fn history_input_edge_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalEdgeId {
-    cadmpeg_ir::ids::HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalEdgeId::mint(format!("f3d:history-input:edge#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input vertex key for `slot` under a `prefix`.
@@ -589,7 +609,8 @@ pub(crate) fn history_input_vertex_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalVertexId {
-    cadmpeg_ir::ids::HistoricalVertexId(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalVertexId::mint(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input face key for `slot` under a `prefix`.
@@ -597,7 +618,8 @@ pub(crate) fn history_input_face_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalFaceId {
-    cadmpeg_ir::ids::HistoricalFaceId(format!("f3d:history-input:face#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalFaceId::mint(format!("f3d:history-input:face#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input body key for `slot` under a `prefix`.
@@ -605,7 +627,8 @@ pub(crate) fn history_input_body_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalBodyId {
-    cadmpeg_ir::ids::HistoricalBodyId(format!("f3d:history-input:body#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalBodyId::mint(format!("f3d:history-input:body#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 // --- native design-record keys ---------------------------------------------
@@ -872,7 +895,8 @@ mod tests {
         neutral_face_appearance_binding_id, neutral_sketch_record_id, neutral_sketch_text_id,
         same_native_occurrence, SCHEME_PREFIX,
     };
-    use crate::records::{ConstructionRecipeKind, DesignAssemblyLegacySelection};
+    use crate::records::feature::DesignAssemblyLegacySelection;
+    use crate::records::ConstructionRecipeKind;
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -918,7 +942,7 @@ mod tests {
         let id = neutral_face_appearance_binding_id(
             "face-guid",
             "visual-guid",
-            &cadmpeg_ir::ids::FaceId("f3d:brep/path:face#12".into()),
+            &cadmpeg_ir::ids::FaceId::mint("f3d:brep/path:face#12").expect("identity grammar"),
         );
         assert_eq!(
             id,
@@ -966,10 +990,16 @@ mod tests {
         let selection = DesignAssemblyLegacySelection {
             record_index: 7,
             byte_offset: 100,
-            class_tag: "264".into(),
-            asset_id: "A B".into(),
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             asset_id_offset: 110,
-            context_id: "CTX#".into(),
+            context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             context_id_offset: 120,
             recipe_record_index: 8,
             recipe_record_byte_offset: 130,
@@ -980,7 +1010,7 @@ mod tests {
         };
         assert_eq!(
             neutral_assembly_legacy_object_id(&selection),
-            "f3d:feature-input:connector#assembly-legacy:5:a%20b:6:ctx%23:10:recipe%3A1:7:8"
+            "f3d:feature-input:connector#assembly-legacy:36:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:36:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:10:recipe%3A1:7:8"
         );
         let mut second = selection.clone();
         second.record_index += 1;

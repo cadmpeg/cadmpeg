@@ -16,19 +16,19 @@
 /// Ids are dense and assigned in registration order; the root is always
 /// [`SpaceId::ROOT`]. Error locations use the id to qualify offsets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpaceId(u32);
+pub struct SpaceId(usize);
 
 impl SpaceId {
     /// The root input space, registered first by every decode.
     pub const ROOT: SpaceId = SpaceId(0);
 
     /// Creates a session-local address-space identifier.
-    pub(crate) const fn from_index(index: u32) -> Self {
+    pub(crate) const fn from_index(index: usize) -> Self {
         Self(index)
     }
 
     /// Returns the dense index of this space.
-    pub fn index(self) -> u32 {
+    pub fn index(self) -> usize {
         self.0
     }
 }
@@ -63,16 +63,16 @@ pub enum SpaceDerivation {
     },
     /// Concatenation of several parent windows.
     Concatenated {
-        /// Parent spaces, in concatenation order.
-        parents: Vec<SpaceId>,
+        /// First parent space.
+        first_parent: SpaceId,
+        /// Remaining parent spaces, in concatenation order.
+        additional_parents: Vec<SpaceId>,
     },
 }
 
 /// Stable description of one registered address space.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceDescriptor {
-    /// Session-local identifier.
-    pub id: SpaceId,
     /// Stable label (archive member name, stream path, or `"root"`).
     pub label: String,
     /// How this space was derived.
@@ -84,7 +84,7 @@ pub struct SpaceDescriptor {
 pub struct AddressStep {
     /// Stable label for this step.
     pub label: String,
-    /// Whether this step is the root, a stored member, or an expansion.
+    /// Whether this step is the root or an archive member.
     pub kind: AddressStepKind,
 }
 
@@ -93,10 +93,8 @@ pub struct AddressStep {
 pub enum AddressStepKind {
     /// Root input file.
     Root,
-    /// Stored archive member (borrowed parent bytes).
-    StoredMember,
-    /// Expanded (inflated) archive member.
-    ExpandedMember,
+    /// Archive member, stored or expanded.
+    Member,
 }
 
 /// Owned root-to-leaf address that survives the decode session.
@@ -129,15 +127,21 @@ impl ResolvedAddress {
     /// extracted member. Root-only addresses emit `inspect hex` on the file.
     pub fn inspect_commands(&self, file: &str) -> Vec<String> {
         let leaf = self.steps.last();
-        match leaf.map(|step| step.kind) {
-            None | Some(AddressStepKind::Root) => {
+        match leaf {
+            None
+            | Some(AddressStep {
+                kind: AddressStepKind::Root,
+                ..
+            }) => {
                 vec![format!(
                     "cadmpeg inspect hex {file} --offset {} --len 64",
                     self.offset
                 )]
             }
-            Some(AddressStepKind::StoredMember | AddressStepKind::ExpandedMember) => {
-                let member = leaf.expect("leaf present").label.clone();
+            Some(AddressStep {
+                kind: AddressStepKind::Member,
+                label: member,
+            }) => {
                 let extracted = format!("{file}.member");
                 vec![
                     format!("cadmpeg inspect extract {file} {member} -o {extracted}"),
@@ -158,18 +162,15 @@ pub fn resolve_address(
 ) -> ResolvedAddress {
     let mut steps = Vec::new();
     let mut current = location.space;
-    let mut guard = 0u32;
-    while guard < descriptors.len() as u32 + 1 {
-        guard = guard.saturating_add(1);
-        let Some(descriptor) = descriptors.iter().find(|entry| entry.id == current) else {
+    for _ in 0..=descriptors.len() {
+        let Some(descriptor) = descriptors.get(current.index()) else {
             break;
         };
         let kind = match descriptor.derivation {
             SpaceDerivation::Root => AddressStepKind::Root,
-            SpaceDerivation::StoredSlice { .. } => AddressStepKind::StoredMember,
-            SpaceDerivation::Expanded { .. } | SpaceDerivation::Concatenated { .. } => {
-                AddressStepKind::ExpandedMember
-            }
+            SpaceDerivation::StoredSlice { .. }
+            | SpaceDerivation::Expanded { .. }
+            | SpaceDerivation::Concatenated { .. } => AddressStepKind::Member,
         };
         steps.push(AddressStep {
             label: descriptor.label.clone(),
@@ -181,22 +182,10 @@ pub fn resolve_address(
             | SpaceDerivation::Expanded { parent, .. } => {
                 current = parent;
             }
-            SpaceDerivation::Concatenated { ref parents } => {
-                if let Some(parent) = parents.first().copied() {
-                    current = parent;
-                } else {
-                    break;
-                }
-            }
+            SpaceDerivation::Concatenated { first_parent, .. } => current = first_parent,
         }
     }
     steps.reverse();
-    if steps.is_empty() {
-        steps.push(AddressStep {
-            label: "root".into(),
-            kind: AddressStepKind::Root,
-        });
-    }
     ResolvedAddress {
         steps,
         offset: location.offset,

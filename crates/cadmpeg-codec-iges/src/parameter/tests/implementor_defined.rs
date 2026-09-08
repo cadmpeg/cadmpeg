@@ -37,14 +37,22 @@ fn type406_implementor_defined_forms_use_common_count_boundary() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1, "Form {form}");
-        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
         let groups = analysis
-            .groups
+            .groups()
             .expect("implementor-defined property table boundary");
         assert_eq!(groups.token_start, expected_start, "Form {form}");
-        assert_eq!(groups.associations, expected_associations, "Form {form}");
-        assert_eq!(groups.properties, expected_properties, "Form {form}");
+        assert_eq!(
+            groups.associations().copied().collect::<Vec<_>>(),
+            expected_associations,
+            "Form {form}"
+        );
+        assert_eq!(
+            groups.properties().copied().collect::<Vec<_>>(),
+            expected_properties,
+            "Form {form}"
+        );
     }
 }
 
@@ -94,8 +102,8 @@ fn type406_implementor_defined_malformed_count_or_span_suppresses_generic_recove
         let record = token_parameter_record(1, values);
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 0);
-        assert_eq!(analysis.valid_candidate_count, 0);
-        assert!(analysis.groups.is_none());
+        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(analysis.valid_candidate_count(), 0);
+        assert!(analysis.groups().is_none());
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, clippy::default_trait_access, clippy::wildcard_imports)]
+#![allow(clippy::default_trait_access, clippy::wildcard_imports)]
 
 use super::prelude::*;
 
@@ -50,12 +50,9 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         parse_parameter_scope(
             bytes,
             &IndexedRecordOffsets::build(bytes),
-            &DesignRecordHeader {
-                id: "generated:scope-header#class-296-to-face".into(),
-                record_index: RECORD_INDEX,
-                class_tag: class_tag.into(),
-                byte_offset: 0,
-            },
+            RECORD_INDEX,
+            &crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            0,
         )
     };
     let parse = |bytes: &[u8], class_tag: &str| {
@@ -67,9 +64,8 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         assert_eq!(scope.frame_length, frame_length as u64);
         assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
         assert_eq!(
-            scope.extrude_prologue,
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker: None,
                 operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: layout::OPERATION as u64,
@@ -102,13 +98,15 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
     let mut invalid_side = make_bytes(462, 9);
     invalid_side[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
         .copy_from_slice(&1u32.to_le_bytes());
-    assert!(parse(&invalid_side, "296").extrude_prologue.is_none());
+    assert!(parse(&invalid_side, "296").extrude_prologue().is_none());
 
     let mut invalid_pair = make_bytes(473, 10);
     invalid_pair[473 + 4..473 + 7].copy_from_slice(b"260");
-    assert!(parse(&invalid_pair, "296").extrude_prologue.is_none());
+    assert!(parse(&invalid_pair, "296").extrude_prologue().is_none());
 
-    assert!(parse(&make_bytes(462, 9), "414").extrude_prologue.is_none());
+    assert!(parse(&make_bytes(462, 9), "414")
+        .extrude_prologue()
+        .is_none());
 }
 
 #[test]
@@ -157,21 +155,33 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-symmetric".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 symmetric-distance scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 symmetric-distance scope envelope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, 450);
     assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
-    assert_eq!(scope.reference_members, REFERENCE_MEMBERS);
     assert_eq!(
-        scope.extrude_prologue,
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        REFERENCE_MEMBERS
+    );
+    assert_eq!(
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Cut,
             operation_offset: layout::OPERATION as u64,
@@ -195,16 +205,16 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     let mut invalid_extent = bytes.clone();
     invalid_extent[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+    assert!(parse(&invalid_extent).extrude_prologue().is_none());
 
     let mut invalid_direction = bytes.clone();
     invalid_direction[layout::DIRECTION..layout::DIRECTION + 4]
         .copy_from_slice(&1u32.to_le_bytes());
-    assert!(parse(&invalid_direction).extrude_prologue.is_none());
+    assert!(parse(&invalid_direction).extrude_prologue().is_none());
 
     let mut invalid_pair = bytes;
     invalid_pair[450 + 4..450 + 7].copy_from_slice(b"260");
-    assert!(parse(&invalid_pair).extrude_prologue.is_none());
+    assert!(parse(&invalid_pair).extrude_prologue().is_none());
 }
 
 #[test]
@@ -276,21 +286,33 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-two-sided-to-faces".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 two-sided-to-faces scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 two-sided-to-faces scope envelope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, 536);
     assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
-    assert_eq!(scope.reference_members, REFERENCE_MEMBERS);
     assert_eq!(
-        scope.extrude_prologue,
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        REFERENCE_MEMBERS
+    );
+    assert_eq!(
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: layout::OPERATION as u64,
@@ -315,7 +337,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     alternate_face_extend[layout::FACE_EXTEND..layout::FACE_EXTEND + 4]
         .copy_from_slice(&1u32.to_le_bytes());
     assert!(matches!(
-        parse(&alternate_face_extend).extrude_prologue,
+        parse(&alternate_face_extend).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             direction_face_extend_values: [2, 1],
             extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
@@ -325,16 +347,16 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
 
     let mut invalid_slot = bytes.clone();
     invalid_slot[layout::REFERENCE_SLOTS] = 1;
-    assert!(parse(&invalid_slot).extrude_prologue.is_none());
+    assert!(parse(&invalid_slot).extrude_prologue().is_none());
 
     let mut invalid_profile_normal = bytes.clone();
     invalid_profile_normal[layout::PROFILE_NORMAL..layout::PROFILE_NORMAL + 8]
         .copy_from_slice(&2.0f64.to_le_bytes());
-    assert!(parse(&invalid_profile_normal).extrude_prologue.is_none());
+    assert!(parse(&invalid_profile_normal).extrude_prologue().is_none());
 
     let mut invalid_pair = bytes;
     invalid_pair[536 + 4..536 + 7].copy_from_slice(b"260");
-    assert!(parse(&invalid_pair).extrude_prologue.is_none());
+    assert!(parse(&invalid_pair).extrude_prologue().is_none());
 }
 
 #[test]
@@ -426,12 +448,18 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-legacy-one-sided".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let prologue = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .and_then(|scope| scope.extrude_prologue)
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .and_then(|scope| scope.extrude_prologue())
     };
     let assert_valid = |bytes: &[u8],
                         frame_length: usize,
@@ -440,15 +468,27 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                         extent: DesignExtrudeExtent,
                         face_extend: u32,
                         direction_reversed: bool| {
-        let scope = parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 legacy one-sided scope");
+        let scope = parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 legacy one-sided scope");
         assert_eq!(scope.frame_length, frame_length as u64);
         assert_eq!(scope.reference_count_offset, reference_count_offset as u64);
-        assert_eq!(scope.reference_members.as_slice(), reference_members);
         assert_eq!(
-            scope.extrude_prologue,
+            scope
+                .reference_members
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            reference_members
+        );
+        assert_eq!(
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker: None,
                 operation_prefix_marker_offset: None,
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: scalar_54::OPERATION as u64,

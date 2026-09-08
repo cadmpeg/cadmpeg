@@ -2,6 +2,7 @@
 //! `FeatDefs` / DEPDB feature definitions and owner binding.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::bounded_len;
 
@@ -9,12 +10,10 @@ use crate::psb;
 use crate::scalar;
 
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
-use super::helpers::{decode_optional_scalars, find_bytes};
+use super::helpers::find_bytes;
 use super::operations::{FeatureOperation, FeatureRecipeKind};
-use super::rows::{
-    FeatureGeometryTable, FeatureGeometryTableKind, FeatureRevolutionExtent,
-    FeatureRevolutionExtentKind,
-};
+use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
+use super::segment_rows::{SegmentRow, SegmentRows};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
@@ -35,7 +34,7 @@ pub struct FeatureParameterFrame {
     /// Exact scalar-body bytes after `f9 04 03`.
     pub body: Vec<u8>,
     /// Twelve values when the body consists entirely of defined scalar tokens.
-    pub decoded_values: Option<Vec<f64>>,
+    pub decoded_values: Option<[f64; 12]>,
     /// Byte offset of the field label in the original stream.
     pub offset: usize,
 }
@@ -80,45 +79,130 @@ pub enum OutlinePhase {
 pub struct FeatureOutline {
     /// Feature-history phase.
     pub phase: OutlinePhase,
-    /// Six feature-local scalar slots; undefined prefixes remain `None`.
-    pub local_values: Vec<Option<f64>>,
-    /// Exact encoded scalar body of each feature-local slot.
-    pub local_value_bodies: Vec<Vec<u8>>,
+    /// Six scalar slots and their encoded bodies; undefined values remain `None`.
+    pub local_scalars: [DecodedField<Option<f64>>; 6],
     /// Byte offset of the outline label in the original stream.
     pub offset: usize,
+}
+
+fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField<Option<f64>>; 6] {
+    let mut cursor = 0;
+    std::array::from_fn(|_| {
+        if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
+            return DecodedField {
+                value: None,
+                body: Vec::new(),
+            };
+        }
+        let start = cursor;
+        let value = if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
+            cursor = next;
+            Some(value)
+        } else {
+            cursor += 1;
+            None
+        };
+        DecodedField {
+            value,
+            body: payload[start..cursor].to_vec(),
+        }
+    })
+}
+
+/// Stored state of a solver scalar token.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScalarLane {
+    Value(f64),
+    DimensionDriven,
+    Undefined,
+}
+
+impl ScalarLane {
+    pub fn value(self) -> Option<f64> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::DimensionDriven | Self::Undefined => None,
+        }
+    }
+}
+
+/// Solver-variable class carried by a compact integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VariableType {
+    Dimension,
+    U,
+    V,
+    Radius,
+    Parameter,
+    Selector,
+    Result,
+    Auxiliary,
+    Unknown(UnknownVariableType),
+}
+
+/// Unclassified code, constructed only by normalizing the encoded integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnknownVariableType(u32);
+
+impl From<u32> for VariableType {
+    fn from(code: u32) -> Self {
+        match code {
+            0 => Self::Dimension,
+            1 => Self::U,
+            2 => Self::V,
+            3 => Self::Radius,
+            4 => Self::Parameter,
+            5 => Self::Selector,
+            6 => Self::Result,
+            7 => Self::Auxiliary,
+            _ => Self::Unknown(UnknownVariableType(code)),
+        }
+    }
+}
+
+impl VariableType {
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Dimension => 0,
+            Self::U => 1,
+            Self::V => 2,
+            Self::Radius => 3,
+            Self::Parameter => 4,
+            Self::Selector => 5,
+            Self::Result => 6,
+            Self::Auxiliary => 7,
+            Self::Unknown(UnknownVariableType(code)) => code,
+        }
+    }
 }
 
 /// One positional solver-variable row from `var_arr`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureVariableRow {
     /// Variable class: `1` is section `u`, `2` is section `v`, `3` is radius.
-    pub variable_type: u32,
+    pub variable_type: VariableType,
     /// Point or solver-variable key.
     pub key: u32,
     /// Solved value when the scalar token is defined inline.
-    pub value: Option<f64>,
+    pub value: ScalarLane,
     /// Exact encoded scalar body of the stored value.
     pub value_body: Vec<u8>,
     /// Pre-solve estimate when defined inline.
-    pub guess: Option<f64>,
+    pub guess: ScalarLane,
     /// Exact encoded scalar body of the pre-solve estimate.
     pub guess_body: Vec<u8>,
-    /// Whether the pre-solve estimate used the nine-byte dimension-driven
-    /// sentinel.
-    pub guess_dimension_driven: bool,
     /// Stored solver-known flag.
     pub known: Option<u32>,
     /// Stored solver homogeneity class.
     pub homogeneity: Option<u32>,
     /// Solver unknown identifier from the third trailing compact field.
     pub uvar_id: Option<u32>,
-    /// Whether the value used the nine-byte dimension-driven sentinel.
-    pub dimension_driven: bool,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
 
 /// One section-frame point joined from `var_arr` type-1/type-2 rows.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSectionPoint {
     /// Shared variable-row key.
@@ -138,8 +222,6 @@ pub struct FeatureVariableTable {
     pub entity_ref: Option<u32>,
     /// Positional variable rows in stored order.
     pub rows: Vec<FeatureVariableRow>,
-    /// Section points joined by row key.
-    pub points: Vec<FeatureSectionPoint>,
     /// Byte offset of the `var_arr` label in the original stream.
     pub offset: usize,
 }
@@ -150,17 +232,49 @@ impl FeatureVariableTable {
         usize::try_from(self.declared_count).ok() == Some(self.rows.len())
     }
 
+    /// Join unique coordinate rows by point identity.
+    #[cfg(test)]
+    pub fn points(&self) -> Vec<FeatureSectionPoint> {
+        let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
+        for row in self
+            .rows
+            .iter()
+            .filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V))
+        {
+            coordinates.entry(row.key).or_insert((None, None));
+        }
+        for (&point_id, point) in &mut coordinates {
+            let mut u_rows = self
+                .rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == VariableType::U);
+            let u = u_rows.next();
+            if u_rows.next().is_none() {
+                point.0 = u.and_then(|row| row.value.value());
+            }
+            let mut v_rows = self
+                .rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == VariableType::V);
+            let v = v_rows.next();
+            if v_rows.next().is_none() {
+                point.1 = v.and_then(|row| row.value.value());
+            }
+        }
+        coordinates
+            .into_iter()
+            .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
+            .collect()
+    }
+
     /// Reconcile repeated and complementary section-point rows by identity.
     pub fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
         let point_ids = self
-            .points
+            .rows
             .iter()
-            .map(|point| point.point_id)
-            .chain(
-                self.rows
-                    .iter()
-                    .filter_map(|row| matches!(row.variable_type, 1 | 2).then_some(row.key)),
-            )
+            .filter_map(|row| {
+                matches!(row.variable_type, VariableType::U | VariableType::V).then_some(row.key)
+            })
             .collect::<BTreeSet<_>>();
         let mut points = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
@@ -168,24 +282,13 @@ impl FeatureVariableTable {
             let mut point = [None; 2];
             let mut conflict = false;
             for coordinate in 0..2 {
-                let variable_type = coordinate as u32 + 1;
-                let raw_rows = self
+                let variable_type = [VariableType::U, VariableType::V][coordinate];
+                let values = self
                     .rows
                     .iter()
                     .filter(|row| row.key == point_id && row.variable_type == variable_type)
+                    .filter_map(|row| row.value.value())
                     .collect::<Vec<_>>();
-                let values = if raw_rows.is_empty() {
-                    self.points
-                        .iter()
-                        .filter(|point| point.point_id == point_id)
-                        .filter_map(|point| [point.u, point.v][coordinate])
-                        .collect::<Vec<_>>()
-                } else {
-                    raw_rows
-                        .into_iter()
-                        .filter_map(|row| row.value)
-                        .collect::<Vec<_>>()
-                };
                 let Some(first) = values.first().copied() else {
                     continue;
                 };
@@ -251,24 +354,21 @@ pub struct FeatureEquationTable {
 /// Defined positional segment family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureSegmentKind {
-    /// Type `2` line segment.
-    Line,
-    /// Type `3` circular-arc segment.
-    Arc,
-    /// Type `5` isolated point entity.
-    Point,
+    /// Type `2` line segment with its endpoint IDs.
+    Line([u32; 2]),
+    /// Type `3` circular-arc segment with its endpoint IDs.
+    Arc([u32; 2]),
+    /// Type `5` isolated point entity with its point ID.
+    Point(u32),
 }
 
 /// One positional `segtab_ptr` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSegment {
-    /// Line or arc discriminator.
+    /// Segment family and its point identifiers.
     pub kind: FeatureSegmentKind,
     /// Three direction fields; control-range sentinels remain `None`.
     pub directions: [Option<u32>; 3],
-    /// Endpoint IDs into the section variable table. Point entities normalize
-    /// their single stored point identifier into both slots.
-    pub point_ids: [u32; 2],
     /// Arc center point ID, or `None` for the null sentinel.
     pub center_id: Option<u32>,
     /// Arc orientation field.
@@ -287,6 +387,16 @@ pub struct FeatureSegment {
     pub body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureSegment {
+    /// Endpoint slots into the section variable table. A point repeats its ID.
+    pub fn point_ids(&self) -> [u32; 2] {
+        match self.kind {
+            FeatureSegmentKind::Line(points) | FeatureSegmentKind::Arc(points) => points,
+            FeatureSegmentKind::Point(point) => [point; 2],
+        }
+    }
 }
 
 /// One circular type `10` `segtab_ptr` row.
@@ -416,68 +526,25 @@ pub struct FeatureSegmentTable {
     pub has_elided_prototype: bool,
     /// Entity-table reference following the opener.
     pub entity_ref: Option<u32>,
-    /// Fully aligned line and arc rows.
-    pub rows: Vec<FeatureSegment>,
-    /// Fully aligned circular rows.
-    pub circle_rows: Vec<FeatureCircleSegment>,
-    /// Fully aligned type-1 point rows.
-    pub point_rows: Vec<FeaturePointSegment>,
-    /// Fully aligned centered construction-line rows.
-    pub centered_line_rows: Vec<FeatureCenteredLineSegment>,
-    /// Fully aligned type-25 section-reference lines.
-    pub reference_line_rows: Vec<FeatureReferenceLineSegment>,
-    /// Fully aligned type-12 bounded section curves.
-    pub bounded_curve_rows: Vec<FeatureBoundedCurveSegment>,
-    /// Fully aligned type-58 saved-conic rows.
-    pub conic_rows: Vec<FeatureConicSegment>,
-    /// Fully aligned rows with unsupported segment-family discriminators.
-    pub opaque_rows: Vec<FeatureOpaqueSegment>,
+    /// Source rows admitted by external identity across all segment families.
+    pub(crate) rows: SegmentRows,
     /// Byte offset of the `segtab_ptr` label in the original stream.
     pub offset: usize,
 }
 
 impl FeatureSegmentTable {
-    /// Number of decoded rows retained across all segment families.
-    pub(crate) fn retained_row_count(&self) -> usize {
-        self.rows.len()
-            + self.circle_rows.len()
-            + self.point_rows.len()
-            + self.centered_line_rows.len()
-            + self.reference_line_rows.len()
-            + self.bounded_curve_rows.len()
-            + self.conic_rows.len()
-            + self.opaque_rows.len()
-    }
-
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
-            == Some(usize::from(self.has_elided_prototype) + self.retained_row_count())
-    }
-
-    /// Number of decoded rows carrying one external identifier.
-    pub(crate) fn external_id_count(&self, external_id: u32) -> usize {
-        self.rows
-            .iter()
-            .map(|row| row.external_id)
-            .chain(self.circle_rows.iter().map(|row| row.external_id))
-            .chain(self.point_rows.iter().map(|row| row.external_id))
-            .chain(self.centered_line_rows.iter().map(|row| row.external_id))
-            .chain(self.reference_line_rows.iter().map(|row| row.external_id))
-            .chain(self.bounded_curve_rows.iter().map(|row| row.external_id))
-            .chain(self.conic_rows.iter().map(|row| row.external_id))
-            .chain(self.opaque_rows.iter().map(|row| row.external_id))
-            .filter(|candidate| *candidate == external_id)
-            .count()
+            == Some(usize::from(self.has_elided_prototype) + self.rows.len())
     }
 
     /// Resolve a unique ordinary row without requiring whole-table completeness.
     pub(crate) fn unique_segment(&self, external_id: u32) -> Option<&FeatureSegment> {
-        let segment = self
-            .rows
-            .iter()
-            .find(|segment| segment.external_id == external_id)?;
-        (self.external_id_count(external_id) == 1).then_some(segment)
+        match self.rows.get(external_id)? {
+            SegmentRow::Ordinary(row) => Some(row),
+            _ => None,
+        }
     }
 
     /// Resolve a uniquely identified defining-sketch segment from a complete table.
@@ -493,7 +560,10 @@ pub enum TrimEntityKind {
     /// No center vertex: trimmed line.
     Line,
     /// Center vertex present: trimmed circular arc.
-    Arc,
+    Arc {
+        /// Solved center vertex identifier.
+        center_vertex: u32,
+    },
 }
 
 /// One positional `ent_tab` replay row.
@@ -505,12 +575,20 @@ pub struct FeatureTrimEntity {
     pub mode: Option<u32>,
     /// Solved start and end vertex IDs.
     pub vertices: [u32; 2],
-    /// Solved center vertex ID for an arc.
-    pub center_vertex: Option<u32>,
-    /// Line or arc classification derived from center presence.
+    /// Trimmed entity geometry.
     pub kind: TrimEntityKind,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureTrimEntity {
+    /// Solved center vertex identifier for an arc.
+    pub fn center_vertex(&self) -> Option<u32> {
+        match self.kind {
+            TrimEntityKind::Line => None,
+            TrimEntityKind::Arc { center_vertex } => Some(center_vertex),
+        }
+    }
 }
 
 /// One stored hash bucket in a native trim table.
@@ -752,10 +830,8 @@ pub struct FeatureSection3d {
     pub sketch_plane_entity_id: Option<u32>,
     /// Sketch-plane side flag.
     pub sketch_plane_flip: Option<BinaryFlag>,
-    /// Entity references that orient the sketch plane.
-    pub reference_plane_entity_ids: Vec<u32>,
-    /// Complete positional reference-plane rows in stored order.
-    pub reference_plane_rows: Vec<FeatureSectionReferencePlane>,
+    /// Named entity references or complete positional rows in stored order.
+    pub reference_planes: ReferencePlanes,
     /// Geometry identifier joining the reference plane to its datum surface.
     pub reference_plane_datum_geometry_id: Option<u32>,
     /// Singleton named-record orientation fields.
@@ -764,6 +840,26 @@ pub struct FeatureSection3d {
     pub dimension_ids: Vec<u32>,
     /// Byte offset of the gsec3d record header in the original stream.
     pub offset: usize,
+}
+
+/// Reference-plane representation selected by the section layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReferencePlanes {
+    Named(Vec<u32>),
+    Positional(Vec<FeatureSectionReferencePlane>),
+}
+
+impl ReferencePlanes {
+    pub fn entity_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        let (named, positional): (&[u32], &[FeatureSectionReferencePlane]) = match self {
+            Self::Named(ids) => (ids, &[]),
+            Self::Positional(rows) => (&[], rows),
+        };
+        named
+            .iter()
+            .copied()
+            .chain(positional.iter().map(|row| row.plane_entity_id))
+    }
 }
 
 /// Interpretation of a stored feature-dimension value.
@@ -803,19 +899,49 @@ pub struct FeatureDimensionReferenceTable {
     pub offset: usize,
 }
 
+/// Primary dimension scalar state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DimensionValue {
+    Resolved(f64),
+    UnresolvedToken(Vec<u8>),
+    Undefined,
+}
+
+impl DimensionValue {
+    fn decoded(value: Option<f64>, body: &[u8]) -> Self {
+        match value {
+            Some(value) => Self::Resolved(value),
+            None => match body {
+                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(body.to_vec()),
+                _ => Self::Undefined,
+            },
+        }
+    }
+
+    pub fn resolved(&self) -> Option<f64> {
+        match self {
+            Self::Resolved(value) => Some(*value),
+            Self::UnresolvedToken(_) | Self::Undefined => None,
+        }
+    }
+
+    pub fn unresolved_token(&self) -> Option<&[u8]> {
+        match self {
+            Self::UnresolvedToken(token) => Some(token),
+            Self::Resolved(_) | Self::Undefined => None,
+        }
+    }
+}
+
 /// One dimension record from a gsec2d `dimtab_ptr` table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDimension {
     /// Dimension type discriminator.
     pub dimension_type: u32,
-    /// Decoded primary scalar, when its prefix is defined.
-    pub value: Option<f64>,
+    /// Decoded primary scalar or unresolved state.
+    pub value: DimensionValue,
     /// Exact encoded scalar body of the primary value.
     pub value_body: Vec<u8>,
-    /// Exact bounded placeholder token when the primary scalar is unresolved.
-    pub unresolved_value_token: Option<Vec<u8>>,
-    /// Unit interpretation selected by the dimension type.
-    pub value_unit: DimensionUnit,
     /// Stored direction byte.
     pub direction_byte: u8,
     /// Decoded auxiliary scalar, when its prefix is defined.
@@ -828,6 +954,12 @@ pub struct FeatureDimension {
     pub references: Option<FeatureDimensionReferenceTable>,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureDimension {
+    pub fn unit(&self) -> DimensionUnit {
+        dimension_unit(self.dimension_type)
+    }
 }
 
 /// Dimension table for one gsec2d section.
@@ -877,15 +1009,91 @@ pub struct FeatureRelationTable {
     /// Complete positional relation rows in stored order.
     pub rows: Vec<FeatureRelation>,
     /// Section-entity incidence records used by solver equations.
-    pub skamps: Vec<FeatureSkamp>,
-    /// Count, class, and source location of `skamp_ptr`.
-    pub skamp_header: Option<FeatureSolverTableHeader>,
+    pub skamps: Option<SolverSubtable<FeatureSkamp>>,
     /// Joins between relation, equation, and incidence identifiers.
-    pub triples: Vec<FeatureRelationTriple>,
-    /// Count, class, and source location of `triples_ptr`.
-    pub triples_header: Option<FeatureSolverTableHeader>,
+    pub triples: Option<SolverSubtable<FeatureRelationTriple>>,
     /// Byte offset of the `relat_ptr` label in the original stream.
     pub offset: usize,
+}
+
+/// A solver table declaration with retained rows, or rows with no decoded declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SolverSubtable<T> {
+    Declared {
+        header: FeatureSolverTableHeader,
+        rows: Vec<T>,
+    },
+    Unframed(NonEmptySolverRows<T>),
+}
+
+/// Retained rows without a decoded table declaration. The collection is nonempty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonEmptySolverRows<T>(Vec<T>);
+
+impl<T> SolverSubtable<T> {
+    pub fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
+        match header {
+            Some(header) => Some(Self::Declared { header, rows }),
+            None if rows.is_empty() => None,
+            None => Some(Self::Unframed(NonEmptySolverRows(rows))),
+        }
+    }
+
+    pub fn header(&self) -> Option<&FeatureSolverTableHeader> {
+        match self {
+            Self::Declared { header, .. } => Some(header),
+            Self::Unframed(_) => None,
+        }
+    }
+
+    pub fn header_mut(&mut self) -> Option<&mut FeatureSolverTableHeader> {
+        match self {
+            Self::Declared { header, .. } => Some(header),
+            Self::Unframed(_) => None,
+        }
+    }
+
+    pub fn rows(&self) -> &[T] {
+        match self {
+            Self::Declared { rows, .. } => rows,
+            Self::Unframed(rows) => &rows.0,
+        }
+    }
+
+    pub fn rows_mut(&mut self) -> &mut [T] {
+        match self {
+            Self::Declared { rows, .. } => rows,
+            Self::Unframed(rows) => &mut rows.0,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        match self {
+            Self::Declared { header, rows } => {
+                usize::try_from(header.declared_count).ok() == Some(rows.len())
+            }
+            Self::Unframed(_) => false,
+        }
+    }
+
+    pub fn missing_rows(&self) -> usize {
+        match self {
+            Self::Declared { header, rows } => usize::try_from(header.declared_count)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(rows.len()),
+            Self::Unframed(_) => 0,
+        }
+    }
+}
+
+impl FeatureRelationTable {
+    pub fn skamps(&self) -> &[FeatureSkamp] {
+        self.skamps.as_ref().map_or(&[], SolverSubtable::rows)
+    }
+
+    pub fn triples(&self) -> &[FeatureRelationTriple] {
+        self.triples.as_ref().map_or(&[], SolverSubtable::rows)
+    }
 }
 
 /// Header identity for a counted solver subtable.
@@ -1008,6 +1216,13 @@ pub struct FeatureSavedConic {
     pub offset: usize,
 }
 
+/// A decoded field and its complete encoded value bytes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedField<T> {
+    pub value: T,
+    pub body: Vec<u8>,
+}
+
 /// One saved interpolation spline retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSavedSpline {
@@ -1019,14 +1234,10 @@ pub struct FeatureSavedSpline {
     pub interpolation_points: Vec<[f64; 3]>,
     /// Exact `i_pnts` value bytes through the last complete interpolation point.
     pub interpolation_points_body: Vec<u8>,
-    /// Two stored endpoint tangent triples, when every scalar is defined.
-    pub endpoint_tangents: Option<[[f64; 3]; 2]>,
-    /// Exact complete `end_tangts` value bytes, including its array wrapper.
-    pub endpoint_tangents_body: Option<Vec<u8>>,
-    /// One stored interpolation parameter per point, when complete.
-    pub parameters: Option<Vec<f64>>,
-    /// Exact complete `params` value bytes, including its array wrapper.
-    pub parameters_body: Option<Vec<u8>>,
+    /// Complete endpoint tangent triples and `end_tangts` bytes with the array wrapper.
+    pub endpoint_tangents: Option<DecodedField<[[f64; 3]; 2]>>,
+    /// Complete interpolation parameters and `params` bytes with the array wrapper.
+    pub parameters: Option<DecodedField<Vec<f64>>>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1071,13 +1282,8 @@ pub struct FeatureSavedSection {
 /// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDefinition {
-    /// Numeric identifier embedded in `feat_defs_<id>`. A positional replay
-    /// inherits that schema identifier until an exact owner join replaces it
-    /// with the canonical feature identifier.
-    pub id: u32,
-    /// Canonical definition owner, joining the definition to its modeling
-    /// feature.
-    pub owner_feature_id: Option<u32>,
+    /// Parsed definition identity and any established canonical owner.
+    pub identity: DefinitionIdentity,
     /// Exact record bytes through the next feature definition or section end.
     pub body: Vec<u8>,
     /// Definition-space local-system and transform fields.
@@ -1104,6 +1310,50 @@ pub struct FeatureDefinition {
     pub saved_section: Option<FeatureSavedSection>,
     /// Byte offset of the record name in the original stream.
     pub offset: usize,
+}
+
+/// Definition naming before and after a join selects the owner as its identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionIdentity {
+    /// A recorded or inherited identifier, with ownership independent of its name.
+    Parsed {
+        schema_id: Option<NonZeroU32>,
+        owner_feature_id: Option<u32>,
+    },
+    /// A unique join selects the canonical owner for record naming.
+    BoundOwner {
+        schema_id: Option<NonZeroU32>,
+        owner_feature_id: u32,
+    },
+}
+
+impl DefinitionIdentity {
+    /// Numeric record identity. Anonymous source definitions retain zero on the wire.
+    pub fn id(self) -> u32 {
+        match self {
+            Self::Parsed { schema_id, .. } => schema_id.map_or(0, NonZeroU32::get),
+            Self::BoundOwner {
+                owner_feature_id, ..
+            } => owner_feature_id,
+        }
+    }
+
+    pub fn schema_id(self) -> Option<NonZeroU32> {
+        match self {
+            Self::Parsed { schema_id, .. } | Self::BoundOwner { schema_id, .. } => schema_id,
+        }
+    }
+
+    pub fn owner_feature_id(self) -> Option<u32> {
+        match self {
+            Self::Parsed {
+                owner_feature_id, ..
+            } => owner_feature_id,
+            Self::BoundOwner {
+                owner_feature_id, ..
+            } => Some(owner_feature_id),
+        }
+    }
 }
 
 fn decode_parameter_scalar(
@@ -1170,9 +1420,9 @@ pub(crate) fn decode_variable_scalar(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
-        return (None, offset, false);
+        return (ScalarLane::Undefined, offset);
     };
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -1182,31 +1432,31 @@ pub(crate) fn decode_variable_scalar(
             &[0xc0, 0x05]
         });
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x4f && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
-        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     let variable_dict = match prefix {
         0x51 => Some([0x3f, 0xc6]),
@@ -1230,24 +1480,24 @@ pub(crate) fn decode_variable_scalar(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x18
         && payload
             .get(offset + 1)
             .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe2 | 0xe3 | 0x10 | 0xe4 | 0xe6))
     {
-        return (Some(0.0), offset + 1, false);
+        return (ScalarLane::Value(0.0), offset + 1);
     }
     if prefix == 0x18 && unresolved_variable_guess_end(payload, offset + 1, end).is_some() {
-        return (Some(0.0), offset + 1, false);
+        return (ScalarLane::Value(0.0), offset + 1);
     }
     if prefix == 0xed && offset + 9 <= end {
-        return (None, offset + 9, true);
+        return (ScalarLane::DimensionDriven, offset + 9);
     }
     decode_parameter_scalar(payload, offset, end, cache)
-        .map_or((None, offset + 1, false), |(value, next)| {
-            (Some(value), next, false)
+        .map_or((ScalarLane::Undefined, offset + 1), |(value, next)| {
+            (ScalarLane::Value(value), next)
         })
 }
 
@@ -1256,17 +1506,17 @@ pub(crate) fn decode_section_coordinate_scalar(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     match payload.get(offset) {
-        Some(0x00 | 0x34) if offset + 3 <= end => return (None, offset + 3, false),
-        Some(0x01) if offset + 4 <= end => return (None, offset + 4, false),
+        Some(0x00 | 0x34) if offset + 3 <= end => return (ScalarLane::Undefined, offset + 3),
+        Some(0x01) if offset + 4 <= end => return (ScalarLane::Undefined, offset + 4),
         _ => {}
     }
     if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
-        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     decode_variable_scalar(payload, offset, end, cache)
 }
@@ -1276,7 +1526,7 @@ fn decode_variable_guess(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
@@ -1296,13 +1546,13 @@ fn decode_variable_guess(
                     .get(trailing)
                     .is_some_and(|byte| matches!(byte, 0xe0..=0xe3 | 0xf1..=0xf3)))
         {
-            return (Some(0.0), offset + 1, false);
+            return (ScalarLane::Value(0.0), offset + 1);
         }
     }
     let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
-    if decoded.0.is_none() && !decoded.2 {
+    if decoded.0 == ScalarLane::Undefined {
         if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
-            return (None, next, false);
+            return (ScalarLane::Undefined, next);
         }
     }
     decoded
@@ -1332,23 +1582,21 @@ pub(crate) fn variable_table(
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
         let key = named_compact_int(payload, b"key\0", cursor, close)?;
         let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
-        let (value, value_end, dimension_driven) =
+        let (value, value_end) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, guess_end, guess_dimension_driven) =
+        let (guess, guess_end) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body: payload[value_label..value_end].to_vec(),
             guess,
             guess_body: payload[guess_label..guess_end].to_vec(),
-            guess_dimension_driven,
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
-            dimension_driven,
             offset: type_label.saturating_sub(2),
         })
     })();
@@ -1378,13 +1626,11 @@ pub(crate) fn variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next, dimension_driven) =
-            decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, guess_dimension_driven) =
-            decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::new();
@@ -1400,17 +1646,15 @@ pub(crate) fn variable_table(
             cursor = next;
         }
         let row = FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body,
             guess,
             guess_body,
-            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
-            dimension_driven,
             offset: row_offset,
         };
         let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
@@ -1419,50 +1663,12 @@ pub(crate) fn variable_table(
         cursor += delimiter + 1;
         rows.push(row);
     }
-    Some(variable_table_from_rows(
+    Some(FeatureVariableTable {
         declared_count,
         entity_ref,
         rows,
-        table,
-    ))
-}
-
-pub(crate) fn variable_table_from_rows(
-    declared_count: u32,
-    entity_ref: Option<u32>,
-    rows: Vec<FeatureVariableRow>,
-    offset: usize,
-) -> FeatureVariableTable {
-    let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
-    for row in rows.iter().filter(|row| matches!(row.variable_type, 1 | 2)) {
-        coordinates.entry(row.key).or_insert((None, None));
-    }
-    for (&point_id, point) in &mut coordinates {
-        let mut u_rows = rows
-            .iter()
-            .filter(|row| row.key == point_id && row.variable_type == 1);
-        let u = u_rows.next();
-        if u_rows.next().is_none() {
-            point.0 = u.and_then(|row| row.value);
-        }
-        let mut v_rows = rows
-            .iter()
-            .filter(|row| row.key == point_id && row.variable_type == 2);
-        let v = v_rows.next();
-        if v_rows.next().is_none() {
-            point.1 = v.and_then(|row| row.value);
-        }
-    }
-    FeatureVariableTable {
-        declared_count,
-        entity_ref,
-        rows,
-        points: coordinates
-            .into_iter()
-            .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
-            .collect(),
-        offset,
-    }
+        offset: table,
+    })
 }
 
 pub(crate) fn positional_variable_table(
@@ -1512,13 +1718,11 @@ pub(crate) fn positional_variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next, dimension_driven) =
-            decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, guess_dimension_driven) =
-            decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::with_capacity(3);
@@ -1534,17 +1738,15 @@ pub(crate) fn positional_variable_table(
             cursor = next;
         }
         let row = FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body,
             guess,
             guess_body,
-            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
-            dimension_driven,
             offset: row_offset,
         };
         if rows.len() + 1 < row_limit {
@@ -1564,12 +1766,12 @@ pub(crate) fn positional_variable_table(
         }
         rows.push(row);
     }
-    Some(variable_table_from_rows(
+    Some(FeatureVariableTable {
         declared_count,
-        Some(table_class),
+        entity_ref: Some(table_class),
         rows,
-        table,
-    ))
+        offset: table,
+    })
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -1992,28 +2194,15 @@ pub(crate) fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut segments = FeatureSegmentTable {
-        declared_count,
-        has_elided_prototype,
-        entity_ref,
-        rows: Vec::new(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
-        offset: table,
-    };
-    if let Some(row) = named_row {
-        retain_segment_row(row, &mut segments);
-    }
+    let mut rows = named_row
+        .and_then(typed_segment_row)
+        .into_iter()
+        .collect::<Vec<_>>();
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count)
         .unwrap_or(usize::MAX)
         .saturating_sub(usize::from(has_elided_prototype));
-    while cursor < region_end && segments.retained_row_count() < row_limit {
+    while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2077,31 +2266,36 @@ pub(crate) fn segment_table_body(
             continue;
         };
         if payload.get(p) == Some(&0xe2) {
-            retain_segment_row(
-                FeatureOpaqueSegment {
-                    kind,
-                    directions,
-                    point_ids: [point0, point1],
-                    center_id,
-                    arc_orientation,
-                    vertical_horizontal,
-                    radius_ref,
-                    radius2_ref,
-                    external_id,
-                    body: payload[row_start..=p].to_vec(),
-                    offset: row_start,
-                },
-                &mut segments,
-            );
+            if let Some(row) = typed_segment_row(FeatureOpaqueSegment {
+                kind,
+                directions,
+                point_ids: [point0, point1],
+                center_id,
+                arc_orientation,
+                vertical_horizontal,
+                radius_ref,
+                radius2_ref,
+                external_id,
+                body: payload[row_start..=p].to_vec(),
+                offset: row_start,
+            }) {
+                rows.push(row);
+            }
             cursor = p + 1;
         } else {
             cursor += 1;
         }
     }
-    Some(segments)
+    Some(FeatureSegmentTable {
+        declared_count,
+        has_elided_prototype,
+        entity_ref,
+        rows: rows.into_iter().collect(),
+        offset: table,
+    })
 }
 
-fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTable) {
+fn typed_segment_row(row: FeatureOpaqueSegment) -> Option<SegmentRow> {
     if row.kind == 10
         && row.directions == [Some(0); 3]
         && row.point_ids == [None, Some(1)]
@@ -2110,13 +2304,12 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let (Some(center_id), Some(radius_ref)) = (row.center_id, row.radius_ref) {
-            segments.circle_rows.push(FeatureCircleSegment {
+            return Some(SegmentRow::Circle(FeatureCircleSegment {
                 center_id,
                 radius_ref,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
     if row.kind == 1
@@ -2128,12 +2321,11 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let Some(point_id) = row.center_id {
-            segments.point_rows.push(FeaturePointSegment {
+            return Some(SegmentRow::Point(FeaturePointSegment {
                 point_id,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
     if row.kind == 47
@@ -2145,14 +2337,11 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let Some(center_id) = row.center_id {
-            segments
-                .centered_line_rows
-                .push(FeatureCenteredLineSegment {
-                    center_id,
-                    external_id: row.external_id,
-                    offset: row.offset,
-                });
-            return;
+            return Some(SegmentRow::CenteredLine(FeatureCenteredLineSegment {
+                center_id,
+                external_id: row.external_id,
+                offset: row.offset,
+            }));
         }
     }
     if row.kind == 25
@@ -2161,33 +2350,27 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius_ref.is_none()
         && row.radius2_ref.is_none()
     {
-        segments
-            .reference_line_rows
-            .push(FeatureReferenceLineSegment {
-                directions: row.directions,
-                point_ids: row.point_ids,
-                vertical_horizontal: row.vertical_horizontal,
-                external_id: row.external_id,
-                offset: row.offset,
-            });
-        return;
+        return Some(SegmentRow::ReferenceLine(FeatureReferenceLineSegment {
+            directions: row.directions,
+            point_ids: row.point_ids,
+            vertical_horizontal: row.vertical_horizontal,
+            external_id: row.external_id,
+            offset: row.offset,
+        }));
     }
     if row.kind == 12 {
         if let [Some(first), Some(second)] = row.point_ids {
-            segments
-                .bounded_curve_rows
-                .push(FeatureBoundedCurveSegment {
-                    directions: row.directions,
-                    point_ids: [first, second],
-                    center_id: row.center_id,
-                    arc_orientation: row.arc_orientation,
-                    vertical_horizontal: row.vertical_horizontal,
-                    radius_ref: row.radius_ref,
-                    radius2_ref: row.radius2_ref,
-                    external_id: row.external_id,
-                    offset: row.offset,
-                });
-            return;
+            return Some(SegmentRow::BoundedCurve(FeatureBoundedCurveSegment {
+                directions: row.directions,
+                point_ids: [first, second],
+                center_id: row.center_id,
+                arc_orientation: row.arc_orientation,
+                vertical_horizontal: row.vertical_horizontal,
+                radius_ref: row.radius_ref,
+                radius2_ref: row.radius2_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            }));
         }
     }
     if row.kind == 58
@@ -2199,40 +2382,32 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         if let (Some(center_id), Some(first_coefficient_ref), Some(second_coefficient_ref)) =
             (row.center_id, row.radius_ref, row.radius2_ref)
         {
-            segments.conic_rows.push(FeatureConicSegment {
+            return Some(SegmentRow::Conic(FeatureConicSegment {
                 center_id,
                 first_coefficient_ref,
                 second_coefficient_ref,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
-    let kind = match row.kind {
-        2 => FeatureSegmentKind::Line,
-        3 => FeatureSegmentKind::Arc,
-        5 => FeatureSegmentKind::Point,
-        _ => {
-            segments.opaque_rows.push(row);
-            return;
+    if !matches!(row.kind, 2 | 3 | 5) {
+        return Some(SegmentRow::Opaque(row));
+    }
+    let point0 = row.point_ids[0]?;
+    let kind = if row.kind == 5 {
+        FeatureSegmentKind::Point(point0)
+    } else {
+        let point1 = row.point_ids[1]?;
+        if row.kind == 2 {
+            FeatureSegmentKind::Line([point0, point1])
+        } else {
+            FeatureSegmentKind::Arc([point0, point1])
         }
     };
-    let Some(point0) = row.point_ids[0] else {
-        return;
-    };
-    let point1 = if kind == FeatureSegmentKind::Point {
-        point0
-    } else {
-        let Some(point1) = row.point_ids[1] else {
-            return;
-        };
-        point1
-    };
-    segments.rows.push(FeatureSegment {
+    Some(SegmentRow::Ordinary(FeatureSegment {
         kind,
         directions: row.directions,
-        point_ids: [point0, point1],
         center_id: row.center_id,
         arc_orientation: row.arc_orientation,
         vertical_horizontal: row.vertical_horizontal,
@@ -2241,7 +2416,7 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         external_id: row.external_id,
         body: row.body,
         offset: row.offset,
-    });
+    }))
 }
 
 fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {
@@ -2294,12 +2469,9 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
                     external_id,
                     mode,
                     vertices: [start_vertex, end_vertex],
-                    center_vertex,
-                    kind: if center_vertex.is_some() {
-                        TrimEntityKind::Arc
-                    } else {
-                        TrimEntityKind::Line
-                    },
+                    kind: center_vertex.map_or(TrimEntityKind::Line, |center_vertex| {
+                        TrimEntityKind::Arc { center_vertex }
+                    }),
                     offset: row_offset,
                 });
             }
@@ -2795,12 +2967,9 @@ pub(crate) fn positional_trim_entity_table(
                     external_id,
                     mode,
                     vertices: [start_vertex, end_vertex],
-                    center_vertex,
-                    kind: if center_vertex.is_some() {
-                        TrimEntityKind::Arc
-                    } else {
-                        TrimEntityKind::Line
-                    },
+                    kind: center_vertex.map_or(TrimEntityKind::Line, |center_vertex| {
+                        TrimEntityKind::Arc { center_vertex }
+                    }),
                     offset: row_offset,
                 });
             }
@@ -3032,14 +3201,14 @@ fn trim_vertex_intersection(
 
 fn resolved_trim_scalar(
     variables: &FeatureVariableTable,
-    variable_type: u32,
+    variable_type: VariableType,
     key: u32,
 ) -> Result<Option<f64>, ()> {
     let values = variables
         .rows
         .iter()
         .filter(|row| row.variable_type == variable_type && row.key == key)
-        .map(|row| row.value)
+        .map(|row| row.value.value())
         .collect::<Vec<_>>();
     if values.is_empty() || values.iter().all(Option::is_none) {
         return Ok(None);
@@ -3070,7 +3239,7 @@ fn trim_endpoint_radius(
     points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<f64>, ()> {
     let mut radii = Vec::new();
-    for point_id in segment.point_ids {
+    for point_id in segment.point_ids() {
         let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
             continue;
         };
@@ -3101,7 +3270,7 @@ fn trim_radius(
     points: &BTreeMap<u32, [Option<f64>; 2]>,
     variables: &FeatureVariableTable,
 ) -> Option<f64> {
-    let stored = resolved_trim_scalar(variables, 3, segment.radius_ref?).ok()?;
+    let stored = resolved_trim_scalar(variables, VariableType::Radius, segment.radius_ref?).ok()?;
     let endpoint = trim_endpoint_radius(segment, center, points).ok()?;
     let radius = match (stored, endpoint) {
         (Some(stored), Some(endpoint)) => {
@@ -3130,9 +3299,9 @@ fn trim_carrier(
         (u.is_finite() && v.is_finite()).then_some([u, v])
     };
     match segment.kind {
-        FeatureSegmentKind::Line => {
-            let start = point(segment.point_ids[0])?;
-            let end = point(segment.point_ids[1])?;
+        FeatureSegmentKind::Line(_) => {
+            let start = point(segment.point_ids()[0])?;
+            let end = point(segment.point_ids()[1])?;
             let scale = start
                 .into_iter()
                 .chain(end)
@@ -3141,12 +3310,12 @@ fn trim_carrier(
             ((end[0] - start[0]).hypot(end[1] - start[1]) > TRIM_INTERSECTION_EPS * scale)
                 .then_some(TrimCarrier::Line { start, end })
         }
-        FeatureSegmentKind::Arc => {
+        FeatureSegmentKind::Arc(_) => {
             let center = point(segment.center_id?)?;
             let radius = trim_radius(segment, center, points, variables)?;
             Some(TrimCarrier::Circle { center, radius })
         }
-        FeatureSegmentKind::Point => None,
+        FeatureSegmentKind::Point(_) => None,
     }
 }
 
@@ -3311,9 +3480,9 @@ pub(crate) fn entity_intersection(
         .iter()
         .skip(1)
         .fold(
-            segments[0].point_ids.into_iter().collect::<BTreeSet<_>>(),
+            segments[0].point_ids().into_iter().collect::<BTreeSet<_>>(),
             |common, segment| {
-                let segment_points = segment.point_ids.into_iter().collect::<BTreeSet<_>>();
+                let segment_points = segment.point_ids().into_iter().collect::<BTreeSet<_>>();
                 common.intersection(&segment_points).copied().collect()
             },
         )
@@ -3585,7 +3754,6 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         .and_then(BinaryFlag::decode);
 
     let mut reference_plane_entity_ids = Vec::new();
-    let reference_plane_rows = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
     if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
@@ -3644,8 +3812,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     Some(FeatureSection3d {
         sketch_plane_entity_id,
         sketch_plane_flip,
-        reference_plane_entity_ids,
-        reference_plane_rows,
+        reference_planes: ReferencePlanes::Named(reference_plane_entity_ids),
         reference_plane_datum_geometry_id,
         orientation,
         dimension_ids,
@@ -3674,8 +3841,7 @@ pub(crate) fn positional_section_3d(
     let mut result = FeatureSection3d {
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: ReferencePlanes::Positional(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -3778,7 +3944,6 @@ pub(crate) fn positional_section_3d(
             sub_index,
             reference_flip,
         });
-        result.reference_plane_entity_ids.push(plane_id);
         if row + 1 < row_count {
             let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
                 break;
@@ -3786,7 +3951,7 @@ pub(crate) fn positional_section_3d(
             cursor = separator_at + separator.len();
         }
     }
-    result.reference_plane_rows = reference_plane_rows;
+    result.reference_planes = ReferencePlanes::Positional(reference_plane_rows);
     Some(result)
 }
 
@@ -3795,13 +3960,6 @@ pub(crate) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
         0x0a => DimensionUnit::Radians,
         0x01..=0x05 => DimensionUnit::Millimeters,
         _ => DimensionUnit::SchemaDefined,
-    }
-}
-
-fn unresolved_dimension_value_token(bytes: &[u8]) -> Option<Vec<u8>> {
-    match bytes {
-        [0x00, _, _] | [0x01, _, _, _] => Some(bytes.to_vec()),
-        _ => None,
     }
 }
 
@@ -3965,17 +4123,14 @@ fn labeled_dimension(
     let dimension_type = dimension_type?;
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
     let value_start = value_label + b"value\0".len();
-    let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
+    let (value, after_value) = decode_variable_scalar(payload, value_start, end, cache);
     let value_body = payload.get(value_start..after_value)?.to_vec();
-    let unresolved_value_token = value
-        .is_none()
-        .then_some(value_body.as_slice())
-        .and_then(unresolved_dimension_value_token);
+    let value = DimensionValue::decoded(value.value(), &value_body);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
-    let (auxiliary_value, after_auxiliary, _) =
+    let (auxiliary_value, after_auxiliary) =
         decode_variable_scalar(payload, auxiliary_start, end, cache);
     let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
@@ -3985,10 +4140,8 @@ fn labeled_dimension(
         dimension_type,
         value,
         value_body,
-        unresolved_value_token,
-        value_unit: dimension_unit(dimension_type),
         direction_byte,
-        auxiliary_value,
+        auxiliary_value: auxiliary_value.value(),
         auxiliary_body,
         external_id: external_id?,
         references,
@@ -4005,25 +4158,22 @@ pub(crate) fn positional_dimension(
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
     let value_start = cursor;
-    let (value, cursor, _) = match payload.get(cursor) {
-        Some(0x00) if cursor + 3 <= end => (None, cursor + 3, true),
-        Some(0x01) if cursor + 4 <= end => (None, cursor + 4, true),
-        Some(0x0e) => (Some(-0.5), cursor + 1, false),
-        Some(0x18) => (Some(0.0), cursor + 1, false),
+    let (value, cursor) = match payload.get(cursor) {
+        Some(0x00) if cursor + 3 <= end => (ScalarLane::Undefined, cursor + 3),
+        Some(0x01) if cursor + 4 <= end => (ScalarLane::Undefined, cursor + 4),
+        Some(0x0e) => (ScalarLane::Value(-0.5), cursor + 1),
+        Some(0x18) => (ScalarLane::Value(0.0), cursor + 1),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
     let value_body = payload.get(value_start..cursor)?.to_vec();
-    let unresolved_value_token = value
-        .is_none()
-        .then_some(value_body.as_slice())
-        .and_then(unresolved_dimension_value_token);
+    let value = DimensionValue::decoded(value.value(), &value_body);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
         (Some(0.0), auxiliary_start + 1)
     } else {
-        let (value, next, _) = decode_variable_scalar(payload, auxiliary_start, end, cache);
-        (value, next)
+        let (value, next) = decode_variable_scalar(payload, auxiliary_start, end, cache);
+        (value.value(), next)
     };
     let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
     let (external_id, _) = segment_int(payload, cursor);
@@ -4031,8 +4181,6 @@ pub(crate) fn positional_dimension(
         dimension_type,
         value,
         value_body,
-        unresolved_value_token,
-        value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
         auxiliary_body,
@@ -4975,10 +5123,14 @@ pub(crate) fn relation_table(
         declared_count,
         entity_ref,
         rows,
-        skamps: feature_skamps(payload, start, end),
-        skamp_header: named_solver_table_header(payload, b"skamp_ptr\0", start, end),
-        triples: feature_relation_triples(payload, start, end),
-        triples_header: named_solver_table_header(payload, b"triples_ptr\0", start, end),
+        skamps: SolverSubtable::from_parts(
+            named_solver_table_header(payload, b"skamp_ptr\0", start, end),
+            feature_skamps(payload, start, end),
+        ),
+        triples: SolverSubtable::from_parts(
+            named_solver_table_header(payload, b"triples_ptr\0", start, end),
+            feature_relation_triples(payload, start, end),
+        ),
         offset: table,
     })
 }
@@ -5081,10 +5233,8 @@ pub(crate) fn positional_relation_table(
         declared_count,
         entity_ref: Some(table_class),
         rows,
-        skamps: Vec::new(),
-        skamp_header: None,
-        triples: Vec::new(),
-        triples_header: None,
+        skamps: None,
+        triples: None,
         offset: table,
     })
 }
@@ -5536,9 +5686,9 @@ pub(crate) fn saved_positional_generated_entities(
         };
         let segment = generated_segments[&entity_id];
         let value_count = match segment.kind {
-            FeatureSegmentKind::Line => 6,
-            FeatureSegmentKind::Arc => 12,
-            FeatureSegmentKind::Point => continue,
+            FeatureSegmentKind::Line(_) => 6,
+            FeatureSegmentKind::Arc(_) => 12,
+            FeatureSegmentKind::Point(_) => continue,
         };
         if after_id > row_end {
             continue;
@@ -5593,7 +5743,7 @@ pub(crate) fn saved_positional_generated_entities(
             cursor = next;
         }
         if values.len() != value_count {
-            if segment.kind != FeatureSegmentKind::Arc
+            if !matches!(segment.kind, FeatureSegmentKind::Arc(_))
                 || values.len() > value_count
                 || (cursor != row_end && payload.get(cursor) != Some(&0xe3))
             {
@@ -5602,7 +5752,7 @@ pub(crate) fn saved_positional_generated_entities(
             values.resize(value_count, None);
         }
         match segment.kind {
-            FeatureSegmentKind::Line => {
+            FeatureSegmentKind::Line(_) => {
                 let endpoints = [
                     [values[0], values[1], values[2]],
                     [values[3], values[4], values[5]],
@@ -5636,7 +5786,7 @@ pub(crate) fn saved_positional_generated_entities(
                     }));
                 }
             }
-            FeatureSegmentKind::Arc => {
+            FeatureSegmentKind::Arc(_) => {
                 let body_end = saved_positional_body_end(payload, row_end);
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
@@ -5651,7 +5801,7 @@ pub(crate) fn saved_positional_generated_entities(
                     offset: row_start,
                 }));
             }
-            FeatureSegmentKind::Point => {}
+            FeatureSegmentKind::Point(_) => {}
         }
     }
     entities
@@ -5885,7 +6035,7 @@ pub(crate) fn saved_spline_entities(
                 }
             }
         }
-        let decoded_tangents =
+        let endpoint_tangents =
             find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
                 let value_start = label + TANGENTS_LABEL.len();
                 let mut at = label + TANGENTS.len();
@@ -5898,13 +6048,12 @@ pub(crate) fn saved_spline_entities(
                         at = next;
                     }
                 }
-                Some((tangents, payload[value_start..at].to_vec()))
+                Some(DecodedField {
+                    value: tangents,
+                    body: payload[value_start..at].to_vec(),
+                })
             });
-        let (endpoint_tangents, endpoint_tangents_body) = decoded_tangents
-            .map_or((None, None), |(tangents, body)| {
-                (Some(tangents), Some(body))
-            });
-        let decoded_parameters = point_count.and_then(|point_count| {
+        let parameters = point_count.and_then(|point_count| {
             find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
                 let value_start = label + PARAMETERS_LABEL.len();
                 let count_at = label + PARAMETERS.len();
@@ -5917,22 +6066,19 @@ pub(crate) fn saved_spline_entities(
                     values.push(value);
                     at = next;
                 }
-                Some((values, payload[value_start..at].to_vec()))
+                Some(DecodedField {
+                    value: values,
+                    body: payload[value_start..at].to_vec(),
+                })
             })
         });
-        let (parameters, parameters_body) = decoded_parameters
-            .map_or((None, None), |(parameters, body)| {
-                (Some(parameters), Some(body))
-            });
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
             interpolation_points: points,
             interpolation_points_body,
             endpoint_tangents,
-            endpoint_tangents_body,
             parameters,
-            parameters_body,
             offset: entity_offset,
         }));
         search = body_start;
@@ -6043,13 +6189,14 @@ pub fn definition_revolution_extents(
     ];
     let mut result = Vec::new();
     for definition in definitions {
-        let Some(feature_id) = definition.owner_feature_id else {
+        let Some(feature_id) = definition.identity.owner_feature_id() else {
             continue;
         };
         let recipe_matches = operations.iter().any(|operation| {
             operation.feature_id == feature_id
                 && operation
                     .recipe
+                    .resolved()
                     .is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve)
         });
         if !recipe_matches {
@@ -6063,7 +6210,6 @@ pub fn definition_revolution_extents(
             .collect::<Vec<_>>();
         result.extend(offsets.into_iter().map(|offset| FeatureRevolutionExtent {
             feature_id,
-            kind: FeatureRevolutionExtentKind::FullTurn,
             offset: definition.offset + offset + 6,
         }));
     }
@@ -6073,7 +6219,7 @@ pub fn definition_revolution_extents(
 
 pub(crate) fn definitions_in_ranges(
     payload: &[u8],
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
 ) -> Vec<FeatureDefinition> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
@@ -6116,8 +6262,7 @@ pub(crate) fn definitions_in_ranges(
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
-                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache)
-                        .map(|slots| slots.to_vec()),
+                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
                     body,
                     offset: field_offset,
                 });
@@ -6129,12 +6274,9 @@ pub(crate) fn definitions_in_ranges(
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
-                let (local_values, local_value_bodies) =
-                    decode_optional_scalars(&payload[scalar_start..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_values,
-                    local_value_bodies,
+                    local_scalars: outline_scalars(&payload[scalar_start..end], &cache),
                     offset: label,
                 });
             }
@@ -6160,12 +6302,9 @@ pub(crate) fn definitions_in_ranges(
                 {
                     continue;
                 }
-                let (local_values, local_value_bodies) =
-                    decode_optional_scalars(&payload[after_ref + 4..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase,
-                    local_values,
-                    local_value_bodies,
+                    local_scalars: outline_scalars(&payload[after_ref + 4..end], &cache),
                     offset: label_offset,
                 });
             }
@@ -6261,32 +6400,46 @@ pub(crate) fn definitions_in_ranges(
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
             replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
         } else if let Some(table) = &mut relations {
-            if table.skamp_header.is_none() {
+            if table
+                .skamps
+                .as_ref()
+                .and_then(SolverSubtable::header)
+                .is_none()
+            {
                 if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
                 {
-                    table.skamps = feature_skamps(payload, start, end);
-                    table.skamp_header = Some(header);
-                } else {
-                    table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
-                        positional_feature_skamps(payload, start, end, table_class)
+                    table.skamps = Some(SolverSubtable::Declared {
+                        header,
+                        rows: feature_skamps(payload, start, end),
                     });
-                    table.skamp_header = replay_skamp_class.and_then(|table_class| {
-                        positional_solver_table_header(payload, start, end, table_class)
+                } else {
+                    table.skamps = replay_skamp_class.and_then(|table_class| {
+                        SolverSubtable::from_parts(
+                            positional_solver_table_header(payload, start, end, table_class),
+                            positional_feature_skamps(payload, start, end, table_class),
+                        )
                     });
                 }
             }
-            if table.triples_header.is_none() {
+            if table
+                .triples
+                .as_ref()
+                .and_then(SolverSubtable::header)
+                .is_none()
+            {
                 if let Some(header) =
                     named_solver_table_header(payload, b"triples_ptr\0", start, end)
                 {
-                    table.triples = feature_relation_triples(payload, start, end);
-                    table.triples_header = Some(header);
-                } else {
-                    table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
-                        positional_relation_triples(payload, start, end, table_class)
+                    table.triples = Some(SolverSubtable::Declared {
+                        header,
+                        rows: feature_relation_triples(payload, start, end),
                     });
-                    table.triples_header = replay_triples_class.and_then(|table_class| {
-                        positional_solver_table_header(payload, start, end, table_class)
+                } else {
+                    table.triples = replay_triples_class.and_then(|table_class| {
+                        SolverSubtable::from_parts(
+                            positional_solver_table_header(payload, start, end, table_class),
+                            positional_relation_triples(payload, start, end, table_class),
+                        )
                     });
                 }
             }
@@ -6321,8 +6474,10 @@ pub(crate) fn definitions_in_ranges(
             ids.first().copied().filter(|_| ids.len() == 1)
         });
         result.push(FeatureDefinition {
-            id,
-            owner_feature_id,
+            identity: DefinitionIdentity::Parsed {
+                schema_id: id,
+                owner_feature_id,
+            },
             body: payload[start..end].to_vec(),
             parameter_frames,
             outlines,
@@ -6372,7 +6527,7 @@ fn contextual_references(
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
+fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
@@ -6390,7 +6545,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
         let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
             continue;
         };
-        starts.push((offset, id, None, false));
+        starts.push((offset, NonZeroU32::new(id), None, false));
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     let labeled_starts = starts.clone();
@@ -6401,7 +6556,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
-            starts.push((offset, owner, Some(owner), true));
+            starts.push((offset, NonZeroU32::new(owner), Some(owner), true));
         }
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
@@ -6409,7 +6564,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
     starts
 }
 
-fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
+fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     payload
@@ -6428,7 +6583,7 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
                 return None;
             }
             let id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-            Some((start, id, None, false))
+            Some((start, NonZeroU32::new(id), None, false))
         })
         .collect()
 }
@@ -6493,19 +6648,19 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
 }
 
 fn inherited_definition_id(
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
     replay_offset: usize,
-) -> u32 {
+) -> Option<NonZeroU32> {
     starts
         .iter()
         .filter(|(offset, _, _, positional)| !positional && *offset < replay_offset)
         .max_by_key(|(offset, _, _, _)| *offset)
-        .map_or(0, |(_, id, _, _)| *id)
+        .and_then(|(_, id, _, _)| *id)
 }
 
 fn claimed_s2d_replay_markers(
     payload: &[u8],
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
     replay_markers: &[usize],
 ) -> BTreeSet<usize> {
     starts
@@ -6548,11 +6703,11 @@ pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         .collect()
 }
 
-/// Decode one standalone DEPDB `gsec2d_ptr` section whose owner is established
-/// by the section's unique procedural-recipe record.
+/// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
+/// The sole `gsec2d_ptr` starts the range, so no contextual owner pair occurs inside it.
 pub fn depdb_section_definition(
     payload: &[u8],
-    owner_feature_id: u32,
+    owner_feature_id: Option<u32>,
 ) -> Option<FeatureDefinition> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
@@ -6580,7 +6735,7 @@ pub fn depdb_section_definition(
         find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
     definitions_in_ranges(
         &payload[..end],
-        &[(*start, section_id, Some(owner_feature_id), true)],
+        &[(*start, NonZeroU32::new(section_id), owner_feature_id, true)],
     )
     .pop()
 }
@@ -6588,59 +6743,68 @@ pub fn depdb_section_definition(
 /// Bind an owner omitted by `feat_id` through the section's unique generated
 /// datum entry. An explicit canonical `feat_id` remains authoritative.
 pub fn bind_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
-) {
-    for definition in definitions
-        .iter_mut()
-        .filter(|definition| definition.owner_feature_id.is_none())
-    {
-        let Some(sketch_plane) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-        else {
-            continue;
-        };
-        let owners = geometry_tables
-            .iter()
-            .filter(|table| table.kind == FeatureGeometryTableKind::DatumIds)
-            .filter(|table| {
-                table
-                    .entry_ids
-                    .as_ref()
-                    .is_some_and(|ids| ids.contains(&sketch_plane))
-            })
-            .map(|table| table.feature_id)
-            .collect::<BTreeSet<_>>();
-        if let [owner] = owners.into_iter().collect::<Vec<_>>().as_slice() {
-            definition.owner_feature_id = Some(*owner);
-        }
-    }
+) -> Vec<FeatureDefinition> {
+    definitions
+        .into_iter()
+        .map(|definition| {
+            if definition.identity.owner_feature_id().is_some() {
+                return definition;
+            }
+            let Some(sketch_plane) = definition
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id)
+            else {
+                return definition;
+            };
+            let owners = geometry_tables
+                .iter()
+                .filter(|table| {
+                    table
+                        .kind
+                        .datum_ids()
+                        .is_some_and(|ids| ids.contains(&sketch_plane))
+                })
+                .map(|table| table.feature_id)
+                .collect::<BTreeSet<_>>();
+            let Some(owner) = owners.first().copied().filter(|_| owners.len() == 1) else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::Parsed {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: Some(owner),
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 /// Bind instantiated saved sections through the exact set of trimmed section
 /// entities copied into the owning feature's generated-entity table. Schema
 /// identifiers remain unchanged; only the omitted canonical owner is filled.
 pub fn bind_trimmed_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
-) {
+) -> Vec<FeatureDefinition> {
     let claimed_owner_ids = definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect::<BTreeSet<_>>();
     let candidates = definitions
         .iter()
         .map(|definition| {
             let external_ids = unique_trimmed_external_ids(definition);
-            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+            if definition.identity.owner_feature_id().is_some() || external_ids.is_empty() {
                 return BTreeSet::new();
             }
             entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
@@ -6654,17 +6818,27 @@ pub fn bind_trimmed_definition_owners(
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.owner_feature_id = Some(owner);
-    }
+    definitions
+        .into_iter()
+        .zip(candidates)
+        .map(|(definition, owners)| {
+            let Some(owner) = owners
+                .first()
+                .copied()
+                .filter(|_| owners.len() == 1)
+                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+            else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::Parsed {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: Some(owner),
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 /// Bind unlabeled positional definitions through section-entity IDs in the
@@ -6672,14 +6846,14 @@ pub fn bind_trimmed_definition_owners(
 /// exact; otherwise the generated IDs must be a nonempty subset of the order
 /// table. Empty and non-unique joins remain unbound.
 pub fn bind_replay_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
-) {
+) -> Vec<FeatureDefinition> {
     let candidates = definitions
         .iter()
         .map(|definition| {
-            if definition.owner_feature_id.is_some() {
+            if definition.identity.owner_feature_id().is_some() {
                 return BTreeSet::new();
             }
             let trimmed_external_ids = unique_trimmed_external_ids(definition);
@@ -6700,7 +6874,7 @@ pub fn bind_replay_definition_owners(
             let exact_candidates = entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
@@ -6715,7 +6889,7 @@ pub fn bind_replay_definition_owners(
             entity_tables
                 .iter()
                 .filter_map(|table| {
-                    let owner = table.feature_id?;
+                    let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
@@ -6730,18 +6904,27 @@ pub fn bind_replay_definition_owners(
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.id = owner;
-        definition.owner_feature_id = Some(owner);
-    }
+    definitions
+        .into_iter()
+        .zip(candidates)
+        .map(|(definition, owners)| {
+            let Some(owner) = owners
+                .first()
+                .copied()
+                .filter(|_| owners.len() == 1)
+                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+            else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::BoundOwner {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: owner,
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
@@ -6758,10 +6941,10 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
 /// plane remain unowned because the current regeneration snapshot is not
 /// established.
 pub fn bind_section_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     operations: &[FeatureOperation],
     section_ranges: &[(usize, usize)],
-) {
+) -> Vec<FeatureDefinition> {
     let in_section_range = |offset: usize| {
         section_ranges
             .iter()
@@ -6769,50 +6952,97 @@ pub fn bind_section_owners(
     };
     let claimed_owner_ids = definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect::<BTreeSet<_>>();
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
-        (definition.owner_feature_id.is_none() && in_section_range(definition.offset))
+        (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations = operations.iter().collect::<Vec<_>>();
     ordered_operations.sort_by_key(|operation| operation.offset);
-    for definition in definitions.iter_mut().filter(|definition| {
-        definition.owner_feature_id.is_none() && in_section_range(definition.offset)
-    }) {
-        let Some(plane_id) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-            .filter(|plane_id| *plane_id >= 2)
-        else {
-            continue;
-        };
-        if definitions_per_plane.get(&plane_id) != Some(&1) {
-            continue;
-        }
-        let owner_id = plane_id - 2;
-        let datum_id = plane_id - 1;
-        if claimed_owner_ids.contains(&owner_id) {
-            continue;
-        }
-        let matches = ordered_operations
-            .windows(2)
-            .filter(|pair| {
-                pair[0].feature_id == owner_id
-                    && pair[0].recipe.is_some()
-                    && pair[1].feature_id == datum_id
-                    && pair[1].recipe.is_none()
-            })
-            .count();
-        if matches == 1 {
-            if definition.id == 0 {
-                definition.id = owner_id;
+    definitions
+        .into_iter()
+        .map(|definition| {
+            if definition.identity.owner_feature_id().is_some()
+                || !in_section_range(definition.offset)
+            {
+                return definition;
             }
-            definition.owner_feature_id = Some(owner_id);
+            let Some(plane_id) = definition
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id)
+                .filter(|plane_id| *plane_id >= 2)
+            else {
+                return definition;
+            };
+            if definitions_per_plane.get(&plane_id) != Some(&1) {
+                return definition;
+            }
+            let owner_id = plane_id - 2;
+            let datum_id = plane_id - 1;
+            if claimed_owner_ids.contains(&owner_id) {
+                return definition;
+            }
+            let matches = ordered_operations
+                .windows(2)
+                .filter(|pair| {
+                    pair[0].feature_id == owner_id
+                        && pair[0].recipe.resolved().is_some()
+                        && pair[1].feature_id == datum_id
+                        && pair[1].recipe.resolved().is_none()
+                })
+                .count();
+            if matches != 1 {
+                return definition;
+            }
+            let identity = match definition.identity.schema_id() {
+                Some(schema_id) => DefinitionIdentity::Parsed {
+                    schema_id: Some(schema_id),
+                    owner_feature_id: Some(owner_id),
+                },
+                None => DefinitionIdentity::BoundOwner {
+                    schema_id: None,
+                    owner_feature_id: owner_id,
+                },
+            };
+            FeatureDefinition {
+                identity,
+                ..definition
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+mod tests {
+    use super::VariableType;
+
+    #[test]
+    fn variable_classes_normalize_known_codes_and_preserve_unknown_codes() {
+        for (code, class) in [
+            (0, VariableType::Dimension),
+            (1, VariableType::U),
+            (2, VariableType::V),
+            (3, VariableType::Radius),
+            (4, VariableType::Parameter),
+            (5, VariableType::Selector),
+            (6, VariableType::Result),
+            (7, VariableType::Auxiliary),
+        ] {
+            assert_eq!(VariableType::from(code), class);
+            assert_eq!(class.code(), code);
+        }
+        for code in [8, 255, u32::MAX] {
+            let class = VariableType::from(code);
+            assert!(matches!(class, VariableType::Unknown(_)));
+            assert_eq!(class.code(), code);
         }
     }
 }

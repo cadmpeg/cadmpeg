@@ -24,12 +24,17 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
 pub(crate) struct Cage {
     pub(crate) source_range: Range<usize>,
     pub(crate) dimension: usize,
-    pub(crate) rational: bool,
     pub(crate) orders: [usize; 3],
     pub(crate) counts: [usize; 3],
     pub(crate) knots: [Vec<f64>; 3],
     pub(crate) control_points: Vec<Vec<f64>>,
     pub(crate) weights: Option<Vec<f64>>,
+}
+
+impl Cage {
+    pub(crate) const fn rational(&self) -> bool {
+        self.weights.is_some()
+    }
 }
 
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
@@ -86,7 +91,7 @@ pub(crate) fn decode_at(
 ) -> Result<(Cage, usize), GeometryError> {
     let data = expand.data();
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
             "invalid NURBS cage framing",
@@ -95,16 +100,16 @@ pub(crate) fn decode_at(
 
     let mut body = expand
         .root()
-        .child(chunk.body.start, chunk.body.end)
+        .child(chunk.body().start, chunk.body().end)
         .ok_or_else(|| {
-            GeometryError::malformed(chunk.body.start, "NURBS cage body out of range")
+            GeometryError::malformed(chunk.body().start, "NURBS cage body out of range")
         })?;
 
     let major = req_i32(&mut body)?;
     let minor = req_i32(&mut body)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported NURBS cage version {major}.{minor}"),
         });
     }
@@ -209,12 +214,12 @@ pub(crate) fn decode_at(
         None
     };
     for _ in 0..control_count {
-        let tuple_bound = body.counted(stored_dimension as u64, 8).ok_or_else(|| {
+        let tuple_bound = body.counted(dimension as u64, 8).ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
         })?;
         let mut stored =
             ExactVec::<f64>::new(tuple_bound).map_err(|error| refused(body.position(), &error))?;
-        for _ in 0..stored_dimension {
+        for _ in 0..dimension {
             let value = req_f64(&mut body)?;
             if !value.is_finite() {
                 return Err(GeometryError::malformed(
@@ -226,21 +231,24 @@ pub(crate) fn decode_at(
                 .push(value)
                 .map_err(|error| refused(body.position(), &error))?;
         }
-        let mut stored = stored
+        let stored = stored
             .finish()
             .map_err(|error| refused(body.position(), &error))?;
-        let weight = if rational {
-            let weight = stored.pop().expect("rational cage has a weight");
+        let weight = if let Some(weights) = &mut weights {
+            let weight = req_f64(&mut body)?;
+            if !weight.is_finite() {
+                return Err(GeometryError::malformed(
+                    body.position() - 8,
+                    "nonfinite NURBS cage control value",
+                ));
+            }
             if weight == 0.0 {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
                     "zero NURBS cage weight",
                 ));
             }
-            weights
-                .as_mut()
-                .expect("rational weights exist")
-                .push(weight);
+            weights.push(weight);
             weight
         } else {
             1.0
@@ -269,16 +277,15 @@ pub(crate) fn decode_at(
         .map_err(|error| refused(body.position(), &error))?;
     Ok((
         Cage {
-            source_range: offset..chunk.next_offset,
+            source_range: offset..chunk.next_offset(),
             dimension,
-            rational,
             orders,
             counts,
             knots,
             control_points,
             weights,
         },
-        chunk.next_offset,
+        chunk.next_offset(),
     ))
 }
 

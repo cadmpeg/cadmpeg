@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
-use crate::records::{
-    ConstructionRecipeKind, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-    DesignConstructionOperandGroupFrame, DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation,
+use crate::records::feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation};
+use crate::records::topology::{
+    DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
 };
+use crate::records::ConstructionRecipeKind;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
 fn group(
@@ -19,7 +20,7 @@ fn group(
     scope_reference_ordinal: u32,
     record_index: u32,
     member: u32,
-    role: u64,
+    role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
@@ -27,17 +28,17 @@ fn group(
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
-        members: vec![member],
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: member,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -47,43 +48,50 @@ fn group(
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
 
 #[test]
 fn replace_face_projects_role_order_and_historical_inputs() {
-    let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1129", "ReplaceFace", 1129);
-    scope.class_tag = "301".into();
-    scope.paired_class_tag = "258".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1129",
+        crate::records::feature::DesignFeatureKind::ReplaceFace,
+        1129,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("301".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 290;
     scope.previous_history_state_id = Some(254);
-    scope.reference_members = vec![1130, 1133, 1137, 1140];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
 
-    let replacement_group = group(1129, 0, 1130, 1133, 0x0000_0009_0000_0000);
-    let target_group = group(1129, 2, 1137, 1140, 0x0000_0010_0000_0000);
+    let replacement_group = group(1129, 0, 1130, 1133, DesignOperandRole::ROLE_0X9);
+    let target_group = group(1129, 2, 1137, 1140, DesignOperandRole::ROLE_0X10);
     let replacement = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
         scope_record_index: 1129,
-        owner: DesignBodyRecipeOperandOwner::Group {
+        owner: DesignOperandOwner::Group {
             group_record_index: 1130,
             group_member_ordinal: 0,
         },
         record_index: 1133,
         byte_offset: 0,
-        class_tag: "316".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
+
         references: vec![DesignBodyRecipeReference {
             design_reference: 326,
             design_reference_offset: 0,
@@ -107,13 +115,15 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
         scope_record_index: 1129,
         scope_reference_ordinal: 3,
-        group_record_index: Some(1137),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::topology::DesignOperandGroup {
+            group_record_index: 1137,
+            group_member_ordinal: 0,
+        }),
         record_index: 1140,
         byte_offset: 0,
-        class_tag: "272".into(),
+        class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
         paired_byte_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 1143,
         recipe_record_byte_offset: 0,
         recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
@@ -123,7 +133,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         recipe_kind: ConstructionRecipeKind::BoundedFace,
         recipe_program_offset: 0,
         recipe_program: Vec::new(),
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),
@@ -172,27 +182,36 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
-    let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1200", "SurfaceTrim", 1200);
-    scope.reference_members = vec![1201, 1202, 1203, 1204];
-    let target_group = group(1200, 0, 1201, 1202, 0x0000_0004_0000_0000);
-    let tool_group = group(1200, 2, 1203, 1204, 0x0000_0021_0000_0000);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1200",
+        crate::records::feature::DesignFeatureKind::SurfaceTrim,
+        1200,
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
+    let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
+    let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
     let body = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
         scope_record_index: 1200,
-        owner: DesignBodyRecipeOperandOwner::Group {
+        owner: DesignOperandOwner::Group {
             group_record_index: 1201,
             group_member_ordinal: 0,
         },
         record_index: 1202,
         byte_offset: 0,
-        class_tag: "316".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
+
         references: vec![DesignBodyRecipeReference {
             design_reference: 326,
             design_reference_offset: 0,
@@ -224,7 +243,6 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             faces: FaceSelection::Historical { ref faces, ref native, .. },
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: None,
         } if faces.len() == 1
             && native == &target_group.id
             && tool == &tool_group.id
@@ -235,17 +253,16 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
-        "SurfaceTrim",
+        crate::records::feature::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature::new(
-        cadmpeg_ir::features::FeatureId::from("f3d:feature#1200"),
+        cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").expect("identity grammar"),
         0,
         FeatureDefinition::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: None,
         },
     );
     feature.native_ref = Some(scope.id.clone());
@@ -259,9 +276,10 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         chain_records: Vec::new(),
         cell_table_record_index: 3,
         cell_table_byte_offset: 0,
-        cell_table_class_tag: "325".into(),
+        cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
         cell_table_frame_length: 0,
-        cell_table_paired_class_tag: "257".into(),
+        cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
         cell_table_paired_byte_offset: 0,
         cell_count: 2,
         cell_count_offset: 0,
@@ -293,9 +311,8 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     assert!(matches!(
         feature.definition,
         FeatureDefinition::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: Some(cadmpeg_ir::features::TrimCellSelection { removed, total }),
+            keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..
-        } if removed == vec![1, 4] && total == 5
+        } if selection.removed() == [1, 4] && selection.total() == 5
     ));
 }

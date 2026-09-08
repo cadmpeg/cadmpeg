@@ -8,7 +8,7 @@ use crate::validate::validate_neutral;
 #[test]
 fn ids_are_globally_unique_across_arenas() {
     let mut ir = unit_cube();
-    ir.model.points[0].id.0 = ir.model.vertices[0].id.0.clone();
+    ir.model.points[0].id = crate::ids::PointId::mint(ir.model.vertices[0].id.as_str()).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

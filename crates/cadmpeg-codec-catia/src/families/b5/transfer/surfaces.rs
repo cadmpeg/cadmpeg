@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -217,15 +217,16 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
     match profile {
         B5Profile::Line {
             point, direction, ..
-        } => Some(NurbsCurve {
-            degree: 1,
-            knots: vec![interval[0], interval[0], interval[1], interval[1]],
-            control_points: interval
+        } => NurbsCurve::new(
+            1,
+            vec![interval[0], interval[0], interval[1], interval[1]],
+            interval
                 .map(|parameter| point3(add(*point, scale(*direction, parameter))))
                 .to_vec(),
-            weights: None,
-            periodic: false,
-        }),
+            None,
+            false,
+        )
+        .ok(),
         B5Profile::Arc {
             center,
             direction_x,
@@ -291,13 +292,7 @@ pub(super) fn rational_arc(
         weights.push(1.0);
         append_quadratic_span_knots(&mut knots, interval, span, span_count);
     }
-    Some(NurbsCurve {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    })
+    NurbsCurve::new(2, knots, control_points, Some(weights), false).ok()
 }
 
 pub(super) fn revolve_nurbs(
@@ -315,7 +310,7 @@ pub(super) fn revolve_nurbs(
     let span_count = (span_count as usize).max(1);
     let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
     let control_count =
-        crate::nurbs_surface_control_count(profile.control_points.len(), angular_count)?;
+        crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
     let mut angles = Vec::with_capacity(angular_count);
     let mut angular_weights = Vec::with_capacity(angular_count);
     let mut v_knots = Vec::with_capacity(angular_count + 3);
@@ -339,10 +334,10 @@ pub(super) fn revolve_nurbs(
         angular_weights.push(1.0);
         append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
     }
-    let profile_weights = match profile.weights.clone() {
-        Some(weights) => weights,
+    let profile_weights = match profile.weights() {
+        Some(weights) => weights.to_vec(),
         None => alloc_filled(
-            profile.control_points.len(),
+            profile.control_points().len(),
             1.0,
             "catia b5 revolution profile weights",
         )
@@ -350,7 +345,7 @@ pub(super) fn revolve_nurbs(
     };
     let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
-    for (profile_point, profile_weight) in profile.control_points.iter().zip(profile_weights) {
+    for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights) {
         let relative = [
             profile_point.x - axis_origin[0],
             profile_point.y - axis_origin[1],
@@ -369,19 +364,20 @@ pub(super) fn revolve_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
-    Some(NurbsSurface {
-        u_degree: profile.degree,
-        v_degree: 2,
-        u_knots: profile.knots.clone(),
+    NurbsSurface::new(
+        profile.degree(),
+        2,
+        profile.knots().to_vec(),
         v_knots,
-        u_count: u32::try_from(profile.control_points.len()).ok()?,
-        v_count: u32::try_from(angular_count).ok()?,
+        u32::try_from(profile.control_points().len()).ok()?,
+        u32::try_from(angular_count).ok()?,
         control_points,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+        Some(weights),
+        false,
+        false,
+        false,
+    )
+    .ok()
 }
 
 pub(super) fn append_quadratic_span_knots(
@@ -466,7 +462,7 @@ pub(super) fn emit_surfaces(
         .map(|object_id| {
             (
                 *object_id,
-                SurfaceId(format!("catia:b5:surface#{object_id}")),
+                SurfaceId::mint(format!("catia:b5:surface#{object_id}")).expect("identity grammar"),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -522,7 +518,8 @@ pub(super) fn emit_surfaces(
                 emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
-                let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
+                let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
+                    .expect("identity grammar");
                 annotate(
                     annotations,
                     &directrix_id,
@@ -537,7 +534,8 @@ pub(super) fn emit_surfaces(
                     source_object: None,
                 });
                 let procedural_id =
-                    ProceduralSurfaceId(format!("catia:b5:procedural-surface#{object_id}"));
+                    ProceduralSurfaceId::mint(format!("catia:b5:procedural-surface#{object_id}"))
+                        .expect("identity grammar");
                 annotate(
                     annotations,
                     &procedural_id,
@@ -545,22 +543,23 @@ pub(super) fn emit_surfaces(
                     "2d_surface_of_revolution",
                     Exactness::Derived,
                 );
-                ir.model.procedural_surfaces.push(ProceduralSurface {
-                    id: procedural_id,
-                    surface: id,
-                    definition: ProceduralSurfaceDefinition::Revolution {
-                        directrix: directrix_id,
-                        axis_origin: revolution.axis_origin,
-                        axis_direction: revolution.axis_direction,
-                        angular_interval: revolution.angular_interval,
-                        angular_parameter_interval: Some(revolution.angular_parameter_interval),
-                        parameter_interval: Some(revolution.parameter_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
-                    cache_fit_tolerance: None,
-                    record_bounds: None,
-                });
+                let _attached = ir.model.add_procedural_surface(
+                    id,
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Revolution {
+                            directrix: directrix_id,
+                            axis_origin: revolution.axis_origin,
+                            axis_direction: revolution.axis_direction,
+                            angular_interval: revolution.angular_interval,
+                            angular_parameter_interval: Some(revolution.angular_parameter_interval),
+                            parameter_interval: Some(revolution.parameter_interval),
+                            transposed: false,
+                            revision_form: None,
+                        },
+                        None,
+                    ),
+                );
             }
             Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
@@ -570,7 +569,8 @@ pub(super) fn emit_surfaces(
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
                 let procedural_id =
-                    ProceduralSurfaceId(format!("catia:b5:rolling-ball#{object_id}"));
+                    ProceduralSurfaceId::mint(format!("catia:b5:rolling-ball#{object_id}"))
+                        .expect("identity grammar");
                 let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
                 annotate(
                     annotations,
@@ -579,13 +579,10 @@ pub(super) fn emit_surfaces(
                     &carrier_tag,
                     Exactness::ByteExact,
                 );
-                ir.model.procedural_surfaces.push(ProceduralSurface {
-                    id: procedural_id,
-                    surface: id,
-                    definition,
-                    cache_fit_tolerance: None,
-                    record_bounds: None,
-                });
+                let _attached = ir.model.add_procedural_surface(
+                    id,
+                    ProceduralSurface::new(procedural_id, definition, None),
+                );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
@@ -603,7 +600,8 @@ pub(super) fn emit_surfaces(
         ) else {
             continue;
         };
-        let procedural_id = ProceduralSurfaceId(format!("catia:b5:offset#{object_id}"));
+        let procedural_id = ProceduralSurfaceId::mint(format!("catia:b5:offset#{object_id}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &procedural_id,
@@ -611,21 +609,23 @@ pub(super) fn emit_surfaces(
             "30_offset_surface",
             Exactness::Derived,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: procedural_id,
-            surface: surface.clone(),
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: support.clone(),
-                distance: offset.distance,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: Some(parameter_record_bounds(offset.parameter_bounds)),
-        });
+        let _attached = ir.model.add_procedural_surface(
+            surface.clone(),
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Offset {
+                    support: support.clone(),
+                    distance: offset.distance,
+                    u_sense: None,
+                    v_sense: None,
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                Some(parameter_record_bounds(offset.parameter_bounds)),
+            ),
+        );
     }
     surface_ids
 }
@@ -647,10 +647,11 @@ fn emit_extrusion_procedure(
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
 ) {
-    let directrix_id = CurveId(format!(
+    let directrix_id = CurveId::mint(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
-    ));
+    ))
+    .expect("identity grammar");
     match extrusion.directrix {
         super::ResolvedExtrusionDirectrix::Intersection {
             supports,
@@ -658,10 +659,12 @@ fn emit_extrusion_procedure(
         } => {
             let sides = (*supports).map(|side| IntcurveSupportSide {
                 surface: Some(surface_ids[&side.surface_object_id].clone()),
-                pcurve: Some(side.pcurve),
-                pcurve_parameter_range: (side.pcurve_parameter_range
-                    != extrusion.directrix_parameter_range)
-                    .then_some(side.pcurve_parameter_range),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve,
+                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
+                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                        .flatten(),
+                )),
             });
             annotate(
                 annotations,
@@ -675,10 +678,11 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId(format!(
+            let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
                 extrusion.directrix_object_id
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &procedure_id,
@@ -686,10 +690,9 @@ fn emit_extrusion_procedure(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedure_id,
-                curve: directrix_id.clone(),
-                definition: ProceduralCurveDefinition::Intersection {
+            if let Ok(procedure) = ProceduralCurve::try_new(
+                procedure_id,
+                ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides,
                         parameter_range: extrusion.directrix_parameter_range,
@@ -697,8 +700,12 @@ fn emit_extrusion_procedure(
                     },
                     discontinuity_flag: false,
                 },
-                cache_fit_tolerance: Some(cache_fit_tolerance),
-            });
+                Some(cache_fit_tolerance),
+            ) {
+                let _attached = ir
+                    .model
+                    .add_procedural_curve(directrix_id.clone(), procedure);
+            }
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -722,9 +729,10 @@ fn emit_extrusion_procedure(
             distance,
             direction,
         } => {
-            let source_id = CurveId(format!(
+            let source_id = CurveId::mint(format!(
                 "catia:b5:extrusion-directrix-source#{source_object_id}"
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &source_id,
@@ -749,10 +757,11 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId(format!(
+            let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
                 extrusion.directrix_object_id
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &procedure_id,
@@ -760,23 +769,27 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedure_id,
-                curve: directrix_id.clone(),
-                definition: ProceduralCurveDefinition::Offset {
-                    source: source_id,
-                    distance,
-                    direction: Some(direction),
-                    support: Some(surface_ids[&support.surface_object_id].clone()),
-                    normal: None,
-                    parameter_range: Some(source_parameter_range),
-                    distance_law: None,
-                },
-                cache_fit_tolerance: None,
-            });
+            let _attached = ir.model.add_procedural_curve(
+                directrix_id.clone(),
+                ProceduralCurve::new(
+                    procedure_id,
+                    ProceduralCurveDefinition::Offset {
+                        source: source_id,
+                        distance,
+                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
+                            direction,
+                            support: Some(surface_ids[&support.surface_object_id].clone()),
+                        },
+                        range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                            parameter_range: source_parameter_range,
+                        }),
+                    },
+                ),
+            );
         }
     }
-    let procedure_id = ProceduralSurfaceId(format!("catia:b5:extrusion#{surface_object_id}"));
+    let procedure_id = ProceduralSurfaceId::mint(format!("catia:b5:extrusion#{surface_object_id}"))
+        .expect("identity grammar");
     annotate(
         annotations,
         &procedure_id,
@@ -784,27 +797,27 @@ fn emit_extrusion_procedure(
         "2c_extrusion_surface",
         Exactness::ByteExact,
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: procedure_id,
-        surface: surface_id,
-        definition: ProceduralSurfaceDefinition::Extrusion {
-            directrix: directrix_id,
-            parameter_interval: Some(extrusion.directrix_parameter_range),
-            direction: extrusion.direction,
-            native_position: None,
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: Some(parameter_record_bounds(extrusion.parameter_bounds)),
-    });
+    let _attached = ir.model.add_procedural_surface(
+        surface_id,
+        ProceduralSurface::new(
+            procedure_id,
+            ProceduralSurfaceDefinition::Extrusion {
+                directrix: directrix_id,
+                parameter_interval: Some(extrusion.directrix_parameter_range),
+                direction: extrusion.direction,
+                native_position: None,
+                revision_form: None,
+            },
+            Some(parameter_record_bounds(extrusion.parameter_bounds)),
+        ),
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::units::Units;
 
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
@@ -813,15 +826,26 @@ mod tests {
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
         let support_ids = HashMap::from([
-            (10, SurfaceId("support-10".to_string())),
-            (20, SurfaceId("support-20".to_string())),
+            (
+                10,
+                SurfaceId::mint("catia:test:surface#support-10".to_string())
+                    .expect("identity grammar"),
+            ),
+            (
+                20,
+                SurfaceId::mint("catia:test:surface#support-20".to_string())
+                    .expect("identity grammar"),
+            ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
+                None,
+                false,
+            )
+            .expect("valid support pcurve"),
         };
         let extrusion = ResolvedExtrusionSurface {
             surface_object_id: 30,
@@ -857,43 +881,54 @@ mod tests {
                 ]),
             },
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
+        let surface_id = SurfaceId::mint("catia:test:surface#result-30").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
 
         emit_extrusion_procedure(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &support_ids,
-            SurfaceId("result-30".to_string()),
+            surface_id,
             30,
             extrusion,
         );
 
         assert!(matches!(
-            ir.model.curves[0].geometry,
-            CurveGeometry::Unknown { record: None }
+            &ir.model.curves[0].geometry,
+            CurveGeometry::Procedural { construction, cache: Some(cache) }
+                if *construction == ir.model.procedural_curves[0].id
+                    && matches!(cache.as_geometry(), CurveGeometry::Unknown { record: None })
         ));
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &ir.model.procedural_curves[0].definition
+            ir.model.procedural_curves[0].definition()
         else {
             panic!("expected intersection directrix");
         };
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert_eq!(context.sides[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(context.sides[0].pcurve_parameter_range, None);
+        assert_eq!(context.sides[0].pcurve_parameter_range(), None);
         assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
-        assert_eq!(context.sides[1].pcurve_parameter_range, Some([0.25, 0.75]));
         assert_eq!(
-            ir.model.procedural_curves[0].cache_fit_tolerance,
+            context.sides[1].pcurve_parameter_range(),
+            Some([0.25, 0.75])
+        );
+        assert_eq!(
+            ir.model.procedural_curves[0].cache_fit_tolerance(),
             Some(1e-5)
         );
         assert!(matches!(
-            ir.model.procedural_surfaces[0].definition,
+            ir.model.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Extrusion {
                 parameter_interval: Some([0.0, 1.0]),
                 direction,
                 native_position: None,
                 ..
-            } if direction == Vector3::new(0.0, 0.0, 1.0)
+            } if *direction == Vector3::new(0.0, 0.0, 1.0)
         ));
         assert_eq!(
             ir.model.procedural_surfaces[0].record_bounds,

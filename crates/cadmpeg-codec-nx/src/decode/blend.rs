@@ -88,13 +88,14 @@ mod tests {
             1.0,
         );
         for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
-            let surface = SurfaceId(format!("surface-{index}"));
+            let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
+                .expect("identity grammar");
             cache.remember(&surface, index as f64, false, frame);
         }
-        let first = SurfaceId("surface-0".into());
+        let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
         assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
-        let newest = SurfaceId("surface-newest".into());
+        let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
         cache.remember(&newest, 0.0, false, frame);
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
@@ -106,14 +107,17 @@ mod tests {
         let mut cache = BlendSurfaceFrameCache::default();
         let point = Point3::new(1.0, 2.0, 3.0);
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
-            let surface = SurfaceId(format!("boundary-surface-{index}"));
+            let surface = SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
+                .expect("identity grammar");
             cache.remember_boundary_point(&surface, index as f64, index % 2, point);
         }
 
-        let first = SurfaceId("boundary-surface-0".into());
+        let first =
+            SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
         assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
 
-        let newest = SurfaceId("boundary-surface-newest".into());
+        let newest =
+            SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
         cache.remember_boundary_point(&newest, 0.0, 1, point);
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
@@ -151,9 +155,12 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
-        let support = SurfaceId("synthetic:seed-support".into());
-        let spine = CurveId("synthetic:seed-spine".into());
-        let offset_surface = SurfaceId("synthetic:seed-offset".into());
+        let support =
+            SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
+        let spine =
+            CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
+        let offset_surface =
+            SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
             let parameter = parameter as f64;
@@ -376,27 +383,25 @@ fn blend_surface_parameters_inner(
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         let seed_u_is_valid = index
-            .curves(spine.0.as_str())
-            .and_then(|curve| match &curve.geometry {
-                CurveGeometry::Nurbs(nurbs) => {
-                    let degree = usize::try_from(nurbs.degree).ok()?;
-                    let count = nurbs.control_points.len();
-                    let knot_count = count.checked_add(degree)?.checked_add(1)?;
-                    if count <= degree || nurbs.knots.len() != knot_count {
-                        return Some(false);
+            .curves(spine.as_str())
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Nurbs(nurbs) => {
+                        let degree = usize::try_from(nurbs.degree()).ok()?;
+                        let count = nurbs.control_points().len();
+                        let lower = *nurbs.knots().get(degree)?;
+                        let upper = *nurbs.knots().get(count)?;
+                        Some(
+                            lower.is_finite()
+                                && upper.is_finite()
+                                && lower < upper
+                                && seed.u >= lower
+                                && seed.u <= upper,
+                        )
                     }
-                    let lower = *nurbs.knots.get(degree)?;
-                    let upper = *nurbs.knots.get(count)?;
-                    Some(
-                        lower.is_finite()
-                            && upper.is_finite()
-                            && lower < upper
-                            && seed.u >= lower
-                            && seed.u <= upper,
-                    )
-                }
-                _ => Some(seed.u.is_finite()),
-            })
+                    _ => Some(seed.u.is_finite()),
+                },
+            )
             .unwrap_or(false);
         if seed_u_is_valid
             && section_domain.contains(seed.v)
@@ -625,13 +630,14 @@ pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
 ) -> Option<Vec<(Point2, Point3)>> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let curve = index.curves(spine.0.as_str())?;
-    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let curve = index.curves(spine.as_str())?;
+    let CurveGeometry::Nurbs(nurbs) = curve.geometry.solved_cache().unwrap_or(&curve.geometry)
+    else {
         return None;
     };
-    let degree = usize::try_from(nurbs.degree).ok()?;
-    let count = nurbs.control_points.len();
-    let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return None;
     }
@@ -790,16 +796,16 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let u_domain = index
-        .curves(spine.0.as_str())
-        .and_then(|curve| match &curve.geometry {
+    let u_domain = index.curves(spine.as_str()).and_then(|curve| {
+        match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Nurbs(nurbs) => {
-                let degree = usize::try_from(nurbs.degree).ok()?;
-                let count = nurbs.control_points.len();
-                Some([*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?])
+                let degree = usize::try_from(nurbs.degree()).ok()?;
+                let count = nurbs.control_points().len();
+                Some([*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?])
             }
             _ => None,
-        });
+        }
+    });
     if let Some(domain) = u_domain {
         parameters.u = parameters.u.clamp(domain[0], domain[1]);
     }
@@ -1254,10 +1260,22 @@ pub(crate) fn blend_surface_u_derivative_with_index_and_budget(
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    let carrier = index.curves(spine.0.as_str())?;
-    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget)?;
-    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget)?;
-    let acceleration = curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let carrier = index.curves(spine.as_str())?;
+    let center = curve_point_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
+    let velocity = curve_tangent_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
+    let acceleration = curve_second_derivative_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
     let speed = velocity.norm();
     if !speed.is_finite() || speed == 0.0 {
         return None;
@@ -1642,7 +1660,7 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let support_geometry = &index.surfaces(support.0.as_str())?.geometry;
+    let support_geometry = &index.surfaces(support.as_str())?.geometry;
     blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         index,
         blend,
@@ -2011,24 +2029,14 @@ const LOCAL_CONTACT_PCURVE_SEARCH_STEPS: usize = 12;
 const COARSE_CONTACT_PCURVE_SEARCH_INTERVALS: usize = 16;
 
 fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        periodic,
-        ..
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let degree = usize::try_from(*degree).ok()?;
-    let count = control_points.len();
-    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     (domain[0].is_finite() && domain[1].is_finite() && domain[0] < domain[1])
-        .then_some((domain, *periodic))
+        .then_some((domain, nurbs.periodic()))
 }
 
 fn closest_pcurve_parameter_from_coarse_grid(
@@ -2094,39 +2102,35 @@ pub(crate) fn closest_pcurve_parameters(
     point: Point2,
     seed: Option<f64>,
 ) -> Option<Vec<f64>> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let degree = usize::try_from(*degree).ok()?;
-    let count = control_points.len();
-    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
         return None;
     }
-    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, *periodic, seed));
-    let homogeneous =
-        homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
-    let candidates = if degree != 1 || weights.is_some() {
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
+    let homogeneous = homogeneous_pcurve_spans(
+        degree,
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
+        point,
+    )?;
+    let candidates = if degree != 1 || nurbs.weights().is_some() {
         let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
         closest_parameter_candidates(
             stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?,
             search_seed,
         )?
     } else {
-        let candidates = control_points
+        let candidates = nurbs
+            .control_points()
             .windows(2)
             .enumerate()
             .filter_map(|(index, segment)| {
@@ -2141,8 +2145,8 @@ pub(crate) fn closest_pcurve_parameters(
                     + (point.v - start.v) * direction.v)
                     / squared_length)
                     .clamp(0.0, 1.0);
-                let span_start = *knots.get(index + 1)?;
-                let span_end = *knots.get(index + 2)?;
+                let span_start = *nurbs.knots().get(index + 1)?;
+                let span_end = *nurbs.knots().get(index + 2)?;
                 if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
                     return None;
                 }
@@ -2161,7 +2165,10 @@ pub(crate) fn closest_pcurve_parameters(
         closest_parameter_candidates(candidates, search_seed)?
     };
     Some(lift_periodic_parameters(
-        candidates, domain, *periodic, seed,
+        candidates,
+        domain,
+        nurbs.periodic(),
+        seed,
     ))
 }
 
@@ -2755,7 +2762,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
     }
     let support_has_nurbs_parameterization =
         surface_offset_lineage_with_index(index, support, depth + 1)
-            .and_then(|(base, _)| index.surfaces(base.0.as_str()))
+            .and_then(|(base, _)| index.surfaces(base.as_str()))
             .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
     if !support_has_nurbs_parameterization {
         return None;
@@ -2794,20 +2801,20 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     let tangent =
         model_curve_tangent_with_index_and_budget(index, spine, parameter, geometry_budget)?;
     let procedural = index
-        .procedural_curves_for_curve(spine.0.as_str())?
+        .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
         .find(|candidate| {
             matches!(
-                candidate.definition,
+                candidate.definition(),
                 ProceduralCurveDefinition::Intersection { .. }
             )
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         unreachable!("definition selected above");
     };
     let contact_fit_tolerance = procedural
-        .cache_fit_tolerance
+        .cache_fit_tolerance()
         .filter(|fit| fit.is_finite() && *fit > 0.0)
         .map_or(tolerance, |fit| tolerance.max(fit));
     let offset_surfaces = context
@@ -2828,7 +2835,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let Some(side_uv) = pcurve_uv(pcurve, parameter) else {
+        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter) else {
             continue;
         };
         let Some(side_point) = decoded_surface_point_inner_with_budget(
@@ -2939,16 +2946,16 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
     let procedural = index
-        .procedural_curves_for_curve(spine.0.as_str())?
+        .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
         .find(|candidate| {
             matches!(
-                candidate.definition,
+                candidate.definition(),
                 ProceduralCurveDefinition::Intersection { .. }
             )
         })?;
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         unreachable!("definition selected above");
     };
     let candidates = context.sides.iter().filter_map(|side| {
@@ -2966,7 +2973,7 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
     let [pcurve] = candidates.as_slice() else {
         return None;
     };
-    Some(*pcurve)
+    Some(&pcurve.geometry)
 }
 
 #[cfg(test)]
@@ -2993,8 +3000,8 @@ fn constant_surface_offset_between_with_index(
     if support_base == offset_base {
         return Some(offset_distance - support_offset);
     }
-    let support_geometry = &index.surfaces(support_base.0.as_str())?.geometry;
-    let offset_geometry = &index.surfaces(offset_base.0.as_str())?.geometry;
+    let support_geometry = &index.surfaces(support_base.as_str())?.geometry;
+    let offset_geometry = &index.surfaces(offset_base.as_str())?.geometry;
     let base_offset = analytic_surface_offset(support_geometry, offset_geometry).or_else(|| {
         blend_surface_offset_with_index(index, &support_base, &offset_base, depth + 1)
     })?;
@@ -3237,13 +3244,13 @@ fn surface_offset_lineage_with_index(
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
     (depth < 32).then_some(())?;
-    index.surfaces(surface.0.as_str())?;
-    let Some(procedural) = index.procedural_surface_for_carrier(surface.0.as_str()) else {
+    index.surfaces(surface.as_str())?;
+    let Some(procedural) = index.procedural_surface_for_carrier(surface.as_str()) else {
         return Some((surface.clone(), 0.0));
     };
     let ProceduralSurfaceDefinition::Offset {
         support, distance, ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return Some((surface.clone(), 0.0));
     };
@@ -3255,7 +3262,7 @@ pub(crate) fn blend_surface_definition_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_surface(surface.0.as_str())?;
+    let procedural = index.procedural_surface_for_surface(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
@@ -3263,7 +3270,7 @@ fn blend_surface_definition_for_carrier_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_carrier(surface.0.as_str())?;
+    let procedural = index.procedural_surface_for_carrier(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
@@ -3276,7 +3283,7 @@ fn blend_surface_definition_from_procedural(
         radius: BlendRadiusLaw::Constant { signed_radius },
         cross_section: BlendCrossSection::Circular,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -3341,16 +3348,16 @@ fn surface_contact_direction_with_index_and_budget(
     ) {
         return Some(direction);
     }
-    let carrier = index.surfaces(surface.0.as_str())?;
+    let carrier = index.surfaces(surface.as_str())?;
     let tolerance = ir.tolerances.linear;
     if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
     }
     let requires_radius_certificate = matches!(
-        &carrier.geometry,
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
     );
-    let parameters = match &carrier.geometry {
+    let parameters = match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
             nurbs,
             center,
@@ -3448,8 +3455,12 @@ pub(crate) fn model_curve_point_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
-    let carrier = index.curves(curve.0.as_str())?;
-    curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
+    let carrier = index.curves(curve.as_str())?;
+    curve_point_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        parameter,
+        geometry_budget,
+    )
 }
 
 pub(crate) fn model_curve_tangent_with_index_and_budget(
@@ -3458,9 +3469,9 @@ pub(crate) fn model_curve_tangent_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
-    let carrier = index.curves(curve.0.as_str())?;
+    let carrier = index.curves(curve.as_str())?;
     unit_vector(curve_tangent_with_budget(
-        &carrier.geometry,
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
         parameter,
         geometry_budget,
     )?)
@@ -3485,8 +3496,8 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let carrier = index.curves(curve.0.as_str())?;
-    match &carrier.geometry {
+    let carrier = index.curves(curve.as_str())?;
+    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
         CurveGeometry::Line { origin, direction } => Some(
             (point.x - origin.x) * direction.x
                 + (point.y - origin.y) * direction.y
@@ -3494,7 +3505,7 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
         ),
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             closest_periodic_analytic_curve_parameter_with_budget(
-                &carrier.geometry,
+                carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
                 point,
                 seed,
                 geometry_budget,
@@ -3736,14 +3747,11 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if degree == 0
-        || count <= degree
-        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve.control_points.iter().any(|control| {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
+    if curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
+        || curve.control_points().iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
         || !point.x.is_finite()
@@ -3752,34 +3760,33 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
     {
         return None;
     }
-    let domain = [*curve.knots.get(degree)?, *curve.knots.get(count)?];
+    let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
         return None;
     }
-    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic, seed));
-    let weights = match &curve.weights {
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
+    let weights = match curve.weights() {
         Some(weights)
-            if weights.len() == count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+            if weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0) =>
         {
-            weights.clone()
+            weights.to_vec()
         }
         Some(_) => return None,
         None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
     };
     let coordinate_scale = curve
-        .control_points
+        .control_points()
         .iter()
         .flat_map(|control| [control.x, control.y, control.z])
         .chain([point.x, point.y, point.z])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     let controls = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(control, weight)| {
@@ -3795,14 +3802,14 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
         return None;
     }
     let homogeneous = HomogeneousCurveSpans {
-        spans: bezier_spans(degree, &curve.knots, controls)?,
+        spans: bezier_spans(degree, curve.knots(), controls)?,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let parameters = closest_parameter_candidates(
         stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?,
         search_seed,
     )?;
-    lift_periodic_parameters(parameters, domain, curve.periodic, seed)
+    lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
         .into_iter()
         .next()
 }

@@ -26,8 +26,8 @@ pub(crate) fn attach_test_body_surface(
     use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Face, Region, Sense, Shell};
 
-    let region_id = RegionId(format!("{}:region", body_id.0));
-    let shell_id = ShellId(format!("{}:shell", body_id.0));
+    let region_id = RegionId::mint(format!("{body_id}:region")).expect("identity grammar");
+    let shell_id = ShellId::mint(format!("{body_id}:shell")).expect("identity grammar");
     if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
         ir.model.bodies.push(Body {
             id: body_id.clone(),
@@ -51,7 +51,8 @@ pub(crate) fn attach_test_body_surface(
             free_vertices: Vec::new(),
         });
     }
-    let face_id = FaceId(format!("{}:face#{}", body_id.0, ir.model.faces.len()));
+    let face_id =
+        FaceId::mint(format!("{body_id}:face:{}", ir.model.faces.len())).expect("identity grammar");
     ir.model
         .shells
         .iter_mut()
@@ -64,7 +65,7 @@ pub(crate) fn attach_test_body_surface(
         shell: shell_id,
         surface,
         sense: Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,

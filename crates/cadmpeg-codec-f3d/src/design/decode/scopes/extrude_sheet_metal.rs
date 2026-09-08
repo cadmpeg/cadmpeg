@@ -203,15 +203,15 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
 
 pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope) -> bool {
     is_class_296_two_sided_to_faces_layout(
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
         scope.frame_length,
         scope
             .reference_count_offset
             .saturating_sub(scope.byte_offset),
         scope.reference_members.len(),
     ) && scope
-        .extrude_prologue
+        .extrude_prologue()
         .and_then(DesignExtrudePrologue::extent)
         == Some(DesignExtrudeExtent::TwoSidedToFaces)
 }
@@ -307,7 +307,6 @@ fn exact_compact_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: operation_offset as u64,
@@ -397,7 +396,6 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -503,7 +501,6 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -609,7 +606,6 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -763,7 +759,6 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -953,7 +948,6 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -987,9 +981,9 @@ fn exact_legacy_distance_extrude_prologue(
     reference_count_at: usize,
 ) -> Option<DesignExtrudePrologue> {
     let marker_offset = start.checked_add(early_absent::ABSENT_PREFIX)?;
-    let (prefix_value, prefix_value_offset, operation_offset, expected_reference_count_delta) =
+    let (prefix_zero_offset, operation_offset, expected_reference_count_delta) =
         match bytes.get(marker_offset)? {
-            0 => (None, None, start.checked_add(early_absent::OPERATION)?, 208),
+            0 => (None, start.checked_add(early_absent::OPERATION)?, 208),
             1 => {
                 let prefix_value_offset = start.checked_add(early_present::PREFIX_VALUE)?;
                 let prefix_value = View::u32_le_at(bytes, prefix_value_offset)?;
@@ -997,8 +991,7 @@ fn exact_legacy_distance_extrude_prologue(
                     return None;
                 }
                 (
-                    Some(prefix_value),
-                    Some(prefix_value_offset),
+                    Some(u64::try_from(prefix_value_offset).ok()?),
                     start.checked_add(early_present::OPERATION)?,
                     212,
                 )
@@ -1027,21 +1020,20 @@ fn exact_legacy_distance_extrude_prologue(
         _ => return None,
     };
     let geometry_kind_offset = direction_reversed_offset.checked_add(1)?;
-    let geometry_kind = View::u32_le_at(bytes, geometry_kind_offset)?;
-    if !matches!(geometry_kind, 0 | 1) {
-        return None;
-    }
+    let solid_operation = match View::u32_le_at(bytes, geometry_kind_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     Some(DesignExtrudePrologue::LegacyDistance {
-        prefix_value,
-        prefix_value_offset: prefix_value_offset.map(|offset| offset as u64),
+        prefix_zero_offset,
         operation,
         operation_offset: operation_offset as u64,
-        extent_kind,
         extent_kind_offset: extent_kind_offset as u64,
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
-        geometry_kind,
-        geometry_kind_offset: geometry_kind_offset as u64,
+        solid_operation,
+        solid_operation_offset: geometry_kind_offset as u64,
     })
 }
 
@@ -1104,7 +1096,6 @@ fn exact_current_extrude_prologue(
                 record_index,
                 record_index_offset: reference_record_index_offset as u64,
                 trailing_zero_count,
-                operation_prefix_marker: operation_marker_offset.map(|_| 1),
                 operation_prefix_marker_offset: operation_marker_offset
                     .and_then(|offset| u64::try_from(offset).ok()),
             },
@@ -1679,16 +1670,16 @@ fn exact_legacy_shifted_extrude_prologue(
         return None;
     }
     let marker_offset = start.checked_add(shifted_extrude::OPERATION)?;
-    let (operation_prefix_marker, operation_prefix_marker_offset, field_shift) =
+    let (operation_prefix_marker_offset, field_shift) =
         if matches!(View::u32_le_at(bytes, marker_offset), Some(1..=4)) {
-            (None, None, 0)
+            (None, 0)
         } else if bytes.get(marker_offset) == Some(&1)
             && matches!(
                 View::u32_le_at(bytes, marker_offset.checked_add(1)?),
                 Some(1..=4)
             )
         {
-            (Some(1), Some(marker_offset as u64), 1)
+            (Some(marker_offset as u64), 1)
         } else {
             return None;
         };
@@ -1841,7 +1832,6 @@ fn exact_legacy_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker,
         operation_prefix_marker_offset,
         operation,
         operation_offset: operation_offset as u64,
@@ -1990,7 +1980,6 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
         return None;
     }
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -2114,10 +2103,7 @@ pub(crate) fn exact_ruled_surface_operation(
     let fixed_reference = |at: usize| {
         let mut cursor = at;
         let reference = take_reference(bytes, &mut cursor)?;
-        (cursor == at.checked_add(11)?
-            && reference.segment.is_none()
-            && reference.link_name.is_none())
-        .then(|| u32::try_from(reference.target?).ok())?
+        (cursor == at.checked_add(11)?).then(|| u32::try_from(reference.local()?.0).ok())?
     };
     let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
     let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
@@ -2159,11 +2145,14 @@ pub(crate) fn exact_ruled_surface_operation(
     if direction_end.checked_add(3)? != reference_count_at
         || bytes.get(direction_end..reference_count_at)? != [0; 3]
         || paired_at <= reference_count_at
-        || (!direction_absent && !crate::bytes::is_guid_relaxed(&direction_entity_id))
     {
         return None;
     }
-    let direction_entity_id = (!direction_absent).then_some(direction_entity_id);
+    let direction_entity_id = if direction_absent {
+        None
+    } else {
+        Some(crate::records::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
+    };
     if reference_members.first() != Some(&distance_owner_record_index)
         || reference_members.get(1) != Some(&angle_owner_record_index)
         || edge_group_record_indices.is_empty()
@@ -2315,7 +2304,6 @@ struct LegacyEdgeFlangeLayout {
     height_datum_offset: usize,
     angle_owner_offset: usize,
     height_owner_offset: usize,
-    reference_side_offset: usize,
     bend_radius_offset: usize,
     result_count_offset: usize,
     result_reference_start: usize,
@@ -2341,7 +2329,6 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
     height_datum_offset: edge_flange_legacy::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_legacy::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_legacy::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_legacy::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_legacy::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_legacy::RESULT_COUNT,
     result_reference_start: edge_flange_legacy::RESULT_ONE_REFERENCE,
@@ -2373,7 +2360,6 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     height_datum_offset: edge_flange_multi::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_multi::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_multi::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_multi::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_multi::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_multi::RESULT_COUNT,
     result_reference_start: edge_flange_multi::RESULT_ONE_REFERENCE,
@@ -2405,7 +2391,6 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: edge_flange_325_per_edge::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_325_per_edge::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_325_per_edge::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_325_per_edge::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_325_per_edge::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_325_per_edge::RESULT_COUNT,
     result_reference_start: edge_flange_325_per_edge::RESULT_ONE_REFERENCE,
@@ -2437,7 +2422,6 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
     height_datum_offset: edge_flange_364_width::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_364_width::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_364_width::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_364_width::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_364_width::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_364_width::RESULT_COUNT,
     result_reference_start: edge_flange_364_width::RESULT_ONE_REFERENCE,
@@ -2469,7 +2453,6 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: edge_flange_286_per_edge::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_286_per_edge::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_286_per_edge::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_286_per_edge::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_286_per_edge::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_286_per_edge::RESULT_COUNT,
     result_reference_start: edge_flange_286_per_edge::RESULT_ONE_REFERENCE,
@@ -2495,7 +2478,6 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: 110,
     angle_owner_offset: 114,
     height_owner_offset: 125,
-    reference_side_offset: 136,
     bend_radius_offset: 142,
     result_count_offset: 150,
     result_reference_start: 154,
@@ -2558,13 +2540,11 @@ fn legacy_edge_flange_operation_at(
         marked_record_reference(bytes, start.checked_add(layout.height_owner_offset)?)?,
         &mut unclaimed,
     )?;
-    let reference_side_code =
-        View::u32_le_at(bytes, start.checked_add(layout.reference_side_offset)?)?;
     let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     if View::u32_le_at(bytes, start.checked_add(layout.result_count_offset)?)?
         != u32::try_from(layout.result_trailers.len()).ok()?
         || View::u32_le_at(bytes, start.checked_add(layout.result_separator_offset)?)? != 1
@@ -2636,24 +2616,31 @@ fn legacy_edge_flange_operation_at(
         } else {
             Vec::new()
         };
-    Some(DesignEdgeFlangeOperation {
+    let edges = crate::records::feature::DesignEdgeFlangeEdge::from_columns(
         edge_wrapper_record_indices,
         edge_group_record_indices,
         edge_operand_record_indices,
-        aggregate_group_record_index,
         aggregate_operand_record_indices,
+    )
+    .ok()?;
+    Some(DesignEdgeFlangeOperation {
+        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
+            edges,
+            Some(layout.width_mode),
+            width_distance_owner_record_indices,
+            width_distance_owner_record_indices_by_edge,
+            layout.width_parameter_source,
+            DesignEdgeFlangeHeightExtent::Distance,
+        )
+        .ok()?,
+        aggregate_group_record_index,
         height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width_mode: Some(layout.width_mode),
-        width_distance_owner_record_indices,
-        width_distance_owner_record_indices_by_edge,
         auxiliary_reference_record_indices,
-        width_parameter_source: layout.width_parameter_source,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
@@ -2699,10 +2686,7 @@ fn edge_flange_operation_at(
     };
 
     let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_record_indices = vec![claim(
-        marked_record_reference(bytes, cursor)?,
-        &mut unclaimed,
-    )?];
+    let edge_wrapper_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
@@ -2711,13 +2695,11 @@ fn edge_flange_operation_at(
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
-    let reference_side_code = View::u32_le_at(bytes, cursor)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let result_count =
         usize::try_from(View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
     // The aggregate-group and role-`0x08` group slots close the section after the
@@ -2732,13 +2714,10 @@ fn edge_flange_operation_at(
     let first_edge_group = marked_record_reference(bytes, aggregate_slot.checked_add(27)?)?;
 
     // A group's recipe-backed operand is the record three after the group.
-    let aggregate_operand_record_indices = vec![claim(
-        aggregate_group_record_index.checked_add(3)?,
-        &mut unclaimed,
-    )?];
-    let edge_group_record_indices = vec![claim(first_edge_group, &mut unclaimed)?];
-    let edge_operand_record_indices =
-        vec![claim(first_edge_group.checked_add(3)?, &mut unclaimed)?];
+    let aggregate_operand_record_index =
+        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
+    let edge_operand_record_index = claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
 
     if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
         return None;
@@ -2754,23 +2733,28 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        edge_operand_record_indices,
+        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
+            vec![crate::records::feature::DesignEdgeFlangeEdge {
+                wrapper_record_index: edge_wrapper_record_index,
+                group_record_index: edge_group_record_index,
+                operand_record_index: edge_operand_record_index,
+                aggregate_operand_record_index,
+            }],
+            None,
+            width_distance_owner_record_indices,
+            Vec::new(),
+            DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+            DesignEdgeFlangeHeightExtent::Distance,
+        )
+        .ok()?,
         aggregate_group_record_index,
-        aggregate_operand_record_indices,
         height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width_mode: None,
-        width_distance_owner_record_indices,
-        width_distance_owner_record_indices_by_edge: Vec::new(),
         auxiliary_reference_record_indices: Vec::new(),
-        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+
         height_datum,
         bend_position,
     })
@@ -2805,10 +2789,7 @@ fn edge_flange_to_object_operation_at(
         Some(index)
     };
     let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_record_indices = vec![claim(
-        marked_record_reference(bytes, cursor)?,
-        &mut unclaimed,
-    )?];
+    let edge_wrapper_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
@@ -2817,13 +2798,11 @@ fn edge_flange_to_object_operation_at(
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
-    let reference_side_code = View::u32_le_at(bytes, cursor)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let result_count = View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?;
     if result_count != 1
         || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
@@ -2900,15 +2879,9 @@ fn edge_flange_to_object_operation_at(
     )?;
     let target_operand_record_index =
         claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let aggregate_operand_record_indices = vec![claim(
-        aggregate_group_record_index.checked_add(3)?,
-        &mut unclaimed,
-    )?];
-    let edge_group_record_indices = vec![edge_group_record_index];
-    let edge_operand_record_indices = vec![claim(
-        edge_group_record_index.checked_add(3)?,
-        &mut unclaimed,
-    )?];
+    let aggregate_operand_record_index =
+        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let [offset_owner_record_index] = unclaimed.as_slice() else {
         return None;
     };
@@ -2917,38 +2890,40 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        edge_wrapper_record_indices,
-        edge_group_record_indices,
-        edge_operand_record_indices,
-        aggregate_group_record_index,
-        aggregate_operand_record_indices,
-        height_owner_record_index,
-        height_extent: DesignEdgeFlangeHeightExtent::ToObject {
-            target_group_record_index,
-            target_operand_record_index,
-            offset_owner_record_index: *offset_owner_record_index,
-            reference_record_indices,
+        shape: crate::records::feature::DesignEdgeFlangeShape::FullEdge {
+            edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
+                wrapper_record_index: edge_wrapper_record_index,
+                group_record_index: edge_group_record_index,
+                operand_record_index: edge_operand_record_index,
+                aggregate_operand_record_index,
+            }],
+            height: DesignEdgeFlangeHeightExtent::ToObject {
+                target_group_record_index,
+                target_operand_record_index,
+                offset_owner_record_index: *offset_owner_record_index,
+                reference_record_indices,
+            },
         },
+        aggregate_group_record_index,
+        height_owner_record_index,
         angle_owner_record_index,
-        width_mode: None,
-        width_distance_owner_record_indices: Vec::new(),
-        width_distance_owner_record_indices_by_edge: Vec::new(),
         auxiliary_reference_record_indices: Vec::new(),
-        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+
         height_datum,
         bend_position,
     })
 }
 
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn exact_hem_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32> + Clone,
     parameter_source_kinds: &[(u32, &str)],
 ) -> Option<DesignHemOperation> {
     // The header shift and form are recovered by agreement, so all candidates
@@ -2956,9 +2931,21 @@ pub(crate) fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(bytes, start, paired_at, references, header_shift),
-            hem_radius_angle_operation_at(bytes, start, paired_at, references, header_shift),
-            hem_gap_length_radius_operation_at(bytes, start, paired_at, references, header_shift),
+            hem_gap_length_operation_at(bytes, start, paired_at, references.clone(), header_shift),
+            hem_radius_angle_operation_at(
+                bytes,
+                start,
+                paired_at,
+                references.clone(),
+                header_shift,
+            ),
+            hem_gap_length_radius_operation_at(
+                bytes,
+                start,
+                paired_at,
+                references.clone(),
+                header_shift,
+            ),
         ]
         .into_iter()
         .flatten()
@@ -3016,7 +3003,7 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) {
-    if scope.kind != "Hem" {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::Hem {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -3027,7 +3014,10 @@ pub(super) fn bind_hem_operation_from_parameters(
         .filter(|owner| {
             native_stream(&owner.id) == Some(stream)
                 && owner.scope_record_index == scope.record_index
-                && scope.reference_members.contains(&owner.record_index)
+                && scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == &owner.record_index)
         })
         .flat_map(|owner| {
             parameters
@@ -3036,7 +3026,7 @@ pub(super) fn bind_hem_operation_from_parameters(
                     native_stream(&parameter.id) == Some(stream)
                         && parameter.record_index == owner.parameter_record_index
                 })
-                .map(move |parameter| (owner.record_index, parameter.source_kind.as_str()))
+                .map(move |parameter| (owner.record_index, parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     let Some(start) = usize::try_from(scope.byte_offset).ok() else {
@@ -3045,13 +3035,18 @@ pub(super) fn bind_hem_operation_from_parameters(
     let Some(paired_at) = usize::try_from(scope.paired_byte_offset).ok() else {
         return;
     };
-    scope.hem_operation = exact_hem_operation(
-        bytes,
-        start,
-        paired_at,
-        &scope.reference_members,
-        &parameter_source_kinds,
-    );
+    {
+        let construction = exact_hem_operation(
+            bytes,
+            start,
+            paired_at,
+            scope.reference_members.values().copied(),
+            &parameter_source_kinds,
+        );
+        if let crate::records::feature::DesignScopePayload::Hem(slot) = &mut scope.payload {
+            *slot = construction;
+        }
+    }
 }
 
 /// Read the gap-and-length `Hem` fixed operation section for one candidate header
@@ -3065,7 +3060,7 @@ fn hem_gap_length_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 8
@@ -3078,7 +3073,7 @@ fn hem_gap_length_operation_at(
         return None;
     }
 
-    let mut unclaimed: Vec<u32> = references.to_vec();
+    let mut unclaimed: Vec<u32> = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -3098,10 +3093,10 @@ fn hem_gap_length_operation_at(
     let length_owner_record_index = slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
 
     let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
 
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
@@ -3125,10 +3120,6 @@ fn hem_gap_length_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }
 
@@ -3143,7 +3134,7 @@ fn hem_radius_angle_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 8
@@ -3156,7 +3147,7 @@ fn hem_radius_angle_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -3174,10 +3165,10 @@ fn hem_radius_angle_operation_at(
     let angle_owner_record_index = slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
     let aggregate_operand_record_index =
@@ -3200,10 +3191,6 @@ fn hem_radius_angle_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }
 
@@ -3213,7 +3200,7 @@ fn hem_gap_length_radius_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    references: &[u32],
+    references: impl ExactSizeIterator<Item = u32>,
     header_shift: usize,
 ) -> Option<DesignHemOperation> {
     if references.len() != 9
@@ -3226,7 +3213,7 @@ fn hem_gap_length_radius_operation_at(
         return None;
     }
 
-    let mut unclaimed = references.to_vec();
+    let mut unclaimed = references.collect::<Vec<_>>();
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);
@@ -3245,10 +3232,10 @@ fn hem_gap_length_radius_operation_at(
     let length_owner_record_index = slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
-    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
-    if !bend_radius.is_finite() || bend_radius <= 0.0 {
-        return None;
-    }
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let aggregate_group_record_index = slot(118, &mut unclaimed)?;
     let edge_group_record_index = slot(145, &mut unclaimed)?;
     let aggregate_operand_record_index =
@@ -3272,9 +3259,5 @@ fn hem_gap_length_radius_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }

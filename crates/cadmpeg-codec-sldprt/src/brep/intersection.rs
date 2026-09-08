@@ -16,7 +16,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point2, Point3};
 
-use super::{Carrier, CarrierGeometry, LEN_TO_MM};
+use super::{CurveCarrier, LEN_TO_MM};
 
 use crate::layout::intersection_composite as isect;
 use crate::layout::support_uv_00_cc as support_uv;
@@ -38,7 +38,7 @@ struct Chart {
 
 /// One validated intersection curve and its solved chart.
 pub(super) struct IntersectionCarrier {
-    pub carrier: Carrier,
+    pub carrier: CurveCarrier,
     pub support_data: IntersectionSupportData,
 }
 
@@ -331,20 +331,18 @@ fn solved_curve(
         return None;
     };
     let knots = degree_one_knots(&parameters);
-    Some((
-        CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots,
-            control_points: points
-                .iter()
-                .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
-                .collect(),
-            weights: None,
-            periodic: false,
-        }),
-        parameters,
-        reversed,
-    ))
+    let nurbs = NurbsCurve::new(
+        1,
+        knots,
+        points
+            .iter()
+            .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
+            .collect(),
+        None,
+        false,
+    )
+    .ok()?;
+    Some((CurveGeometry::Nurbs(nurbs), parameters, reversed))
 }
 
 fn solved_support_uv(
@@ -470,14 +468,12 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
             uvs.get(&uv_ref).map(Vec::as_slice),
         );
         out.entry(attr).or_insert(IntersectionCarrier {
-            carrier: Carrier {
+            carrier: CurveCarrier {
                 attr,
                 offset,
                 end: body + isect::LEN,
-                geometry: CarrierGeometry::Curve(selected.geometry),
-                frame: None,
+                geometry: selected.geometry,
                 parameter_range: None,
-                orientation_reversed: false,
             },
             support_data: IntersectionSupportData {
                 supports,
@@ -597,15 +593,15 @@ mod tests {
     fn consistent_composite_yields_polyline() {
         let carriers = scan_intersection_carriers(&stream());
         let carrier = carriers.get(&9).expect("composite decoded");
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
+        let CurveGeometry::Nurbs(curve) = &carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.degree, 1);
-        assert_eq!(curve.control_points.len(), 3);
-        assert_eq!(curve.control_points[1], Point3::new(10.0, 0.0, 0.0));
-        assert_eq!(curve.knots.len(), 5);
-        assert!((curve.knots[2] - 0.01).abs() < 1.0e-12);
-        assert!((curve.knots[3] - 0.02).abs() < 1.0e-12);
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(curve.control_points().len(), 3);
+        assert_eq!(curve.control_points()[1], Point3::new(10.0, 0.0, 0.0));
+        assert_eq!(curve.knots().len(), 5);
+        assert!((curve.knots()[2] - 0.01).abs() < 1.0e-12);
+        assert!((curve.knots()[3] - 0.02).abs() < 1.0e-12);
         let support_data = &carrier.support_data;
         assert_eq!(support_data.supports, [2, 3]);
         let support_uv = support_data
@@ -635,10 +631,10 @@ mod tests {
             .remove(&9)
             .expect("intersection-data entity decoded");
         assert_eq!(carrier.carrier.offset, 0);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = carrier.carrier.geometry else {
+        let CurveGeometry::Nurbs(curve) = carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(curve.control_points().len(), POINTS.len());
     }
 
     #[test]
@@ -653,12 +649,12 @@ mod tests {
 
         let carriers = scan_intersection_carriers(&bytes);
         let carrier = carriers.get(&9).expect("decreasing chart decoded");
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
+        let CurveGeometry::Nurbs(curve) = &carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
         assert_eq!(
-            curve.control_points,
+            curve.control_points(),
             [
                 Point3::new(10.0, 10.0, 0.0),
                 Point3::new(10.0, 0.0, 0.0),
@@ -669,7 +665,7 @@ mod tests {
         let control_points = &support_data.support_uv.as_ref().expect("UV cache")[0];
         assert_eq!(control_points[0], Point2::new(8.0, 9.0));
         assert_eq!(control_points[2], Point2::new(0.0, 1.0));
-        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
     }
 
     #[test]
@@ -693,7 +689,7 @@ mod tests {
         bytes.extend(term(6, end));
         bytes.extend(uv(7, POINTS.len()));
         let carriers = scan_intersection_carriers(&bytes);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+        let CurveGeometry::Nurbs(curve) = &carriers
             .get(&9)
             .expect("composite decoded")
             .carrier
@@ -702,7 +698,7 @@ mod tests {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(
-            *curve.control_points.last().expect("points"),
+            *curve.control_points().last().expect("points"),
             Point3::new(end[0] * LEN_TO_MM, end[1] * LEN_TO_MM, end[2] * LEN_TO_MM),
         );
     }
@@ -739,7 +735,7 @@ mod tests {
         }
         bytes.extend(term);
         let carriers = scan_intersection_carriers(&bytes);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+        let CurveGeometry::Nurbs(curve) = &carriers
             .get(&9)
             .expect("ring composite decoded")
             .carrier
@@ -747,8 +743,8 @@ mod tests {
         else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), 4);
-        assert_eq!(curve.control_points[0], curve.control_points[3]);
+        assert_eq!(curve.control_points().len(), 4);
+        assert_eq!(curve.control_points()[0], curve.control_points()[3]);
     }
 
     #[test]
@@ -776,7 +772,7 @@ mod tests {
         bytes.extend(uv(7, POINTS.len()));
 
         let carriers = scan_intersection_carriers(&bytes);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+        let CurveGeometry::Nurbs(curve) = &carriers
             .get(&9)
             .expect("extended chart decoded")
             .carrier
@@ -784,9 +780,9 @@ mod tests {
         else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(curve.control_points().len(), POINTS.len());
         assert_eq!(
-            *curve.control_points.last().expect("points"),
+            *curve.control_points().last().expect("points"),
             Point3::new(
                 POINTS[2][0] * LEN_TO_MM,
                 POINTS[2][1] * LEN_TO_MM,

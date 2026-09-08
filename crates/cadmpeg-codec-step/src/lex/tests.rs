@@ -11,22 +11,22 @@ fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
     assert_eq!(
         lex(b"\"0A1F\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
-            bit_len: 12,
-            data: vec![0xa1, 0xf0],
+            unused_bits: 4,
+            data: vec![0xa1, 0xf0].into_boxed_slice(),
         })
     );
     assert_eq!(
         lex(b"\"17E\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
-            bit_len: 7,
-            data: vec![0x7e],
+            unused_bits: 1,
+            data: vec![0x7e].into_boxed_slice(),
         })
     );
     assert_eq!(
         lex(b"\"0\\N\\A\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
-            bit_len: 4,
-            data: vec![0xa0],
+            unused_bits: 4,
+            data: vec![0xa0].into_boxed_slice(),
         })
     );
     for invalid in [b"\"\"".as_slice(), b"\"4FF\"", b"\"17F\"", b"\"3A7\""] {
@@ -76,8 +76,8 @@ fn lexer_ignores_controls_inside_escaped_literals_and_directives() {
     assert_eq!(
         lex(b"\"0\\\x01F\x02\\A\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
-            bit_len: 4,
-            data: vec![0xa0],
+            unused_bits: 4,
+            data: vec![0xa0].into_boxed_slice(),
         })
     );
 

@@ -135,7 +135,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     };
                     properties.insert(key.into(), source.clone());
                 }
-                Some(DatumPlaneReference::Face { .. }) => {
+                Some(DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. }) => {
                     let Some(record) = existing else {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} cannot create a face-supported datum plane",

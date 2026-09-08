@@ -6,11 +6,13 @@
 //! `f7 <entry-class>` may prefix the first entry. The table belongs to an `AllFeatur` row only
 //! when its byte offset is bounded by that row's known feature-id header.
 
-mod definitions;
+pub(crate) mod definitions;
 mod entity;
 mod helpers;
-mod operations;
+pub(crate) mod operations;
 mod rows;
+pub(crate) mod schema;
+pub(crate) mod segment_rows;
 
 #[cfg(test)]
 mod tests;
@@ -26,8 +28,8 @@ pub use definitions::{
     FeatureOrderTable, FeatureParameterFrameKind, FeaturePointSegment, FeatureReferenceLineSegment,
     FeatureRelation, FeatureRelationTable, FeatureRelationTriple, FeatureSavedArc,
     FeatureSavedEntity, FeatureSavedLine, FeatureSavedSpline, FeatureSection3d, FeatureSegment,
-    FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-    FeatureSolverTableHeader, FeatureTrimEntity, FeatureVariableRow, OutlinePhase, TrimEntityKind,
+    FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureTrimEntity,
+    FeatureVariableRow, OutlinePhase, TrimEntityKind,
 };
 pub(crate) use definitions::{FeatureEquation, FeatureVariableTable};
 #[cfg(test)]
@@ -37,13 +39,16 @@ pub use definitions::{
     FeatureSectionReferencePlane, FeatureTrimBucket, FeatureTrimEntityTable, FeatureTrimVertex,
     FeatureTrimVertexTable,
 };
+#[cfg(test)]
+pub(crate) use entity::{dummy_table_entry, entry_payload, EntryPayload, RelatedState};
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureEntityTableEntry,
 };
 pub use operations::{
-    operation_states, operations, reference_names, FeatureOperation, FeatureRecipe,
-    FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName,
+    operation_states, operations, reference_names, FeatureOperation, FeatureOperationState,
+    FeatureRecipe, FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName, OperationKind,
+    RecipeResolution,
 };
 pub use rows::{
     affected_ids, choice_fields, choices, geometry_tables, loop_history_entries,
@@ -51,7 +56,7 @@ pub use rows::{
     surface_merge_replay_affected_ids, AffectedIdKind, FeatureAffectedIds, FeatureChoice,
     FeatureChoiceField, FeatureFieldValue, FeatureGeometryTable, FeatureGeometryTableKind,
     FeatureLoopHistoryBoundary, FeatureLoopHistoryEntry, FeatureLoopRestoreDirection,
-    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRevolutionExtentKind, FeatureRow,
-    FeatureSurfaceMergeAffectedIds, LoopRestoreDirectionLane, ReplayExtentSource,
+    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow, FeatureSurfaceMergeAffectedIds,
+    LoopRestoreDirectionLane, ReplayExtentSource,
 };
 pub(crate) use rows::{round_replay_scalars, FeatureRoundReplayScalar};

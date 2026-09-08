@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode bounded Parasolid surface-intersection constructions.
 
+pub(crate) mod finite_point;
+use finite_point::FinitePoint;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_iter;
@@ -8,17 +11,50 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod blend_bound_state;
+use blend_bound_state::BlendBoundState;
+pub(crate) mod chart_samples;
+pub(crate) mod support_uv_values;
+use support_uv_values::{SupportUvPacking, SupportUvValues};
+
+use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
+
+use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
 const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 
-const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
-pub type SupportUv = [Option<Vec<[f64; 2]>>; 2];
+pub type SupportUv = [Option<SupportUvLane>; 2];
+
+/// Support parameters checked against their chart sample count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportUvLane(Vec<[f64; 2]>);
+
+impl SupportUvLane {
+    /// Construct one parameter pair per chart sample.
+    pub fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
+        (values.len() == sample_count).then_some(Self(values))
+    }
+
+    /// Ordered support parameter pairs.
+    pub fn as_slice(&self) -> &[[f64; 2]] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SupportUvLane {
+    type Target = [[f64; 2]];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
 
 /// Serialized framing of one `CHART_s` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,28 +95,10 @@ pub enum BlendBoundFraming {
 pub struct ChartSourceRecord {
     /// Cross-reference index of the chart.
     pub xmt: u32,
-    /// Serialized leading point count.
-    pub count: u32,
-    /// Base chart parameter.
-    pub base_parameter: f64,
-    /// Chord-to-parameter scale.
-    pub base_scale: f64,
-    /// Redundant serialized chart count.
-    pub chart_count: u32,
-    /// Chordal error in Parasolid metres.
-    pub chordal_error: f64,
-    /// Angular error in radians.
-    pub angular_error: f64,
-    /// Two serialized missing-parameter sentinels.
-    pub parameter_errors: [f64; 2],
-    /// Model-space chart points in millimetres.
-    pub points: Vec<Point3>,
-    /// Native ext11 parameters, when present.
-    pub native_parameters: Option<Vec<f64>>,
-    /// Two ordered ext11 support-UV lanes.
-    pub ext_support_uv: SupportUv,
-    /// Hvec point layout.
-    pub point_layout: ChartPointLayout,
+    /// Checked chart preamble.
+    pub preamble: ChartPreamble,
+    /// Points with exactly the fields admitted by their Hvec layout.
+    pub data: SourceChartData,
     /// Serialized record framing.
     pub framing: ChartFraming,
     /// Type-tag offset in the inflated stream.
@@ -90,16 +108,7 @@ pub struct ChartSourceRecord {
 /// A complete type-59 second-support bridge record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlendBound {
-    /// Cross-reference index of the bridge record.
-    pub xmt: u32,
-    /// Five ordered common-header references.
-    pub header_references: [u32; 5],
-    /// Serialized orientation sense.
-    pub sense: bool,
-    /// Zero- or one-valued blend boundary index.
-    pub boundary_index: u32,
-    /// Cross-reference index of the blend surface.
-    pub blend_surface: u32,
+    pub state: BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
     pub framing: BlendBoundFraming,
     /// Type-tag offset in the inflated stream.
@@ -118,17 +127,35 @@ pub enum TermUseFraming {
     DescriptorInline,
 }
 
+/// Admitted endpoint-form encodings and their required leading counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TermUseForm {
+    #[serde(rename = "L?")]
+    LQuestion,
+    #[serde(rename = "TF")]
+    Tf,
+    #[serde(rename = "TS")]
+    Ts,
+}
+
+impl TermUseForm {
+    pub fn count(self) -> u32 {
+        match self {
+            Self::LQuestion => 1,
+            Self::Tf | Self::Ts => 2,
+        }
+    }
+}
+
 /// A complete `term_use` endpoint record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TermUse {
     /// Cross-reference index of the endpoint record.
     pub xmt: u32,
-    /// Serialized leading count.
-    pub count: u32,
-    /// Two-byte endpoint-form discriminator.
-    pub form: [u8; 2],
+    /// Endpoint form, including its required leading count.
+    pub form: TermUseForm,
     /// Endpoint position in millimetres.
-    pub point: Point3,
+    pub point: FinitePoint,
     /// Serialized record framing.
     pub framing: TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -152,34 +179,12 @@ pub enum SupportUvFraming {
 pub struct SupportUvRecord {
     /// Cross-reference index of the values array.
     pub xmt: u32,
-    /// Serialized scalar count.
-    pub count: u32,
-    /// Tuple-packing marker (`2`, `3`, or `4`).
-    pub marker: u8,
-    /// Ordered serialized finite scalar values.
-    pub values: Vec<f64>,
+    /// Exact finite packed support tuples.
+    pub values: SupportUvValues,
     /// Serialized record framing.
     pub framing: SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub pos: usize,
-}
-
-impl SupportUvRecord {
-    fn support_uv(&self) -> SupportUv {
-        let width = if self.marker == 4 { 4 } else { 2 };
-        let first = self
-            .values
-            .chunks_exact(width)
-            .map(|entry| [entry[0], entry[1]])
-            .collect();
-        let second = (self.marker == 4).then(|| {
-            self.values
-                .chunks_exact(4)
-                .map(|entry| [entry[2], entry[3]])
-                .collect()
-        });
-        [Some(first), second]
-    }
 }
 
 /// A decoded surface-intersection construction and its solved chart cache.
@@ -189,14 +194,14 @@ pub struct IntersectionCurve {
     pub xmt: u32,
     /// Six ordered construction references.
     pub references: [u32; 6],
-    /// Resolved primary and secondary support-surface references.
-    pub supports: [u32; 2],
+    /// Resolved primary support-surface reference.
+    pub primary_support: NonNullXmt,
+    /// Resolved secondary support-surface reference.
+    pub secondary_support: Option<NonNullXmt>,
     /// Type-tag offset of the construction record.
     pub pos: usize,
-    /// Chart points in millimetres.
-    pub points: Vec<Point3>,
-    /// Native chart parameter at each point.
-    pub parameters: Vec<f64>,
+    /// Paired chart points in millimetres and native parameters.
+    pub samples: ChartSamples,
     /// Chart chordal error in millimetres.
     pub fit_tolerance: f64,
     /// Ordered support UV values in native Parasolid parameter units.
@@ -299,18 +304,9 @@ enum Rejection {
 
 #[derive(Debug, Clone)]
 struct Chart {
-    points: Vec<Point3>,
-    parameters: Vec<f64>,
+    samples: ChartSamples,
     fit_tolerance: f64,
     ext_support_uv: SupportUv,
-}
-
-#[derive(Debug, Clone)]
-struct ChartPoints {
-    points: Vec<Point3>,
-    native_parameters: Option<Vec<f64>>,
-    ext_support_uv: SupportUv,
-    end: usize,
 }
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
@@ -330,7 +326,7 @@ pub(crate) fn scan_with_graph(
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
 ) -> CurveScan {
-    let (uv, uv_markers) = uv_records(stream);
+    let uv = uv_records(stream);
     let constructions = graph
         .composite_curves()
         .into_iter()
@@ -340,7 +336,6 @@ pub(crate) fn scan_with_graph(
         &chart_records(stream, point_layout),
         &term_records(stream),
         &uv,
-        &uv_markers,
         &blend_bound_records(stream),
         graph,
         constructions,
@@ -367,14 +362,12 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
 ) -> CurveScan {
     let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
     let mut terms = term_records(base_stream);
-    let (mut uv, mut uv_markers) = uv_records(base_stream);
+    let mut uv = uv_records(base_stream);
     let mut bridges = blend_bound_records(base_stream);
     for replacement_stream in replacement_streams {
         charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
         terms.extend(term_records(replacement_stream));
-        let (replacement_uv, replacement_markers) = uv_records(replacement_stream);
-        uv.extend(replacement_uv);
-        uv_markers.extend(replacement_markers);
+        uv.extend(uv_records(replacement_stream));
         bridges.extend(blend_bound_records(replacement_stream));
     }
     let constructions = graph
@@ -386,7 +379,6 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         &charts,
         &terms,
         &uv,
-        &uv_markers,
         &bridges,
         graph,
         constructions,
@@ -400,14 +392,10 @@ enum CrossFormCollision {
     PreferDeltaTwin,
 }
 
-// Keep each independently keyed auxiliary family and the merge-context policy
-// explicit at the construction-admission boundary.
-#[allow(clippy::too_many_arguments)]
 fn scan_with_auxiliaries(
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
-    uv: &BTreeMap<u32, SupportUv>,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
@@ -442,22 +430,24 @@ fn scan_with_auxiliaries(
         })
         .collect::<Vec<_>>();
     for construction in constructions.iter().copied() {
-        match enrich(construction, charts, terms, uv, uv_markers, bridges, graph) {
+        match enrich(construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, uv_markers, bridges, graph)
-                        .is_some()
+                    && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, uv_markers, bridges, graph)
-                            .filter(|supports| supports[1] > 1),
+                        construction_supports(construction, uv, bridges, graph).and_then(
+                            |(primary, secondary)| {
+                                Some([u32::from(primary), u32::from(secondary?)])
+                            },
+                        ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
                             .filter(|witness| {
@@ -490,18 +480,14 @@ fn enrich(
     construction: CompositeCurve,
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
-    uv: &BTreeMap<u32, SupportUv>,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
     let chart = charts
         .get(&construction.references[2])
         .ok_or(Rejection::MissingChart)?;
-    let chart_endpoints = [
-        *chart.points.first().ok_or(Rejection::MissingChart)?,
-        *chart.points.last().ok_or(Rejection::MissingChart)?,
-    ];
+    let chart_endpoints = chart.samples.endpoints();
     let serialized_terms = [
         terms.get(&construction.references[3]).copied(),
         terms.get(&construction.references[4]).copied(),
@@ -543,19 +529,20 @@ fn enrich(
             });
         }
     }
-    let supports = construction_supports(construction, uv_markers, bridges, graph)
-        .ok_or(Rejection::MissingSupport)?;
+    let (primary_support, secondary_support) =
+        construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
-        .cloned()
-        .unwrap_or([None, None]);
+        .map_or([None, None], |values| {
+            values.support_uv(chart.samples.points().len())
+        });
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
-        supports,
+        primary_support,
+        secondary_support,
         pos: construction.pos,
-        points: chart.points.clone(),
-        parameters: chart.parameters.clone(),
+        samples: chart.samples.clone(),
         fit_tolerance: chart.fit_tolerance,
         support_uv,
         ext_support_uv: chart.ext_support_uv.clone(),
@@ -564,20 +551,26 @@ fn enrich(
 
 fn construction_supports(
     construction: CompositeCurve,
-    uv_markers: &BTreeMap<u32, u8>,
+    uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Option<[u32; 2]> {
+) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
     let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
     } else {
         // A present marker-3 values array explicitly reverses the serialized
         // support order. Without that array, retain the type-38 references'
         // order; no alternate order was serialized.
-        match uv_markers.get(&construction.references[5]).copied() {
-            Some(3) => (construction.references[1], construction.references[0]),
-            Some(2 | 4) | None => (construction.references[0], construction.references[1]),
-            Some(_) => return None,
+        match uv
+            .get(&construction.references[5])
+            .map(SupportUvValues::packing)
+        {
+            Some(SupportUvPacking::Form3) => {
+                (construction.references[1], construction.references[0])
+            }
+            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
+                (construction.references[0], construction.references[1])
+            }
         }
     };
     is_surface(graph, primary).then_some(())?;
@@ -586,8 +579,8 @@ fn construction_supports(
         .copied()
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
-        .unwrap_or(1);
-    (primary > 1).then_some([primary, secondary])
+        .and_then(|secondary| NonNullXmt::try_from(secondary).ok());
+    Some((NonNullXmt::try_from(primary).ok()?, secondary))
 }
 
 fn construction_has_endpoint_witnesses(
@@ -607,7 +600,7 @@ fn construction_has_endpoint_witnesses(
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
     blend_bounds(stream)
         .into_iter()
-        .map(|b| (b.xmt, b.blend_surface))
+        .map(|b| (b.state.xmt(), b.state.blend_surface()))
         .collect()
 }
 
@@ -617,7 +610,7 @@ pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 59]) {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, bound.xmt, bound);
+            insert_unique(&mut out, &mut duplicates, bound.state.xmt(), bound);
         }
     }
     out.into_values().collect()
@@ -665,7 +658,6 @@ fn blend_bound_layout(
     );
     let mut at = tag.checked_add(2 + usize::from(escaped))?;
     let (xmt, consumed) = read_xmt(stream, at)?;
-    (xmt > 1).then_some(())?;
     at = at.checked_add(consumed + 4)?;
     let mut header = [0u32; 5];
     for reference in &mut header {
@@ -677,7 +669,6 @@ fn blend_bound_layout(
             at += 1;
         }
     }
-    (header[0] == 1).then_some(())?;
     let sense = match stream.get(at) {
         Some(b'+') => true,
         Some(b'-') => false,
@@ -685,10 +676,8 @@ fn blend_bound_layout(
     };
     at += 1;
     let (boundary, consumed) = read_xmt(stream, at)?;
-    (boundary <= 1).then_some(())?;
     at += consumed;
     let (surface, consumed) = read_xmt(stream, at)?;
-    (surface > 1).then_some(())?;
     at += consumed;
     if status_framed {
         (stream.get(at) == Some(&1)).then_some(())?;
@@ -696,11 +685,7 @@ fn blend_bound_layout(
     }
     Some((
         BlendBound {
-            xmt,
-            header_references: header,
-            sense,
-            boundary_index: boundary,
-            blend_surface: surface,
+            state: BlendBoundState::new(xmt, header, sense, boundary, surface).ok()?,
             framing,
             pos: tag,
         },
@@ -709,9 +694,18 @@ fn blend_bound_layout(
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
-    [50, 51, 52, 53, 54, 56, 60, 124]
-        .into_iter()
-        .any(|kind| graph.get(kind, xmt).is_some())
+    [
+        NodeKind::Plane,
+        NodeKind::Cylinder,
+        NodeKind::Cone,
+        NodeKind::Sphere,
+        NodeKind::Torus,
+        NodeKind::BlendSurface,
+        NodeKind::OffsetSurface,
+        NodeKind::BSurface,
+    ]
+    .into_iter()
+    .any(|kind| graph.get(kind, xmt).is_some())
 }
 
 fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
@@ -722,50 +716,47 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         if duplicates.contains(&source.xmt) {
             continue;
         }
-        let fit_tolerance = source.chordal_error * 1000.0;
+        let fit_tolerance = source.preamble.chordal_error() * 1000.0;
         if !fit_tolerance.is_finite() {
             continue;
         }
-        let mut chord_parameters = Vec::with_capacity(source.points.len());
-        chord_parameters.push(source.base_parameter);
-        for pair in source.points.windows(2) {
-            let chord_m = distance(pair[0], pair[1]) / 1000.0;
-            chord_parameters.push(
-                chord_parameters
-                    .last()
-                    .copied()
-                    .expect("invariant: base parameter inserted")
-                    + chord_m * source.base_scale,
-            );
-        }
+        let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
+        let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
+            continue;
+        };
         let candidate = Chart {
-            points: source.points,
-            parameters: source.native_parameters.clone().unwrap_or(chord_parameters),
+            samples,
             fit_tolerance,
-            ext_support_uv: source.ext_support_uv,
+            ext_support_uv,
         };
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
             }
-            std::collections::btree_map::Entry::Occupied(mut entry)
-                if !complemented.contains(&source.xmt)
-                    && source.native_parameters.is_some()
-                    && entry.get().points.len() == candidate.points.len()
-                    && entry.get().points.iter().zip(&candidate.points).all(
-                        |(first, second)| {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let complements = !complemented.contains(&source.xmt)
+                    && has_native_parameters
+                    && entry
+                        .get()
+                        .samples
+                        .points()
+                        .iter()
+                        .zip(candidate.samples.points().iter())
+                        .all(|(first, second)| {
                             distance(*first, *second)
                                 <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
-                        },
-                    ) =>
-            {
-                entry.get_mut().parameters = candidate.parameters;
-                entry.get_mut().ext_support_uv = candidate.ext_support_uv;
-                complemented.insert(source.xmt);
-            }
-            std::collections::btree_map::Entry::Occupied(entry) => {
-                entry.remove();
-                duplicates.insert(source.xmt);
+                        })
+                    && entry
+                        .get_mut()
+                        .samples
+                        .replace_parameters_from(&candidate.samples);
+                if complements {
+                    entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+                    complemented.insert(source.xmt);
+                } else {
+                    entry.remove();
+                    duplicates.insert(source.xmt);
+                }
             }
         }
     }
@@ -809,7 +800,6 @@ pub(crate) fn chart_source_record_at(
             .child(base, stream.len())
             .and_then(|mut view| view.u32_be())
             .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count >= 2)
         else {
             continue;
         };
@@ -829,41 +819,23 @@ pub(crate) fn chart_source_record_at(
             head.f64_be(), head.f64_be(), head.u32_be(), head.f64_be(), head.f64_be(),
             head.f64_be(), head.f64_be(),
         ) else { continue; };
-        let parameter_errors = [e0, e1];
-        if chart_count as usize != count
-            || ![base_parameter, base_scale, chordal_error, angular_error]
-                .iter()
-                .all(|value| value.is_finite())
-            || base_scale == 0.0
-            || chordal_error <= 0.0
-            || parameter_errors != [MISSING_PARAMETER, MISSING_PARAMETER]
-        {
+        if chart_count as usize != count || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER] {
             continue;
         }
-        let block = preamble + chart_preamble::LEN;
-        let Some(chart_points) = chart_points(stream, block, count, point_layout) else {
+        let Ok(preamble_values) =
+            ChartPreamble::new(base_parameter, base_scale, chordal_error, angular_error)
+        else {
             continue;
         };
-        let point_layout = if chart_points.native_parameters.is_some() {
-            ChartPointLayout::Ext11
-        } else {
-            ChartPointLayout::Xyz3
+        let block = preamble + chart_preamble::LEN;
+        let Some((data, end)) = chart_points(stream, block, count, point_layout) else {
+            continue;
         };
-        let end = chart_points.end;
         return Some((
             ChartSourceRecord {
                 xmt,
-                count: count as u32,
-                base_parameter,
-                base_scale,
-                chart_count,
-                chordal_error,
-                angular_error,
-                parameter_errors,
-                points: chart_points.points,
-                native_parameters: chart_points.native_parameters,
-                ext_support_uv: chart_points.ext_support_uv,
-                point_layout,
+                preamble: preamble_values,
+                data,
                 framing: if escape == 0 {
                     ChartFraming::Direct
                 } else {
@@ -882,7 +854,7 @@ fn chart_points(
     block: usize,
     count: usize,
     point_layout: ChartPointLayout,
-) -> Option<ChartPoints> {
+) -> Option<(SourceChartData, usize)> {
     let point_width = match point_layout {
         ChartPointLayout::Xyz3 => 24,
         ChartPointLayout::Ext11 => 88,
@@ -890,34 +862,10 @@ fn chart_points(
     let end = block.checked_add(count.checked_mul(point_width)?)?;
     stream.get(block..end)?;
     if point_layout == ChartPointLayout::Xyz3 {
-        let mut previous = None;
-        let mut has_difference = false;
-        for index in 0..count {
-            let point = point_m(stream, block + index * 24)?;
-            if previous.is_some_and(|previous| previous != point) {
-                has_difference = true;
-            }
-            previous = Some(point);
-        }
-        has_difference.then_some(())?;
         let points = (0..count)
-            .map(|index| point_m(stream, block + index * 24))
+            .map(|index| point_m(stream, block + index * 24).map(Point3::from))
             .collect::<Option<Vec<_>>>()?;
-        return Some(ChartPoints {
-            points,
-            native_parameters: None,
-            ext_support_uv: [None, None],
-            end,
-        });
-    }
-
-    let mut previous_parameter = None;
-    for index in 0..count {
-        let (_, parameter, _) = chart_ext_point_at(stream, block + index * 88)?;
-        if previous_parameter.is_some_and(|previous| parameter <= previous) {
-            return None;
-        }
-        previous_parameter = Some(parameter);
+        return Some((SourceChartData::xyz3(points).ok()?, end));
     }
 
     let mut points = Vec::with_capacity(count);
@@ -940,16 +888,14 @@ fn chart_points(
             }
         }
     }
-    Some(ChartPoints {
-        points,
-        native_parameters: Some(native_parameters),
-        ext_support_uv,
+    Some((
+        SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?,
         end,
-    })
+    ))
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {
-    let point = point_m(stream, at)?;
+    let point = Point3::from(point_m(stream, at)?);
     let mut mid = View::over_retained(stream).child(at.checked_add(24)?, at.checked_add(88)?)?;
     let (u0, u1, v0, v1) = (mid.f64_be()?, mid.f64_be()?, mid.f64_be()?, mid.f64_be()?);
     let tangent = [mid.f64_be()?, mid.f64_be()?, mid.f64_be()?];
@@ -966,7 +912,7 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
     term_use_records(stream)
         .into_iter()
-        .map(|term| (term.xmt, term.point))
+        .map(|term| (term.xmt, Point3::from(term.point)))
         .collect()
 }
 
@@ -1021,13 +967,15 @@ fn term_at(
         .u32_be()?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
-    let form: [u8; 2] = stream.get(payload..payload + 2)?.try_into().ok()?;
-    let valid = (count == 1 && form == *b"L?") || (count == 2 && matches!(&form, b"TF" | b"TS"));
-    valid.then_some(())?;
+    let form = match (count, stream.get(payload..payload + 2)?) {
+        (1, b"L?") => TermUseForm::LQuestion,
+        (2, b"TF") => TermUseForm::Tf,
+        (2, b"TS") => TermUseForm::Ts,
+        _ => return None,
+    };
     Some((
         TermUse {
             xmt,
-            count,
             form,
             point: point_m(stream, payload + 2)?,
             framing,
@@ -1037,12 +985,11 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
-    let records = support_uv_records(stream);
-    (
-        records.iter().map(|r| (r.xmt, r.support_uv())).collect(),
-        records.into_iter().map(|r| (r.xmt, r.marker)).collect(),
-    )
+fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
+    support_uv_records(stream)
+        .into_iter()
+        .map(|record| (record.xmt, record.values))
+        .collect()
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
@@ -1129,24 +1076,14 @@ fn uv_at(
     let count_usize = count as usize;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
-    let marker @ 2..=4 = stream.get(payload).copied()? else {
-        return None;
-    };
-    let width = if marker == 4 { 4 } else { 2 };
-    if count_usize < width * 2 || !count_usize.is_multiple_of(width) {
-        return None;
-    }
+    let packing = SupportUvPacking::try_from(*stream.get(payload)?).ok()?;
     let values = View::over_retained(stream)
         .child(payload + 1, stream.len())?
         .read_counted(count as u64, 8, View::f64_be)?;
-    if !values.iter().all(|value| value.is_finite()) {
-        return None;
-    }
+    let values = SupportUvValues::new(packing, values).ok()?;
     Some((
         SupportUvRecord {
             xmt,
-            count,
-            marker,
             values,
             framing,
             pos,
@@ -1162,16 +1099,14 @@ fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
         .filter_map(move |(offset, window)| (window == tag).then_some(offset))
 }
 
-fn point_m(stream: &[u8], at: usize) -> Option<Point3> {
+fn point_m(stream: &[u8], at: usize) -> Option<FinitePoint> {
     let mut view = View::over_retained(stream).child(at, stream.len())?;
     let mm = [
         view.f64_be()? * 1000.0,
         view.f64_be()? * 1000.0,
         view.f64_be()? * 1000.0,
     ];
-    mm.iter()
-        .all(|value| value.is_finite())
-        .then_some(Point3::new(mm[0], mm[1], mm[2]))
+    FinitePoint::try_from(mm).ok()
 }
 
 fn distance(first: Point3, second: Point3) -> f64 {

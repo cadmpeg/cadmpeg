@@ -181,12 +181,12 @@ fn container_only_stops_before_geometry() {
         ..DecodeOptions::default()
     };
     let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
-    assert!(!result.report().geometry_transferred);
-    assert!(result.report().container_only);
+    assert!(!result.report().geometry_transferred());
+    assert!(result.report().container_only());
     // The reconstructed BREP stream is preserved as an unknown passthrough.
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = &result.source_fidelity().retained_records[0];
-    assert_eq!(retained.sha256.len(), 64);
-    assert!(retained.data.is_some());
+    assert_eq!(retained.sha256().len(), 64);
+    assert!(retained.data().is_some());
 }

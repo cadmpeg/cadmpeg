@@ -6,12 +6,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::NativeRecord;
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -40,7 +41,7 @@ struct TargetContext<'a> {
 }
 
 impl TargetContext<'_> {
-    fn target(&self, id: u64) -> Option<DrawingTarget> {
+    fn target(&self, id: u64) -> Option<ReferenceSelection> {
         target_for(
             id,
             self.target_identities,
@@ -73,8 +74,8 @@ pub(super) fn decode(
     let mut losses = Vec::new();
     let mut candidates = exchange
         .records
-        .values()
-        .filter_map(|record| drawing_type(record).map(|name| (record.id, name)))
+        .iter()
+        .filter_map(|(&id, record)| drawing_type(record).map(|name| (id, name)))
         .filter(|(id, name)| {
             let valid = required_parameter_count(name)
                 .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
@@ -204,7 +205,7 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId(identity.clone()),
+                id: DrawingId::mint(identity.clone()).expect("identity grammar"),
                 object: identity.clone(),
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
@@ -322,7 +323,7 @@ fn add_source_typed_targets(
         {
             continue;
         }
-        let identity = opaque_record_id(record).0;
+        let identity = opaque_record_id(id, record).into_string();
         let source_type = record
             .partials
             .iter()
@@ -335,18 +336,18 @@ fn add_source_typed_targets(
             serde_json::Value::String(format!("#{id}")),
         );
         fields.insert("source_type".into(), serde_json::Value::String(source_type));
-        native_targets.push(NativeRecord::new(identity.clone(), fields));
+        native_targets.push(
+            NativeRecord::new(identity.clone(), fields)
+                .expect("opaque_record_id checked the identity"),
+        );
         target_identities.insert(id, BTreeSet::from([identity]));
     }
     if native_targets.is_empty() {
         return;
     }
     let namespace = ir.native.namespace_mut("step");
-    if namespace.version == 0 {
-        namespace.version = 1;
-    }
     namespace
-        .arenas
+        .arenas_mut()
         .entry("drawing_targets".into())
         .or_default()
         .extend(native_targets);
@@ -377,7 +378,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
 }
 
 fn drawing_identity(id: u64, name: &str) -> String {
-    StepIdentity::drawing(&name.to_ascii_lowercase(), id)
+    ids::drawing(&name.to_ascii_lowercase(), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {
@@ -468,7 +469,7 @@ fn relationship_fields(name: &str) -> &'static [(usize, &'static str)] {
 }
 
 fn add_reference_fields(
-    relationships: &mut BTreeMap<String, Vec<DrawingTarget>>,
+    relationships: &mut BTreeMap<String, Vec<ReferenceSelection>>,
     name: &str,
     parameters: &[Value],
     source_id: u64,
@@ -792,54 +793,47 @@ fn target_for(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> Option<DrawingTarget> {
+) -> Option<ReferenceSelection> {
     if let Some(identity) = target_identities
         .get(&id)
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.iter().next())
     {
-        return Some(DrawingTarget {
-            target: Some(identity.clone()),
-            external_document: None,
-            external_object: None,
-            is_null: false,
-            subelements: Vec::new(),
-        });
+        return Some(ReferenceSelection::new(
+            ReferenceTarget::Local(identity.clone()),
+            Vec::new(),
+        ));
     }
     if let Some(uri) = external_documents.get(&id) {
-        return Some(DrawingTarget {
-            target: None,
-            external_document: Some((*uri).into()),
-            external_object: Some(format!("#{id}")),
-            is_null: false,
-            subelements: Vec::new(),
-        });
+        return Some(ReferenceSelection::new(
+            ReferenceTarget::External {
+                document: (*uri).into(),
+                object: format!("#{id}"),
+            },
+            Vec::new(),
+        ));
     }
     if let Some(identities) = wrapper_target_identities(id, target_identities, exchange) {
         if identities.len() == 1 {
-            return Some(DrawingTarget {
-                target: Some(
+            return Some(ReferenceSelection::new(
+                ReferenceTarget::Local(
                     identities
                         .into_iter()
                         .next()
                         .expect("one wrapper target identity"),
                 ),
-                external_document: None,
-                external_object: None,
-                is_null: false,
-                subelements: Vec::new(),
-            });
+                Vec::new(),
+            ));
         }
     }
     if known_typed.contains(&id) {
         return None;
     }
-    exchange.records.get(&id).map(|record| DrawingTarget {
-        target: Some(opaque_record_id(record).0),
-        external_document: None,
-        external_object: None,
-        is_null: false,
-        subelements: Vec::new(),
+    exchange.records.get(&id).map(|record| {
+        ReferenceSelection::new(
+            ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
+            Vec::new(),
+        )
     })
 }
 
@@ -979,8 +973,8 @@ fn value_text(
         ),
         Value::Binary(value) => Some(format!(
             "binary:{}:{}",
-            value.bit_len,
-            value.data.iter().fold(String::new(), |mut output, byte| {
+            value.bit_len(),
+            value.data().iter().fold(String::new(), |mut output, byte| {
                 write!(&mut output, "{byte:02X}").expect("writing binary value to String");
                 output
             })

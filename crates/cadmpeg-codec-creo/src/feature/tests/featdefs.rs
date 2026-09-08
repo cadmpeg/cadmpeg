@@ -23,7 +23,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.features.definitions.len(), 2);
-    assert_eq!(scan.features.definitions[0].id, 40);
+    assert_eq!(scan.features.definitions[0].identity.id(), 40);
     assert_eq!(scan.features.definitions[0].parameter_frames.len(), 2);
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].kind,
@@ -31,9 +31,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].decoded_values,
-        Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
-        ])
+        Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].kind,
@@ -41,13 +39,14 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].decoded_values,
-        Some(vec![1.0; 12])
+        Some([1.0; 12])
     );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let definitions = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let definitions =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let definition_fields = definitions[0].fields();
     let frames = definition_fields["parameter_frames"]
         .as_array()
@@ -73,9 +72,7 @@ fn scan_decodes_rank_two_featdefs_local_system() {
 
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].decoded_values,
-        Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0
-        ])
+        Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0])
     );
 }
 
@@ -93,7 +90,11 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
     assert_eq!(
-        outlines[0].local_values,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![
             Some(3.0),
             Some(0.0),
@@ -104,21 +105,42 @@ fn scan_decodes_featdefs_feature_local_outlines() {
         ]
     );
     assert_eq!(
-        outlines[0].local_value_bodies[0],
+        outlines[0].local_scalars[0].body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
     );
-    assert_eq!(outlines[0].local_value_bodies[1..], vec![vec![0x0f]; 5]);
+    assert_eq!(
+        outlines[0].local_scalars[1..]
+            .iter()
+            .map(|field| field.body.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0x0f]; 5]
+    );
     assert_eq!(
         outlines[1].phase,
         crate::feature::OutlinePhase::PostRollback
     );
-    assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
-    assert_eq!(outlines[1].local_value_bodies, vec![vec![0xe4]; 6]);
+    assert_eq!(
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
+        vec![Some(1.0); 6]
+    );
+    assert_eq!(
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
+        vec![vec![0xe4]; 6]
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let definitions = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let definitions =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let definition_fields = definitions[0].fields();
     let outlines = definition_fields["outlines"].as_array().expect("outlines");
     assert_eq!(outlines.len(), 2);
@@ -153,11 +175,19 @@ fn scan_stops_feature_local_outlines_at_named_records() {
     assert_eq!(outlines.len(), 3);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
     assert_eq!(
-        outlines[0].local_values,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![Some(0.0), Some(1.0), None, None, None, None]
     );
     assert_eq!(
-        outlines[0].local_value_bodies,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
         vec![vec![0x0f], vec![0xe4], vec![], vec![], vec![], vec![]]
     );
     assert_eq!(
@@ -165,16 +195,38 @@ fn scan_stops_feature_local_outlines_at_named_records() {
         crate::feature::OutlinePhase::PostRollback
     );
     assert_eq!(
-        outlines[1].local_values,
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![Some(1.0), Some(0.0), None, None, None, None]
     );
     assert_eq!(
-        outlines[1].local_value_bodies,
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
         vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
     );
     assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
-    assert_eq!(outlines[2].local_values, vec![Some(0.0); 6]);
-    assert_eq!(outlines[2].local_value_bodies, vec![vec![0x0f]; 6]);
+    assert_eq!(
+        outlines[2]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
+        vec![Some(0.0); 6]
+    );
+    assert_eq!(
+        outlines[2]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
+        vec![vec![0x0f]; 6]
+    );
 }
 
 #[test]
@@ -193,22 +245,28 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(1));
     assert_eq!(variables.rows.len(), 2);
-    assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(
+        variables.rows[0].value,
+        crate::feature::definitions::ScalarLane::Value(1.0)
+    );
     assert_eq!(variables.rows[0].value_body, [0xe4]);
     assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
-    assert_eq!(variables.rows[1].value, Some(3.0));
+    assert_eq!(
+        variables.rows[1].value,
+        crate::feature::definitions::ScalarLane::Value(3.0)
+    );
     assert_eq!(variables.rows[1].value_body, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     assert_eq!(variables.rows[1].guess_body, [0x0f]);
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(4));
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(1.0));
-    assert_eq!(variables.points[0].v, Some(3.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(1.0));
+    assert_eq!(variables.points()[0].v, Some(3.0));
 }
 
 #[test]
@@ -225,11 +283,20 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
         .as_ref()
         .expect("var_arr");
     assert_eq!(variables.rows.len(), 1);
-    assert_eq!(variables.rows[0].variable_type, 1);
+    assert_eq!(
+        variables.rows[0].variable_type,
+        crate::feature::definitions::VariableType::U
+    );
     assert_eq!(variables.rows[0].key, 7);
-    assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(
+        variables.rows[0].value,
+        crate::feature::definitions::ScalarLane::Value(1.0)
+    );
     assert_eq!(variables.rows[0].value_body, [0xe4]);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(2));
@@ -257,7 +324,10 @@ fn scan_classifies_named_var_arr_guess_sentinel() {
         row.guess_body,
         [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
     );
-    assert!(row.guess_dimension_driven);
+    assert_eq!(
+        row.guess,
+        crate::feature::definitions::ScalarLane::DimensionDriven
+    );
 }
 
 #[test]
@@ -281,37 +351,64 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .as_ref()
         .expect("segtab");
     assert_eq!(segments.declared_count, 5);
-    assert_eq!(segments.rows.len(), 5);
+    assert_eq!(segments.rows.ordinary().count(), 5);
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].kind,
+        crate::feature::FeatureSegmentKind::Line(_)
+    ));
     assert_eq!(
-        segments.rows[0].kind,
-        crate::feature::FeatureSegmentKind::Line
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [7, 8]
     );
-    assert_eq!(segments.rows[0].point_ids, [7, 8]);
-    assert_eq!(segments.rows[0].center_id, None);
-    assert_eq!(segments.rows[0].external_id, 42);
     assert_eq!(
-        segments.rows[0].body,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].center_id,
+        None
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        42
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].body,
         [2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]
     );
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
+        crate::feature::FeatureSegmentKind::Arc(_)
+    ));
     assert_eq!(
-        segments.rows[1].kind,
-        crate::feature::FeatureSegmentKind::Arc
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].center_id,
+        Some(10)
     );
-    assert_eq!(segments.rows[1].center_id, Some(10));
-    assert_eq!(segments.rows[2].external_id, 227);
-    assert_eq!(segments.rows[3].point_ids, [11, 12]);
-    assert_eq!(segments.rows[3].external_id, 0);
     assert_eq!(
-        segments.rows[4].kind,
-        crate::feature::FeatureSegmentKind::Point
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[2].external_id,
+        227
     );
-    assert_eq!(segments.rows[4].point_ids, [13, 13]);
-    assert_eq!(segments.rows[4].external_id, 4);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[3].point_ids(),
+        [11, 12]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[3].external_id,
+        0
+    );
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].kind,
+        crate::feature::FeatureSegmentKind::Point(_)
+    ));
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].point_ids(),
+        [13, 13]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].external_id,
+        4
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native_sketch = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0];
+    let native_sketch = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0];
     assert_eq!(
         native_sketch.fields()["segments"][0]["body"]
             .as_array()
@@ -373,7 +470,10 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
             entities,
             &[SketchEntityId("creo:featdefs:sketch_entity#40:43".into())]
         );
-        assert_eq!(operands[1].native_field.as_deref(), Some(field));
+        assert_eq!(
+            operands[1].field.as_ref().map(|field| field.name.as_str()),
+            Some(field)
+        );
         assert_eq!(operands[1].object_index, ordinal);
     }
     let point_verhor = constraints
@@ -396,7 +496,10 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         entities,
         &[SketchEntityId("creo:featdefs:sketch_entity#40:4".into())]
     );
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 4);
 }
 
@@ -419,24 +522,24 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         .expect("segtab");
 
     assert!(segments.is_complete());
-    assert_eq!(segments.circle_rows.len(), 1);
-    assert_eq!(segments.point_rows.len(), 1);
+    assert_eq!(segments.rows.circles().count(), 1);
+    assert_eq!(segments.rows.points().count(), 1);
     assert_eq!(
         segments
-            .centered_line_rows
-            .iter()
+            .rows
+            .centered_lines()
             .map(|row| (row.external_id, row.center_id))
             .collect::<Vec<_>>(),
         vec![(22, 2), (23, 0)]
     );
-    assert_eq!(segments.reference_line_rows.len(), 1);
-    assert_eq!(segments.bounded_curve_rows.len(), 1);
-    assert!(segments.opaque_rows.is_empty());
+    assert_eq!(segments.rows.reference_lines().count(), 1);
+    assert_eq!(segments.rows.bounded_curves().count(), 1);
+    assert!(segments.rows.opaque().next().is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let sketch = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0];
+    let sketch = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0];
     assert_eq!(sketch.fields()["circle_segments"][0]["external_id"], 20);
     assert_eq!(sketch.fields()["circle_segments"][0]["center_id"], 2);
     assert_eq!(
@@ -508,7 +611,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         1
     );
     assert!(!coverage
-        .coverage
+        .coverage()
         .contains_key("decoded_feature_segment_count"));
     assert_eq!(
         coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)
@@ -529,10 +632,19 @@ fn scan_includes_named_segtab_prototype_as_data() {
         .as_ref()
         .expect("segtab");
 
-    assert_eq!(segments.rows.len(), 1);
-    assert_eq!(segments.rows[0].external_id, 4);
-    assert_eq!(segments.rows[0].point_ids, [0, 1]);
-    assert_eq!(segments.rows[0].vertical_horizontal, Some(1));
+    assert_eq!(segments.rows.ordinary().count(), 1);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        4
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [0, 1]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].vertical_horizontal,
+        Some(1)
+    );
 }
 
 #[test]
@@ -553,16 +665,19 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows.len(), 3);
     assert_eq!(entities.rows[0].external_id, 42);
     assert_eq!(entities.rows[0].vertices, [100, 101]);
-    assert_eq!(entities.rows[0].center_vertex, None);
+    assert_eq!(entities.rows[0].center_vertex(), None);
     assert_eq!(entities.rows[0].kind, crate::feature::TrimEntityKind::Line);
-    assert_eq!(entities.rows[1].kind, crate::feature::TrimEntityKind::Arc);
+    assert_eq!(
+        entities.rows[1].kind,
+        crate::feature::TrimEntityKind::Arc { center_vertex: 103 }
+    );
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_entities = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let trim_entities = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["trim_entities"];
     assert_eq!(
         trim_entities.as_array().expect("trim entity array").len(),
@@ -595,7 +710,7 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_vertices = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let trim_vertices = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["trim_vertices"];
     assert_eq!(
         trim_vertices.as_array().expect("trim vertex array").len(),
@@ -671,8 +786,8 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let order_rows =
-        &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields()["order_rows"];
+    let order_rows = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
+        .fields()["order_rows"];
     assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
     assert_eq!(order_rows[0]["external_id"], 283);
     assert_eq!(order_rows[1]["internal_id"], 12);
@@ -707,9 +822,9 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.entity_ref, Some(258));
     assert_eq!(dimensions.rows.len(), 3);
     assert_eq!(dimensions.rows[0].dimension_type, 10);
-    assert_eq!(dimensions.rows[0].value, Some(1.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(1.0));
     assert_eq!(
-        dimensions.rows[0].value_unit,
+        dimensions.rows[0].unit(),
         crate::feature::DimensionUnit::Radians
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
@@ -717,20 +832,20 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].value_body, [0xe4]);
     assert_eq!(dimensions.rows[0].auxiliary_body, [0x0f]);
     assert_eq!(dimensions.rows[0].external_id, 42);
-    assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(dimensions.rows[1].value.resolved(), Some(3.0));
     assert_eq!(
         dimensions.rows[1].value_body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
     );
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
-        dimensions.rows[1].value_unit,
+        dimensions.rows[1].unit(),
         crate::feature::DimensionUnit::Millimeters
     );
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
     assert_eq!(
-        dimensions.rows[2].value,
+        dimensions.rows[2].value.resolved(),
         Some(f64::from_be_bytes([
             0x3f, 0xd5, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f
         ]))
@@ -797,33 +912,43 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(relations.rows[1].used, 1);
     assert_eq!(relations.rows[1].dimension_id, 42);
     assert_eq!(relations.rows[1].relation_type, 3);
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
-    assert_eq!(relations.skamps[0].kind, 2);
-    assert_eq!(relations.skamps[0].items[0].entity_id, 42);
-    assert_eq!(relations.skamps[0].items[0].sense, 1);
-    let skamp_header = relations.skamp_header.as_ref().expect("skamp header");
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
+    assert_eq!(relations.skamps()[0].kind, 2);
+    assert_eq!(relations.skamps()[0].items[0].entity_id, 42);
+    assert_eq!(relations.skamps()[0].items[0].sense, 1);
+    let skamp_header = relations
+        .skamps
+        .as_ref()
+        .expect("skamp table")
+        .header()
+        .expect("skamp header");
     assert_eq!(skamp_header.declared_count, 1);
     assert_eq!(skamp_header.entity_ref, 107);
     assert!(relations.offset < skamp_header.offset);
-    assert!(skamp_header.offset <= relations.skamps[0].offset);
-    assert_eq!(relations.triples.len(), 2);
-    assert_eq!(relations.triples[0].relation_id, Some(7));
-    assert_eq!(relations.triples[0].equation_id, Some(8));
-    assert_eq!(relations.triples[0].skamp_id, Some(5));
-    assert_eq!(relations.triples[1].relation_id, None);
-    assert_eq!(relations.triples[1].equation_id, Some(9));
-    let triples_header = relations.triples_header.as_ref().expect("triples header");
+    assert!(skamp_header.offset <= relations.skamps()[0].offset);
+    assert_eq!(relations.triples().len(), 2);
+    assert_eq!(relations.triples()[0].relation_id, Some(7));
+    assert_eq!(relations.triples()[0].equation_id, Some(8));
+    assert_eq!(relations.triples()[0].skamp_id, Some(5));
+    assert_eq!(relations.triples()[1].relation_id, None);
+    assert_eq!(relations.triples()[1].equation_id, Some(9));
+    let triples_header = relations
+        .triples
+        .as_ref()
+        .expect("triples table")
+        .header()
+        .expect("triples header");
     assert_eq!(triples_header.declared_count, 2);
     assert_eq!(triples_header.entity_ref, 109);
     assert!(skamp_header.offset < triples_header.offset);
-    assert!(triples_header.offset <= relations.triples[0].offset);
+    assert!(triples_header.offset <= relations.triples()[0].offset);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let sketch_fields =
-        result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields();
+        result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0].fields();
     let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
@@ -891,13 +1016,13 @@ fn scan_decodes_extended_solver_incidences() {
         .as_ref()
         .expect("relat_ptr");
 
-    assert_eq!(relations.skamps.len(), 2);
-    assert_eq!(relations.skamps[1].id, 0x4001);
-    assert_eq!(relations.skamps[1].kind, 14);
-    assert_eq!(relations.skamps[1].flags, 0x4000);
-    assert_eq!(relations.skamps[1].status, 34);
+    assert_eq!(relations.skamps().len(), 2);
+    assert_eq!(relations.skamps()[1].id, 0x4001);
+    assert_eq!(relations.skamps()[1].kind, 14);
+    assert_eq!(relations.skamps()[1].flags, 0x4000);
+    assert_eq!(relations.skamps()[1].status, 34);
     assert_eq!(
-        relations.skamps[1]
+        relations.skamps()[1]
             .items
             .iter()
             .map(|item| (item.entity_id, item.sense))
@@ -949,7 +1074,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native_saved = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let native_saved = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["saved_entities"];
     for (native, expected) in native_saved
         .as_array()
@@ -1015,7 +1140,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let saved = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+    let saved = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0].fields()
         ["saved_entities"];
     assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
     assert_eq!(saved[0]["kind"], "arc");

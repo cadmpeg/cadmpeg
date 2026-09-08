@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SKAMP solver constraint emission and locus compatibility.
 
-use super::super::feature_history::feature_solver_table_complete;
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
-use super::{
-    section_entity_external_ids, section_skamp_active, section_skamp_center_entity,
-    section_skamp_circular_entity, section_skamp_curve_entity, section_skamp_incidence_locus,
-    section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair,
-    section_skamp_locus, section_skamp_midpoint, section_skamp_oriented_line,
-    section_skamp_point_locus, section_skamp_same_coordinate, section_skamp_same_coordinate_axis,
-    section_skamp_tangent_loci, unique_bounded_curve_segment,
+use crate::decode::sketch_transfer::identity::section_entity_external_ids;
+use crate::decode::sketch_transfer::loci::{
+    section_skamp_active, section_skamp_center_entity, section_skamp_circular_entity,
+    section_skamp_curve_entity, section_skamp_incidence_locus, section_skamp_is_arc,
+    section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair, section_skamp_locus,
+    section_skamp_midpoint, section_skamp_oriented_line, section_skamp_point_locus,
+    section_skamp_same_coordinate, section_skamp_same_coordinate_axis, section_skamp_tangent_loci,
+    unique_bounded_curve_segment,
 };
+use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId,
-    SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
+    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::BTreeMap;
 
@@ -26,11 +27,13 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     let Some(relations) = &definition.relations else {
         return Vec::new();
     };
-    let complete_skamps =
-        feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len());
+    let complete_skamps = relations
+        .skamps
+        .as_ref()
+        .is_none_or(SolverSubtable::is_complete);
     let skamp_id_counts =
         relations
-            .skamps
+            .skamps()
             .iter()
             .fold(BTreeMap::<u32, usize>::new(), |mut counts, skamp| {
                 *counts.entry(skamp.id).or_default() += 1;
@@ -41,7 +44,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         || section_entities.clone(),
         |geometry| {
             relations
-                .skamps
+                .skamps()
                 .iter()
                 .flat_map(|skamp| &skamp.items)
                 .map(|item| item.entity_id)
@@ -50,17 +53,18 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         },
     );
     relations
-        .skamps
+        .skamps()
         .iter()
         .filter_map(|skamp| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
             let joined_equation_id = if unique_skamp_id
-                && feature_solver_table_complete(
-                    relations.triples_header.as_ref(),
-                    relations.triples.len(),
-                ) {
-                let mut equation_ids = relations
+                && relations
                     .triples
+                    .as_ref()
+                    .is_none_or(SolverSubtable::is_complete)
+            {
+                let mut equation_ids = relations
+                    .triples()
                     .iter()
                     .filter(|triple| triple.skamp_id == Some(skamp.id))
                     .filter_map(|triple| triple.equation_id);
@@ -82,18 +86,26 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .items
                     .iter()
                     .map(|item| SketchNativeOperand {
-                        native_kind: "skamp_ptr".to_string(),
-                        native_field: Some("items.entity_id".to_string()),
-                        native_role: Some(item.sense),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr")
+                            .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id")
+                                .expect("source field name is nonempty"),
+                            role: Some(item.sense),
+                        }),
                         object_index: item.entity_id,
                         native_ref: Some(native_ref.clone()),
                     })
                     .collect::<Vec<_>>();
                 if let Some(equation_id) = joined_equation_id {
                     operands.push(SketchNativeOperand {
-                        native_kind: "triples_ptr".to_string(),
-                        native_field: Some("equation_id".to_string()),
-                        native_role: None,
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new("triples_ptr")
+                            .expect("source operand kind is nonempty"),
+                        field: Some(NativeOperandField {
+                            name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                                .expect("source field name is nonempty"),
+                            role: None,
+                        }),
                         object_index: equation_id,
                         native_ref: Some(native_ref),
                     });
@@ -346,10 +358,15 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         let entity = sketch_entity_id(sketch, item.entity_id);
                         let first = SketchLocus::Start(entity.clone());
                         let second = SketchLocus::End(entity);
-                        if kind == 12 {
-                            SketchConstraintDefinition::HorizontalLoci { first, second }
+                        let axis = if kind == 12 {
+                            SketchCoordinateAxis::V
                         } else {
-                            SketchConstraintDefinition::VerticalLoci { first, second }
+                            SketchCoordinateAxis::U
+                        };
+                        SketchConstraintDefinition::SameCoordinate {
+                            first,
+                            second,
+                            axis,
                         }
                     }
                     (37, [source, result])
@@ -436,7 +453,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                         first,
                                         second,
                                         axis: [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
-                                            [axis],
+                                            [axis.index()],
                                     }
                                 }
                                 _ => native_constraint()?,
@@ -565,9 +582,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
         | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. }
-        | SketchConstraintDefinition::HorizontalLoci { first, second }
-        | SketchConstraintDefinition::VerticalLoci { first, second } => {
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
         SketchConstraintDefinition::Midpoint { point, entity }

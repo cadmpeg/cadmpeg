@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -21,43 +20,43 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         .model
         .regions
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let shells = ir
         .model
         .shells
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let faces = ir
         .model
         .faces
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let loops = ir
         .model
         .loops
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let coedges = ir
         .model
         .coedges
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let edges = ir
         .model
         .edges
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let vertices = ir
         .model
         .vertices
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
 
     let mut point_transforms = HashMap::new();
@@ -68,39 +67,36 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         check_rigid(transform)?;
         for region_id in &body.regions {
             let region = regions
-                .get(region_id.0.as_str())
+                .get(region_id.as_str())
                 .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
             for shell_id in &region.shells {
-                let shell = shells.get(shell_id.0.as_str()).ok_or_else(|| {
+                let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 for face_id in &shell.faces {
-                    let face = faces.get(face_id.0.as_str()).ok_or_else(|| {
+                    let face = faces.get(face_id.as_str()).ok_or_else(|| {
                         CodecError::Malformed("shell references missing face".into())
                     })?;
-                    assign(&mut surface_transforms, &face.surface.0, transform)?;
+                    assign(&mut surface_transforms, face.surface.as_str(), transform)?;
                     for loop_id in &face.loops {
-                        let lp = loops.get(loop_id.0.as_str()).ok_or_else(|| {
+                        let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
                             CodecError::Malformed("face references missing loop".into())
                         })?;
-                        for coedge_id in &lp.coedges {
-                            let coedge = coedges.get(coedge_id.0.as_str()).ok_or_else(|| {
+                        for coedge_id in lp.coedges() {
+                            let coedge = coedges.get(coedge_id.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("loop references missing coedge".into())
                             })?;
-                            let edge = edges.get(coedge.edge.0.as_str()).ok_or_else(|| {
+                            let edge = edges.get(coedge.edge.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("coedge references missing edge".into())
                             })?;
                             if let Some(curve) = &edge.curve {
-                                assign(&mut curve_transforms, &curve.0, transform)?;
+                                assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
                             for vertex_id in [&edge.start, &edge.end] {
-                                let vertex =
-                                    vertices.get(vertex_id.0.as_str()).ok_or_else(|| {
-                                        CodecError::Malformed(
-                                            "edge references missing vertex".into(),
-                                        )
-                                    })?;
-                                assign(&mut point_transforms, &vertex.point.0, transform)?;
+                                let vertex = vertices.get(vertex_id.as_str()).ok_or_else(|| {
+                                    CodecError::Malformed("edge references missing vertex".into())
+                                })?;
+                                assign(&mut point_transforms, vertex.point.as_str(), transform)?;
                             }
                         }
                     }
@@ -110,18 +106,18 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     }
 
     for point in &mut ir.model.points {
-        if let Some(transform) = point_transforms.get(point.id.0.as_str()) {
+        if let Some(transform) = point_transforms.get(point.id.as_str()) {
             point.position = transform.apply_point(point.position);
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(transform) = surface_transforms.get(surface.id.0.as_str()).copied() else {
+        let Some(transform) = surface_transforms.get(surface.id.as_str()).copied() else {
             continue;
         };
         transform_surface(&mut surface.geometry, transform)?;
     }
     for curve in &mut ir.model.curves {
-        let Some(transform) = curve_transforms.get(curve.id.0.as_str()).copied() else {
+        let Some(transform) = curve_transforms.get(curve.id.as_str()).copied() else {
             continue;
         };
         transform_curve(&mut curve.geometry, transform)?;
@@ -148,15 +144,19 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     ))
                 }
             };
-            mesh.vertices
+            mesh.vertices_mut()
                 .iter_mut()
                 .for_each(|point| *point = transform.apply_point(*point));
-            mesh.normals
-                .iter_mut()
-                .for_each(|normal| *normal = transform.apply_vector(*normal));
-            mesh.corner_normals
-                .iter_mut()
-                .for_each(|normal| *normal = transform.apply_vector(*normal));
+            if let Some(normals) = mesh.normals_mut() {
+                for normal in normals {
+                    *normal = transform.apply_vector(*normal);
+                }
+            }
+            if let Some(normals) = mesh.corner_normals_mut() {
+                for normal in normals {
+                    *normal = transform.apply_vector(*normal);
+                }
+            }
         }
     }
     ir.model
@@ -183,49 +183,7 @@ fn assign(
 }
 
 fn check_rigid(transform: Transform) -> Result<(), CodecError> {
-    const EPS: f64 = 1.0e-9;
-    if transform
-        .rows
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT body transform contains a non-finite value".into(),
-        ));
-    }
-    if transform.rows[3]
-        .iter()
-        .zip([0.0, 0.0, 0.0, 1.0])
-        .any(|(actual, expected)| (*actual - expected).abs() > EPS)
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT body transform is not affine".into(),
-        ));
-    }
-    let rows = [
-        Vector3::new(
-            transform.rows[0][0],
-            transform.rows[0][1],
-            transform.rows[0][2],
-        ),
-        Vector3::new(
-            transform.rows[1][0],
-            transform.rows[1][1],
-            transform.rows[1][2],
-        ),
-        Vector3::new(
-            transform.rows[2][0],
-            transform.rows[2][1],
-            transform.rows[2][2],
-        ),
-    ];
-    if rows.iter().any(|row| (row.norm() - 1.0).abs() > EPS)
-        || rows[0].dot(rows[1]).abs() > EPS
-        || rows[0].dot(rows[2]).abs() > EPS
-        || rows[1].dot(rows[2]).abs() > EPS
-        || (rows[0].dot(rows[1].cross(rows[2])) - 1.0).abs() > EPS
-    {
+    if !transform.is_proper_rigid() {
         return Err(CodecError::NotImplemented(
             "SLDPRT body transform must be a right-handed rigid transform".into(),
         ));
@@ -284,10 +242,16 @@ fn transform_surface(
             *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
-            .control_points
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
-        SurfaceGeometry::Polygonal { vertices, .. } => vertices
+            .edit_control_points(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+            })?,
+        SurfaceGeometry::Polygonal(surface) => surface
+            .vertices_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
@@ -323,10 +287,16 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
-            .control_points
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
-        CurveGeometry::Polyline { points, .. } => points
+            .edit_control_points(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+            })?,
+        CurveGeometry::Polyline(polyline) => polyline
+            .points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         CurveGeometry::Parabola {

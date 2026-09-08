@@ -6,10 +6,10 @@ use super::{
     valid_feature_direction,
 };
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeStart,
-    FaceSelection, FeatureId, HoleKind, Length, LoftPointSection, LoftSection, PathRef,
-    PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction,
-    RibDraft, SweepMode, SweepOrientation, Termination, VertexSelection,
+    AngularTermination, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
+    ExtrudeStart, FaceSelection, FeatureId, HoleKind, Length, LinearTermination, LoftPointSection,
+    LoftSection, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolveConstruction, RevolveExtent,
+    RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -21,13 +21,11 @@ const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
 pub(crate) fn hole_feature_is_incomplete(
     profile: Option<&ProfileRef>,
     face: Option<&FaceSelection>,
-    authored_axis: (Option<Point3>, Option<Vector3>),
-    placements: &[cadmpeg_ir::features::HolePlacement],
+    placements: Option<&[cadmpeg_ir::features::HolePlacement]>,
     treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
-    extent: Option<&Termination>,
+    extent: Option<&LinearTermination>,
 ) -> bool {
-    let (position, direction) = authored_axis;
     let (kind, exit_kind) = treatments;
     let profile_incomplete = profile.is_some_and(profile_ref_is_incomplete);
     let face_incomplete = face.is_some_and(face_selection_is_incomplete);
@@ -39,33 +37,30 @@ pub(crate) fn hole_feature_is_incomplete(
             && vector.z.is_finite()
             && vector.norm() > EPS_NONZERO_HOLE_DIRECTION
     };
-    let axis_is_direction_invariant = matches!(extent, Some(Termination::ThroughAll))
+    let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll))
         && exit_kind.is_none_or(|exit| exit == kind);
-    let placements_complete = !placements.is_empty()
-        && !placements
-            .iter()
-            .enumerate()
-            .any(|(index, placement)| placements[index + 1..].contains(placement))
-        && placements.iter().all(|placement| match placement {
-            cadmpeg_ir::features::HolePlacement::Directed {
-                position,
-                direction,
-            } => finite_point(*position) && finite_direction(*direction),
-            cadmpeg_ir::features::HolePlacement::Axis { origin, axis } => {
-                axis_is_direction_invariant && finite_point(*origin) && finite_direction(*axis)
-            }
-        });
-    let placements_incomplete = !placements.is_empty() && !placements_complete;
-    let authored_axis_incomplete = position.is_some_and(|point| !finite_point(point))
-        || direction.is_some_and(|vector| !finite_direction(vector));
-    let location_unresolved =
-        !placements_complete && position.is_none() && profile.is_none_or(profile_ref_is_incomplete);
-    let orientation_unresolved = !placements_complete
-        && direction.is_none()
-        && face.is_none_or(face_selection_is_incomplete);
+    let placements_complete = placements.is_some_and(|placements| {
+        !placements.is_empty()
+            && !placements
+                .iter()
+                .enumerate()
+                .any(|(index, placement)| placements[index + 1..].contains(placement))
+            && placements.iter().all(|placement| match placement {
+                cadmpeg_ir::features::HolePlacement::Directed {
+                    position,
+                    direction,
+                } => finite_point(*position) && finite_direction(*direction),
+                cadmpeg_ir::features::HolePlacement::Axis { origin, axis } => {
+                    axis_is_direction_invariant && finite_point(*origin) && finite_direction(*axis)
+                }
+            })
+    });
+    let placements_incomplete = placements.is_some() && !placements_complete;
+    let location_unresolved = !placements_complete && profile.is_none_or(profile_ref_is_incomplete);
+    let orientation_unresolved =
+        !placements_complete && face.is_none_or(face_selection_is_incomplete);
     profile_incomplete
         || face_incomplete
-        || authored_axis_incomplete
         || placements_incomplete
         || location_unresolved
         || orientation_unresolved
@@ -83,7 +78,9 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
         !positive_feature_length(diameter) || bore_diameter.is_none_or(|bore| diameter.0 <= bore.0)
     };
     match kind {
-        HoleKind::Unresolved { .. } => true,
+        HoleKind::Unresolved(_)
+        | HoleKind::PartialCounterbore { .. }
+        | HoleKind::PartialCountersink { .. } => true,
         HoleKind::Simple => false,
         HoleKind::Chamfer { diameter, angle } | HoleKind::Countersink { diameter, angle } => {
             treatment_diameter_is_incomplete(*diameter) || !valid_angle(*angle)
@@ -100,18 +97,6 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
             treatment_diameter_is_incomplete(*diameter)
                 || !positive_feature_length(*depth)
                 || !valid_angle(*drill_point_angle)
-        }
-        HoleKind::Threaded {
-            major_diameter,
-            thread_depth,
-            pitch,
-            drill_point_angle,
-        } => {
-            !positive_feature_length(*major_diameter)
-                || !positive_feature_length(*thread_depth)
-                || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
-                || !valid_angle(*drill_point_angle)
-                || bore_diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0)
         }
         HoleKind::Counterdrill {
             diameter,
@@ -147,27 +132,40 @@ pub(crate) fn hole_auxiliary_semantics_are_incomplete(
         })
         || taper_angle.is_some_and(|angle| !valid_angle(angle))
         || specification.is_some_and(|specification| {
-            specification.standard.trim().is_empty()
-                || specification
-                    .pitch
-                    .is_some_and(|pitch| !positive_feature_length(pitch))
-                || specification
-                    .major_diameter
-                    .is_some_and(|diameter| !positive_feature_length(diameter))
-                || specification
-                    .clearance
-                    .is_some_and(|clearance| !clearance.0.is_finite())
+            let (standard, pitch, major_diameter, clearance, depth) = match specification {
+                cadmpeg_ir::features::HoleSpecification::Clearance {
+                    standard,
+                    clearance,
+                    depth,
+                    ..
+                } => (standard, None, None, clearance, depth),
+                cadmpeg_ir::features::HoleSpecification::Threaded {
+                    standard,
+                    pitch,
+                    major_diameter,
+                    clearance,
+                    depth,
+                    ..
+                } => (standard, *pitch, *major_diameter, clearance, depth),
+            };
+            standard.trim().is_empty()
+                || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
+                || major_diameter.is_some_and(|diameter| !positive_feature_length(diameter))
+                || clearance.is_some_and(|clearance| !clearance.0.is_finite())
                 || matches!(
-                    specification.depth,
+                    depth,
                     cadmpeg_ir::features::HoleThreadDepth::Blind { depth }
-                        if !positive_feature_length(depth)
+                        if !positive_feature_length(*depth)
                 )
         })
 }
 
 pub(crate) fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {
     match spec {
-        ChamferSpec::Unresolved { .. } => true,
+        ChamferSpec::Unresolved
+        | ChamferSpec::UnresolvedDistance
+        | ChamferSpec::UnresolvedTwoDistances
+        | ChamferSpec::UnresolvedDistanceAngle => true,
         ChamferSpec::Distance { distance } => !positive_feature_length(*distance),
         ChamferSpec::TwoDistances { first, second } => {
             !positive_feature_length(*first) || !positive_feature_length(*second)
@@ -191,7 +189,6 @@ pub(crate) fn extrude_extent_is_incomplete(
             || side.draft.is_some_and(|angle| {
                 !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
             })
-            || side.offset.is_some_and(|offset| !offset.0.is_finite())
     };
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -215,25 +212,28 @@ pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
 }
 
 pub(crate) fn revolve_feature_is_incomplete(
-    construction: &RevolutionConstruction,
+    construction: &RevolveConstruction,
     op: BooleanOp,
     dependencies: &[FeatureId],
 ) -> bool {
-    construction
-        .profile
-        .as_ref()
-        .is_none_or(profile_ref_is_incomplete)
-        || construction
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, dependencies))
-        || construction.axis.is_none_or(|axis| {
-            !finite_feature_point(axis.origin) || !unit_feature_direction(axis.direction)
-        })
-        || construction.extent.as_ref().is_none_or(|extent| {
-            let side_is_incomplete = |termination: &Termination| {
-                termination_is_incomplete(termination)
-                    || termination_dependency_is_incomplete(termination, dependencies)
+    let RevolveConstruction::Resolved {
+        profile,
+        axis,
+        extent,
+        solid,
+        ..
+    } = construction
+    else {
+        return true;
+    };
+    profile_ref_is_incomplete(profile)
+        || profile_dependency_is_incomplete(profile, dependencies)
+        || !finite_feature_point(axis.origin)
+        || !unit_feature_direction(axis.direction)
+        || {
+            let side_is_incomplete = |termination: &AngularTermination| {
+                angular_termination_is_incomplete(termination)
+                    || angular_termination_dependency_is_incomplete(termination, dependencies)
             };
             match extent {
                 RevolveExtent::OneSided { termination }
@@ -242,26 +242,19 @@ pub(crate) fn revolve_feature_is_incomplete(
                     side_is_incomplete(first) || side_is_incomplete(second)
                 }
             }
-        })
-        || construction
-            .axis_reference
-            .as_ref()
-            .is_some_and(path_ref_is_incomplete)
-        || construction.solid.is_none()
-        || construction
-            .face_maker_class
-            .as_ref()
-            .is_some_and(|class| class.trim().is_empty())
+        }
+        || axis.reference.as_ref().is_some_and(path_ref_is_incomplete)
+        || solid.is_none()
         || matches!(op, BooleanOp::Unresolved)
 }
 
-pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
+pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool {
     match termination {
-        Termination::Unresolved => true,
-        Termination::ToFace { face, offset } => {
+        LinearTermination::Unresolved => true,
+        LinearTermination::ToFace { face, offset } => {
             face_selection_is_incomplete(face) || offset.is_some_and(|offset| !offset.0.is_finite())
         }
-        Termination::ToVertex { vertex } => match vertex {
+        LinearTermination::ToVertex { vertex } => match vertex {
             VertexSelection::Generated { vertex, native } => {
                 native.trim().is_empty() || vertex.local_id.trim().is_empty()
             }
@@ -270,30 +263,76 @@ pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
                 vertex,
                 native,
             } => {
-                state.0.trim().is_empty() || vertex.0.trim().is_empty() || native.trim().is_empty()
+                state.as_str().trim().is_empty()
+                    || vertex.as_str().trim().is_empty()
+                    || native.trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },
-        Termination::OffsetFromFace { face, offset } => {
+        LinearTermination::OffsetFromFace { face, offset } => {
             face_selection_is_incomplete(face) || !positive_feature_length(*offset)
         }
-        Termination::ToShape { target } => face_selection_is_incomplete(target),
-        Termination::Blind { length } => !length.0.is_finite() || length.0 == 0.0,
-        Termination::Angle { angle } => !angle.0.is_finite() || angle.0 <= 0.0,
-        Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast => false,
+        LinearTermination::ToShape { target } => face_selection_is_incomplete(target),
+        LinearTermination::Blind { length } => !length.0.is_finite() || length.0 == 0.0,
+        LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast => false,
     }
 }
 
 pub(crate) fn termination_dependency_is_incomplete(
-    termination: &Termination,
+    termination: &LinearTermination,
     dependencies: &[FeatureId],
 ) -> bool {
     matches!(
         termination,
-        Termination::ToVertex {
+        LinearTermination::ToVertex {
+            vertex: VertexSelection::Generated { vertex, .. },
+        } if !dependencies.contains(&vertex.feature)
+    )
+}
+
+fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
+    match termination {
+        AngularTermination::Unresolved => true,
+        AngularTermination::ToFace { face, offset } => {
+            face_selection_is_incomplete(face) || offset.is_some_and(|offset| !offset.0.is_finite())
+        }
+        AngularTermination::ToVertex { vertex } => match vertex {
+            VertexSelection::Generated { vertex, native } => {
+                native.trim().is_empty() || vertex.local_id.trim().is_empty()
+            }
+            VertexSelection::Historical {
+                state,
+                vertex,
+                native,
+            } => {
+                state.as_str().trim().is_empty()
+                    || vertex.as_str().trim().is_empty()
+                    || native.trim().is_empty()
+            }
+            VertexSelection::Unresolved | VertexSelection::Native(_) => true,
+        },
+        AngularTermination::OffsetFromFace { face, offset } => {
+            face_selection_is_incomplete(face) || !positive_feature_length(*offset)
+        }
+        AngularTermination::ToShape { target } => face_selection_is_incomplete(target),
+        AngularTermination::Angle { angle } => !angle.0.is_finite() || angle.0 <= 0.0,
+        AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast => false,
+    }
+}
+
+fn angular_termination_dependency_is_incomplete(
+    termination: &AngularTermination,
+    dependencies: &[FeatureId],
+) -> bool {
+    matches!(
+        termination,
+        AngularTermination::ToVertex {
             vertex: VertexSelection::Generated { vertex, .. },
         } if !dependencies.contains(&vertex.feature)
     )
@@ -318,11 +357,8 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
 
 pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     match mode {
-        SweepMode::Unresolved
-        | SweepMode::Solid {
-            op: BooleanOp::Unresolved,
-        } => true,
-        SweepMode::Solid { .. } | SweepMode::Surface => false,
+        SweepMode::Unresolved => true,
+        SweepMode::NewBody | SweepMode::Solid { .. } | SweepMode::Surface => false,
     }
 }
 
@@ -339,7 +375,13 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear {
             direction,
             spacing,
@@ -453,7 +495,11 @@ pub(crate) fn pattern_feature_is_incomplete(
 
 pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     match radius {
-        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Unresolved
+        | RadiusSpec::UnresolvedConstant
+        | RadiusSpec::UnresolvedChordal
+        | RadiusSpec::UnresolvedAsymmetric
+        | RadiusSpec::UnresolvedVariable => true,
         RadiusSpec::Constant { radius } => !positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => !positive_feature_length(*chord_length),
         RadiusSpec::Asymmetric {
@@ -549,15 +595,22 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
                     }
                 })?
         }
-        PatternKind::Unresolved { .. } => None,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => None,
     }
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => selection_ids_are_incomplete(bodies),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            selection_ids_are_incomplete(bodies)
+        }
+        BodySelection::ResolvedSet { .. } => false,
         BodySelection::Local { bodies, native } => {
             native.trim().is_empty()
                 || selection_ids_are_incomplete(bodies)
@@ -586,11 +639,12 @@ pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
     }
 }
 
-pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
+pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<Vec<BodyId>> {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.clone())
+        }
+        BodySelection::ResolvedSet { members } => Some(members.bodies().cloned().collect()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
@@ -604,9 +658,10 @@ pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> 
 
 pub(crate) fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
     match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.len())
+        }
+        BodySelection::ResolvedSet { members } => Some(members.len()),
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
@@ -715,7 +770,7 @@ pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
         LoftSection::Profile(profile) => profile_ref_is_incomplete(profile),
         LoftSection::Point(LoftPointSection::Native(_)) => true,
         LoftSection::Point(LoftPointSection::Point(point)) => !finite_feature_point(*point),
-        LoftSection::Point(LoftPointSection::Vertex(vertex)) => vertex.0.trim().is_empty(),
+        LoftSection::Point(LoftPointSection::Vertex(_)) => false,
     }
 }
 

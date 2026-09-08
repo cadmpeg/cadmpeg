@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
-    LawFormula, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceForm,
+    LawFormula, LegacyExtensionFlags, NurbsCurve, NurbsSurface, OffsetExtension,
+    OffsetSupportExtension, PcurveGeometry, PolylineCurve, ProceduralCurve, ProceduralSurface,
+    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
     RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
     RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
     SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
     VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
-    VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendRadii, VariableBlendRenderMode, VariableBlendSupportKind,
     VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
@@ -23,43 +24,69 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::WorkBudget;
 
+macro_rules! procedural_surface {
+    (
+        id: $id:expr,
+        definition: $definition:expr,
+        cache_fit_tolerance: $cache_fit_tolerance:expr,
+        record_bounds: $record_bounds:expr $(,)?
+    ) => {
+        ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+            .expect("valid procedural surface fixture")
+    };
+}
+
+macro_rules! procedural_curve {
+    (
+        id: $id:expr,
+        definition: $definition:expr,
+        cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
+    ) => {
+        ProceduralCurve::try_new($id, $definition, $cache_fit_tolerance)
+            .expect("valid procedural curve fixture")
+    };
+}
+
 mod helix;
 mod law_sweep;
+mod pcurves;
+mod procedural_curves;
 mod ruled_sum;
 mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap()
 }
 
 #[test]
 fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     let mut surface = bilinear_surface();
-    surface.u_periodic = true;
+    surface.set_u_periodic(true);
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
     assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
     assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
 
-    surface.u_periodic = false;
+    surface.set_u_periodic(false);
     assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
@@ -74,33 +101,39 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet {
         degree: 5,
-        knots: vec![2.0, 5.0],
-        multiplicities: vec![6, 6],
-        sites: vec![
-            RollingBallJetSite {
-                first_limit: Point3::new(2.0, 0.0, 0.0),
-                second_limit: Point3::new(0.0, 2.0, 0.0),
-                center: Point3::new(0.0, 0.0, 0.0),
-                angle: std::f64::consts::FRAC_PI_2,
-                first_derivative: derivative.clone(),
-                second_derivative: RollingBallJetDerivative {
-                    first_limit: Vector3::new(0.0, 0.0, 0.0),
-                    second_limit: Vector3::new(0.0, 0.0, 0.0),
-                    center: Vector3::new(0.0, 0.0, 0.0),
-                    angle: 0.0,
+        stations: vec![
+            crate::geometry::RollingBallJetStation {
+                knot: 2.0,
+                multiplicity: 6,
+                site: RollingBallJetSite {
+                    first_limit: Point3::new(2.0, 0.0, 0.0),
+                    second_limit: Point3::new(0.0, 2.0, 0.0),
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    angle: std::f64::consts::FRAC_PI_2,
+                    first_derivative: derivative.clone(),
+                    second_derivative: RollingBallJetDerivative {
+                        first_limit: Vector3::new(0.0, 0.0, 0.0),
+                        second_limit: Vector3::new(0.0, 0.0, 0.0),
+                        center: Vector3::new(0.0, 0.0, 0.0),
+                        angle: 0.0,
+                    },
                 },
             },
-            RollingBallJetSite {
-                first_limit: Point3::new(3.0, 0.0, 0.0),
-                second_limit: Point3::new(1.0, 2.0, 0.0),
-                center: Point3::new(1.0, 0.0, 0.0),
-                angle: std::f64::consts::FRAC_PI_2,
-                first_derivative: derivative,
-                second_derivative: RollingBallJetDerivative {
-                    first_limit: Vector3::new(0.0, 0.0, 0.0),
-                    second_limit: Vector3::new(0.0, 0.0, 0.0),
-                    center: Vector3::new(0.0, 0.0, 0.0),
-                    angle: 0.0,
+            crate::geometry::RollingBallJetStation {
+                knot: 5.0,
+                multiplicity: 6,
+                site: RollingBallJetSite {
+                    first_limit: Point3::new(3.0, 0.0, 0.0),
+                    second_limit: Point3::new(1.0, 2.0, 0.0),
+                    center: Point3::new(1.0, 0.0, 0.0),
+                    angle: std::f64::consts::FRAC_PI_2,
+                    first_derivative: derivative,
+                    second_derivative: RollingBallJetDerivative {
+                        first_limit: Vector3::new(0.0, 0.0, 0.0),
+                        second_limit: Vector3::new(0.0, 0.0, 0.0),
+                        center: Vector3::new(0.0, 0.0, 0.0),
+                        angle: 0.0,
+                    },
                 },
             },
         ],
@@ -130,24 +163,30 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet {
         degree: 5,
-        knots: vec![2.0, 5.0],
-        multiplicities: vec![6, 6],
-        sites: vec![
-            RollingBallJetSite {
-                first_limit: Point3::new(2.0, 0.0, 0.0),
-                second_limit: Point3::new(0.0, 2.0, 0.0),
-                center: Point3::new(0.0, 0.0, 0.0),
-                angle: std::f64::consts::FRAC_PI_2,
-                first_derivative: zero.clone(),
-                second_derivative: zero.clone(),
+        stations: vec![
+            crate::geometry::RollingBallJetStation {
+                knot: 2.0,
+                multiplicity: 6,
+                site: RollingBallJetSite {
+                    first_limit: Point3::new(2.0, 0.0, 0.0),
+                    second_limit: Point3::new(0.0, 2.0, 0.0),
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    angle: std::f64::consts::FRAC_PI_2,
+                    first_derivative: zero.clone(),
+                    second_derivative: zero.clone(),
+                },
             },
-            RollingBallJetSite {
-                first_limit: Point3::new(0.0, 2.0, 0.0),
-                second_limit: Point3::new(-2.0, 0.0, 0.0),
-                center: Point3::new(0.0, 0.0, 0.0),
-                angle: std::f64::consts::FRAC_PI_2,
-                first_derivative: zero.clone(),
-                second_derivative: zero,
+            crate::geometry::RollingBallJetStation {
+                knot: 5.0,
+                multiplicity: 6,
+                site: RollingBallJetSite {
+                    first_limit: Point3::new(0.0, 2.0, 0.0),
+                    second_limit: Point3::new(-2.0, 0.0, 0.0),
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    angle: std::f64::consts::FRAC_PI_2,
+                    first_derivative: zero.clone(),
+                    second_derivative: zero,
+                },
             },
         ],
     };
@@ -259,14 +298,13 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 
     let transformed = SurfaceGeometry::Transformed {
         basis: Box::new(SurfaceGeometry::Nurbs(surface)),
-        transform: Transform {
-            rows: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
     let budget = WorkBudget::new(12);
     assert!(surface_point_with_budget(&transformed, 0.25, 0.75, &budget).is_none());
@@ -281,18 +319,22 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 
 #[test]
 fn budgeted_model_surface_charges_nurbs_directrix_work() {
-    let directrix_id = CurveId("budgeted-directrix".into());
-    let surface_id = SurfaceId("budgeted-sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id =
+        CurveId::mint("test:model:entity#budgeted-directrix").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#budgeted-sweep").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -300,16 +342,20 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("budgeted-sweep-construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::LinearSweep {
-            directrix: directrix_id,
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    ir.model
+        .add_procedural_surface(
+            surface_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::LinearSweep {
+                    directrix: directrix_id,
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(5);
@@ -339,14 +385,14 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.5, 0.0, 0.2),
@@ -354,11 +400,12 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
     let parameters = nurbs_surface_parameter_within_tolerance(&surface, point, None, 1.0e-10)
         .expect("rational multi-span inverse");
@@ -369,7 +416,9 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
-    surface.control_points[3].z = 1.0;
+    surface
+        .edit_control_points(|points| points[3].z = 1.0)
+        .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
     let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)
@@ -397,19 +446,20 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
-    let surface = NurbsSurface {
-        u_degree: 0,
-        v_degree: 0,
-        u_knots: vec![0.0, 1.0],
-        v_knots: vec![0.0, 1.0],
-        u_count: 1,
-        v_count: 1,
-        control_points: vec![Point3::new(1.0, 2.0, 3.0)],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+    let surface = NurbsSurface::new(
+        0,
+        0,
+        vec![0.0, 1.0],
+        vec![0.0, 1.0],
+        1,
+        1,
+        vec![Point3::new(1.0, 2.0, 3.0)],
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
     let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -423,19 +473,20 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
-    let surface = NurbsSurface {
-        u_degree: 0,
-        v_degree: 0,
-        u_knots: vec![0.0, 1.0, 2.0],
-        v_knots: vec![0.0, 1.0],
-        u_count: 2,
-        v_count: 1,
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+    let surface = NurbsSurface::new(
+        0,
+        0,
+        vec![0.0, 1.0, 2.0],
+        vec![0.0, 1.0],
+        2,
+        1,
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
         let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -450,14 +501,14 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.5, 0.0, 0.25),
@@ -465,11 +516,12 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
     let endpoints = parameters
         .map(|point| nurbs_surface_point(&surface, point.u, point.v).expect("surface endpoint"));
@@ -539,8 +591,8 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             0.7
         };
         let point = curve_point(&geometry, parameter).expect("analytic curve evaluates");
-        let id = CurveId(format!("test:inverse:{index}"));
-        let mut ir = CadIr::empty(crate::units::Units::default());
+        let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -556,51 +608,61 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
 fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
     let cases = [
         (
-            CurveGeometry::Polyline {
-                points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                parameters: None,
-                chordal_deflection: 0.0,
-            },
+            CurveGeometry::Polyline(
+                PolylineCurve::new(
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    None,
+                    0.0,
+                )
+                .unwrap(),
+            ),
             Point3::new(0.5, 0.0, 0.0),
             0.5,
             0.5,
         ),
         (
-            CurveGeometry::Polyline {
-                points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                parameters: Some(vec![4.0, 2.0, 0.0]),
-                chordal_deflection: 0.0,
-            },
+            CurveGeometry::Polyline(
+                PolylineCurve::new(
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    Some(vec![4.0, 2.0, 0.0]),
+                    0.0,
+                )
+                .unwrap(),
+            ),
             Point3::new(1.0, 0.5, 0.0),
             1.0,
             1.0,
         ),
         (
-            CurveGeometry::Polyline {
-                points: vec![
-                    Point3::new(2.0, 3.0, 4.0),
-                    Point3::new(2.0, 3.0, 4.0),
-                    Point3::new(5.0, 3.0, 4.0),
-                ],
-                parameters: Some(vec![0.0, 1.0, 2.0]),
-                chordal_deflection: 0.0,
-            },
+            CurveGeometry::Polyline(
+                PolylineCurve::new(
+                    vec![
+                        Point3::new(2.0, 3.0, 4.0),
+                        Point3::new(2.0, 3.0, 4.0),
+                        Point3::new(5.0, 3.0, 4.0),
+                    ],
+                    Some(vec![0.0, 1.0, 2.0]),
+                    0.0,
+                )
+                .unwrap(),
+            ),
             Point3::new(2.0, 3.0, 4.0),
             0.7,
             0.7,
         ),
     ];
     for (index, (geometry, point, seed, expected)) in cases.into_iter().enumerate() {
-        let id = CurveId(format!("test:polyline-inverse:{index}"));
-        let mut ir = CadIr::empty(crate::units::Units::default());
+        let id =
+            CurveId::mint(format!("test:polyline-inverse:curve#{index}")).expect("valid identity");
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -614,8 +676,8 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
 
 #[test]
 fn indexed_curve_inverse_uses_the_caller_tolerance() {
-    let id = CurveId("test:inverse-tolerance".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let id = CurveId::mint("test:model:entity#test:inverse-tolerance").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Line {
@@ -642,22 +704,21 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 4.0,
     };
-    let transform = Transform {
-        rows: [
-            [-2.0, 0.0, 0.0, 1.0e6],
-            [0.0, 0.5, 0.0, -2.0e6],
-            [0.0, 0.0, 3.0, 3.0e6],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [-2.0, 0.0, 0.0, 1.0e6],
+        [0.0, 0.5, 0.0, -2.0e6],
+        [0.0, 0.0, 3.0, 3.0e6],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let geometry = CurveGeometry::Transformed {
         basis: Box::new(basis.clone()),
         transform,
     };
     let parameter = 0.7 + std::f64::consts::TAU;
     let point = curve_point(&geometry, parameter).expect("transformed curve evaluates");
-    let id = CurveId("test:transformed-inverse".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -669,14 +730,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 
     ir.model.curves[0].geometry = CurveGeometry::Transformed {
         basis: Box::new(basis),
-        transform: Transform {
-            rows: [
-                [0.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
     assert!(
         super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
@@ -687,8 +747,8 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 #[test]
 fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let point = Point3::new(2.0, 3.0, 4.0);
-    let id = CurveId("test:degenerate-inverse".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let id = CurveId::mint("test:model:entity#test:degenerate-inverse").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Degenerate { point },
@@ -709,14 +769,14 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
 fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
-    let surface = NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![-2.0, -2.0, 3.0, 3.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        2,
+        1,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![-2.0, -2.0, 3.0, 3.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 4.0),
             Point3::new(1.0, 2.0, 0.5),
@@ -724,11 +784,12 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             Point3::new(3.0, -1.0, 1.0),
             Point3::new(3.0, -1.0, 5.0),
         ],
-        weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
 
     for (direction, at, samples) in [
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
@@ -742,10 +803,10 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             };
             let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
             let actual = nurbs_curve_point(
-                curve.degree,
-                &curve.knots,
-                &curve.control_points,
-                curve.weights.as_deref(),
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
                 sample,
             )
             .expect("curve point");
@@ -762,24 +823,25 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 3.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_partials(&surface, 0.25, 0.75).expect("partials");
     assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
@@ -788,14 +850,14 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: (0..3)
+    let surface = NurbsSurface::new(
+        2,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        3,
+        3,
+        (0..3)
             .flat_map(|i| {
                 (0..3).map(move |j| {
                     Point3::new(
@@ -806,11 +868,12 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
                 })
             })
             .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_second_partials(&surface, 0.25, 0.75).expect("second partials");
     assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
@@ -822,12 +885,14 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
 
 #[test]
 fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
-    let support_id = SurfaceId("support".into());
-    let first_id = SurfaceId("first-offset".into());
-    let second_id = SurfaceId("second-offset".into());
-    let first_construction = ProceduralSurfaceId("first-construction".into());
-    let second_construction = ProceduralSurfaceId("second-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let first_id = SurfaceId::mint("test:model:entity#first-offset").expect("valid identity");
+    let second_id = SurfaceId::mint("test:model:entity#second-offset").expect("valid identity");
+    let first_construction =
+        ProceduralSurfaceId::mint("test:model:entity#first-construction").expect("valid identity");
+    let second_construction =
+        ProceduralSurfaceId::mint("test:model:entity#second-construction").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -842,6 +907,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             id: first_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: first_construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
@@ -849,37 +915,34 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             id: second_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: second_construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ];
     ir.model.procedural_surfaces = vec![
-        ProceduralSurface {
+        procedural_surface! {
             id: first_construction,
-            surface: first_id.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
                 support: support_id,
                 distance: 2.0,
                 u_sense: None,
                 v_sense: None,
                 support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
+                extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
             },
             cache_fit_tolerance: None,
             record_bounds: None,
         },
-        ProceduralSurface {
+        procedural_surface! {
             id: second_construction,
-            surface: second_id.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
                 support: first_id,
                 distance: -5.0,
                 u_sense: None,
                 v_sense: None,
                 support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
+                extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -912,54 +975,57 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
 
 #[test]
 fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
-    let support_id = SurfaceId("support".into());
-    let offset_id = SurfaceId("offset".into());
-    let construction = ProceduralSurfaceId("offset-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 2,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 3,
-                control_points: [0.0, 1.0]
-                    .into_iter()
-                    .flat_map(|u| {
-                        [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
-                            .into_iter()
-                            .map(move |(v, z)| Point3::new(u, v, z))
-                    })
-                    .collect(),
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    2,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    2,
+                    3,
+                    [0.0, 1.0]
+                        .into_iter()
+                        .flat_map(|u| {
+                            [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
+                                .into_iter()
+                                .map(move |(v, z)| Point3::new(u, v, z))
+                        })
+                        .collect(),
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        surface: offset_id.clone(),
         definition: ProceduralSurfaceDefinition::Offset {
             support: support_id,
             distance: 0.0,
             u_sense: None,
             v_sense: None,
             support_extension: Some(OffsetSupportExtension::Linear),
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
         },
         cache_fit_tolerance: None,
         record_bounds: None,
@@ -977,12 +1043,13 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
 
 #[test]
 fn offset_uses_the_nurbs_carrier_normal_orientation() {
-    let support_id = SurfaceId("support".into());
-    let offset_id = SurfaceId("offset".into());
-    let construction = ProceduralSurfaceId("offset-construction".into());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let mut support = bilinear_surface();
-    support.normal_reversed = true;
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    support.set_normal_reversed(true);
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -993,21 +1060,20 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        surface: offset_id.clone(),
         definition: ProceduralSurfaceDefinition::Offset {
             support: support_id,
             distance: 2.0,
             u_sense: None,
             v_sense: None,
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
         },
         cache_fit_tolerance: None,
         record_bounds: None,
@@ -1026,17 +1092,19 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
 
 #[test]
 fn offset_of_reversed_subset_uses_the_local_surface_normal() {
-    let base_id = SurfaceId("base".into());
-    let subset_id = SurfaceId("subset".into());
-    let offset_id = SurfaceId("offset".into());
-    let subset_construction = ProceduralSurfaceId("subset-construction".into());
-    let offset_construction = ProceduralSurfaceId("offset-construction".into());
+    let base_id = SurfaceId::mint("test:model:entity#base").expect("valid identity");
+    let subset_id = SurfaceId::mint("test:model:entity#subset").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let subset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#subset-construction").expect("valid identity");
+    let offset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: base_id.clone(),
@@ -1054,35 +1122,40 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces = vec![
-        ProceduralSurface {
-            id: subset_construction,
-            surface: subset_id.clone(),
-            definition: ProceduralSurfaceDefinition::Subset {
-                support: base_id,
-                parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
-                u_sense: Some(false),
-                v_sense: Some(true),
+    ir.model
+        .add_procedural_surface(
+            subset_id.clone(),
+            procedural_surface! {
+                id: subset_construction,
+                definition: ProceduralSurfaceDefinition::Subset {
+                    support: base_id,
+                    parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    u_sense: Some(false),
+                    v_sense: Some(true),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
-        ProceduralSurface {
-            id: offset_construction,
-            surface: offset_id.clone(),
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: subset_id,
-                distance: 2.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
+        )
+        .expect("subset surface exists and has no procedural construction");
+    ir.model
+        .add_procedural_surface(
+            offset_id.clone(),
+            procedural_surface! {
+                id: offset_construction,
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: subset_id,
+                    distance: 2.0,
+                    u_sense: None,
+                    v_sense: None,
+                    support_extension: None,
+                    extension: OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
-    ];
+        )
+        .expect("offset surface exists and has no procedural construction");
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -1098,9 +1171,10 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 
 #[test]
 fn curve_bounded_surface_delegates_evaluation_to_its_support() {
-    let support_id = SurfaceId("curve-bounded-support".into());
-    let bounded_id = SurfaceId("curve-bounded".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let support_id =
+        SurfaceId::mint("test:model:entity#curve-bounded-support").expect("valid identity");
+    let bounded_id = SurfaceId::mint("test:model:entity#curve-bounded").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -1117,18 +1191,22 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             source_object: None,
         },
     ];
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("curve-bounded-construction".into()),
-        surface: bounded_id.clone(),
-        definition: ProceduralSurfaceDefinition::CurveBounded {
-            support: support_id,
-            boundaries: Vec::new(),
-            boundary_pcurves: Vec::new(),
-            implicit_outer: true,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    ir.model
+        .add_procedural_surface(
+            bounded_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::CurveBounded {
+                    support: support_id,
+                    boundaries: Vec::new(),
+                    boundary_pcurves: Vec::new(),
+                    implicit_outer: true,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -1144,9 +1222,9 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
 
 #[test]
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
-    let directrix_id = CurveId("directrix".into());
-    let surface_id = SurfaceId("sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id = CurveId::mint("test:model:entity#directrix").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#sweep").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1160,16 +1238,20 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("sweep-construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::LinearSweep {
-            directrix: directrix_id,
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    ir.model
+        .add_procedural_surface(
+            surface_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::LinearSweep {
+                    directrix: directrix_id,
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     let point =
@@ -1189,31 +1271,38 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
 
 #[test]
 fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
-    let directrix_id = CurveId("reversed-directrix".into());
-    let surface_id = SurfaceId("cacheless-extrusion".into());
-    let construction_id = ProceduralSurfaceId("cacheless-extrusion-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id =
+        CurveId::mint("test:model:entity#reversed-directrix").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#cacheless-extrusion").expect("valid identity");
+    let construction_id =
+        ProceduralSurfaceId::mint("test:model:entity#cacheless-extrusion-construction")
+            .expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 2.0, 2.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 2.0, 2.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Extrusion {
             directrix: directrix_id,
             parameter_interval: Some([-2.0, 0.0]),
@@ -1225,8 +1314,9 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
                 flags: vec![true],
-                tail_enum: 2,
-                tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                cache: RevisionCacheForm::Parameterization(
+                    RevisionSurfaceParameterization::default(),
+                ),
                 discontinuities: Default::default(),
                 tail_flag: false,
                 trailing_flags: Vec::new(),
@@ -1246,10 +1336,10 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
 
 #[test]
 fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
-    let profile_id = CurveId("profile".into());
-    let spine_id = CurveId("spine".into());
-    let surface_id = SurfaceId("cacheless-sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let profile_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
+    let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
@@ -1271,13 +1361,16 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
-            construction: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+            construction: ProceduralSurfaceId::mint(
+                "test:model:entity#cacheless-sweep-construction",
+            )
+            .expect("valid identity"),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("cacheless-sweep-construction".into()),
-        surface: surface_id.clone(),
+    ir.model.procedural_surfaces.push(procedural_surface! {
+        id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep {
             profile: profile_id,
             spine: spine_id,
@@ -1288,8 +1381,9 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                     primary_flag: false,
                     profile_endpoints: [Some(0.0), Some(1.0)],
                     path_endpoints: [Some(0.0), Some(1.0)],
-                    tail_enum: 2,
-                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                    cache: RevisionCacheForm::Parameterization(
+                        RevisionSurfaceParameterization::default(),
+                    ),
                 }),
                 layout: SweepSurfaceLayout::LawDriven {
                     mode: 10,
@@ -1316,10 +1410,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                         value: "VEC(1,1,1)".into(),
                     }),
                     formula_mode: 0,
-                    formula: LawFormula {
-                        name: "null_law".into(),
-                        variables: Vec::new(),
-                    },
+                    formula: LawFormula::Null,
                     trailing_flag: false,
                 },
                 discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -1349,9 +1440,9 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
 
 #[test]
 fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
-    let directrix_id = CurveId("profile".into());
-    let surface_id = SurfaceId("revolution".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#revolution").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Transformed {
@@ -1368,17 +1459,21 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("revolution-construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::AxisRevolution {
-            directrix: directrix_id,
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    ir.model
+        .add_procedural_surface(
+            surface_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::AxisRevolution {
+                    directrix: directrix_id,
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
@@ -1402,9 +1497,10 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
 
 #[test]
 fn revolution_surface_maps_its_angular_parameter_interval() {
-    let directrix_id = CurveId("mapped-profile".into());
-    let surface_id = SurfaceId("mapped-revolution".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id = CurveId::mint("test:model:entity#mapped-profile").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#mapped-revolution").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1418,22 +1514,26 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("mapped-revolution-construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::Revolution {
-            directrix: directrix_id,
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            angular_interval: [0.0, std::f64::consts::PI],
-            angular_parameter_interval: Some([10.0, 14.0]),
-            parameter_interval: None,
-            transposed: false,
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    ir.model
+        .add_procedural_surface(
+            surface_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: directrix_id,
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                    angular_interval: [0.0, std::f64::consts::PI],
+                    angular_parameter_interval: Some([10.0, 14.0]),
+                    parameter_interval: None,
+                    transposed: false,
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
@@ -1451,13 +1551,19 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
 
 #[test]
 fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
-    let directrix_id = CurveId("normalized-profile".into());
-    let surface_id = SurfaceId("normalized-revolution".into());
-    let start_point_id = PointId("normalized-profile-start-point".into());
-    let end_point_id = PointId("normalized-profile-end-point".into());
-    let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
-    let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let directrix_id =
+        CurveId::mint("test:model:entity#normalized-profile").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#normalized-revolution").expect("valid identity");
+    let start_point_id =
+        PointId::mint("test:model:entity#normalized-profile-start-point").expect("valid identity");
+    let end_point_id =
+        PointId::mint("test:model:entity#normalized-profile-end-point").expect("valid identity");
+    let start_vertex_id = VertexId::mint("test:model:entity#normalized-profile-start-vertex")
+        .expect("valid identity");
+    let end_vertex_id =
+        VertexId::mint("test:model:entity#normalized-profile-end-vertex").expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1491,7 +1597,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("normalized-profile-edge".into()),
+        id: EdgeId::mint("test:model:entity#normalized-profile-edge").expect("valid identity"),
         curve: Some(directrix_id.clone()),
         start: start_vertex_id,
         end: end_vertex_id,
@@ -1503,22 +1609,26 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("normalized-revolution-construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::Revolution {
-            directrix: directrix_id,
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            angular_interval: [0.0, std::f64::consts::TAU],
-            angular_parameter_interval: None,
-            parameter_interval: Some([0.0, 1.0]),
-            transposed: false,
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: Some([Some(0.0), Some(10.0), None, None]),
-    });
+    ir.model
+        .add_procedural_surface(
+            surface_id.clone(),
+            procedural_surface! {
+                id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: directrix_id,
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                    angular_interval: [0.0, std::f64::consts::TAU],
+                    angular_parameter_interval: None,
+                    parameter_interval: Some([0.0, 1.0]),
+                    transposed: false,
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: Some([Some(0.0), Some(10.0), None, None]),
+            },
+        )
+        .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
@@ -1564,14 +1674,13 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         }),
-        transform: Transform {
-            rows: [
-                [2.0, 0.0, 0.0, 7.0],
-                [0.0, 3.0, 0.0, 11.0],
-                [0.0, 0.0, 4.0, 13.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [2.0, 0.0, 0.0, 7.0],
+            [0.0, 3.0, 0.0, 11.0],
+            [0.0, 0.0, 4.0, 13.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
 
     let cylinder_second =
@@ -1627,17 +1736,20 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
     assert_eq!(curve_tangent(&circle, f64::NAN), None);
 
-    let arc = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-        periodic: false,
-    });
+    let arc = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            false,
+        )
+        .unwrap(),
+    );
     for parameter in [0.0, 0.5, 1.0] {
         let point = curve_point(&arc, parameter).expect("rational arc point");
         let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
@@ -1648,15 +1760,18 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         assert!(tangent.norm() > 0.0);
     }
 
-    let corner = CurveGeometry::Polyline {
-        points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        parameters: Some(vec![0.0, 1.0, 2.0]),
-        chordal_deflection: 0.0,
-    };
+    let corner = CurveGeometry::Polyline(
+        PolylineCurve::new(
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            Some(vec![0.0, 1.0, 2.0]),
+            0.0,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         curve_tangent(&corner, 0.5),
         Some(Vector3::new(1.0, 0.0, 0.0))
@@ -1666,24 +1781,25 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 3.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
     assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
     assert!((partials.point.y - 0.75).abs() < 1.0e-12);
@@ -1699,24 +1815,25 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 1.0),
             Point3::new(2.0, 3.0, 1.0),
         ],
-        weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 2.0, 3.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     for (axis, fixed) in [
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
@@ -1742,17 +1859,18 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
 
 #[test]
 fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        control_points: vec![
+    let curve = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
         nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1),
@@ -1803,175 +1921,4 @@ fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
     );
 }
 
-#[test]
-fn analytic_pcurves_preserve_angular_parameterization() {
-    let circle = PcurveGeometry::Circle {
-        center: Point2::new(2.0, 3.0),
-        x_axis: Point2::new(1.0, 0.0),
-        y_axis: Point2::new(0.0, -1.0),
-        radius: 4.0,
-    };
-    let ellipse = PcurveGeometry::Ellipse {
-        center: Point2::new(2.0, 3.0),
-        x_axis: Point2::new(0.0, 1.0),
-        y_axis: Point2::new(-1.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    };
-    let polar = PcurveGeometry::PolarHarmonic {
-        radial_center: Point2::new(0.0, 0.0),
-        radial_cos: Point2::new(2.0, 0.0),
-        radial_sin: Point2::new(0.0, 2.0),
-        axial_origin: 3.0,
-        axial_cos: 4.0,
-        axial_sin: 0.0,
-    };
-    let polar_nurbs = PcurveGeometry::PolarNurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        radial_control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 2.0),
-            Point2::new(0.0, 2.0),
-        ],
-        axial_control_points: vec![3.0, 4.0, 5.0],
-        weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-        periodic: false,
-    };
-
-    let circle_tangent =
-        pcurve_tangent(&circle, std::f64::consts::FRAC_PI_2).expect("circle tangent");
-    let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).expect("circle evaluates");
-    let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
-    let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
-    let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
-    assert!((circle.u - 2.0).abs() < 1.0e-12 && (circle.v + 1.0).abs() < 1.0e-12);
-    assert!((circle_tangent.u + 4.0).abs() < 1.0e-12 && circle_tangent.v.abs() < 1.0e-12);
-    assert!(ellipse.u.abs() < 1.0e-12 && (ellipse.v - 3.0).abs() < 1.0e-12);
-    assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!((polar.v - 3.0).abs() < 1.0e-12);
-    assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
-    assert!((polar_nurbs.v - 4.0).abs() < 1.0e-12);
-}
-
-#[test]
-fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
-    let geometry = PcurveGeometry::SphericalGreatCircle {
-        azimuth_origin: 0.25,
-        azimuth_rate: 0.5,
-        plane_phase: 1.0,
-        plane_slope: -0.75,
-    };
-    let point = pcurve_uv(&geometry, 1.5).expect("great-circle pcurve evaluates");
-    assert_eq!(point.u, 1.0);
-    assert_eq!(point.v, (-0.75_f64).atan());
-}
-
-#[test]
-fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
-    let harmonic = PcurveGeometry::Harmonic {
-        center: Point2::new(2.0, 3.0),
-        cosine: Point2::new(4.0, -1.0),
-        sine: Point2::new(2.0, 5.0),
-    };
-    let hyperbolic = PcurveGeometry::Hyperbolic {
-        center: Point2::new(-3.0, 7.0),
-        cosine: Point2::new(2.5, -4.0),
-        sine: Point2::new(1.5, 0.75),
-    };
-    let angle = std::f64::consts::FRAC_PI_3;
-    assert_eq!(
-        pcurve_uv(&harmonic, angle),
-        Some(Point2::new(
-            2.0 + 4.0 * angle.cos() + 2.0 * angle.sin(),
-            3.0 - angle.cos() + 5.0 * angle.sin(),
-        ))
-    );
-    let parameter = 0.75_f64;
-    assert_eq!(
-        pcurve_uv(&hyperbolic, parameter),
-        Some(Point2::new(
-            -3.0 + 2.5 * parameter.cosh() + 1.5 * parameter.sinh(),
-            7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
-        ))
-    );
-}
-
-#[test]
-fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
-    let geometry = PcurveGeometry::Transformed {
-        basis: Box::new(PcurveGeometry::Parabola {
-            vertex: Point2::new(1.0, 2.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            focal_distance: 0.5,
-        }),
-        transform: Transform2 {
-            rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
-        },
-    };
-
-    assert_eq!(pcurve_uv(&geometry, 2.0), Some(Point2::new(2.0, 26.0)));
-    assert_eq!(pcurve_tangent(&geometry, 2.0), Some(Point2::new(-2.0, 4.0)));
-    let differential =
-        pcurve_uv_differential_inner(&geometry, 2.0, 0).expect("transformed pcurve differential");
-    assert_eq!(differential.acceleration, Some(Point2::new(0.0, 2.0)));
-}
-
-#[test]
-fn signed_offset_pcurves_use_the_exact_left_normal() {
-    let line = PcurveGeometry::Offset {
-        distance: 2.0,
-        basis: Box::new(PcurveGeometry::Line {
-            origin: Point2::new(1.0, 2.0),
-            direction: Point2::new(3.0, 4.0),
-        }),
-    };
-    let circle = PcurveGeometry::Offset {
-        distance: 1.0,
-        basis: Box::new(PcurveGeometry::Circle {
-            center: Point2::new(0.0, 0.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            radius: 4.0,
-        }),
-    };
-    let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
-    assert!((point.u - 0.9).abs() < 1.0e-12);
-    assert!((point.v - 5.2).abs() < 1.0e-12);
-    assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
-    assert_eq!(pcurve_tangent(&line, 0.5), Some(Point2::new(3.0, 4.0)));
-    assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
-
-    let rational_arc = PcurveGeometry::Offset {
-        distance: 0.25,
-        basis: Box::new(PcurveGeometry::Nurbs {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point2::new(1.0, 0.0),
-                Point2::new(1.0, 1.0),
-                Point2::new(0.0, 1.0),
-            ],
-            weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-            periodic: false,
-        }),
-    };
-    for parameter in [0.0, 0.5, 1.0] {
-        let point =
-            pcurve_uv(&rational_arc, parameter).expect("regular rational NURBS offset evaluates");
-        let tangent = pcurve_tangent(&rational_arc, parameter).expect("rational offset tangent");
-        assert!((point.u.hypot(point.v) - 0.75).abs() < 1.0e-12);
-        assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1.0e-12);
-    }
-
-    let nested = PcurveGeometry::Offset {
-        distance: 1.0,
-        basis: Box::new(line),
-    };
-    let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
-    assert!((nested_point.u - 0.1).abs() < 1.0e-12);
-    assert!((nested_point.v - 5.8).abs() < 1.0e-12);
-    assert_eq!(pcurve_tangent(&nested, 0.5), None);
-}
 mod periodic_and_analytic;

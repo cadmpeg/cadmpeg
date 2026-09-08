@@ -5,7 +5,7 @@ use crate::history_records::{
     AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory,
 };
-use crate::records::DesignParameterScope;
+use crate::records::feature::DesignParameterScope;
 
 fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState {
     AsmDeltaState {
@@ -23,8 +23,9 @@ fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
             previous_state_id: Some(previous_state_id),
             records: AsmHistoricalEntityDelta::default(),
@@ -37,8 +38,7 @@ fn history(states: Vec<AsmDeltaState>) -> AsmHistory {
     AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states,
@@ -53,7 +53,7 @@ fn scope(
 ) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:stream:design-parameter-scope#{byte_offset}"),
-        "Chamfer",
+        crate::records::feature::DesignFeatureKind::Chamfer,
         record_index,
     );
     scope.byte_offset = byte_offset;
@@ -79,7 +79,7 @@ fn retains_the_unique_history_bound_scope_envelope() {
 #[test]
 fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
     let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
-    scopes[1].feature_ordinal = 2;
+    scopes[1].feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let histories = [history(vec![
         history_state(7, Some(6)),
         history_state(9, Some(8)),
@@ -91,20 +91,29 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
 #[test]
 fn retains_later_equivalent_scope_envelope_without_history_binding() {
     let mut older = scope(42, 100, 7, 6);
-    older.class_tag = "392".into();
+    older.class_tag = crate::records::DesignClassTag::try_from("392".to_owned()).unwrap();
     older.frame_length = 260;
-    older.feature_ordinal = 1;
-    older.reference_members = vec![101, 102, 103];
-    older.reference_member_offsets = vec![110, 120, 130];
-    older.paired_class_tag = "262".into();
+    older.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
+    older.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![101, 102, 103],
+        vec![110, 120, 130],
+        "reference_members",
+    )
+    .unwrap();
+    older.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     let mut newer = older.clone();
     newer.id = "f3d:stream:design-parameter-scope#200".into();
     newer.byte_offset = 200;
-    newer.class_tag = "404".into();
+    newer.class_tag = crate::records::DesignClassTag::try_from("404".to_owned()).unwrap();
     newer.frame_length = 340;
     newer.history_state_id = Some(9);
-    newer.reference_member_offsets = vec![210, 220, 230];
-    newer.paired_class_tag = "258".into();
+    newer.reference_members = crate::records::ReferenceRun::from_columns(
+        newer.reference_members.values().copied().collect(),
+        vec![210, 220, 230],
+        "reference_members",
+    )
+    .unwrap();
+    newer.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
 
     let mut scopes = vec![older, newer];
     admit_history_bound_scope_variants(&mut scopes, &[]).expect("equivalent envelope");

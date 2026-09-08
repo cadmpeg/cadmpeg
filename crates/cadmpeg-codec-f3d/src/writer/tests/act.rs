@@ -11,9 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -25,26 +28,16 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity {
-        id: "generated:act-entity#0".into(),
+        id: "f3d:generated:act-entity#0".into(),
         record_index: 7,
-        table_record_index_offset: None,
-        channel_record_index_offset: None,
         entity_id: "0_985".into(),
-        table_entity_id_offset: None,
-        channel_entity_id_offset: None,
-        in_table: true,
-        channel_class_tag: None,
-        channels: Default::default(),
-        channel_guid_offsets: Default::default(),
-        channel_class_tail: Vec::new(),
-        channel_class_tail_offset: None,
+        membership: crate::records::ActEntityMembership::TableOnly(
+            crate::records::ActTableRow::new(0).unwrap(),
+        ),
     }];
     drop(native);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("ACT generation without its record registry must fail atomically");
     assert!(error
@@ -60,14 +53,18 @@ fn generated_f3d_rejects_act_binding_divergence() {
         .expect("generated ACT decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.act_entities[0].channels.insert(
-            "Appearance".into(),
-            "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
-        );
+        native.act_entities[0]
+            .channel_group_mut()
+            .unwrap()
+            .channels
+            .get_mut("Appearance")
+            .unwrap()
+            .value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+            .try_into()
+            .unwrap();
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -83,8 +80,7 @@ fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
         native.act_root_components[0].record_index += 1;
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("an ACT record-index edit without its MetaStream index must fail");
     assert!(matches!(
         error,

@@ -36,25 +36,49 @@ cargo install cadmpeg
 
 ```sh
 cadmpeg convert bracket.f3d -o bracket.step
-cadmpeg convert bracket.f3d -o bracket.ap242.step --step-target ap242e3
-cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
-cadmpeg convert bracket.f3d -o bracket.igs --iges-target 5.3
+cadmpeg convert bracket.f3d -o bracket.ap242.step --to step:ap242-e3
+cadmpeg convert bracket.f3d -o bracket.step --reject-lossy=export
+cadmpeg convert bracket.f3d -o bracket.igs --to 5.3
+cadmpeg convert bracket.f3d -o bracket.3dm --to rhino:archive-80
 ```
 
-`--step-target` selects the STEP application protocol and edition
-(`ap203e1`, `ap203e2`, `ap214` default, `ap242e1`, `ap242e2`, `ap242e3`).
-`--reject-step-losses` refuses STEP output before writing when any STEP loss
-note would be reported.
+### `--to FORMAT[:DIALECT]`
 
-`--iges-target 5.1`, `5.2`, or `5.3` selects the IGES target. The default is
-`5.3`.
+One flag names the output format and, when you want to say so, the dialect of
+it. `--to` is a spelling of `-f`/`--format`; the three are the same flag.
+
+- `--to rhino:archive-80` names both halves. The format half may use any
+  spelling `--to` accepts, so `--to 3dm:archive-80` is the same request.
+- `--to step` names the format alone. It says which kind of file to write, not
+  which dialect of it, so a same-format conversion still preserves the input's
+  dialect.
+- `--to 5.1` names a dialect of the format the output path implies. Each
+  format's own short vocabulary works here: `5.1` for IGES, `60` for Rhino,
+  `ap242e3` for STEP. A bare value is read as a format first, and no dialect
+  spelling collides with a format name.
+
+Omitting `--to` is the identity default: converting a file to its own format
+keeps the dialect it already is, and converting across formats writes the
+target format's default. `cadmpeg dialects FORMAT` lists every id, and
+`cadmpeg inspect FILE` prints the id of the file in front of you — the same
+string you would pass to `--to`.
+
+The CLI inspect path calls `cadmpeg_registry::resolve_and_inspect_with`.
+`cadmpeg_registry::identify` is the candidate-reporting entry point: it retains
+equal-confidence candidates instead of resolving them to one source.
+
+A dialect the writer cannot produce is refused by name, with the whole catalog
+of what it can produce, rather than silently rewritten. For IGES this covers
+Compressed ASCII and Binary sources: converting one back to IGES replays the
+original bytes, which the writer could not synthesize, and asking for a
+different target is a synthesis request that says so.
 
 The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
-`cadir`. Pass `--format` (alias `--to`) when the filename does not identify
-the format, or when a text format (`cadir`, `step`) goes to standard output:
+`cadir`. Pass `--to` when the filename does not identify the format, or when a
+text format (`cadir`, `step`) goes to standard output:
 
 ```sh
-cadmpeg convert bracket.f3d --format step > bracket.step
+cadmpeg convert bracket.f3d --to step > bracket.step
 ```
 
 Binary formats (`fcstd`, `f3d`, `sldprt`, `rhino`) are refused on standard
@@ -107,8 +131,8 @@ not. Every offset and length argument accepts `0x` hexadecimal or decimal, and
 cadmpeg inspect hex part.prt --offset 0x40 --len 0x80   # dump with an ASCII gutter
 cadmpeg inspect read part.prt --type u32 --offset 0x40  # one scalar, decimal and hex
 cadmpeg inspect read part.prt --type f64 --offset 0x100 --count 8 --stride 24
-cadmpeg inspect find part.prt --hex '4d5a??00'          # `??` is a byte wildcard
-cadmpeg inspect find part.prt --utf16le Extrude
+cadmpeg inspect find part.prt --encoding hex '4d5a??00'          # `??` is a byte wildcard
+cadmpeg inspect find part.prt --encoding utf16le Extrude
 cadmpeg inspect strings part.prt --min 6 --encoding both
 cadmpeg inspect struct part.prt --offset 0x100 --count 4 \
   --layout 'u32le:id,pad4,f64le:x,f64le:y,f64le:z'
@@ -117,18 +141,17 @@ cadmpeg inspect extract part.f3d 'Design/Streams.dat' -o streams.dat
 cadmpeg inspect cmp probe-a.prt probe-b.prt             # positional byte compare
 ```
 
-`--le` and `--be` select the byte order for `read`; little-endian is the
+`--endian le` and `--endian be` select the byte order for `read`; little-endian is the
 default. `read --count N` walks a record array, stepping `--stride` bytes and
 defaulting to the scalar width.
 
 Common alternative spellings are accepted: `--length` for `--len`, `--min-len`
 and `--min-length` for `--min`, `--start` for `--offset`, `--step` for
 `--stride`, `-n` for `--count`, and `--input FILE` for the positional file on
-every single-input tool. `cadmpeg inspect bytes <tool>` runs the same tool as
-`cadmpeg inspect <tool>`. `find` needs its pattern on `--hex`, `--ascii`, or
-`--utf16le`, because a bare word does not say how to encode it; a guessed
-`--type` on `find`, or a text or hex value on `read --type`, gets an error that
-names the right flag or tool. `find` stops at `--max` hits and says so,
+single-input tools. `cadmpeg inspect bytes <tool>` runs the same tool as
+`cadmpeg inspect <tool>`. `find FILE NEEDLE --encoding hex|ascii|utf16le`
+selects the encoding of the positional pattern. Text or hex values on
+`read --type` produce an error that names the corresponding tool. `find` stops at `--max` hits and says so,
 `--max 0` reports every hit, and `--context N` dumps `N` bytes around each
 hit.
 
@@ -192,16 +215,20 @@ inputs positionally only.
 Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
-- `step` for ISO 10303-21 Part 21; `--step-target` selects AP203 edition 1 or 2,
-  AP214, or AP242 edition 1, 2, or 3.
+- `step` for ISO 10303-21 Part 21; `iges` for IGES fixed ASCII.
 - `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
+
+`cadmpeg formats` lists what this build reads and writes. `cadmpeg dialects
+[FORMAT]` lists the dialects of each format: the id, how well cadmpeg reads it,
+whether anything writes it, and which of them are write targets of this build's
+encoders.
 
 Native writers use retained source data where the format requires it, and reject
 unsupported edits. The [format support page][support] defines each reader and
 writer's current semantic coverage.
 
 File output is atomic. cadmpeg refuses to replace its input or an existing
-output unless `--force` is present. An explicit `--format` takes precedence
+output unless `--force` is present. An explicit `--to` format takes precedence
 over a conflicting output extension and emits a warning.
 
 ## Losses and machine-readable reports
@@ -241,8 +268,8 @@ cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
-cadmpeg query schema model.features    # the arena's IR record type (no FILE)
-cadmpeg query schema part.cadir.json native.nx.class_definitions  # inferred native fields
+cadmpeg query schema types model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema file part.cadir.json native.nx.class_definitions  # inferred native fields
 cadmpeg query graph bracket.cadir.json model.features ID --hops 1
 cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --reverse
 cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \

@@ -20,7 +20,7 @@ pub(super) fn check_assets(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::PayloadIntegrity,
                 severity: Severity::Error,
                 message: "document asset has invalid metadata or empty content".into(),
-                entity: Some(asset.id.0.clone()),
+                entity: Some(asset.id.as_str().to_owned()),
             });
         }
     }

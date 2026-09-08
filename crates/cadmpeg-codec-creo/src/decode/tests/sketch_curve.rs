@@ -8,10 +8,11 @@ use crate::decode::feature_history::{
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
-use crate::decode::sketch_transfer::{
+use crate::decode::sketch_transfer::constraints::{
     section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
-    section_segment_verhor_definition, section_skamp_active,
+    section_segment_verhor_definition,
 };
+use crate::decode::sketch_transfer::loci::section_skamp_active;
 use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};
@@ -20,7 +21,6 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind};
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -66,9 +66,8 @@ fn placed_extrusion_arc_defines_cylinder() {
         offset: 7,
     };
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: Some(3),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -117,9 +116,8 @@ fn placed_extrusion_arc_defines_cylinder() {
 #[test]
 fn segment_verhor_projection_is_closed_and_lossless() {
     let mut segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line,
+        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
-        point_ids: [7, 9],
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: Some(0),
@@ -157,9 +155,12 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     assert_eq!(native_properties["verhor"], "2");
     assert_eq!(entities, std::slice::from_ref(&entity));
     assert_eq!(operands[0].native_kind, "segtab_ptr");
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 12);
-    segment.kind = crate::feature::FeatureSegmentKind::Arc;
+    segment.kind = crate::feature::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity),
@@ -192,7 +193,7 @@ fn dimension_identity_includes_its_feature_definition() {
         feature_dimension_parameter_id(&sketch_1104, 3)
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3).0,
+        feature_dimension_parameter_id(&sketch_917, 3).as_str(),
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
@@ -222,10 +223,8 @@ fn dimension_identity_includes_its_feature_definition() {
     );
     let dimension = crate::feature::FeatureDimension {
         dimension_type: 2,
-        value: Some(5.0),
+        value: crate::feature::definitions::DimensionValue::Resolved(5.0),
         value_body: Vec::new(),
-        unresolved_value_token: None,
-        value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: None,
         auxiliary_body: Vec::new(),
@@ -240,8 +239,10 @@ fn dimension_identity_includes_its_feature_definition() {
         offset: 9,
     };
     let mut definition = crate::feature::FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -264,26 +265,23 @@ fn dimension_identity_includes_its_feature_definition() {
         ),
         Some((
             &dimension,
-            ParameterId("creo:featdefs:parameter#917:3".to_string())
+            ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar")
         ))
     );
     definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: Vec::new(),
-        circle_rows: vec![crate::feature::FeatureCircleSegment {
+        rows: (vec![crate::feature::FeatureCircleSegment {
             center_id: 7,
             radius_ref: 0,
             external_id: 42,
             offset: 20,
-        }],
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Circle)
+        .collect(),
         offset: 19,
     });
     definition
@@ -302,7 +300,8 @@ fn dimension_identity_includes_its_feature_definition() {
         radius[0].0.definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar"),
         }
     );
     let retained_without_circle = section_segment_radius_constraints_for_emitted(
@@ -325,9 +324,15 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(native_kind, "creo:segtab:radius");
     assert_eq!(native_properties["dimension_ordinal"], "0");
     assert!(entities.is_empty());
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 42);
-    assert_eq!(operands[1].native_field.as_deref(), Some("radius"));
+    assert_eq!(
+        operands[1].field.as_ref().map(|field| field.name.as_str()),
+        Some("radius")
+    );
     assert_eq!(operands[1].object_index, 0);
     let circle_entity = SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string());
     let retained_without_parameter = section_segment_radius_constraints_for_emitted(
@@ -360,7 +365,8 @@ fn dimension_identity_includes_its_feature_definition() {
         diameter[0].0.definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar"),
         }
     );
     let mut duplicate_circle_id = definition.clone();
@@ -368,13 +374,15 @@ fn dimension_identity_includes_its_feature_definition() {
         .segments
         .as_mut()
         .expect("segment table")
-        .circle_rows
-        .push(crate::feature::FeatureCircleSegment {
-            center_id: 8,
-            radius_ref: 0,
-            external_id: 42,
-            offset: 21,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Circle(
+            crate::feature::FeatureCircleSegment {
+                center_id: 8,
+                radius_ref: 0,
+                external_id: 42,
+                offset: 21,
+            },
+        ));
     let duplicate_constraints =
         section_segment_radius_constraints(&duplicate_circle_id, &sketch_917);
     assert_eq!(duplicate_constraints.len(), 2);
@@ -397,7 +405,8 @@ fn dimension_identity_includes_its_feature_definition() {
             .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar"),
         }
     );
     definition
@@ -418,27 +427,29 @@ fn dimension_identity_includes_its_feature_definition() {
         SketchConstraintDefinition::Native { .. }
     ));
     let segments = definition.segments.as_mut().expect("segment table");
-    let circle = segments.circle_rows.remove(0);
+    let circle = segments.rows.edit_circles(|rows| rows.remove(0));
     segments
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 10,
-            directions: [None; 3],
-            point_ids: [None, Some(1)],
-            center_id: Some(circle.center_id),
-            arc_orientation: Some(0),
-            vertical_horizontal: Some(0),
-            radius_ref: Some(circle.radius_ref),
-            radius2_ref: Some(7),
-            external_id: circle.external_id,
-            body: Vec::new(),
-            offset: circle.offset,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            crate::feature::FeatureOpaqueSegment {
+                kind: 10,
+                directions: [None; 3],
+                point_ids: [None, Some(1)],
+                center_id: Some(circle.center_id),
+                arc_orientation: Some(0),
+                vertical_horizontal: Some(0),
+                radius_ref: Some(circle.radius_ref),
+                radius2_ref: Some(7),
+                external_id: circle.external_id,
+                body: Vec::new(),
+                offset: circle.offset,
+            },
+        ));
     let retained_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(retained_slots.len(), 2);
     let secondary = retained_slots
         .iter()
-        .find(|(constraint, _)| constraint.id.0.ends_with("radius2:42"))
+        .find(|(constraint, _)| constraint.id.as_str().ends_with("radius2:42"))
         .expect("secondary radius binding");
     let SketchConstraintDefinition::Native {
         native_kind,
@@ -458,37 +469,44 @@ fn dimension_identity_includes_its_feature_definition() {
             "creo:featdefs:sketch_entity#917:42".to_string()
         )]
     );
-    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(
+        operands[0].field.as_ref().map(|field| field.name.as_str()),
+        Some("ext_id")
+    );
     assert_eq!(operands[0].object_index, 42);
-    assert_eq!(operands[1].native_field.as_deref(), Some("radius2"));
+    assert_eq!(
+        operands[1].field.as_ref().map(|field| field.name.as_str()),
+        Some("radius2")
+    );
     assert_eq!(operands[1].object_index, 7);
     definition
         .segments
         .as_mut()
         .expect("segment table")
-        .opaque_rows[0]
-        .radius2_ref = None;
+        .rows
+        .edit_opaque(|rows| rows[0].radius2_ref = None);
     definition
         .segments
         .as_mut()
         .expect("segment table")
         .rows
-        .push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Arc,
-            directions: [None; 3],
-            point_ids: [1, 2],
-            center_id: Some(7),
-            arc_orientation: Some(0),
-            vertical_horizontal: None,
-            radius_ref: Some(8),
-            radius2_ref: Some(9),
-            external_id: 43,
-            body: Vec::new(),
-            offset: 21,
-        });
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+                directions: [None; 3],
+                center_id: Some(7),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: Some(8),
+                radius2_ref: Some(9),
+                external_id: 43,
+                body: Vec::new(),
+                offset: 21,
+            },
+        ));
     let typed_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(typed_slots.iter().any(|(constraint, _)| {
-        constraint.id.0.ends_with("segtab-radius:43")
+        constraint.id.as_str().ends_with("segtab-radius:43")
             && matches!(
                 &constraint.definition,
                 SketchConstraintDefinition::Native {
@@ -498,7 +516,7 @@ fn dimension_identity_includes_its_feature_definition() {
             )
     }));
     assert!(typed_slots.iter().any(|(constraint, _)| {
-        constraint.id.0.ends_with("segtab-radius2:43")
+        constraint.id.as_str().ends_with("segtab-radius2:43")
             && matches!(
                 &constraint.definition,
                 SketchConstraintDefinition::Native {
@@ -512,10 +530,12 @@ fn dimension_identity_includes_its_feature_definition() {
         .as_mut()
         .expect("segment table")
         .rows
-        .clear();
+        .edit_ordinary(Vec::clear);
     let segments = definition.segments.as_mut().expect("segment table");
-    segments.opaque_rows.clear();
-    segments.circle_rows.push(circle);
+    segments.rows.edit_opaque(Vec::clear);
+    segments
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Circle(circle));
     definition
         .dimensions
         .as_mut()
@@ -526,7 +546,14 @@ fn dimension_identity_includes_its_feature_definition() {
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
             &resolved_section_radii(&definition),
-            &definition.segments.as_ref().expect("segments").circle_rows[0],
+            &definition
+                .segments
+                .as_ref()
+                .expect("segments")
+                .rows
+                .circles()
+                .cloned()
+                .collect::<Vec<_>>()[0],
         ),
         Some(SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
@@ -534,7 +561,7 @@ fn dimension_identity_includes_its_feature_definition() {
         })
     );
     let unresolved_dimension = crate::feature::FeatureDimension {
-        value: None,
+        value: crate::feature::definitions::DimensionValue::Undefined,
         value_body: Vec::new(),
         external_id: 4,
         ..dimension.clone()
@@ -547,7 +574,8 @@ fn dimension_identity_includes_its_feature_definition() {
         resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
         Some((
             &unresolved_dimension,
-            ParameterId("creo:featdefs:parameter#917:4".to_string())
+            ParameterId::mint("creo:featdefs:parameter#917:4".to_string())
+                .expect("identity grammar")
         ))
     );
     let incomplete_table = crate::feature::FeatureDimensionTable {
@@ -594,14 +622,14 @@ fn dimension_display_preserves_radius_and_diameter_types() {
 
 #[test]
 fn evaluated_sweep_bodies_are_feature_outputs() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for id in [
         "creo:feature:extrusion#40:body",
         "creo:feature:revolution#40:body",
         "creo:feature:revolution#41:body",
     ] {
         ir.model.bodies.push(Body {
-            id: BodyId(id.to_string()),
+            id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -611,7 +639,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         });
     }
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#43:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
         transform: None,
@@ -622,8 +650,8 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40),
         vec![
-            BodyId("creo:feature:extrusion#40:body".to_string()),
-            BodyId("creo:feature:revolution#40:body".to_string()),
+            BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
+            BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),
         ]
     );
     assert_eq!(

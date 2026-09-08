@@ -15,7 +15,8 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::{detect, print_json, read_input, Artifact};
+use super::document::reject_non_cadir;
+use super::{print_json, read_input};
 
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
@@ -36,13 +37,34 @@ pub struct ItemArgs {
     /// Conflicts with `--json`.
     #[arg(long, value_delimiter = ',', conflicts_with = "json")]
     pub fields: Option<Vec<String>>,
-    /// Wrap matched records in the versioned JSON envelope.
+    /// Wrap matched records in the JSON envelope.
     #[arg(long)]
     pub json: bool,
 }
 
+impl ItemArgs {
+    /// Resolves the flat clap output fields into one output mode.
+    pub(crate) fn mode(&self) -> Output<'_> {
+        if self.json {
+            Output::Json
+        } else if let Some(paths) = self.fields.as_deref() {
+            Output::Tsv(paths)
+        } else {
+            Output::Pretty
+        }
+    }
+}
+
+/// Record-oriented query output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Output<'a> {
+    Pretty,
+    Tsv(&'a [String]),
+    Json,
+}
+
 /// Where the requested arena lives in the document.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ArenaTarget {
     Model { arena: String },
     Native { codec: String, arena: String },
@@ -80,14 +102,6 @@ impl ArenaTarget {
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
         }
     }
-
-    fn matches_model(&self, arena: &str) -> bool {
-        matches!(self, Self::Model { arena: a } if a == arena)
-    }
-
-    fn matches_native(&self, codec: &str, arena: &str) -> bool {
-        matches!(self, Self::Native { codec: c, arena: a } if c == codec && a == arena)
-    }
 }
 
 /// How many / which records to retain while streaming the arena.
@@ -101,15 +115,19 @@ enum KeepMode<'a> {
 
 /// Result of one targeted deserialize of a CADIR document.
 struct Capture {
-    /// True when the target key was present and its value was a JSON array.
-    found_array: bool,
+    /// Present when the target key held a JSON array.
+    target: Option<TargetCapture>,
+    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
+    addressable: Vec<(String, u64)>,
+}
+
+#[derive(Default)]
+struct TargetCapture {
     entry_count: u64,
     /// Kept raw records (ID hits or first-N).
     kept: Vec<Box<RawValue>>,
     /// Every JSON-string `id` observed in the target arena (ID mode).
     all_ids: Vec<String>,
-    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
-    addressable: Vec<(String, u64)>,
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -129,24 +147,9 @@ fn string_id(raw: &RawValue) -> Option<String> {
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs) -> Result<()> {
+pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
     let bytes = read_input(&args.file)?;
-    let artifact = detect(&bytes, &args.file)?;
-    match artifact {
-        Artifact::Cadir(_) => {}
-        Artifact::Report(_) => bail!(
-            "{} is a command report; reports have no arenas. Use \
-             `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
-             `cadmpeg dump SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
-            args.file.display()
-        ),
-        Artifact::Sidecar(_) => bail!(
-            "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query item \
-             doc.json ARENA ID`",
-            args.file.display()
-        ),
-    }
+    reject_non_cadir(&bytes, &args.file, "item")?;
 
     let target = ArenaTarget::parse(&args.arena)?;
     let text = std::str::from_utf8(&bytes)
@@ -165,19 +168,19 @@ pub fn run(args: &ItemArgs) -> Result<()> {
     .deserialize(&mut serde_json::Deserializer::from_str(text))
     .with_context(|| format!("parsing the CADIR document {}", args.file.display()))?;
 
-    if !capture.found_array {
+    let Some(target_capture) = capture.target else {
         bail!("{}", unknown_arena_message(&target, &capture.addressable));
-    }
+    };
 
     match mode {
         KeepMode::Head(_) => {
-            let values = parse_kept(&capture.kept)?;
-            emit(args, &values)
+            let values = parse_kept(&target_capture.kept)?;
+            emit_values("item", output, &values)
         }
         KeepMode::Ids(ids) => {
             let dotted = target.dotted();
-            let (values, errors) = resolve_ids(ids, &capture, &dotted)?;
-            match (emit(args, &values), errors.is_empty()) {
+            let (values, errors) = resolve_ids(ids, &target_capture, &dotted)?;
+            match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
                 (Err(err), true) => Err(err),
@@ -198,7 +201,7 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
 
 fn resolve_ids(
     ids: &[String],
-    capture: &Capture,
+    capture: &TargetCapture,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
     let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(capture.kept.len());
@@ -269,19 +272,14 @@ fn resolve_one<'a>(
     }
 }
 
-fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
-    emit_values("item", args.json, args.fields.as_deref(), values)
-}
-
-/// Pretty-print records, TSV `--fields`, or the versioned `--json` envelope.
+/// Pretty-print records, TSV `--fields`, or the `--json` envelope.
 pub(crate) fn emit_values(
     view: &str,
-    json: bool,
-    fields: Option<&[String]>,
+    output: Output<'_>,
     values: &[serde_json::Value],
 ) -> Result<()> {
-    if json {
-        print_json(view, &serde_json::Value::Array(values.to_vec()));
+    if output == Output::Json {
+        print_json(view, serde_json::Value::Array(values.to_vec()));
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a
@@ -289,7 +287,7 @@ pub(crate) fn emit_values(
     if values.is_empty() {
         return Ok(());
     }
-    if let Some(paths) = fields {
+    if let Output::Tsv(paths) = output {
         let (tsv, empty_paths) = project_fields(values, paths)?;
         print!("{tsv}");
         if !empty_paths.is_empty() {
@@ -384,8 +382,8 @@ pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[
         ));
     }
     parts.push(
-        "list fields with `cadmpeg query schema FILE ARENA` (native records) or \
-         `cadmpeg query schema model.<arena>` (IR types)"
+        "list fields with `cadmpeg query schema file FILE ARENA` (native records) or \
+         `cadmpeg query schema types model.<arena>` (IR types)"
             .to_owned(),
     );
     parts.join("\n")
@@ -513,10 +511,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Capture, A::Error> {
         let mut capture = Capture {
-            found_array: false,
-            entry_count: 0,
-            kept: Vec::new(),
-            all_ids: Vec::new(),
+            target: None,
             addressable: Vec::new(),
         };
         while let Some(key) = map.next_key::<String>()? {
@@ -554,9 +549,7 @@ impl<'de> DeserializeSeed<'de> for ModelSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(ArenasVisitor {
-            namespace: ArenaNamespace::Model,
-            codec: None,
+        deserializer.deserialize_map(ArenasVisitor::Model {
             target: self.target,
             mode: self.mode,
             capture: self.capture,
@@ -619,7 +612,7 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(NativeCodecVisitor {
+        deserializer.deserialize_map(ArenasVisitor::Native {
             codec: self.codec,
             target: self.target,
             mode: self.mode,
@@ -628,72 +621,18 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
     }
 }
 
-struct NativeCodecVisitor<'a> {
-    codec: &'a str,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
-}
-
-impl<'de> Visitor<'de> for NativeCodecVisitor<'_> {
-    type Value = ();
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a native codec object with an arenas map")
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        while let Some(key) = map.next_key::<String>()? {
-            if key == "arenas" {
-                map.next_value_seed(ArenasSeed {
-                    namespace: ArenaNamespace::Native,
-                    codec: Some(self.codec),
-                    target: self.target,
-                    mode: self.mode,
-                    capture: self.capture,
-                })?;
-            } else {
-                let _ = map.next_value::<IgnoredAny>()?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ArenaNamespace {
-    Model,
-    Native,
-}
-
-struct ArenasSeed<'a> {
-    namespace: ArenaNamespace,
-    codec: Option<&'a str>,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
-}
-
-impl<'de> DeserializeSeed<'de> for ArenasSeed<'_> {
-    type Value = ();
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(ArenasVisitor {
-            namespace: self.namespace,
-            codec: self.codec,
-            target: self.target,
-            mode: self.mode,
-            capture: self.capture,
-        })
-    }
-}
-
-struct ArenasVisitor<'a> {
-    namespace: ArenaNamespace,
-    codec: Option<&'a str>,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
+enum ArenasVisitor<'a> {
+    Model {
+        target: &'a ArenaTarget,
+        mode: &'a KeepMode<'a>,
+        capture: &'a mut Capture,
+    },
+    Native {
+        codec: &'a str,
+        target: &'a ArenaTarget,
+        mode: &'a KeepMode<'a>,
+        capture: &'a mut Capture,
+    },
 }
 
 impl<'de> Visitor<'de> for ArenasVisitor<'_> {
@@ -703,29 +642,50 @@ impl<'de> Visitor<'de> for ArenasVisitor<'_> {
         f.write_str("an arenas object")
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        while let Some(arena) = map.next_key::<String>()? {
-            let is_target = match self.namespace {
-                ArenaNamespace::Model => self.target.matches_model(&arena),
-                ArenaNamespace::Native => self
-                    .codec
-                    .is_some_and(|codec| self.target.matches_native(codec, &arena)),
-            };
-            let dotted = match self.namespace {
-                ArenaNamespace::Model => format!("model.{arena}"),
-                ArenaNamespace::Native => {
-                    format!("native.{}.{arena}", self.codec.unwrap_or(""))
-                }
-            };
-            map.next_value_seed(ArenaValueSeed {
-                dotted,
-                is_target,
-                mode: self.mode,
-                capture: self.capture,
-            })?;
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<(), A::Error> {
+        match self {
+            Self::Model {
+                target,
+                mode,
+                capture,
+            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Model {
+                arena,
+            }),
+            Self::Native {
+                codec,
+                target,
+                mode,
+                capture,
+            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Native {
+                codec: codec.to_owned(),
+                arena,
+            }),
         }
-        Ok(())
     }
+}
+
+fn visit_arenas<'de, A, F>(
+    mut map: A,
+    target: &ArenaTarget,
+    mode: &KeepMode<'_>,
+    capture: &mut Capture,
+    make_target: F,
+) -> Result<(), A::Error>
+where
+    A: MapAccess<'de>,
+    F: Fn(String) -> ArenaTarget,
+{
+    while let Some(arena) = map.next_key::<String>()? {
+        let current = make_target(arena);
+        let is_target = current == *target;
+        map.next_value_seed(ArenaValueSeed {
+            dotted: current.dotted(),
+            is_target,
+            mode,
+            capture,
+        })?;
+    }
+    Ok(())
 }
 
 struct ArenaValueSeed<'a> {
@@ -771,24 +731,27 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
-        self.capture.found_array = true;
+        let target = self
+            .capture
+            .target
+            .get_or_insert_with(TargetCapture::default);
         match self.mode {
             KeepMode::Head(n) => {
                 while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    self.capture.entry_count += 1;
-                    if self.capture.kept.len() < *n {
-                        self.capture.kept.push(raw);
+                    target.entry_count += 1;
+                    if target.kept.len() < *n {
+                        target.kept.push(raw);
                     }
                 }
             }
             KeepMode::Ids(ids) => {
                 while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    self.capture.entry_count += 1;
+                    target.entry_count += 1;
                     let id = string_id(&raw);
                     if let Some(ref id) = id {
-                        self.capture.all_ids.push(id.clone());
+                        target.all_ids.push(id.clone());
                         if ids.iter().any(|req| id == req || id.ends_with(req)) {
-                            self.capture.kept.push(raw);
+                            target.kept.push(raw);
                         }
                     }
                 }
@@ -796,7 +759,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
         }
         self.capture
             .addressable
-            .push((self.dotted, self.capture.entry_count));
+            .push((self.dotted, target.entry_count));
         Ok(())
     }
 

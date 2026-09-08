@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::test_support::fixture;
+use crate::test_support::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
 
 #[test]
@@ -21,9 +21,25 @@ fn inspects_the_complete_synthetic_hierarchy() {
     let summary = InventorCodec
         .inspect(&mut input, &cadmpeg_core::decode::InspectOptions::default())
         .expect("synthetic Inventor container inspects");
-    assert_eq!(summary.format, "inventor");
+    assert_eq!(summary.format(), "inventor");
     assert!(summary
         .entries
         .iter()
         .any(|entry| entry.name == "RSeStorage/RSeSegInfo"));
+}
+
+#[test]
+fn malformed_metadata_inspection_retains_its_declaration() {
+    let mut input = std::io::Cursor::new(primary_envelope_fixture_with_broken_metadata());
+    let summary = InventorCodec
+        .inspect(&mut input, &cadmpeg_core::decode::InspectOptions::default())
+        .expect("malformed metadata remains inspectable");
+    let entry = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name.ends_with("/Mseg"))
+        .expect("metadata stream entry");
+    assert_eq!(entry.attributes["meta_marker"], "RSe Meta Stream Version 8");
+    assert_eq!(entry.attributes["meta_stream_version"], "8");
+    assert!(entry.attributes.contains_key("framing_error"));
 }

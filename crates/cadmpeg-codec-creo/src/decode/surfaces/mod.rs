@@ -3,26 +3,21 @@
 
 mod brep;
 mod cylinders;
-mod intersection_candidates;
+pub(super) mod intersection_candidates;
 mod intersection_resolve;
-mod intersections;
-mod nurbs_boundaries;
+pub(super) mod intersections;
+pub(super) mod nurbs_boundaries;
 mod positional;
 mod prototypes;
 mod transfer_curves;
 
+use crate::decode::axis::{Axis, Sign};
 #[allow(clippy::wildcard_imports)]
 pub(super) use brep::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use cylinders::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use intersection_candidates::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use intersection_resolve::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use intersections::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use nurbs_boundaries::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use positional::*;
 #[allow(clippy::wildcard_imports)]
@@ -66,13 +61,13 @@ pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> Surfac
         .iter()
         .any(|cylinder| cylinder.id == surface_id);
     if visible_present {
-        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
     } else if nonvisible_present {
-        SurfaceId(format!("creo:novisgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:novisgeom:surface#{surface_id}")).expect("identity grammar")
     } else if active_datum_present {
-        SurfaceId(format!("creo:actdatums:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:actdatums:surface#{surface_id}")).expect("identity grammar")
     } else {
-        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
     }
 }
 
@@ -103,16 +98,18 @@ mod tests {
         let mut scan = scan_bytes(Vec::new());
         scan.surfaces.nonvisible_rows.push(SurfaceRow {
             id: 17,
-            type_byte: SurfaceKind::Plane.canonical_type_byte(),
             kind: SurfaceKind::Plane,
             feature_id: 1,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         });
 
-        assert_eq!(native_surface_id(&scan, 17).0, "creo:novisgeom:surface#17");
+        assert_eq!(
+            native_surface_id(&scan, 17).as_str(),
+            "creo:novisgeom:surface#17"
+        );
     }
 }
 
@@ -124,11 +121,12 @@ pub(super) fn transfer_part_product(
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return false;
     };
-    let Some(model_name_offset) = scan.framing.model_name_offset else {
-        return false;
-    };
-    let product_id = ProductDefinitionId("creo:model:product_definition#root".to_string());
-    let occurrence_id = OccurrenceId("creo:model:occurrence#root".to_string());
+    let model_name_offset = model_name.offset;
+    let model_name = &model_name.name;
+    let product_id = ProductDefinitionId::mint("creo:model:product_definition#root".to_string())
+        .expect("identity grammar");
+    let occurrence_id =
+        OccurrenceId::mint("creo:model:occurrence#root".to_string()).expect("identity grammar");
     annotate(
         annotations,
         &product_id,
@@ -164,49 +162,42 @@ pub(super) fn transfer_part_product(
         parent: OccurrenceParent::Root,
         ordinal: 0,
         transform: Transform::identity(),
-        prototype_transform: Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: Some(model_name.clone()),
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
-        link_transform: None,
+        link: None,
         native_ref: None,
     });
     true
 }
 
 pub(super) fn fc05_model_frame(
-    axis_index: usize,
+    axis_index: Axis,
     axis_ordinate: f64,
     center_row_frame: [f64; 2],
     reference_row_frame: [f64; 2],
-    axis_sign: f64,
+    axis_sign: Sign,
 ) -> ([f64; 3], [f64; 3], [f64; 3]) {
     let [first, second] = center_row_frame;
     let [reference_x, reference_z] = reference_row_frame;
+    let axis_sign = axis_sign.scale();
     match axis_index {
-        0 => (
+        Axis::X => (
             [axis_ordinate, second, first],
             [axis_sign, 0.0, 0.0],
             [0.0, reference_z, reference_x],
         ),
-        1 => (
+        Axis::Y => (
             [first, axis_ordinate, second],
             [0.0, axis_sign, 0.0],
             [reference_x, 0.0, reference_z],
         ),
-        2 => (
+        Axis::Z => (
             [second, first, axis_ordinate],
             [0.0, 0.0, axis_sign],
             [reference_z, reference_x, 0.0],
         ),
-        _ => unreachable!("model-space axis index is bounded by XYZ"),
     }
 }
 
@@ -216,10 +207,18 @@ const EPS_FC05_CAP_FRAME: f64 = 1.0e-9;
 pub(super) struct Fc05CapPairFrame {
     /// Model-space origin of the native cylinder parameterization (`v = 0`).
     pub(super) origin: [f64; 3],
-    pub(super) axis: [f64; 3],
     pub(super) ref_direction: [f64; 3],
-    pub(super) axis_index: usize,
-    pub(super) axis_sign: f64,
+    pub(super) axis_index: Axis,
+    pub(super) axis_sign: Sign,
+}
+
+impl Fc05CapPairFrame {
+    /// The signed unit vector of the cylinder axis.
+    pub(super) fn unit_vector(self) -> [f64; 3] {
+        let mut axis = [0.0; 3];
+        axis[self.axis_index.index()] = self.axis_sign.scale();
+        axis
+    }
 }
 
 /// Resolve one cap-pair cylinder in model space from its two placed cap planes.
@@ -232,18 +231,18 @@ pub(super) fn fc05_cap_pair_model_frame(
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Option<Fc05CapPairFrame> {
     let placed_caps = pair
-        .cap_plane_ids
+        .cap_edges
         .iter()
-        .zip(&pair.curve_cap_ordinates_row_frame)
-        .filter_map(|(id, ordinate)| {
-            crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
-                .map(|plane| (plane, *ordinate))
+        .map(|edge| {
+            crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
+                .map(|plane| (plane, edge.cap_ordinate_row_frame))
         })
-        .collect::<Vec<_>>();
-    (placed_caps.len() == pair.cap_plane_ids.len() && placed_caps.len() >= 2).then_some(())?;
+        .collect::<Option<Vec<_>>>()?;
+    (placed_caps.len() >= 2).then_some(())?;
     let (first_cap, first_ordinate) = placed_caps.first().copied()?;
-    let axis_index =
-        (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
+    let axis_index = Axis::ALL
+        .into_iter()
+        .find(|axis| first_cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
     if placed_caps
         .iter()
         .any(|(plane, _)| plane.normal != first_cap.normal)
@@ -252,7 +251,7 @@ pub(super) fn fc05_cap_pair_model_frame(
     }
     let (last_cap, last_ordinate) = placed_caps.last().copied()?;
     let row_span = last_ordinate - first_ordinate;
-    let model_span = last_cap.origin[axis_index] - first_cap.origin[axis_index];
+    let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
     let span_scale = row_span.abs().max(model_span.abs()).max(1.0);
     if !row_span.is_finite()
         || !model_span.is_finite()
@@ -261,10 +260,14 @@ pub(super) fn fc05_cap_pair_model_frame(
     {
         return None;
     }
-    let axis_sign = (model_span / row_span).signum();
+    let axis_sign = if (model_span / row_span).is_sign_negative() {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    };
     let parameter_origins = placed_caps
         .iter()
-        .map(|(plane, ordinate)| plane.origin[axis_index] - axis_sign * ordinate)
+        .map(|(plane, ordinate)| plane.origin[axis_index.index()] - axis_sign.scale() * ordinate)
         .collect::<Vec<_>>();
     if parameter_origins
         .iter()
@@ -276,7 +279,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         return None;
     }
     let axis_origin = parameter_origins[0];
-    let (origin, axis, ref_direction) = fc05_model_frame(
+    let (origin, _, ref_direction) = fc05_model_frame(
         axis_index,
         axis_origin,
         pair.center_row_frame,
@@ -285,7 +288,6 @@ pub(super) fn fc05_cap_pair_model_frame(
     );
     Some(Fc05CapPairFrame {
         origin,
-        axis,
         ref_direction,
         axis_index,
         axis_sign,
@@ -308,22 +310,19 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let cap_planes = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter_map(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.planes.outlines, *face)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
             })
             .collect::<Vec<_>>();
         let cylinders = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, **face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .copied()
             .collect::<Vec<_>>();
         let ([cap], [cylinder_id], Some(_)) = (
             cap_planes.as_slice(),
@@ -332,8 +331,9 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let Some(axis_index) =
-            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
         else {
             continue;
         };
@@ -344,28 +344,28 @@ pub(super) fn transfer_fc05_cap_circles(
             .iter()
             .find(|pair| pair.surface_id == *cylinder_id)
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
-        let reference = circle
-            .reference_direction_row_frame
-            .unwrap_or(circle.sample_direction_row_frame);
-        let axis_sign = pair_frame.map_or_else(
-            || {
-                circle
-                    .parameter_sign
-                    .map_or_else(|| cap.normal[axis_index].signum(), |sign| -f64::from(sign))
-            },
-            |frame| frame.axis_sign,
-        );
+        let (reference, circle_axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                Sign::of_component(cap.normal[axis_index.index()]),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
+        };
+        let axis_sign = pair_frame.map_or(circle_axis_sign, |frame| frame.axis_sign);
         let legacy_frame = fc05_model_frame(
             axis_index,
-            cap.origin[axis_index],
+            cap.origin[axis_index.index()],
             [first, second],
             reference,
             axis_sign,
         );
-        let witness = crate::decode::analytic::fc05_cylinder_model_witness(
+        let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
             scan,
             *cylinder_id,
-            crate::decode::analytic::CylinderEquation {
+            crate::decode::analytic::equations::CylinderEquation {
                 origin: legacy_frame.0,
                 axis: legacy_frame.1,
                 ref_direction: legacy_frame.2,
@@ -374,10 +374,11 @@ pub(super) fn transfer_fc05_cap_circles(
         );
         let mut surface_origin = witness.origin;
         if let Some(frame) = pair_frame {
-            surface_origin[axis_index] = frame.origin[axis_index];
+            surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
+        let id = CurveId::mint(format!("creo:visibgeom:curve#{}", circle.curve_id))
+            .expect("identity grammar");
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             annotate(
                 annotations,
@@ -400,7 +401,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     radius: circle.radius_mm,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{}", circle.curve_id),
                     name: None,
                     color: None,
@@ -410,7 +411,8 @@ pub(super) fn transfer_fc05_cap_circles(
                 }),
             });
         }
-        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
+            .expect("identity grammar");
         if ir
             .model
             .surfaces
@@ -436,7 +438,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 radius: circle.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{cylinder_id}"),
                 name: None,
                 color: None,

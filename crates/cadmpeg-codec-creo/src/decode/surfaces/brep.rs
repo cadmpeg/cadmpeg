@@ -19,22 +19,31 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::topology::HalfEdgeId;
 
-use super::super::analytic::{
-    canonicalized_pcurve_endpoints, exact_line_edge_parameter_range,
-    full_periodic_conic_edge_parameter_range, full_periodic_nurbs_edge_parameter_range,
-    geometry_section_record, meridian_circle_pcurve, native_face_orientations,
-    nonperiodic_conic_edge_parameter_range, ordered_face_loops, ordered_parameter_face_loops,
-    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
-    pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
-    ruled_generator_line_pcurve, solve_topological_vertices, surface_of_revolution_parallel_pcurve,
-    unique_oriented_native_pcurve, CarrierEquation, NativePcurveCandidates,
-    TopologicalVertexSolveDiagnostics,
-};
 use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
+use crate::decode::analytic::carriers::{
+    geometry_section_record, native_face_orientations, ordered_face_loops,
+    ordered_parameter_face_loops, placed_carriers,
+};
+use crate::decode::analytic::edges::{
+    exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
+    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
+    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
+};
+use crate::decode::analytic::equations::CarrierEquation;
+use crate::decode::analytic::pcurve_geometry::{
+    meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
+};
+use crate::decode::analytic::pcurves::{
+    canonicalized_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
+    planar_curve_pcurve, unique_oriented_native_pcurve, NativePcurveCandidates,
+};
+use crate::decode::analytic::vertices::{
+    solve_topological_vertices, TopologicalVertexSolveDiagnostics,
+};
 
 use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
 
@@ -89,6 +98,31 @@ impl FaceAdmissionRejection {
             Self::AmbiguousBoundaryCurve => "ambiguous_boundary_curve",
             Self::TwoEdgeParameterProof => "two_edge_parameter_proof",
             Self::LoopOrdering => "loop_ordering",
+        }
+    }
+
+    pub(in super::super) const fn coverage_key(self) -> cadmpeg_ir::CoverageKey {
+        match self {
+            Self::MissingSurfaceCarrier => {
+                crate::coverage::BREP_REJECTED_FACE_MISSING_SURFACE_CARRIER_COUNT
+            }
+            Self::MissingOrientation => {
+                crate::coverage::BREP_REJECTED_FACE_MISSING_ORIENTATION_COUNT
+            }
+            Self::AmbiguousSurfaceCarrier => {
+                crate::coverage::BREP_REJECTED_FACE_AMBIGUOUS_SURFACE_CARRIER_COUNT
+            }
+            Self::MissingLoops => crate::coverage::BREP_REJECTED_FACE_MISSING_LOOPS_COUNT,
+            Self::UnresolvedBoundaryVertices => {
+                crate::coverage::BREP_REJECTED_FACE_UNRESOLVED_BOUNDARY_VERTICES_COUNT
+            }
+            Self::AmbiguousBoundaryCurve => {
+                crate::coverage::BREP_REJECTED_FACE_AMBIGUOUS_BOUNDARY_CURVE_COUNT
+            }
+            Self::TwoEdgeParameterProof => {
+                crate::coverage::BREP_REJECTED_FACE_TWO_EDGE_PARAMETER_PROOF_COUNT
+            }
+            Self::LoopOrdering => crate::coverage::BREP_REJECTED_FACE_LOOP_ORDERING_COUNT,
         }
     }
 
@@ -161,13 +195,6 @@ impl FaceAdmissionDetail {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(in super::super) struct FaceAdmissionEvidence {
-    pub(in super::super) count: usize,
-    pub(in super::super) sample_ids: Vec<u32>,
-    pub(in super::super) sample_details: Vec<FaceAdmissionDetail>,
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) candidate_face_count: usize,
@@ -177,7 +204,6 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) boundary_curve_missing_incidence_count: usize,
     pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
-    pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
     pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
     pub(in super::super) legacy_nonvisible_face_reference_count: usize,
     pub(in super::super) body_count_mismatch: bool,
@@ -198,18 +224,24 @@ impl BrepTransferDiagnostics {
         detail: FaceAdmissionDetail,
     ) {
         self.face_rejection_diagnostics
-            .push(FaceAdmissionDiagnostic {
-                reason,
-                detail: detail.clone(),
-            });
-        let evidence = self.rejected_faces.entry(reason).or_default();
-        evidence.count += 1;
-        if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_ids.push(detail.face_id);
-        }
-        if evidence.sample_details.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_details.push(detail);
-        }
+            .push(FaceAdmissionDiagnostic { reason, detail });
+    }
+
+    /// The rejection count and bounded detail samples for a reason.
+    pub(in super::super) fn evidence(
+        &self,
+        reason: FaceAdmissionRejection,
+    ) -> (usize, impl Iterator<Item = &FaceAdmissionDetail>) {
+        let matching = self
+            .face_rejection_diagnostics
+            .iter()
+            .filter(move |diagnostic| diagnostic.reason == reason);
+        (
+            matching.clone().count(),
+            matching
+                .take(FACE_REJECTION_SAMPLE_LIMIT)
+                .map(|diagnostic| &diagnostic.detail),
+        )
     }
 
     pub(in super::super) fn face_admission_rejection_records(
@@ -235,87 +267,87 @@ impl BrepTransferDiagnostics {
             .collect()
     }
 
-    pub(in super::super) fn record_coverage(&self, coverage: &mut BTreeMap<String, usize>) {
-        coverage.insert(
-            "brep_candidate_face_count".to_string(),
+    pub(in super::super) fn record_coverage(&self, coverage: &mut cadmpeg_ir::Coverage) {
+        coverage.record(
+            crate::coverage::BREP_CANDIDATE_FACE_COUNT,
             self.candidate_face_count,
         );
-        coverage.insert(
-            "brep_admitted_face_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_ADMITTED_FACE_COUNT,
             self.admitted_face_count,
         );
-        coverage.insert(
-            "brep_emitted_face_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_EMITTED_FACE_COUNT,
             self.emitted_face_count,
         );
-        coverage.insert(
-            "brep_boundary_curve_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_BOUNDARY_CURVE_COUNT,
             self.boundary_curve_count,
         );
-        coverage.insert(
-            "brep_boundary_curve_missing_incidence_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_BOUNDARY_CURVE_MISSING_INCIDENCE_COUNT,
             self.boundary_curve_missing_incidence_count,
         );
-        coverage.insert(
-            "brep_boundary_curve_unsolved_vertex_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_BOUNDARY_CURVE_UNSOLVED_VERTEX_COUNT,
             self.boundary_curve_unsolved_vertex_count,
         );
         if self.legacy_nonvisible_face_reference_count > 0 {
-            coverage.insert(
-                "brep_legacy_nonvisible_face_reference_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_LEGACY_NONVISIBLE_FACE_REFERENCE_COUNT,
                 self.legacy_nonvisible_face_reference_count,
             );
         }
-        coverage.insert(
-            "brep_vertex_topological_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_TOPOLOGICAL_COUNT,
             self.vertex_solve.topological_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_incident_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_INCIDENT_COUNT,
             self.vertex_solve.carrier_incident_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_pair_intersection_candidate_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_PAIR_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_pair_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_triple_intersection_candidate_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_TRIPLE_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_triple_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_valid_intersection_candidate_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_VALID_INTERSECTION_CANDIDATE_COUNT,
             self.vertex_solve.carrier_valid_candidates,
         );
-        coverage.insert(
-            "brep_vertex_carrier_zero_candidate_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_ZERO_CANDIDATE_COUNT,
             self.vertex_solve.carrier_zero_candidate_vertices,
         );
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
-            coverage.insert(
-                "brep_vertex_carrier_no_geometric_candidate_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_VERTEX_CARRIER_NO_GEOMETRIC_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_geometric_candidate_vertices,
             );
         }
         if self.vertex_solve.carrier_no_valid_candidate_vertices != 0 {
-            coverage.insert(
-                "brep_vertex_carrier_no_valid_candidate_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_VERTEX_CARRIER_NO_VALID_CANDIDATE_COUNT,
                 self.vertex_solve.carrier_no_valid_candidate_vertices,
             );
         }
-        coverage.insert(
-            "brep_vertex_carrier_ambiguous_candidate_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_AMBIGUOUS_CANDIDATE_COUNT,
             self.vertex_solve.carrier_ambiguous_candidate_vertices,
         );
-        coverage.insert(
-            "brep_vertex_carrier_point_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_CARRIER_POINT_COUNT,
             self.vertex_solve.carrier_points,
         );
-        coverage.insert(
-            "brep_pcurve_record_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_RECORD_COUNT,
             self.vertex_solve.pcurve.records,
         );
-        coverage.insert(
-            "brep_pcurve_path_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_PATH_COUNT,
             self.vertex_solve.pcurve.paths,
         );
         let pcurve = &self.vertex_solve.pcurve;
@@ -324,33 +356,33 @@ impl BrepTransferDiagnostics {
             || pcurve.partial_records > 0
             || pcurve.topology_mismatch_records > 0
         {
-            coverage.insert(
-                "brep_pcurve_inactive_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_INACTIVE_PATH_COUNT,
                 pcurve.inactive_paths,
             );
-            coverage.insert(
-                "brep_pcurve_inactive_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_INACTIVE_RECORD_COUNT,
                 pcurve.inactive_records,
             );
-            coverage.insert(
-                "brep_pcurve_partial_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_PARTIAL_RECORD_COUNT,
                 pcurve.partial_records,
             );
-            coverage.insert(
-                "brep_pcurve_topology_mismatch_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TOPOLOGY_MISMATCH_RECORD_COUNT,
                 pcurve.topology_mismatch_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_missing_surface_path_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_MISSING_SURFACE_PATH_COUNT,
             self.vertex_solve.pcurve.missing_surfaces,
         );
-        coverage.insert(
-            "brep_pcurve_unevaluable_path_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_UNEVALUABLE_PATH_COUNT,
             self.vertex_solve.pcurve.unevaluable_paths,
         );
-        coverage.insert(
-            "brep_pcurve_mapped_path_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_MAPPED_PATH_COUNT,
             self.vertex_solve.pcurve.mapped_paths,
         );
         if pcurve.carrier_validated_paths > 0
@@ -358,182 +390,174 @@ impl BrepTransferDiagnostics {
             || pcurve.carrier_unknown_paths > 0
             || pcurve.carrier_rejected_records > 0
         {
-            coverage.insert(
-                "brep_pcurve_carrier_validated_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_VALIDATED_PATH_COUNT,
                 pcurve.carrier_validated_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_rejected_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_REJECTED_PATH_COUNT,
                 pcurve.carrier_rejected_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PATH_COUNT,
                 pcurve.carrier_unknown_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_missing_surface_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_SURFACE_PATH_COUNT,
                 pcurve.carrier_unknown_missing_surface_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_missing_carrier_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_MISSING_CARRIER_PATH_COUNT,
                 pcurve.carrier_unknown_missing_carrier_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_unsupported_pair_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PAIR_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_pair_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_parallel_plane_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_PARALLEL_PLANE_PATH_COUNT,
                 pcurve.carrier_unknown_parallel_plane_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_unknown_unsupported_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_UNKNOWN_UNSUPPORTED_PATH_COUNT,
                 pcurve.carrier_unknown_unsupported_path_paths,
             );
-            coverage.insert(
-                "brep_pcurve_carrier_rejected_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_CARRIER_REJECTED_RECORD_COUNT,
                 pcurve.carrier_rejected_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_unmapped_record_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_UNMAPPED_RECORD_COUNT,
             self.vertex_solve.pcurve.unmapped_records,
         );
-        coverage.insert(
-            "brep_pcurve_inconsistent_record_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_INCONSISTENT_RECORD_COUNT,
             self.vertex_solve.pcurve.inconsistent_records,
         );
-        coverage.insert(
-            "brep_pcurve_accepted_record_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_ACCEPTED_RECORD_COUNT,
             self.vertex_solve.pcurve.accepted_records,
         );
-        coverage.insert(
-            "brep_pcurve_complete_record_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_COMPLETE_RECORD_COUNT,
             self.vertex_solve.pcurve.complete_records,
         );
         if self.vertex_solve.pcurve.two_chart_records > 0 {
-            coverage.insert(
-                "brep_pcurve_two_chart_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_mapped_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_MAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_mapped_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_complete_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_COMPLETE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_complete_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_partial_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_PARTIAL_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_partial_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_missing_surface_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_MISSING_SURFACE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_missing_surface_paths,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_unevaluable_path_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_UNEVALUABLE_PATH_COUNT,
                 self.vertex_solve.pcurve.two_chart_unevaluable_paths,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_surface_mismatch_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_SURFACE_MISMATCH_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_surface_mismatch_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_no_sample_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_NO_SAMPLE_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_no_sample_records,
             );
-            coverage.insert(
-                "brep_pcurve_two_chart_unmapped_record_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_PCURVE_TWO_CHART_UNMAPPED_RECORD_COUNT,
                 self.vertex_solve.pcurve.two_chart_unmapped_records,
             );
         }
-        coverage.insert(
-            "brep_pcurve_conflicting_curve_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_PCURVE_CONFLICTING_CURVE_COUNT,
             self.vertex_solve.pcurve.conflicting_curves,
         );
-        coverage.insert(
-            "brep_vertex_pcurve_endpoint_evidence_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.evidence,
         );
-        coverage.insert(
-            "brep_vertex_complete_pcurve_endpoint_evidence_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_COMPLETE_PCURVE_ENDPOINT_EVIDENCE_COUNT,
             self.vertex_solve.pcurve.complete_evidence,
         );
-        coverage.insert(
-            "brep_vertex_pcurve_constraint_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_PCURVE_CONSTRAINT_COUNT,
             self.vertex_solve.pcurve_constraints,
         );
         if self.vertex_solve.pcurve_fixed_endpoint_conflicts > 0 {
-            coverage.insert(
-                "brep_vertex_pcurve_fixed_endpoint_conflict_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_VERTEX_PCURVE_FIXED_ENDPOINT_CONFLICT_COUNT,
                 self.vertex_solve.pcurve_fixed_endpoint_conflicts,
             );
         }
         if self.vertex_solve.pcurve_ambiguous_endpoint_vertices > 0 {
-            coverage.insert(
-                "brep_vertex_pcurve_ambiguous_endpoint_vertex_count".to_string(),
+            coverage.record(
+                crate::coverage::BREP_VERTEX_PCURVE_AMBIGUOUS_ENDPOINT_VERTEX_COUNT,
                 self.vertex_solve.pcurve_ambiguous_endpoint_vertices,
             );
         }
-        coverage.insert(
-            "brep_vertex_directed_endpoint_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_ASSIGNMENT_COUNT,
             self.vertex_solve.directed_endpoint_assignments,
         );
-        coverage.insert(
-            "brep_vertex_directed_endpoint_conflict_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_DIRECTED_ENDPOINT_CONFLICT_COUNT,
             self.vertex_solve.directed_endpoint_conflicts,
         );
-        coverage.insert(
-            "brep_vertex_nurbs_endpoint_constraint_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_NURBS_ENDPOINT_CONSTRAINT_COUNT,
             self.vertex_solve.nurbs_endpoint_constraints,
         );
-        coverage.insert(
-            "brep_vertex_analytic_domain_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_ANALYTIC_DOMAIN_COUNT,
             self.vertex_solve.analytic_domain_vertices,
         );
-        coverage.insert(
-            "brep_vertex_solved_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_VERTEX_SOLVED_COUNT,
             self.vertex_solve.solved_vertices,
         );
-        coverage.insert(
-            "brep_rejected_face_count".to_string(),
-            self.rejected_faces
-                .values()
-                .map(|evidence| evidence.count)
-                .sum(),
+        coverage.record(
+            crate::coverage::BREP_REJECTED_FACE_COUNT,
+            self.face_rejection_diagnostics.len(),
         );
         for reason in FaceAdmissionRejection::ALL {
-            coverage.insert(
-                format!("brep_rejected_face_{}_count", reason.key()),
-                self.rejected_faces
-                    .get(&reason)
-                    .map_or(0, |evidence| evidence.count),
-            );
+            coverage.record(reason.coverage_key(), self.evidence(reason).0);
         }
-        coverage.insert(
-            "brep_body_count_mismatch_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_BODY_COUNT_MISMATCH_COUNT,
             usize::from(self.body_count_mismatch),
         );
-        coverage.insert(
-            "brep_legacy_body_ownership_ambiguous_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_LEGACY_BODY_OWNERSHIP_AMBIGUOUS_COUNT,
             usize::from(self.legacy_body_ownership_ambiguous),
         );
-        coverage.insert(
-            "brep_empty_component_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_EMPTY_COMPONENT_COUNT,
             self.empty_component_count,
         );
-        coverage.insert(
-            "brep_admitted_component_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_ADMITTED_COMPONENT_COUNT,
             self.admitted_component_count,
         );
-        coverage.insert(
-            "brep_selected_body_count".to_string(),
+        coverage.record(
+            crate::coverage::BREP_SELECTED_BODY_COUNT,
             self.selected_body_count.unwrap_or_default(),
         );
-        coverage.insert(
-            "brep_selected_body_count_unresolved".to_string(),
+        coverage.record(
+            crate::coverage::BREP_SELECTED_BODY_COUNT_UNRESOLVED,
             usize::from(self.selected_body_count.is_none()),
         );
     }
@@ -556,7 +580,10 @@ fn admitted_face_components(
     scan: &ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
 ) -> Vec<crate::topology::FaceComponent> {
-    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+    if !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) {
         return scan.topology.face_components.clone();
     }
     scan.topology
@@ -581,8 +608,10 @@ fn admitted_face_components(
 /// but admitting their references here would manufacture disconnected body
 /// components and make body ownership appear ambiguous.
 fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
-    scan.framing.layout != crate::container::Layout::LegacyAscii
-        || scan.surfaces.rows.iter().any(|row| row.id == face_id)
+    !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
 fn merge_body_components(
@@ -598,8 +627,10 @@ fn merge_body_components(
 }
 
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
-    scan.framing.layout != crate::container::Layout::LegacyAscii
-        || scan.framing.declared_body_count.is_some()
+    !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) || scan.framing.declared_body_count.is_some()
         || scan.framing.first_quilt_ptr == Some(0)
         || component_count <= 1
 }
@@ -681,12 +712,12 @@ fn component_is_closed(
             .iter()
             .filter(|half_edge| half_edge.curve_id == *curve_id)
             .filter_map(|half_edge| half_edges.get(half_edge))
-            .map(|half_edge| half_edge.face_id)
+            .filter_map(|half_edge| half_edge.face_id)
             .collect::<Vec<_>>();
         face_uses.len() == 2
             && face_uses
                 .iter()
-                .all(|face_id| *face_id != 0 && faces.contains(face_id))
+                .all(|face_id| faces.contains(&face_id.get()))
     })
 }
 
@@ -720,7 +751,7 @@ fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
         .filter_map(|curve| {
             let id = curve
                 .id
-                .0
+                .as_str()
                 .strip_prefix("creo:visibgeom:curve#")?
                 .parse()
                 .ok()?;
@@ -773,8 +804,10 @@ fn native_circle_loop_geometry(
     if first.curve_id == second.curve_id {
         return None;
     }
-    let first_id = CurveId(format!("creo:visibgeom:curve#{}", first.curve_id));
-    let second_id = CurveId(format!("creo:visibgeom:curve#{}", second.curve_id));
+    let first_id = CurveId::mint(format!("creo:visibgeom:curve#{}", first.curve_id))
+        .expect("identity grammar");
+    let second_id = CurveId::mint(format!("creo:visibgeom:curve#{}", second.curve_id))
+        .expect("identity grammar");
     let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
     let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
     let (
@@ -1038,22 +1071,22 @@ pub(in super::super) fn transfer_native_brep(
             )
         }))
     {
-        native_pcurves
-            .entry((curve_id, faces[0]))
-            .or_default()
-            .push((face_0_endpoints, offset));
-        native_pcurves
-            .entry((curve_id, faces[1]))
-            .or_default()
-            .push((face_1_endpoints, offset));
+        for (face, endpoints) in faces.into_iter().zip([face_0_endpoints, face_1_endpoints]) {
+            if let Some(face) = face {
+                native_pcurves
+                    .entry((curve_id, face.get()))
+                    .or_default()
+                    .push((endpoints, offset));
+            }
+        }
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let Some(endpoint_sets) =
-            super::super::analytic::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
+            crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
         else {
             continue;
         };
-        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
             if let Some(endpoints) = endpoints {
                 native_pcurves
                     .entry((pcurve.curve_id, face_id))
@@ -1068,7 +1101,7 @@ pub(in super::super) fn transfer_native_brep(
     ) {
         let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
             scan,
-            pcurve.faces,
+            pcurve.faces.map(std::num::NonZeroU32::new),
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
         );
@@ -1092,7 +1125,8 @@ pub(in super::super) fn transfer_native_brep(
     let model_curve_counts = edge_vertices
         .keys()
         .map(|curve_id| {
-            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
+                .expect("identity grammar");
             let count = ir
                 .model
                 .curves
@@ -1109,8 +1143,8 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeSet<_>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
     for lp in &scan.topology.loops {
-        if lp.face_id != 0 {
-            loops_by_face.entry(lp.face_id).or_default().push(lp);
+        if let Some(face_id) = lp.face_id {
+            loops_by_face.entry(face_id.get()).or_default().push(lp);
         }
     }
     let topology_face_reference_ids = scan
@@ -1319,7 +1353,7 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeMap<_, _>>();
     let curve_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
-        .map(|row| (row.id, row.faces))
+        .map(|row| (row.id, row.stored_face_ids()))
         .collect::<BTreeMap<_, _>>();
 
     let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();
@@ -1329,10 +1363,12 @@ pub(in super::super) fn transfer_native_brep(
         .flat_map(|component| component.curve_ids.iter().copied())
         .filter(|curve_id| admitted_edge_curves.contains(curve_id))
         .filter(|curve_id| {
-            scan.framing.layout != crate::container::Layout::LegacyAscii
-                || curve_faces
-                    .get(curve_id)
-                    .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
+            !matches!(
+                scan.framing.layout,
+                crate::container::Layout::LegacyAscii(_)
+            ) || curve_faces
+                .get(curve_id)
+                .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
         })
         .collect::<BTreeSet<_>>();
     let body_components = admitted_components
@@ -1372,7 +1408,8 @@ pub(in super::super) fn transfer_native_brep(
         };
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in solved_vertices {
-        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
+        let point_id =
+            PointId::mint(format!("creo:visibgeom:point#{vertex_id}")).expect("identity grammar");
         if ir.model.points.iter().any(|item| item.id == point_id) {
             continue;
         }
@@ -1388,7 +1425,7 @@ pub(in super::super) fn transfer_native_brep(
             id: point_id,
             position: Point3::new(position[0], position[1], position[2]),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("topology:vertex#{vertex_id}"),
                 name: None,
                 color: None,
@@ -1424,11 +1461,13 @@ pub(in super::super) fn transfer_native_brep(
         .copied()
         .collect::<BTreeSet<_>>();
     for vertex_id in used_vertices {
-        let vertex = VertexId(format!("creo:visibgeom:vertex#{vertex_id}"));
+        let vertex =
+            VertexId::mint(format!("creo:visibgeom:vertex#{vertex_id}")).expect("identity grammar");
         if ir.model.vertices.iter().any(|item| item.id == vertex) {
             continue;
         }
-        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
+        let point_id =
+            PointId::mint(format!("creo:visibgeom:point#{vertex_id}")).expect("identity grammar");
         annotate(
             annotations,
             &vertex,
@@ -1445,7 +1484,8 @@ pub(in super::super) fn transfer_native_brep(
     }
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
-        let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        let curve =
+            CurveId::mint(format!("creo:visibgeom:curve#{curve_id}")).expect("identity grammar");
         let points = [solved_vertices[&start], solved_vertices[&end]];
         let unbacked_closed_edge = start == end
             && closed_single_edge_curves.contains(curve_id)
@@ -1517,7 +1557,7 @@ pub(in super::super) fn transfer_native_brep(
                 )
             })
         };
-        let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
+        let id = EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}")).expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1529,8 +1569,9 @@ pub(in super::super) fn transfer_native_brep(
         ir.model.edges.push(Edge {
             id,
             curve: Some(curve.clone()),
-            start: VertexId(format!("creo:visibgeom:vertex#{start}")),
-            end: VertexId(format!("creo:visibgeom:vertex#{end}")),
+            start: VertexId::mint(format!("creo:visibgeom:vertex#{start}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("creo:visibgeom:vertex#{end}")).expect("identity grammar"),
             param_range,
             tolerance: None,
         });
@@ -1550,7 +1591,7 @@ pub(in super::super) fn transfer_native_brep(
                     record: geometry_section_record(scan, offset),
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{curve_id}"),
                     name: None,
                     color: None,
@@ -1563,8 +1604,10 @@ pub(in super::super) fn transfer_native_brep(
     }
 
     for (component_index, (faces, component_curves)) in body_components.iter().enumerate() {
-        let body_id = BodyId(format!("creo:visibgeom:body#{}", component_index + 1));
-        let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
+        let body_id = BodyId::mint(format!("creo:visibgeom:body#{}", component_index + 1))
+            .expect("identity grammar");
+        let region_id = RegionId::mint(format!("creo:visibgeom:region#{}", component_index + 1))
+            .expect("identity grammar");
         for (id, tag) in [
             (body_id.to_string(), "native_component_body"),
             (region_id.to_string(), "native_component_region"),
@@ -1635,13 +1678,15 @@ pub(in super::super) fn transfer_native_brep(
             .enumerate()
             .map(|(shell_index, shell)| {
                 let shell_id = if shell_index == 0 {
-                    ShellId(format!("creo:visibgeom:shell#{}", component_index + 1))
+                    ShellId::mint(format!("creo:visibgeom:shell#{}", component_index + 1))
+                        .expect("identity grammar")
                 } else {
-                    ShellId(format!(
+                    ShellId::mint(format!(
                         "creo:visibgeom:shell#{}:{}",
                         component_index + 1,
                         shell_index + 1
                     ))
+                    .expect("identity grammar")
                 };
                 annotate(
                     annotations,
@@ -1660,12 +1705,18 @@ pub(in super::super) fn transfer_native_brep(
                     faces: shell
                         .faces
                         .iter()
-                        .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
+                        .map(|face| {
+                            FaceId::mint(format!("creo:visibgeom:face#{face}"))
+                                .expect("identity grammar")
+                        })
                         .collect(),
                     wire_edges: shell
                         .wire_curves
                         .iter()
-                        .map(|curve_id| EdgeId(format!("creo:visibgeom:edge#{curve_id}")))
+                        .map(|curve_id| {
+                            EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}"))
+                                .expect("identity grammar")
+                        })
                         .collect(),
                     free_vertices: Vec::new(),
                 });
@@ -1694,14 +1745,17 @@ pub(in super::super) fn transfer_native_brep(
         });
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
-            let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
+            let face =
+                FaceId::mint(format!("creo:visibgeom:face#{face_id}")).expect("identity grammar");
             let shell_id = face_shell_ids[face_id].clone();
             let loop_ids = (0..native_loops.len())
                 .map(|index| {
                     if index == 0 {
-                        LoopId(format!("creo:visibgeom:loop#{face_id}"))
+                        LoopId::mint(format!("creo:visibgeom:loop#{face_id}"))
+                            .expect("identity grammar")
                     } else {
-                        LoopId(format!("creo:visibgeom:loop#{face_id}:{index}"))
+                        LoopId::mint(format!("creo:visibgeom:loop#{face_id}:{index}"))
+                            .expect("identity grammar")
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1736,7 +1790,7 @@ pub(in super::super) fn transfer_native_brep(
                         record: geometry_section_record(scan, face_offset),
                     },
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("VisibGeom:{face_id}"),
                         name: None,
                         color: None,
@@ -1774,46 +1828,48 @@ pub(in super::super) fn transfer_native_brep(
                 shell: shell_id.clone(),
                 surface,
                 sense: face_sense,
-                loops: loop_ids.clone(),
+                loops: {
+                    let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids.clone());
+                    let outer = loops.first().cloned();
+                    loops.classify_outer(outer.as_ref());
+                    loops
+                },
                 name: None,
                 color: None,
                 tolerance: None,
             });
-            for (boundary_index, (native_loop, loop_id)) in
-                native_loops.iter().zip(loop_ids).enumerate()
-            {
+            for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let coedge_ids = native_loop
                     .half_edges
                     .iter()
                     .map(|half_edge| {
-                        CoedgeId(format!(
+                        CoedgeId::mint(format!(
                             "creo:visibgeom:coedge#{}:{}",
                             half_edge.curve_id, half_edge.side
                         ))
+                        .expect("identity grammar")
                     })
                     .collect::<Vec<_>>();
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
-                    boundary_role: if boundary_index == 0 {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                    } else {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                    },
-                    coedges: coedge_ids.clone(),
-                    vertex_uses: Vec::new(),
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                        cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                            .expect("valid loop ring"),
+                    ),
                 });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
-                        side: 1 - half_edge.side,
+                        side: half_edge.side.flip(),
                     };
                     let radial_next = if emitted_half_edges.contains(&twin) {
-                        CoedgeId(format!(
+                        CoedgeId::mint(format!(
                             "creo:visibgeom:coedge#{}:{}",
                             twin.curve_id, twin.side
                         ))
+                        .expect("identity grammar")
                     } else {
                         id.clone()
                     };
@@ -1860,8 +1916,11 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| candidate.id == surface_id),
                             )?;
-                            let curve_id =
-                                CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                            let curve_id = CurveId::mint(format!(
+                                "creo:visibgeom:curve#{}",
+                                half_edge.curve_id
+                            ))
+                            .expect("identity grammar");
                             let curve = exactly_one(
                                 ir.model
                                     .curves
@@ -1869,7 +1928,8 @@ pub(in super::super) fn transfer_native_brep(
                                     .filter(|candidate| candidate.id == curve_id),
                             )?;
                             let edge_id =
-                                EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id));
+                                EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
+                                    .expect("identity grammar");
                             let edge = exactly_one(
                                 ir.model
                                     .edges
@@ -1910,10 +1970,11 @@ pub(in super::super) fn transfer_native_brep(
                         });
                     let pcurves = pcurve_geometry
                         .map(|(geometry, parameter_range, offset, tag)| {
-                            let pcurve = PcurveId(format!(
+                            let pcurve = PcurveId::mint(format!(
                                 "creo:visibgeom:pcurve#{}:{face_id}",
                                 half_edge.curve_id
-                            ));
+                            ))
+                            .expect("identity grammar");
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
                                 annotate(
                                     annotations,
@@ -1926,10 +1987,11 @@ pub(in super::super) fn transfer_native_brep(
                                 ir.model.pcurves.push(Pcurve {
                                     id: pcurve.clone(),
                                     geometry,
-                                    wrapper_reversed: None,
-                                    native_tail_flags: None,
-                                    parameter_range,
-                                    fit_tolerance: None,
+                                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                                        None,
+                                        parameter_range,
+                                        None,
+                                    ),
                                 });
                             }
                             PcurveUse {
@@ -1943,19 +2005,15 @@ pub(in super::super) fn transfer_native_brep(
                     ir.model.coedges.push(Coedge {
                         id,
                         owner_loop: loop_id.clone(),
-                        edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
-                        next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                        previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
+                        edge: EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
+                            .expect("identity grammar"),
                         radial_next,
-                        sense: if half_edge.side == 0 {
-                            Sense::Forward
-                        } else {
-                            Sense::Reversed
+                        sense: match half_edge.side {
+                            crate::topology::Side::Zero => Sense::Forward,
+                            crate::topology::Side::One => Sense::Reversed,
                         },
                         pcurves,
                         use_curve: None,
-                        use_curve_parameter_range: None,
                     });
                 }
             }
@@ -1977,7 +2035,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", pair.surface_id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1993,7 +2052,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             id,
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                axis: Vector3::new(
+                    frame.unit_vector()[0],
+                    frame.unit_vector()[1],
+                    frame.unit_vector()[2],
+                ),
                 ref_direction: Vector3::new(
                     frame.ref_direction[0],
                     frame.ref_direction[1],
@@ -2002,7 +2065,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 radius: pair.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", pair.surface_id),
                 name: None,
                 color: None,
@@ -2011,17 +2074,20 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 instance_path: Vec::new(),
             }),
         });
-        for ((curve_id, ordinate), cap_plane_id) in pair
-            .curve_ids
-            .iter()
-            .zip(&pair.curve_cap_ordinates_row_frame)
-            .zip(&pair.cap_plane_ids)
+        for crate::curve::Fc05CapEdge {
+            curve_id,
+            cap_plane_id,
+            cap_ordinate_row_frame: ordinate,
+        } in &pair.cap_edges
         {
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
-                        || frame.origin[frame.axis_index] + frame.axis_sign * ordinate,
-                        |plane| plane.origin[frame.axis_index],
+                        || {
+                            frame.origin[frame.axis_index.index()]
+                                + frame.axis_sign.scale() * ordinate
+                        },
+                        |plane| plane.origin[frame.axis_index.index()],
                     );
             let (center, _, _) = fc05_model_frame(
                 frame.axis_index,
@@ -2030,7 +2096,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 pair.reference_direction_row_frame,
                 frame.axis_sign,
             );
-            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
             }
@@ -2050,7 +2117,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 id,
                 geometry: CurveGeometry::Circle {
                     center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    axis: Vector3::new(
+                        frame.unit_vector()[0],
+                        frame.unit_vector()[1],
+                        frame.unit_vector()[2],
+                    ),
                     ref_direction: Vector3::new(
                         frame.ref_direction[0],
                         frame.ref_direction[1],
@@ -2059,7 +2130,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     radius: pair.radius_mm,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{curve_id}"),
                     name: None,
                     color: None,

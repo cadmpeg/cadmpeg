@@ -37,7 +37,7 @@ fn decode_preserves_unresolved_active_configuration() {
         .model
         .configurations
         .iter()
-        .all(|configuration| configuration.active.is_inactive()));
+        .all(|configuration| !configuration.active));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
@@ -74,7 +74,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.configurations.len(), 1);
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(
         decoded.ir().model.configurations[0].bodies,
         decoded
@@ -86,9 +86,12 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
             .collect::<Vec<_>>()
     );
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -123,7 +126,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let configuration = &decoded.ir().model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,
@@ -139,9 +142,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.points[0].position.x += 1.0;
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -185,7 +186,7 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .model
         .points
         .iter()
-        .all(|point| point.id.0.contains("@block@")));
+        .all(|point| point.id.as_str().contains("@block@")));
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
@@ -228,7 +229,7 @@ fn decode_does_not_infer_a_source_header_for_unresolved_partition_sites() {
         .model
         .points
         .iter()
-        .all(|point| point.id.0.contains("@block@")));
+        .all(|point| point.id.as_str().contains("@block@")));
 }
 
 #[test]
@@ -254,7 +255,7 @@ fn decode_uses_the_active_configuration_source_site() {
         .model
         .points
         .iter()
-        .filter(|point| !point.id.0.contains("@block@"))
+        .filter(|point| !point.id.as_str().contains("@block@"))
         .collect::<Vec<_>>();
     assert_eq!(active_points.len(), 3);
     assert!(active_points
@@ -292,7 +293,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .find(|configuration| configuration.name.resolved() == Some("Second"))
         .expect("manifest configuration is projected");
 
-    assert!(second.active.is_active());
+    assert!(second.active);
     assert_eq!(second.source_index, Some(1));
     assert!(!second.bodies.is_empty());
     assert!(result
@@ -301,7 +302,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .configurations
         .iter()
         .filter(|configuration| configuration.name.resolved() == Some("First"))
-        .all(|configuration| configuration.active.is_inactive()));
+        .all(|configuration| !configuration.active));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Second"

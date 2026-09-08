@@ -36,7 +36,7 @@ fn invalid_surface_side_is_opaque_and_does_not_transfer_color() {
         "step:data:styled_item#6",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }
@@ -86,7 +86,7 @@ fn invalid_surface_side_does_not_block_a_valid_sibling_style() {
         "step:data:surface_style_usage#4",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }

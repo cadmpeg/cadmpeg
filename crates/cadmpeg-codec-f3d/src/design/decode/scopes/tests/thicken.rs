@@ -50,21 +50,27 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     bytes[scalar_start + 40..scalar_start + 48].copy_from_slice(&(-1.0f64).to_le_bytes());
     put_indexed_header(&mut bytes, *b"261", 74);
 
-    let mut scope = DesignParameterScope::empty("f3d:test:thicken#1", "Thicken", 1);
-    scope.class_tag = "347".into();
-    scope.paired_class_tag = "258".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:thicken#1",
+        crate::records::feature::DesignFeatureKind::Thicken,
+        1,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("347".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 291;
-    scope.reference_members = vec![200, 201, 74];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![200, 201, 74]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
-        Some(DesignDirectFaceOperation::Thicken {
-            signed_thickness: -1.0,
-            thickness_record_index: 74,
-            ..
-        })
+        Some(DesignDirectFaceOperation::Thicken(
+            crate::records::feature::DesignThickenOperation {
+                signed_thickness: -1.0,
+                thickness_record_index: 74,
+                ..
+            }
+        ))
     ));
 
-    scope.paired_class_tag = "259".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         None

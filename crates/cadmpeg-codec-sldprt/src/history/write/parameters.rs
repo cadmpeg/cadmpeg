@@ -84,7 +84,7 @@ pub(crate) fn sync_neutral_parameters(
     {
         return Err(CodecError::NotImplemented(format!(
             "SLDPRT display-only relation parameter {} has no writable native scalar",
-            parameter.id.0
+            parameter.id.as_str()
         )));
     }
     let mut parameters = ir.model.parameters.clone();
@@ -131,19 +131,19 @@ pub(crate) fn sync_neutral_parameters(
         let Some(owner_id) = parameter.owner.as_ref() else {
             return Err(CodecError::NotImplemented(format!(
                 "global SLDPRT parameter {} cannot be written to a feature record",
-                parameter.id.0
+                parameter.id.as_str()
             )));
         };
         let Some(owner) = features.get(owner_id) else {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a missing feature",
-                parameter.id.0
+                parameter.id.as_str()
             )));
         };
         if parameter.display != dimension_display(&parameter.expression) {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has display semantics inconsistent with its expression",
-                parameter.id.0
+                parameter.id.as_str()
             )));
         }
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
@@ -151,7 +151,7 @@ pub(crate) fn sync_neutral_parameters(
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
-                parameter.id.0
+                parameter.id.as_str()
             )));
         }
         let owner_parameters = desired.entry(owner_id.clone()).or_default();
@@ -248,7 +248,7 @@ pub(crate) fn sync_neutral_parameters(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT parameter {} references missing scalar {native_ref}",
-                    parameter.id.0
+                    parameter.id.as_str()
                 ))
             })?;
         let lane = &mut native.feature_input_lanes[location.0];
@@ -256,7 +256,7 @@ pub(crate) fn sync_neutral_parameters(
         if scalar.role == crate::records::FeatureInputScalarRole::Display {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a display scalar",
-                parameter.id.0
+                parameter.id.as_str()
             )));
         }
         let value = match parameter.value {

@@ -29,7 +29,6 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         precision: 0,
         precision_offset: 0,
         display_text: None,
-        display_text_offset: None,
         basic: false,
         basic_offset: 0,
         inspection: false,
@@ -41,11 +40,10 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
 
 fn named_feature(id: &str, name: &str) -> Feature {
     Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -78,11 +76,10 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
 
     let feature = Feature {
-        id: FeatureId("pattern".into()),
+        id: FeatureId::mint("pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -108,10 +105,10 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
 
 #[test]
 fn explicit_keywords_dimension_precedes_pmi_value() {
-    let owner = FeatureId("feature".into());
+    let owner = FeatureId::mint("feature").expect("identity grammar");
     let feature = named_feature("feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        id: ParameterId("keywords-parameter".into()),
+        id: ParameterId::mint("keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),
@@ -193,7 +190,6 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: None,
-            parent_source_id: None,
             ordinal: 0,
             name: "Pattern1".into(),
             kind: "StoredGeometry".into(),
@@ -362,9 +358,9 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
     let [record] = records.as_slice() else {
         panic!("one record");
     };
-    assert_eq!(record.display_text.as_deref(), Some("cadText"));
+    assert_eq!(record.display_text(), Some("cadText"));
     assert_eq!(record.cad_text, "D1@Sketch1");
-    let text_off = record.display_text_offset.expect("display text offset") as usize;
+    let text_off = record.display_text_offset().expect("display text offset") as usize;
     assert_eq!(&payload[text_off..text_off + 7], b"cadText");
 }
 
@@ -449,7 +445,7 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     patched[record.basic_offset as usize] = 0xc2;
     patched[record.inspection_offset as usize] = 0xc3;
     patched[record.reference_only_offset as usize] = 0xc2;
-    let text_off = record.display_text_offset.expect("display text") as usize;
+    let text_off = record.display_text_offset().expect("display text") as usize;
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
     let again = parse_payload(&patched, &mut again_losses);
@@ -462,7 +458,7 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     assert!(!edited_record.basic);
     assert!(edited_record.inspection);
     assert!(!edited_record.reference_only);
-    assert_eq!(edited_record.display_text.as_deref(), Some("50.000 mm"));
+    assert_eq!(edited_record.display_text(), Some("50.000 mm"));
     assert_eq!(edited_record.value_offset, record.value_offset);
     assert_eq!(edited_record.precision_offset, record.precision_offset);
 }
@@ -481,9 +477,10 @@ fn decode_extracts_pmi_semantic_dimension() {
         &pmi_semantic_payload(),
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = sldprt_native(decoded.ir());
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one PMI dimension");
@@ -493,7 +490,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(dimension.subtype, "Linear");
     assert_eq!(dimension.value, 0.025);
     assert_eq!(dimension.precision, 3);
-    assert_eq!(dimension.display_text.as_deref(), Some("25.000 mm"));
+    assert_eq!(dimension.display_text(), Some("25.000 mm"));
     assert!(dimension.basic);
     assert!(!dimension.inspection);
     assert!(dimension.reference_only);
@@ -521,13 +518,12 @@ fn decode_extracts_pmi_semantic_dimension() {
         cadmpeg_ir::features::PmiDimensionSubtype::Linear
     );
     assert_eq!(semantic.native_ref, dimension.id);
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 
     {
         let mut ir = decoded.ir_mut();
@@ -550,9 +546,12 @@ fn decode_extracts_pmi_semantic_dimension() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -562,7 +561,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     };
     assert_eq!(dimension.value, 0.05);
     assert_eq!(dimension.precision, 4);
-    assert_eq!(dimension.display_text.as_deref(), Some("50.000 mm"));
+    assert_eq!(dimension.display_text(), Some("50.000 mm"));
     assert!(!dimension.basic);
     assert!(dimension.inspection);
     assert!(!dimension.reference_only);
@@ -718,9 +717,10 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         ));
     }
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert!(decoded.report().losses.iter().all(|loss| !loss
@@ -737,9 +737,12 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -798,9 +801,10 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     );
     source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let ordinate = ir
@@ -819,9 +823,12 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -839,7 +846,8 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ProfileRef, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -868,7 +876,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(25.0)
                     },
                     ..

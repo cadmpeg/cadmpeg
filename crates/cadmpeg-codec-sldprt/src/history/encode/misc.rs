@@ -124,17 +124,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_native(
         &self,
-        kind: &String,
+        kind: &cadmpeg_ir::features::NativeFeatureKind,
         parameters: &BTreeMap<String, String>,
-        properties: &BTreeMap<String, String>,
     ) -> NeutralFeatureEncoding {
         let feature = self.feature;
-        let mut merged = feature.source_properties.clone();
-        merged.extend(properties.clone());
         NeutralFeatureEncoding {
-            kind: kind.clone(),
+            kind: kind.to_string(),
             parameters: parameters.clone(),
-            properties: merged,
+            properties: feature.source_properties.clone(),
         }
     }
 
@@ -332,23 +329,24 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         axis_origin: &Point3,
         axis_direction: &Vector3,
         radius: &Length,
-        pitch: &Length,
+        shape: &cadmpeg_ir::features::HelixShape,
         revolutions: &f64,
         start_angle: &Angle,
         clockwise: &bool,
-        radial_growth: &Option<Length>,
-        cone_angle: &Option<Angle>,
         segment_turns: &Option<f64>,
         construction_style: &Option<HelixConstructionStyle>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if radial_growth.is_some()
-                || cone_angle.is_some()
-                || segment_turns.is_some()
-                || construction_style.is_some()
-            {
+            let cadmpeg_ir::features::HelixShape::Cylindrical { pitch } = shape else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported helix construction controls",
+                    feature.id
+                )));
+            };
+            let pitch = pitch.get();
+            if segment_turns.is_some() || construction_style.is_some() {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported helix construction controls",
                     feature.id

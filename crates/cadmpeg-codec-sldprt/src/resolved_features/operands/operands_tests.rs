@@ -23,8 +23,7 @@ fn qualified_operand_falls_back_to_marker_family_ordinal() {
             kind: SketchInputKind::LineOrCircle,
             state_value: None,
             coordinates_m: None,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         })
         .collect::<Vec<_>>();
     let kind = FeatureInputOperandKind::Native(0x8386);
@@ -51,8 +50,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([u, 0.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let endpoints = [endpoint("first", 2, 1.0), endpoint("second", 3, 2.0)];
     let handle = SketchInputEntity {
@@ -66,15 +64,17 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([9.0, 9.0]),
-        links: endpoints
-            .iter()
-            .map(|endpoint| SketchInputLink {
-                local_id: u16::try_from(endpoint.local_id.expect("local identity"))
-                    .expect("u16 local identity"),
-                entity_ref: endpoint.id.clone(),
-            })
-            .collect(),
-        link_selector: Some(0x8386),
+        links: crate::records::SketchInputLinks::new(
+            0x8386,
+            endpoints
+                .iter()
+                .map(|endpoint| SketchInputLink {
+                    local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                        .expect("u16 local identity"),
+                    entity_ref: endpoint.id.clone(),
+                })
+                .collect(),
+        ),
     };
     let markers = [&endpoints[0], &endpoints[1], &handle];
 
@@ -101,8 +101,7 @@ fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker("reference", None),
@@ -128,8 +127,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
         kind: SketchInputKind::LineOrCircle,
         state_value: None,
         coordinates_m: Some([1.0, 2.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     for tag in [0x837b, 0xbc7c] {
         assert_eq!(
@@ -154,8 +152,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([f64::from(index), 0.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     }));
     markers[0].local_id = Some(1);
     assert_eq!(
@@ -178,8 +175,7 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker(
@@ -240,8 +236,7 @@ fn roster_point_operand_uses_coordinate_point_order() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         marker("first", 20, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -289,8 +284,7 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([1.0, 2.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let indexed = point("indexed", 7, 100);
     let local = point("local", 8, 7);
@@ -336,8 +330,7 @@ fn relation_point_operands_use_object_index_before_local_identifier() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
         .then_some([1.0, 2.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let indexed = marker("indexed", Some(7), Some(100), SketchInputKind::Point);
     let local = marker("local", Some(8), Some(7), SketchInputKind::Point);
@@ -386,8 +379,7 @@ fn relation_point_operand_rejects_ambiguous_indexed_points() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([1.0, 2.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let first = marker("first");
     let second = marker("second");
@@ -413,14 +405,16 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         kind,
         state_value: None,
         coordinates_m: None,
-        links: links
-            .iter()
-            .map(|target| SketchInputLink {
-                local_id: 0,
-                entity_ref: (*target).into(),
-            })
-            .collect(),
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            links
+                .iter()
+                .map(|target| SketchInputLink {
+                    local_id: 0,
+                    entity_ref: (*target).into(),
+                })
+                .collect(),
+        ),
     };
     let markers = [
         marker("first", Some(5), SketchInputKind::Point, &[]),
@@ -487,8 +481,7 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
             kind: SketchInputKind::LineOrCircle,
             state_value: None,
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "arc-3".into(),
@@ -501,8 +494,7 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
             kind: SketchInputKind::Arc,
             state_value: None,
             coordinates_m: Some([1.0, 1.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
     ];
     assert_eq!(
@@ -526,8 +518,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
             kind: SketchInputKind::LineOrCircle,
             state_value: None,
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "arc-8".into(),
@@ -540,8 +531,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
             kind: SketchInputKind::Arc,
             state_value: None,
             coordinates_m: Some([1.0, 1.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "reference-3".into(),
@@ -554,11 +544,13 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
             kind: SketchInputKind::Relation(SketchRelationKind::Angle),
             state_value: None,
             coordinates_m: None,
-            links: vec![crate::records::SketchInputLink {
-                local_id: 8,
-                entity_ref: "arc-8".into(),
-            }],
-            link_selector: Some(0),
+            links: crate::records::SketchInputLinks::new(
+                0,
+                vec![crate::records::SketchInputLink {
+                    local_id: 8,
+                    entity_ref: "arc-8".into(),
+                }],
+            ),
         },
     ];
     assert_eq!(
@@ -581,8 +573,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
         kind: SketchInputKind::LineOrCircle,
         state_value: None,
         coordinates_m: Some([offset as f64, 0.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [
         curve("curve-7", 7, 0),
@@ -598,17 +589,19 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             kind: SketchInputKind::Relation(SketchRelationKind::Distance),
             state_value: None,
             coordinates_m: None,
-            links: vec![
-                crate::records::SketchInputLink {
-                    local_id: 7,
-                    entity_ref: "curve-7".into(),
-                },
-                crate::records::SketchInputLink {
-                    local_id: 5,
-                    entity_ref: "curve-5".into(),
-                },
-            ],
-            link_selector: Some(0),
+            links: crate::records::SketchInputLinks::new(
+                0,
+                vec![
+                    crate::records::SketchInputLink {
+                        local_id: 7,
+                        entity_ref: "curve-7".into(),
+                    },
+                    crate::records::SketchInputLink {
+                        local_id: 5,
+                        entity_ref: "curve-5".into(),
+                    },
+                ],
+            ),
         },
     ];
     assert!(
@@ -639,8 +632,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([offset as f64, 0.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = [point("first", 0), point("second", 1)];
     assert_eq!(
@@ -668,8 +660,7 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
         kind: SketchInputKind::Arc,
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     assert_eq!(
         resolve_operand_marker(
@@ -704,8 +695,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let line = marker("line", Some(7), None, SketchInputKind::LineOrCircle, None);
     let colliding_point = marker(
@@ -781,8 +771,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let endpoints = [
         endpoint("first", 1, Some([0.0, 0.0])),
@@ -799,15 +788,17 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
         kind: SketchInputKind::Relation(SketchRelationKind::Radius),
         state_value: None,
         coordinates_m: None,
-        links: endpoints
-            .iter()
-            .map(|endpoint| SketchInputLink {
-                local_id: u16::try_from(endpoint.local_id.expect("local identity"))
-                    .expect("u16 local identity"),
-                entity_ref: endpoint.id.clone(),
-            })
-            .collect(),
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            endpoints
+                .iter()
+                .map(|endpoint| SketchInputLink {
+                    local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                        .expect("u16 local identity"),
+                    entity_ref: endpoint.id.clone(),
+                })
+                .collect(),
+        ),
     };
     let markers = [&endpoints[0], &endpoints[1], &handle];
 
@@ -831,8 +822,7 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m: Some([2.0, 0.0]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let relation = SketchInputEntity {
         id: "relation".into(),
@@ -845,8 +835,7 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::Relation(SketchRelationKind::Angle),
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let marker = SketchInputEntity {
         id: "line-handle".into(),
@@ -859,17 +848,19 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         kind: SketchInputKind::Arc,
         state_value: None,
         coordinates_m: Some([1.0, 0.0]),
-        links: vec![
-            SketchInputLink {
-                local_id: 3,
-                entity_ref: relation.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 2,
-                entity_ref: point.id.clone(),
-            },
-        ],
-        link_selector: None,
+        links: crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                SketchInputLink {
+                    local_id: 3,
+                    entity_ref: relation.id.clone(),
+                },
+                SketchInputLink {
+                    local_id: 2,
+                    entity_ref: point.id.clone(),
+                },
+            ],
+        ),
     };
     let markers = HashMap::from([
         (marker.id.as_str(), &marker),

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -20948,6 +20948,10 @@
           "definition": {
             "closed": false,
             "definition": "loft",
+            "guidance": {
+              "kind": "guides",
+              "path": []
+            },
             "linearize": false,
             "max_degree": 4,
             "op": "new_body",
@@ -40583,7 +40587,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "20a6f8df27b7e96b9672bf58c440b8cf4ff0ecf7baaa335d767d9cdeeba36cc3"
+      "__shape_sha256": "c8b1cd5b102e1dde080437239e775bdd8ac57b70d1a28584ab3460683b356f7b"
     },
     "source": {
       "attributes": {
@@ -40591,12 +40595,23 @@
         "archive_entry_count": "66",
         "document_kind": "part-design",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "57",
         "physical_archive_bytes": "43614",
         "physical_ledger_spans": "463",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4",
+          "format": "fcstd"
+        }
       },
       "format": "fcstd"
     },
@@ -40610,6 +40625,19 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    },
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],
@@ -40624,7 +40652,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

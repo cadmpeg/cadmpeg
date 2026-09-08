@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
@@ -31,24 +31,27 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "308".into(),
+        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
         record_index: 100,
     };
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
         byte_offset: 1000,
-        entity_suffix: 172,
-        entity_id: "0_172".into(),
-        class_tag: "269".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(200),
-        record_reference_offset: Some(1010),
-        declared_reference_count: Some(0),
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(200),
+                record_reference_offset: 1010,
+                references: Vec::new(),
+            }),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
 
     let profile = parse_sketch_profile(
@@ -60,8 +63,8 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     )
     .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
-    assert_eq!(profile.entity_suffix, 172);
-    assert_eq!(profile.entity_id, "0_172");
+    assert_eq!(profile.entity_id.suffix(), 172);
+    assert_eq!(profile.entity_id.as_str(), "0_172");
     assert_eq!(profile.paired_byte_offset, paired_at as u64);
 
     bytes.truncate(paired_at - 94);
@@ -85,7 +88,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let compact_header = DesignRecordHeader {
-        class_tag: "319".into(),
+        class_tag: crate::records::DesignClassTag::try_from("319".to_owned()).unwrap(),
         ..header
     };
     let compact = parse_sketch_profile(
@@ -140,24 +143,23 @@ fn generated_base_flange_profile_frame_resolves() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#1501".into(),
         byte_offset: profile_offset as u64,
-        class_tag: "377".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
         record_index: 1501,
     };
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#800".into(),
         byte_offset: 0,
-        entity_suffix: 800,
-        entity_id: "Sketch_800".into(),
-        class_tag: "365".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_800".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let profile = parse_sketch_profile(
         &bytes,
@@ -167,8 +169,8 @@ fn generated_base_flange_profile_frame_resolves() {
         std::slice::from_ref(&entity),
     )
     .expect("generated BaseFlange profile operand");
-    assert_eq!(profile.entity_id, "Sketch_800");
-    assert_eq!(profile.entity_suffix, 800);
+    assert_eq!(profile.entity_id.as_str(), "Sketch_800");
+    assert_eq!(profile.entity_id.suffix(), 800);
 }
 
 #[test]
@@ -185,17 +187,20 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 1000,
-        class_tag: "332".into(),
-        members: vec![200],
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 200,
+            offset: 1026,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![1026],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: vec![300],
-            trailing_record_offsets: vec![1043],
+            trailing_records: vec![crate::records::Located {
+                value: 300,
+                offset: 1043,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -205,18 +210,16 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             opaque_scalar_offset: 1075,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
-        extrude_role: Some(DesignExtrudeOperandRole::Bodies),
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
         role_offset: 1053,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1124,
     };
     let wrapper_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
         byte_offset: 0,
-        class_tag: "326".into(),
+        class_tag: crate::records::DesignClassTag::try_from("326".to_owned()).unwrap(),
         record_index: 300,
     };
     let mut bytes = Vec::new();
@@ -237,8 +240,22 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
     let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
         .expect("identity chain");
-    assert_eq!(identity.wrapper_record_indices, [300, 305]);
-    assert_eq!(identity.wrapper_byte_offsets, [0, 24]);
+    assert_eq!(
+        identity
+            .wrappers
+            .iter()
+            .map(|wrapper| wrapper.record_index)
+            .collect::<Vec<_>>(),
+        [300, 305]
+    );
+    assert_eq!(
+        identity
+            .wrappers
+            .iter()
+            .map(|wrapper| wrapper.byte_offset)
+            .collect::<Vec<_>>(),
+        [0, 24]
+    );
     assert_eq!(identity.following_record_index, 400);
     assert_eq!(identity.following_byte_offset, 48);
     let persistent = identity
@@ -268,22 +285,19 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     let mut terminating_identity = identity;
     terminating_identity.id =
         "f3d:Design/BulkStream.dat:design-construction-operand-identity#200".into();
-    terminating_identity.wrapper_byte_offsets[0] = 200;
+    terminating_identity.wrappers[0].byte_offset = 200;
     bind_lost_edge_groups(
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
-        &[LostEdgeReference {
-            id: "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
-            record_byte_offset: 152,
-            class_tag_offset: 156,
-            class_tag: "419".into(),
-            record_index: 299,
-            record_index_offset: 159,
-            byte_offset: 181,
-            next_byte_offset: 200,
-            next_class_tag: "326".into(),
-            next_record_index: 300,
-        }],
+        &[LostEdgeReference::new(
+            "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
+            152,
+            "419".into(),
+            299,
+            "326".into(),
+            300,
+        )
+        .expect("valid lost-edge record layout")],
     )
     .expect("lost-edge run terminates at the group identity");
     assert_eq!(
@@ -306,17 +320,20 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "269".into(),
-        members: vec![100],
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: vec![200],
-            trailing_record_offsets: vec![943],
+            trailing_records: vec![crate::records::Located {
+                value: 200,
+                offset: 943,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -326,18 +343,18 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 953,
 
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "333".into(),
+        class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -366,7 +383,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
-    assert_eq!(operand.secondary_identity, Some(183));
+    assert_eq!(
+        operand.secondary.map(|secondary| secondary.identity.value),
+        Some(183)
+    );
     assert_eq!(operand.identity_record_offset, identity_at as u64);
     assert_eq!(operand.next_byte_offset, next_at as u64);
 
@@ -379,7 +399,12 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
         .expect("compact nested entity-selection frame");
     assert_eq!(compact_operand.primary_identity, 1331);
-    assert_eq!(compact_operand.secondary_identity, None);
+    assert_eq!(
+        compact_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        None
+    );
     assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
     assert_eq!(compact_operand.next_record_index, 109);
     assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
@@ -395,10 +420,24 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
         .expect("expanded Sketch-curve entity-selection frame");
     assert_eq!(curve_operand.primary_identity, 1331);
-    assert_eq!(curve_operand.secondary_identity, Some(183));
-    assert_eq!(curve_operand.curve_secondary_identity, Some(77));
     assert_eq!(
-        curve_operand.curve_secondary_identity_offset,
+        curve_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        Some(183)
+    );
+    assert_eq!(
+        curve_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.value),
+        Some(77)
+    );
+    assert_eq!(
+        curve_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.offset),
         Some(identity_at as u64 + 21)
     );
     assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
@@ -416,21 +455,34 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let class_338_next_at = class_338_curve_identity.len();
     header(&mut class_338_curve_identity, *b"268", 104);
     let class_338_record = DesignRecordHeader {
-        class_tag: "338".into(),
+        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
         ..record
     };
     let class_338_operand =
         parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
             .expect("class-338 Sketch-curve entity-selection frame");
     assert_eq!(class_338_operand.primary_identity, 949);
-    assert_eq!(class_338_operand.secondary_identity, Some(249));
-    assert_eq!(class_338_operand.curve_secondary_identity, None);
+    assert_eq!(
+        class_338_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        Some(249)
+    );
+    assert_eq!(
+        class_338_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.value),
+        None
+    );
     assert_eq!(
         class_338_operand.primary_identity_offset,
         identity_at as u64 + 33
     );
     assert_eq!(
-        class_338_operand.secondary_identity_offset,
+        class_338_operand
+            .secondary
+            .map(|secondary| secondary.identity.offset),
         Some(identity_at as u64 + 41)
     );
     assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
@@ -453,87 +505,32 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
-        kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: vec![100],
-        reference_member_offsets: vec![1085],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100],
+            vec![1085],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "331".into(),
+        class_tag: crate::records::DesignClassTag::try_from("331".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut group_bytes = Vec::new();
@@ -565,7 +562,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
         .expect("counted Extrude selection group");
-    assert_eq!(group.members, [200, 201]);
+    assert_eq!(
+        group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
     assert_eq!(group.opaque_index, 180);
     assert_eq!(group.opaque_scalar, 0.25);
     assert!(group.variant);
@@ -574,7 +578,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let member_record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: "290".into(),
+        class_tag: crate::records::DesignClassTag::try_from("290".to_owned()).unwrap(),
         record_index: 200,
     };
     let mut member_bytes = Vec::new();
@@ -626,8 +630,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("fixed edge-treatment selection identity");
     assert_eq!(edge_identity.local_id, 5890);
-    assert!(!edge_identity.compact_layout);
-    assert_eq!(edge_identity.local_id_offset, 24);
+    assert!(!edge_identity.layout.is_compact());
+    assert_eq!(edge_identity.layout.local_id_offset(), 24);
     assert_eq!(edge_identity.asset_id_offset, 42);
     assert_eq!(edge_identity.context_id_offset, 118);
 
@@ -635,9 +639,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let compact_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("compact fixed edge-treatment selection identity");
-    assert!(compact_edge_identity.compact_layout);
+    assert!(compact_edge_identity.layout.is_compact());
     assert_eq!(compact_edge_identity.local_id, 5890);
-    assert_eq!(compact_edge_identity.local_id_offset, 23);
+    assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
     assert_eq!(compact_edge_identity.asset_id_offset, 41);
     assert_eq!(compact_edge_identity.context_id_offset, 117);
 
@@ -645,9 +649,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let shortest_edge_identity =
         crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("short compact edge-treatment selection identity");
-    assert!(shortest_edge_identity.compact_layout);
+    assert!(shortest_edge_identity.layout.is_compact());
     assert_eq!(shortest_edge_identity.local_id, 5890);
-    assert_eq!(shortest_edge_identity.local_id_offset, 22);
+    assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);
     assert_eq!(shortest_edge_identity.asset_id_offset, 40);
     assert_eq!(shortest_edge_identity.context_id_offset, 116);
 
@@ -656,19 +660,27 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let identity = DesignConstructionOperandIdentity {
         id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
         group_record_index: 50,
-        wrapper_record_indices: vec![150],
-        wrapper_byte_offsets: vec![50],
-        wrapper_class_tags: vec!["289".into()],
+        wrappers: vec![crate::records::topology::DesignIdentityWrapper {
+            record_index: 150,
+            byte_offset: 50,
+            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
+        }],
         following_record_index: 200,
         following_byte_offset: 0,
-        following_class_tag: "290".into(),
+        following_class_tag: crate::records::DesignClassTag::try_from("290".to_owned()).unwrap(),
         tracking_path: None,
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 586,
             local_id_offset: 21,
-            asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 33,
-            context_id: "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".into(),
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".to_owned(),
+            )
+            .unwrap(),
             context_id_offset: 113,
             tail_slot_present: false,
             tail_slot_offset: 185,
@@ -682,25 +694,35 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    owning_scope.extrude_profile = Some(DesignSketchProfileOperand {
-        scope_reference_ordinal: 1,
-        record_index: 300,
-        byte_offset: 3000,
-        class_tag: "308".into(),
-        asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
-        asset_id_offset: 3040,
-        entity_id: "0_172".into(),
-        entity_suffix: 172,
-        entity_reference_offset: 3120,
-        region_selection: None,
-        paired_class_tag: "259".into(),
-        paired_byte_offset: 3200,
-    });
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
+    {
+        slot.get_or_insert_with(Default::default).extrude_profile =
+            Some(DesignSketchProfileOperand {
+                scope_reference_ordinal: 1,
+                record_index: 300,
+                byte_offset: 3000,
+                class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 3040,
+                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+                    .expect("valid entity identity"),
+                entity_reference_offset: 3120,
+                region_selection: None,
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 3200,
+            });
+    }
     let curve = SketchCurveIdentity {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,
         owner_reference: Some(172),
-        class_tag: "270".into(),
+        class_tag: crate::records::DesignClassTag::try_from("270".to_owned()).unwrap(),
         byte_offset: 4000,
         geometry_offset: 100,
         entity_genesis: None,
@@ -724,7 +746,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         })
     ));
 
-    group.members.truncate(1);
+    let remaining_members = group.members.split_off(1);
     let sketch_id = SketchId("f3d:model:sketch#172".into());
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -777,48 +799,36 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         record_index: 401,
         persistent_id: Some(587),
     });
-    group.members.push(201);
+    group.members.extend(remaining_members);
     let mut sketch = sketch;
     let second_profile_id = SketchEntityId("second-profile".into());
     sketch.profiles.push(vec![SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
     }]);
-    let point_entity = SketchEntity {
-        id: neutral_sketch_point_id(&sketch_id, 587),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point_entity = SketchEntity::new(
+        neutral_sketch_point_id(&sketch_id, 587),
+        sketch_id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.5, 1.0),
         },
-    };
-    let line_entity = SketchEntity {
-        id: neutral_sketch_curve_id(&sketch_id, 586, 0),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    );
+    let line_entity = SketchEntity::new(
+        neutral_sketch_curve_id(&sketch_id, 586, 0),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    };
-    let second_profile_entity = SketchEntity {
-        id: second_profile_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    );
+    let second_profile_entity = SketchEntity::new(
+        second_profile_id,
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
+    );
     let profile_entities = [line_entity, second_profile_entity, point_entity];
     assert!(matches!(
         resolved_extrude_profile_selection(

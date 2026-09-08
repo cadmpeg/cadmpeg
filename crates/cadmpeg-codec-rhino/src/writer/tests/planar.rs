@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn planar_triangle_sheet_round_trips_connected_topology() {
@@ -54,11 +57,11 @@ fn planar_sheet_round_trips_object_attributes() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -101,11 +104,11 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -169,11 +172,11 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -243,11 +246,11 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -281,12 +284,12 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.points.push(Point {
-        id: PointId("cadir:model:point#free".into()),
+        id: PointId::mint("cadir:model:point#free").expect("identity grammar"),
         position: Point3::new(5.0, 6.0, 7.0),
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("cadir:model:curve#free".into()),
+        id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(5.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -296,7 +299,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("cadir:model:surface#free".into()),
+        id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 3.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -312,11 +315,11 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -348,11 +351,11 @@ fn open_planar_solid_is_rejected_before_output() {
     let mut ir = adjacent_quad_sheet();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("incidence"));

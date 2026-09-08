@@ -33,12 +33,12 @@ fn read_root_uses_sized_and_fallback_read_paths() {
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy).unwrap();
+    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy, false).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 
     let arena = DecodeArena::new();
     let mut fallback = Unseekable::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy).unwrap();
+    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy, false).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 }
 
@@ -117,6 +117,10 @@ fn concatenation_and_stored_slices_have_distinct_spaces() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let first = root.child(0, 2).unwrap();
     let second = root.child(4, 6).unwrap();
+    assert!(matches!(
+        ctx.concat_views(&[]),
+        Err(CodecError::Malformed(_))
+    ));
     let concat = ctx.concat_views(&[first, second]).unwrap();
     assert_eq!(concat.window(), &[0, 1, 4, 5]);
     let slice = ctx
@@ -310,23 +314,39 @@ fn committed_reads_preserve_truncation_location_and_operation() {
         .into();
     assert!(matches!(
         error,
-        CodecError::Truncated { location, context }
+        CodecError::Truncated {
+            location,
+            operation
+        }
             if location == root.location_at(0)
-                && context.operation == "read header size"
-                && context.location == Some(location)
+                && operation == "read header size"
     ));
+}
+
+#[test]
+fn unresolved_address_does_not_invent_a_root_step() {
+    let address = resolve_address(
+        &[],
+        SourceLocation {
+            space: SpaceId::ROOT,
+            offset: 7,
+        },
+    );
+    assert!(address.steps.is_empty());
+    assert_eq!(
+        address.inspect_commands("part.FCStd"),
+        ["cadmpeg inspect hex part.FCStd --offset 7 --len 64"]
+    );
 }
 
 #[test]
 fn nested_member_address_is_inspect_replayable() {
     let descriptors = vec![
         SpaceDescriptor {
-            id: SpaceId::ROOT,
             label: "root".into(),
             derivation: SpaceDerivation::Root,
         },
         SpaceDescriptor {
-            id: SpaceId::from_index(1),
             label: "GuiDocument.xml".into(),
             derivation: SpaceDerivation::Expanded {
                 parent: SpaceId::ROOT,
@@ -342,7 +362,7 @@ fn nested_member_address_is_inspect_replayable() {
         },
     );
     assert_eq!(address.path(), "root/GuiDocument.xml@120");
-    assert_eq!(address.steps[1].kind, AddressStepKind::ExpandedMember);
+    assert_eq!(address.steps[1].kind, AddressStepKind::Member);
     let commands = address.inspect_commands("part.FCStd");
     assert_eq!(
         commands,
@@ -351,4 +371,15 @@ fn nested_member_address_is_inspect_replayable() {
             "cadmpeg inspect hex part.FCStd.member --offset 120 --len 64".to_string(),
         ]
     );
+}
+
+#[test]
+fn forced_child_exhaustion_charges_its_full_slice() {
+    let parent = WorkBudget::new(10);
+    let child = parent.child_slice(4);
+    assert!(child.charge());
+    child.exhaust();
+    assert!(parent.consume_child(&child));
+    assert_eq!(parent.remaining(), 6);
+    assert!(!child.charge_by(0));
 }

@@ -31,9 +31,10 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         diameter = '\u{2300}',
     );
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameters = &decoded.ir().model.parameters;
     assert_eq!(parameters.len(), 10);
     assert_eq!(
@@ -138,9 +139,12 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -206,9 +210,10 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="sin">1</Dimension><Dimension Name="pi">2</Dimension><Dimension Name="iif">3</Dimension><Dimension Name="Width">4mm</Dimension><Dimension Name="Driven">sin(30deg) + pi + iif(Width = 4mm, 1, 2) + &quot;sin&quot; + &quot;pi&quot; + &quot;iif&quot;</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_id = |name: &str| {
         decoded
             .ir()
@@ -253,9 +258,12 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
             .name = new_name.into();
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -364,7 +372,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -374,15 +382,16 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         br#"<Keywords><Extrusion Name="Equation boss" Type="BossExtrude" id="7" Operation="Join" EndCondition="Blind"><Dimension Name="Base">4mm</Dimension><Dimension Name="Depth">Base * 2</Dimension></Extrusion></Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0)
                     },
                     ..
@@ -409,9 +418,12 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed equation boss".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -424,7 +436,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0)
                     },
                     ..
@@ -438,8 +450,8 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 #[test]
 fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length, ParameterValue,
-        Termination,
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length,
+        LinearTermination, ParameterValue,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -448,9 +460,10 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension></Feature><Extrusion Name="Equation boss" Type="BossExtrude" id="8" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">Width * 2</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let equations = decoded
         .ir()
         .model
@@ -500,11 +513,10 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         };
         *extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(12.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
         let depth = ir
@@ -518,9 +530,12 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -560,7 +575,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0)
                     },
                     ..
@@ -579,9 +594,10 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 + D1@Sketch2</Dimension></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .model
@@ -592,9 +608,12 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .name = Some("Profile".into());
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -743,13 +762,12 @@ fn decode_preserves_configuration_local_parameter_values() {
     incoherent.model.configurations[1]
         .parameter_values
         .insert(parameter_id.clone(), ParameterValue::Length(Length(75.0)));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            &incoherent,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &incoherent,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -788,20 +806,18 @@ fn decode_preserves_configuration_local_parameter_values() {
         let offset = usize::try_from(scalar.offset).unwrap();
         lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
     });
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            &conflicting,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &conflicting,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut encoded)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -842,8 +858,8 @@ fn decode_preserves_configuration_local_parameter_values() {
 #[test]
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ParameterValue,
-        Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ParameterValue,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -873,7 +889,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(25.0)
                     },
                     ..

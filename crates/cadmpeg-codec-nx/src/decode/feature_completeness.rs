@@ -10,17 +10,16 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
-mod operands;
-pub(crate) use operands::{
+pub(crate) mod operands;
+use operands::{
     body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
     edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
     face_selection_is_incomplete, face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
     hole_feature_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
-    pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
     resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
     sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete,
+    termination_dependency_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
@@ -103,23 +102,18 @@ pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    let suppressed_features = configuration
-        .suppressed_features
-        .iter()
-        .collect::<BTreeSet<_>>();
-    if suppressed_features.len() != configuration.suppressed_features.len()
-        || ir.model.features.iter().any(|feature| {
-            feature
-                .suppressed
-                .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
-        })
-    {
+    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
+    if ir.model.features.iter().any(|feature| {
+        feature
+            .suppressed
+            .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
+    }) {
         return true;
     }
     let Some(bodies) = configuration.bodies.resolved() else {
         return true;
     };
-    let active_features = if ir.model.features.is_empty() {
+    let mut required_features = if ir.model.features.is_empty() {
         BTreeSet::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
@@ -127,7 +121,14 @@ pub(crate) fn active_configuration_state_is_incomplete(
         };
         active_features
     };
-    if configuration.feature_states.len() != active_features.len() {
+    required_features.extend(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| feature.suppressed == Some(true))
+            .map(|feature| feature.id.clone()),
+    );
+    if configuration.feature_states.len() != required_features.len() {
         return true;
     }
     let features = ir
@@ -136,14 +137,14 @@ pub(crate) fn active_configuration_state_is_incomplete(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<BTreeMap<_, _>>();
-    if active_features.iter().any(|id| {
+    if required_features.iter().any(|id| {
         let (Some(feature), Some(state)) = (features.get(id), configuration.feature_states.get(id))
         else {
             return true;
         };
-        state.suppressed
+        Some(state.evaluation.is_suppressed()) != feature.suppressed
             || state.dependencies != feature.dependencies
-            || state.outputs != feature.outputs
+            || state.evaluation.outputs() != feature.outputs.as_slice()
             || state.definition != feature.definition
     }) {
         return true;
@@ -368,17 +369,13 @@ pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Combine {
-        target, tools, op, ..
-    } = &feature.definition
-    else {
+    let FeatureDefinition::Combine { target, tools, .. } = &feature.definition else {
         return true;
     };
     body_selection_is_incomplete(target)
         || body_selection_is_incomplete(tools)
         || resolved_body_selection_len(target) != Some(1)
         || body_selections_overlap(target, tools)
-        || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
 }
 
 pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
@@ -408,37 +405,68 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         profile,
         profile_filter,
         face,
-        position,
-        direction,
         placements,
-        kind,
+        construction,
         exit_kind,
         diameter,
         extent,
         bottom,
         taper_angle,
-        specification,
         ..
     } = &feature.definition
     else {
         return true;
     };
-    hole_feature_is_incomplete(
-        profile.as_ref(),
-        face.as_ref(),
-        (*position, *direction),
-        placements,
-        (kind, exit_kind.as_ref()),
-        *diameter,
-        extent.as_ref(),
-    ) || hole_auxiliary_semantics_are_incomplete(
-        profile_filter.as_ref(),
-        bottom.as_ref(),
-        *taper_angle,
-        specification.as_deref(),
-    ) || extent
-        .as_ref()
-        .is_some_and(|extent| termination_dependency_is_incomplete(extent, &feature.dependencies))
+    let (construction_incomplete, specification) = match construction {
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind,
+            specification,
+        } => (
+            hole_feature_is_incomplete(
+                profile.as_ref(),
+                face.as_ref(),
+                placements.as_deref(),
+                (kind, exit_kind.as_ref()),
+                *diameter,
+                extent.as_ref(),
+            ),
+            specification.as_deref(),
+        ),
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
+            major_diameter,
+            thread_depth,
+            pitch,
+            drill_point_angle,
+        } => {
+            let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
+                drill_point_angle: *drill_point_angle,
+            };
+            (
+                hole_feature_is_incomplete(
+                    profile.as_ref(),
+                    face.as_ref(),
+                    placements.as_deref(),
+                    (&kind, exit_kind.as_ref()),
+                    *diameter,
+                    extent.as_ref(),
+                ) || !positive_feature_length(*major_diameter)
+                    || !positive_feature_length(*thread_depth)
+                    || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
+                    || diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0),
+                None,
+            )
+        }
+    };
+    construction_incomplete
+        || hole_auxiliary_semantics_are_incomplete(
+            profile_filter.as_ref(),
+            bottom.as_ref(),
+            *taper_angle,
+            specification,
+        )
+        || extent.as_ref().is_some_and(|extent| {
+            termination_dependency_is_incomplete(extent, &feature.dependencies)
+        })
         || profile
             .as_ref()
             .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
@@ -540,10 +568,7 @@ pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
 pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Draft {
         faces,
-        neutral_plane,
-        parting_tool,
-        pull_direction,
-        pull_plane,
+        anchor,
         angle,
         outward,
     } = &feature.definition
@@ -551,13 +576,20 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     face_selection_is_incomplete(faces)
-        || parting_tool.as_ref().map_or_else(
-            || face_selection_is_incomplete(neutral_plane),
-            face_selection_is_incomplete,
-        )
-        || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
-        || pull_plane
-            .as_ref()
+        || match anchor {
+            cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                face_selection_is_incomplete(plane)
+            }
+            cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                face_selection_is_incomplete(tool)
+            }
+        }
+        || anchor
+            .pull()
+            .is_none_or(|pull| !valid_feature_direction(pull.direction))
+        || anchor
+            .pull()
+            .and_then(|pull| pull.plane.as_ref())
             .is_some_and(|plane| plane.as_str().is_empty())
         || angle.is_none_or(|angle| !valid_draft_angle(angle))
         || outward.is_none()
@@ -579,8 +611,7 @@ pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
 pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Loft {
         sections,
-        centerline,
-        guides,
+        guidance,
         op,
         max_degree,
         ..
@@ -597,9 +628,14 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
                     if profile_dependency_is_incomplete(profile, &feature.dependencies)
             )
         })
-        || centerline.as_ref().is_some_and(path_ref_is_incomplete)
-        || guides.iter().any(path_ref_is_incomplete)
-        || (centerline.is_some() && !guides.is_empty())
+        || match guidance {
+            cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                guides.iter().any(path_ref_is_incomplete)
+            }
+            cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                path_ref_is_incomplete(centerline)
+            }
+        }
         || max_degree.is_some_and(|degree| degree == 0)
         || matches!(op, BooleanOp::Unresolved)
 }
@@ -612,8 +648,6 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         extent,
         op,
         solid,
-        direction_source,
-        face_maker,
         ..
     } = &feature.definition
     else {
@@ -627,23 +661,20 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         )
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
-                if !valid_feature_direction(*direction)
+            cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
+                if !valid_feature_direction(*vector)
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)
         || matches!(op, BooleanOp::Unresolved)
         || solid.is_none()
-        || direction_source.as_ref().is_some_and(|source| {
-            matches!(
-                source,
-                cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
-                    if path_ref_is_incomplete(reference)
-            )
-        })
-        || face_maker
-            .as_ref()
-            .is_some_and(|maker| maker.class.trim().is_empty())
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
+                ..
+            } if path_ref_is_incomplete(reference)
+        )
 }
 
 pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {

@@ -23,9 +23,14 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
     let markers = [(0, 0), (2, 1), (7, 4), (3, 9)].into_iter().collect();
     let loci = [(0, 0), (1, 2), (4, 7), (9, 3)].into_iter().collect();
     let transform = unique_marker_transform(&markers, &loci).expect("unique transform");
-    assert!(transform.swap);
-    assert_eq!(transform.u_sign, 1);
-    assert_eq!(transform.v_sign, 1);
+    assert_eq!(
+        transform.axes,
+        Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive
+        }
+    );
     assert!(markers
         .into_iter()
         .all(|point| loci.contains(&transform.apply(point).expect("required invariant"))));
@@ -35,11 +40,10 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 fn relation_point_materializes_under_one_proven_marker_transform() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -47,24 +51,21 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, (u, v))| SketchEntity {
-            id: SketchEntityId(format!("point-{index}")),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u, v),
-            },
+        .map(|(index, (u, v))| {
+            SketchEntity::new(
+                SketchEntityId(format!("point-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u, v),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
@@ -88,52 +89,64 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     relation_line.kind = SketchInputKind::Arc;
     let mut support_handle = marker("support-handle", None);
     support_handle.offset = 85;
-    support_handle.links = vec![SketchInputLink {
-        local_id: 3,
-        entity_ref: relation_line.id.clone(),
-    }];
+    support_handle.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: relation_line.id.clone(),
+        }],
+    );
     let mut qualified_curve = marker("qualified-curve", Some([0.0045, 0.0025]));
     qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
     qualified_curve.offset = 86;
     qualified_curve.kind = SketchInputKind::LineOrCircle;
-    relation_line.links = vec![
-        SketchInputLink {
-            local_id: 1,
-            entity_ref: endpoint_a.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 2,
-            entity_ref: qualified_curve.id.clone(),
-        },
-    ];
+    relation_line.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: qualified_curve.id.clone(),
+            },
+        ],
+    );
     let mut coincident_point = marker("coincident-point", Some([0.002, 0.001]));
     coincident_point.offset = 87;
     let mut self_linked_curve = marker("self-linked-curve", Some([0.006, 0.005]));
     self_linked_curve.offset = 88;
     self_linked_curve.kind = SketchInputKind::Arc;
-    self_linked_curve.links = vec![
-        SketchInputLink {
-            local_id: 8,
-            entity_ref: self_linked_curve.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 9,
-            entity_ref: endpoint_b.id.clone(),
-        },
-    ];
+    self_linked_curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: self_linked_curve.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 9,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ],
+    );
     let mut forward_linked_curve = marker("forward-linked-curve", Some([0.009, 0.009]));
     forward_linked_curve.offset = 89;
     forward_linked_curve.kind = SketchInputKind::Arc;
-    forward_linked_curve.links = vec![
-        SketchInputLink {
-            local_id: 10,
-            entity_ref: endpoint_a.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 11,
-            entity_ref: endpoint_b.id.clone(),
-        },
-    ];
+    forward_linked_curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 10,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ],
+    );
     markers.extend([
         endpoint_a,
         endpoint_b,
@@ -178,9 +191,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![FeatureInputOperand {
                     offset: 91,
                     reference_ref: "reference".into(),
@@ -197,9 +213,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 95,
@@ -225,9 +244,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![FeatureInputOperand {
                     offset: 93,
                     reference_ref: "line-reference".into(),
@@ -244,9 +266,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 98,
@@ -272,9 +297,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::Angle,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 101,
@@ -300,9 +328,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
                         offset: 104,
@@ -426,11 +457,10 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 fn relation_point_coexists_with_nonpoint_native_carrier() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -438,24 +468,21 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, (u, v))| SketchEntity {
-            id: SketchEntityId(format!("anchor-{index}")),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u, v),
-            },
+        .map(|(index, (u, v))| {
+            SketchEntity::new(
+                SketchEntityId(format!("anchor-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u, v),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
@@ -470,18 +497,18 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     let mut point_marker = marker("dimension-point", Some([0.005, 0.006]));
     point_marker.offset = 81;
     markers.push(point_marker.clone());
-    entities.push(SketchEntity {
-        id: SketchEntityId("dimension-carrier".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(point_marker.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
-            center: Point2::new(5.0, 6.0),
-            radius: Length(10.0),
-        },
-    });
+    entities.push(
+        SketchEntity::new(
+            SketchEntityId("dimension-carrier".into()),
+            sketch.clone(),
+            SketchGeometry::Circle {
+                center: Point2::new(5.0, 6.0),
+                radius: Length(10.0),
+            },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(point_marker.id.clone())),
+    );
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -498,9 +525,12 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: Vec::new(),
-            parameter_scalar_ref: None,
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                Vec::new(),
+                None,
+                None,
+            )
+            .unwrap(),
             operands: vec![FeatureInputOperand {
                 offset: 91,
                 reference_ref: "reference".into(),
@@ -557,7 +587,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         loci[&super::qualified_point_marker_key(&point_marker.id)],
-        vec![SketchLocus::Entity(point_entity.id.clone())]
+        vec![SketchLocus::Entity(point_entity.id().clone())]
     );
     let markers = lane
         .sketch_entities
@@ -570,7 +600,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         marker_point_locus(&point_marker.id, &markers, &loci),
-        Some(SketchLocus::Entity(point_entity.id.clone()))
+        Some(SketchLocus::Entity(point_entity.id().clone()))
     );
 }
 
@@ -578,11 +608,10 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -590,8 +619,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         },
         native_ref: Some("feature-native".into()),
     };
@@ -620,9 +648,12 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
-        scalar_refs: vec!["distance".into()],
-        parameter_scalar_ref: Some("distance".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["distance".into()],
+            Some("distance".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![
             FeatureInputOperand {
                 offset: 4,
@@ -689,10 +720,11 @@ fn unique_zero_translation_resolves_symmetric_axis_swaps() {
     assert_eq!(
         unique_marker_transform(&markers, &loci),
         Some(MarkerTransform {
-            swap: true,
-            u_sign: 1,
-            v_sign: 1,
-            affine_matrix: None,
+            axes: Axes::Aligned {
+                swap: true,
+                u: Sign::Positive,
+                v: Sign::Positive
+            },
             translation: (0, 0),
         })
     );
@@ -706,23 +738,33 @@ fn marker_kinds_disambiguate_axis_swaps() {
         ((3, 1), HashSet::from([(11, 23)])),
     ]);
     let transform = unique_compatible_marker_transform(&compatible).expect("required invariant");
-    assert!(transform.swap);
-    assert_eq!(transform.u_sign, 1);
-    assert_eq!(transform.v_sign, 1);
+    assert_eq!(
+        transform.axes,
+        Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive
+        }
+    );
     assert_eq!(transform.translation, (10, 20));
 }
 
 #[test]
 fn symmetric_frames_require_the_same_dimensioned_circle_set() {
     let identity = MarkerTransform {
-        swap: false,
-        u_sign: 1,
-        v_sign: 1,
-        affine_matrix: None,
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         translation: (0, 0),
     };
     let swap = MarkerTransform {
-        swap: true,
+        axes: Axes::Aligned {
+            swap: true,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
         ..identity
     };
     assert_eq!(
@@ -755,7 +797,8 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .into_iter()
         .enumerate()
         .map(|(index, (y, z))| Surface {
-            id: SurfaceId(format!("cylinder-{index}")),
+            id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(19.5, y, z),
                 axis: Vector3::new(1.0, 0.0, 0.0),
@@ -783,11 +826,10 @@ fn circular_profile_binds_by_unique_diameter_signature() {
     let sketch_id = SketchId("circle-profile".into());
     let entity_id = SketchEntityId("circle".into());
     let feature = |id: &str, name: &str, sketch| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -795,8 +837,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch,
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         },
         native_ref: Some(format!("native-{id}")),
     };
@@ -805,8 +846,8 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         feature("second", "Sketch2", Some(sketch_id.clone())),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
-        id: ParameterId(id.into()),
-        owner: Some(FeatureId(owner.into())),
+        id: ParameterId::mint(id).expect("identity grammar"),
+        owner: Some(FeatureId::mint(owner).expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: format!("<MOD-DIAM>{diameter}"),
@@ -837,28 +878,28 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         }]],
         native_ref: None,
     }];
-    let entities = [SketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let entities = [SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    }];
+    )];
 
     bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
 
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Sketch { sketch: Some(id), .. } if id == &sketch_id
+        FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)), .. } if id == &sketch_id
     ));
     assert!(matches!(
         &features[1].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert_eq!(sketches[0].name.as_deref(), Some("Sketch1"));
 }

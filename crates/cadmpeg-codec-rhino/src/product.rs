@@ -7,7 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 
 use crate::container::Scan;
-use crate::instances::{DefinitionKind, FileReference};
+use crate::instances::{DefinitionKind, LinkSource};
 use crate::wire::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -97,48 +97,51 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
-fn external_record(
-    definition_uuid: Uuid,
-    legacy_full_path: &str,
-    legacy_relative_path: &str,
-    legacy_relative_preferred: bool,
-    value: Option<&FileReference>,
-) -> Option<ExternalReferenceRecord> {
-    if value.is_none() && legacy_full_path.is_empty() && legacy_relative_path.is_empty() {
-        return None;
-    }
+fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
     let definition = definition_id(definition_uuid);
-    Some(match value {
-        Some(value) => ExternalReferenceRecord {
-            id: external_id(definition_uuid),
-            definition_uuid: definition_uuid.to_string(),
-            full_path: value.full_path.clone(),
-            relative_path: value.relative_path.clone(),
-            relative_path_preferred: false,
-            byte_count: Some(value.content_hash.byte_count),
-            hash_time: Some(value.content_hash.hash_time),
-            content_time: Some(value.content_hash.content_time),
-            name_sha1: Some(hex(&value.content_hash.name_sha1)),
-            content_sha1: Some(hex(&value.content_hash.content_sha1)),
-            path_status: Some(value.path_status),
-            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
-            links: vec![definition],
-        },
-        None => ExternalReferenceRecord {
-            id: external_id(definition_uuid),
-            definition_uuid: definition_uuid.to_string(),
-            full_path: legacy_full_path.to_string(),
-            relative_path: legacy_relative_path.to_string(),
-            relative_path_preferred: legacy_relative_preferred,
-            byte_count: None,
-            hash_time: None,
-            content_time: None,
-            name_sha1: None,
-            content_sha1: None,
-            path_status: None,
-            embedded_file_uuid: None,
-            links: vec![definition],
-        },
+    let (full_path, relative_path, relative_path_preferred) = match link {
+        LinkSource::None => return None,
+        LinkSource::Structured(value) => {
+            return Some(ExternalReferenceRecord {
+                id: external_id(definition_uuid),
+                definition_uuid: definition_uuid.to_string(),
+                full_path: value.full_path.clone(),
+                relative_path: value.relative_path.clone(),
+                relative_path_preferred: false,
+                byte_count: Some(value.content_hash.byte_count),
+                hash_time: Some(value.content_hash.hash_time),
+                content_time: Some(value.content_hash.content_time),
+                name_sha1: Some(hex(&value.content_hash.name_sha1)),
+                content_sha1: Some(hex(&value.content_hash.content_sha1)),
+                path_status: Some(value.path_status),
+                embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+                links: vec![definition],
+            })
+        }
+        LinkSource::LegacyFull(path) => (path.as_str(), "", false),
+        LinkSource::LegacyRelative {
+            full_path,
+            relative_path,
+        } => (
+            full_path.as_ref().map_or("", |path| path.as_str()),
+            relative_path.as_str(),
+            true,
+        ),
+    };
+    Some(ExternalReferenceRecord {
+        id: external_id(definition_uuid),
+        definition_uuid: definition_uuid.to_string(),
+        full_path: full_path.to_owned(),
+        relative_path: relative_path.to_owned(),
+        relative_path_preferred,
+        byte_count: None,
+        hash_time: None,
+        content_time: None,
+        name_sha1: None,
+        content_sha1: None,
+        path_status: None,
+        embedded_file_uuid: None,
+        links: vec![definition],
     })
 }
 
@@ -146,7 +149,7 @@ fn external_record(
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        if let Some(identity) = &object.identity {
+        if let Some(identity) = object.identity() {
             object_records.entry(identity.object_id).or_default().push((
                 source_order,
                 format!("rhino:object:record#{source_order:06}"),
@@ -157,13 +160,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut definitions = Vec::new();
     let mut external = Vec::new();
     for definition in &scan.definitions.definitions {
-        let external_reference = external_record(
-            definition.id,
-            &definition.legacy_linked_path,
-            &definition.legacy_relative_linked_path,
-            definition.legacy_relative_path,
-            definition.file_reference.as_ref(),
-        );
+        let external_reference = external_record(definition.id, &definition.link);
         let external_id = external_reference.as_ref().map(|value| value.id.clone());
         if let Some(value) = external_reference {
             external.push(value);
@@ -204,7 +201,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit);
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit);
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = std::collections::HashSet::new();
     for definition in &scan.definitions.definitions {
@@ -222,7 +219,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     }
     let mut occurrences = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        if !crate::instances::is_reference_class(object.class_uuid) || object.framing_degraded {
+        let Some(object) = object.framed() else {
+            continue;
+        };
+        if !crate::instances::is_reference_class(object.class_uuid) {
             continue;
         }
         let Ok(reference) =
@@ -230,14 +230,13 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         else {
             continue;
         };
-        let Some(identity) = &object.identity else {
-            continue;
-        };
+        let identity = &object.identity;
         let (transform, transform_units) = scale
             .and_then(|scale| crate::instances::scale_translation(reference.transform, scale))
-            .map_or((reference.transform.rows, "source_length_unit"), |value| {
-                (value.rows, "millimeter")
-            });
+            .map_or(
+                (reference.transform.rows(), "source_length_unit"),
+                |value| (value.rows(), "millimeter"),
+            );
         let definition = definition_id(reference.definition_id);
         let object_record = format!("rhino:object:record#{source_order:06}");
         let parents = member_definitions
@@ -273,7 +272,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     }
 
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
     namespace
         .set_arena("product_definitions", &definitions)
         .expect("Rhino definitions serialize");

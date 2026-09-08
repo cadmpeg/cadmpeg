@@ -28,7 +28,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     Angle, BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
     FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternSeed, RadiusSpec,
-    VariableRadius,
+    UnresolvedFamily, VariableRadius,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
@@ -49,7 +49,7 @@ pub(super) fn bind_circular_profile_by_dimension(
 ) {
     let geometry_by_entity = sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let circular_profiles = sketches
         .iter()
@@ -116,8 +116,8 @@ pub(super) fn bind_circular_profile_by_dimension(
             else {
                 continue;
             };
-            if bound.as_ref() == Some(&sketch_id) {
-                *bound = None;
+            if bound.id() == Some(&sketch_id) {
+                *bound = cadmpeg_ir::features::SketchFeatureBinding::Planar(None);
             }
         }
         let name = features[feature_index].name.clone();
@@ -126,7 +126,7 @@ pub(super) fn bind_circular_profile_by_dimension(
         else {
             continue;
         };
-        *sketch = Some(sketch_id.clone());
+        *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone()));
         if let Some(native) = sketches.iter_mut().find(|sketch| sketch.id == sketch_id) {
             native.name = name;
         }
@@ -154,18 +154,18 @@ pub(crate) fn bind_parameter_scalars<'a>(
             .relation_instances
             .iter()
             .filter(|relation| relation.family != FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .collect::<HashSet<_>>();
         let angle_scalars = lane
             .relation_instances
             .iter()
             .filter(|relation| relation.family == FeatureInputRelationFamily::Angle)
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .collect::<HashSet<_>>();
         let detached_scalars = lane
             .relation_instances
             .iter()
-            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter_map(|relation| relation.parameter_scalar_ref())
             .filter(|id| {
                 lane.scalars
                     .iter()
@@ -357,7 +357,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
 
     for lane in lanes {
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_some()
+            if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
                 || relation_ids.contains(&relation.id)
             {
@@ -404,7 +404,8 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .id
                 .rsplit_once('#')
                 .map_or(relation.id.as_str(), |(_, key)| key);
-            let id = ParameterId(format!("sldprt:model:parameter#reference:{relation_key}"));
+            let id = ParameterId::mint(format!("sldprt:model:parameter#reference:{relation_key}"))
+                .expect("identity grammar");
             if !parameter_ids.insert(id.clone()) {
                 continue;
             }
@@ -589,12 +590,11 @@ pub(crate) fn project_compact_body_selections(
                 native: compact_body_selection_value(&selection.local_body_ids),
             };
         }
-        if mode
-            .as_deref()
-            .is_some_and(|mode| matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved))
-        {
-            if let Some(native_mode) = selection.mode {
-                *mode.expect("delete-body mode") = native_mode;
+        if let Some(mode) = mode {
+            if matches!(*mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
+                if let Some(native_mode) = selection.mode {
+                    *mode = native_mode;
+                }
             }
         }
     }
@@ -649,14 +649,12 @@ pub(crate) fn project_compact_edge_selections(
                 None => EdgeSelection::Native(native),
             }
         };
-        let unresolved_variable_fillet = matches!(
-            &feature.definition,
-            FeatureDefinition::Fillet { groups }
-                if matches!(groups.as_slice(), [FilletGroup {
-                    radius: RadiusSpec::Unresolved { .. },
-                    ..
-                }])
-        );
+        let unresolved_variable_fillet = match &feature.definition {
+            FeatureDefinition::Fillet { groups } => {
+                matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
+            }
+            _ => false,
+        };
         if unresolved_variable_fillet {
             if let Some(radius_groups) =
                 variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
@@ -1175,18 +1173,15 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let unresolved_full_round = matches!(
-            &feature.definition,
-            FeatureDefinition::Fillet { groups }
-                if matches!(
-                    groups.as_slice(),
-                    [cadmpeg_ir::features::FilletGroup {
-                        edges: EdgeSelection::Unresolved,
-                        radius: RadiusSpec::Unresolved { .. },
-                        ..
-                    }]
-                )
-        );
+        let unresolved_full_round = match &feature.definition {
+            FeatureDefinition::Fillet { groups } => matches!(
+                groups.as_slice(),
+                [group]
+                    if matches!(group.edges, EdgeSelection::Unresolved)
+                        && group.radius.is_unresolved()
+            ),
+            _ => false,
+        };
         if unresolved_full_round {
             let Some([center_faces, side_one_faces, side_two_faces]) =
                 full_round_fillet_selection_triple(feature_selections)
@@ -1247,8 +1242,12 @@ pub(crate) fn project_compact_surface_selections(
             };
             continue;
         }
-        if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
-            && feature_selections.len() == 2
+        if matches!(
+            feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane
+            }
+        ) && feature_selections.len() == 2
         {
             for selection in feature_selections {
                 for producer in selection
@@ -1275,11 +1274,7 @@ pub(crate) fn project_compact_surface_selections(
         }) else {
             continue;
         };
-        if let FeatureDefinition::DatumOffsetPlane {
-            reference,
-            distance,
-        } = &mut feature.definition
-        {
+        if let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition {
             let native = compact_surface_selection_value(&selection.components);
             let generated = selection
                 .terminal_feature_ref
@@ -1303,44 +1298,12 @@ pub(crate) fn project_compact_surface_selections(
                 None => cadmpeg_ir::features::FaceSelection::Native(native),
             };
             match reference {
-                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                    face: existing, ..
-                }) => *existing = face,
-                None => {
-                    let Some(origin) = feature
-                        .source_properties
-                        .get("Origin")
-                        .and_then(|value| crate::history::parse_point3_mm(value))
-                    else {
-                        continue;
-                    };
-                    let Some(normal) = feature
-                        .source_properties
-                        .get("Normal")
-                        .and_then(|value| crate::history::parse_vector3(value))
-                    else {
-                        continue;
-                    };
-                    let Some(u_axis) = feature
-                        .source_properties
-                        .get("UAxis")
-                        .and_then(|value| crate::history::parse_vector3(value))
-                    else {
-                        continue;
-                    };
-                    let origin = crate::history::offset_plane_support_origin(
-                        &feature.source_properties,
-                        crate::history::face_selection_native(&face),
-                        origin,
-                        normal,
-                        *distance,
-                    );
-                    *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                        face,
-                        origin,
-                        normal,
-                        u_axis,
-                    });
+                Some(cadmpeg_ir::features::DatumPlaneReference::Face(existing)) => *existing = face,
+                reference @ (None
+                | Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane {
+                    ..
+                })) => {
+                    *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(face));
                 }
                 Some(cadmpeg_ir::features::DatumPlaneReference::Feature(_)) => {}
             }
@@ -1365,8 +1328,10 @@ pub(crate) fn project_compact_surface_selections(
                         side:
                             cadmpeg_ir::features::ExtrudeSide {
                                 termination:
-                                    cadmpeg_ir::features::Termination::ToFace { face, .. }
-                                    | cadmpeg_ir::features::Termination::OffsetFromFace { face, .. },
+                                    cadmpeg_ir::features::LinearTermination::ToFace { face, .. }
+                                    | cadmpeg_ir::features::LinearTermination::OffsetFromFace {
+                                        face, ..
+                                    },
                                 ..
                             },
                     },
@@ -1377,7 +1342,8 @@ pub(crate) fn project_compact_surface_selections(
                     cadmpeg_ir::features::ExtrudeExtent::OneSided {
                         side:
                             cadmpeg_ir::features::ExtrudeSide {
-                                termination: cadmpeg_ir::features::Termination::ToVertex { vertex },
+                                termination:
+                                    cadmpeg_ir::features::LinearTermination::ToVertex { vertex },
                                 ..
                             },
                     },
@@ -1483,11 +1449,7 @@ pub(crate) fn project_compact_surface_selections(
         let Some(face) = face_aliases.get(target.as_str()).cloned() else {
             continue;
         };
-        let FeatureDefinition::DatumOffsetPlane {
-            reference,
-            distance,
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
             continue;
         };
         if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
@@ -1497,49 +1459,17 @@ pub(crate) fn project_compact_surface_selections(
                 }
             }
         }
-        if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing, .. }) =
-            reference
-        {
+        if let Some(cadmpeg_ir::features::DatumPlaneReference::Face(existing)) = reference {
             *existing = face;
             continue;
         }
-        if reference.is_some() {
+        if matches!(
+            reference,
+            Some(cadmpeg_ir::features::DatumPlaneReference::Feature(_))
+        ) {
             continue;
         }
-        let Some(origin) = feature
-            .source_properties
-            .get("Origin")
-            .and_then(|value| crate::history::parse_point3_mm(value))
-        else {
-            continue;
-        };
-        let Some(normal) = feature
-            .source_properties
-            .get("Normal")
-            .and_then(|value| crate::history::parse_vector3(value))
-        else {
-            continue;
-        };
-        let Some(u_axis) = feature
-            .source_properties
-            .get("UAxis")
-            .and_then(|value| crate::history::parse_vector3(value))
-        else {
-            continue;
-        };
-        let origin = crate::history::offset_plane_support_origin(
-            &feature.source_properties,
-            crate::history::face_selection_native(&face),
-            origin,
-            normal,
-            *distance,
-        );
-        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-            face,
-            origin,
-            normal,
-            u_axis,
-        });
+        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(face));
     }
 }
 
@@ -1610,39 +1540,48 @@ pub(crate) fn project_draft_operands(
         else {
             continue;
         };
-        let FeatureDefinition::Draft {
-            faces,
-            neutral_plane,
-            parting_tool,
-            pull_direction,
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Draft { faces, anchor, .. } = &mut feature.definition else {
             continue;
         };
-        match &first.anchor {
-            DraftAnchor::NeutralPlane(path)
-                if matches!(
-                    neutral_plane,
-                    cadmpeg_ir::features::FaceSelection::Unresolved
-                ) =>
-            {
-                *neutral_plane = draft_face_selection(
+        match (&first.anchor, &mut *anchor) {
+            (
+                DraftAnchor::NeutralPlane(path),
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    pull,
+                },
+            ) => {
+                let plane = draft_face_selection(
                     std::slice::from_ref(path),
                     native_ref,
                     &history_features,
                     &feature_ids_by_native,
                     &mut feature.dependencies,
                 );
+                let pull = pull.take();
+                *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull };
             }
-            DraftAnchor::PartingTool(paths) if parting_tool.is_none() => {
-                *parting_tool = Some(draft_face_selection(
+            (
+                DraftAnchor::PartingTool(paths),
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    ..
+                },
+            ) => {
+                let tool = draft_face_selection(
                     paths,
                     native_ref,
                     &history_features,
                     &feature_ids_by_native,
                     &mut feature.dependencies,
-                ));
+                );
+                *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
+                    tool,
+                    pull: cadmpeg_ir::features::DraftPull {
+                        direction: first.pull_direction,
+                        plane: None,
+                    },
+                };
             }
             _ => {}
         }
@@ -1655,8 +1594,14 @@ pub(crate) fn project_draft_operands(
                 &mut feature.dependencies,
             );
         }
-        if pull_direction.is_none() {
-            *pull_direction = Some(first.pull_direction);
+        match anchor {
+            cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
+                *pull = Some(cadmpeg_ir::features::DraftPull {
+                    direction: first.pull_direction,
+                    plane: None,
+                });
+            }
+            _ => {}
         }
     }
 }
@@ -2056,38 +2001,23 @@ pub(crate) fn project_unbound_offset_plane_faces(
     surfaces: &[Surface],
 ) {
     for feature in features {
-        let FeatureDefinition::DatumOffsetPlane {
-            reference:
-                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                    face,
-                    origin,
-                    normal,
-                    ..
-                }),
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
             continue;
         };
-        let native = match face {
-            cadmpeg_ir::features::FaceSelection::Unresolved => None,
-            cadmpeg_ir::features::FaceSelection::Native(native)
-                if native.starts_with("sldprt:feature-input:legacy-face-alias#") =>
-            {
-                Some(native.clone())
-            }
+        let (origin, normal) = match reference.as_ref() {
+            Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane {
+                origin,
+                normal,
+                ..
+            }) => (*origin, *normal),
             _ => continue,
         };
-        let Some(selected) = unique_planar_face(*origin, *normal, faces, surfaces) else {
+        let Some(selected) = unique_planar_face(origin, normal, faces, surfaces) else {
             continue;
         };
-        *face = match native {
-            Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
-                faces: vec![selected],
-                native,
-            },
-            None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
-        };
+        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(
+            cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
+        ));
     }
 }
 

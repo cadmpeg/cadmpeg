@@ -2,7 +2,7 @@
 //! XML-backed mesh modifier userdata attached to object attributes.
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
-use crate::objects::AttributeUserdataDescriptor;
+use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
 use crate::settings;
 use crate::wire::Uuid;
 
@@ -198,8 +198,38 @@ pub(crate) struct CurvePipingModifier {
     pub(crate) faceted: bool,
     /// Pipe accuracy from 0 through 100.
     pub(crate) accuracy: i32,
-    /// Cap type: `none`, `flat`, `box`, or `dome`.
-    pub(crate) cap_type: String,
+    /// Pipe end cap.
+    pub(crate) cap_type: CapType,
+}
+
+/// Curve-piping end cap written by `ON_CurvePipingUserData`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CapType {
+    /// No cap.
+    None,
+    /// Flat cap.
+    Flat,
+    /// Box cap.
+    Box,
+    /// Dome cap.
+    Dome,
+}
+
+impl serde::Serialize for CapType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl CapType {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Flat => "flat",
+            Self::Box => "box",
+            Self::Dome => "dome",
+        }
+    }
 }
 
 /// One ordered curve entry written by `ON_ShutLining`.
@@ -265,13 +295,7 @@ pub(crate) fn parse_attribute_userdata(
     }
 
     let displacement = displacement_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range.clone() else {
-            warnings.push(format!(
-                "displacement userdata at {} has no bounded payload",
-                descriptor.range.start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_displacement(bytes, payload_range, archive) {
             Ok(displacement) => Some(displacement),
             Err(error) => {
@@ -284,13 +308,7 @@ pub(crate) fn parse_attribute_userdata(
         }
     });
     let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range.clone() else {
-            warnings.push(format!(
-                "edge-softening userdata at {} has no bounded payload",
-                descriptor.range.start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_edge_softening(bytes, payload_range) {
             Ok(edge_softening) => Some(edge_softening),
             Err(error) => {
@@ -303,13 +321,7 @@ pub(crate) fn parse_attribute_userdata(
         }
     });
     let thickening = thickening_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range.clone() else {
-            warnings.push(format!(
-                "thickening userdata at {} has no bounded payload",
-                descriptor.range.start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_thickening(bytes, payload_range) {
             Ok(thickening) => Some(thickening),
             Err(error) => {
@@ -322,13 +334,7 @@ pub(crate) fn parse_attribute_userdata(
         }
     });
     let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range.clone() else {
-            warnings.push(format!(
-                "curve-piping userdata at {} has no bounded payload",
-                descriptor.range.start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_curve_piping(bytes, payload_range) {
             Ok(curve_piping) => Some(curve_piping),
             Err(error) => {
@@ -341,13 +347,7 @@ pub(crate) fn parse_attribute_userdata(
         }
     });
     let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range.clone() else {
-            warnings.push(format!(
-                "shut-lining userdata at {} has no bounded payload",
-                descriptor.range.start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_shut_lining(bytes, payload_range) {
             Ok(shut_lining) => Some(shut_lining),
             Err(error) => {
@@ -377,12 +377,15 @@ fn first_matching_descriptor(
     descriptors: &[AttributeUserdataDescriptor],
     class_uuid: Uuid,
     item_uuid: Uuid,
-) -> Option<&AttributeUserdataDescriptor> {
-    descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(class_uuid)
-            && descriptor.item_uuid == Some(item_uuid)
-            && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
-    })
+) -> Option<&AttributeUserdata> {
+    descriptors
+        .iter()
+        .filter_map(AttributeUserdataDescriptor::known)
+        .find(|descriptor| {
+            descriptor.class_uuid == class_uuid
+                && descriptor.item_uuid == item_uuid
+                && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
+        })
 }
 
 fn parse_displacement(
@@ -827,19 +830,19 @@ fn field_f64_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) 
     }
 }
 
-fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> String {
+fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> CapType {
     let Some(node) = typed_child(parent, name) else {
-        return "none".into();
+        return CapType::None;
     };
     let kind = attribute(node, "type").unwrap_or_default();
     if !kind.eq_ignore_ascii_case("string") {
-        return "none".into();
+        return CapType::None;
     }
     match node.text().unwrap_or_default().trim() {
-        "flat" => "flat".into(),
-        "box" => "box".into(),
-        "dome" => "dome".into(),
-        _ => "none".into(),
+        "flat" => CapType::Flat,
+        "box" => CapType::Box,
+        "dome" => CapType::Dome,
+        _ => CapType::None,
     }
 }
 
@@ -928,15 +931,14 @@ mod tests {
         item_uuid: Uuid,
         application_uuid: Option<Uuid>,
     ) -> AttributeUserdataDescriptor {
-        AttributeUserdataDescriptor {
+        AttributeUserdataDescriptor::Known(AttributeUserdata {
             range: range.clone(),
-            known: true,
-            class_uuid: Some(class_uuid),
-            item_uuid: Some(item_uuid),
+            class_uuid,
+            item_uuid,
             application_uuid,
             writer_version: Some(2_348_836_140),
-            payload_range: Some(range),
-        }
+            payload_range: range,
+        })
     }
 
     fn v2_payload(xml: &str) -> Vec<u8> {
@@ -1188,7 +1190,7 @@ mod tests {
         assert_eq!(curve_piping.segments, 12);
         assert!(!curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 73);
-        assert_eq!(curve_piping.cap_type, "flat");
+        assert_eq!(curve_piping.cap_type, CapType::Flat);
         assert!(modifiers.displacement.is_none());
         assert!(modifiers.edge_softening.is_none());
         assert!(modifiers.thickening.is_none());
@@ -1220,7 +1222,7 @@ mod tests {
         assert_eq!(curve_piping.segments, 16);
         assert!(curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 50);
-        assert_eq!(curve_piping.cap_type, "none");
+        assert_eq!(curve_piping.cap_type, CapType::None);
         assert!(warnings.is_empty());
     }
 

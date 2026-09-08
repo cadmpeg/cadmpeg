@@ -49,7 +49,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
     assert!(matches!(
         &base.definition,
         cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
-            if source.0 == "fcstd:design:feature#Source"
+            if source.as_str() == "fcstd:design:feature#Source"
     ));
     assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
     assert!(result.ir().model.features.iter().all(|feature| {
@@ -87,7 +87,8 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("derived feature");
     derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
-        source: cadmpeg_ir::features::FeatureId("fcstd:design:feature#Missing".into()),
+        source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
+            .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -123,15 +124,15 @@ fn rejects_noncanonical_feature_base_carriers() {
         .expect("feature base");
     assert!(matches!(
         &feature.definition,
-        FeatureDefinition::Native { kind, .. } if kind == "PartDesign::FeatureBase"
+        FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase"
     ));
     assert_eq!(result.report().losses.len(), 1);
     assert!(result
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        .all(|loss| loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking));
 }
 
@@ -219,7 +220,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     assert_eq!(
         children
             .iter()
-            .map(|child| child.0.as_str())
+            .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#First", "fcstd:design:feature#Second"]
     );
@@ -232,7 +233,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
                 .features
                 .iter()
                 .find(|feature| feature.id == *child)
-                .and_then(|feature| feature.parent.as_ref()),
+                .and_then(|feature| result.ir().model.feature_parent(&feature.id)),
             Some(&body.id)
         );
     }
@@ -251,9 +252,10 @@ fn transfers_ordered_body_membership_and_active_tip() {
     else {
         panic!("body tree node");
     };
-    *active_child = Some(cadmpeg_ir::features::FeatureId(
-        "fcstd:design:feature#Outside".into(),
-    ));
+    *active_child = Some(
+        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
+            .expect("identity grammar"),
+    );
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
@@ -301,13 +303,13 @@ fn rejects_ambiguous_body_history_carriers() {
                 .find(|feature| feature.name.as_deref() == Some(name))
                 .map(|feature| &feature.definition)
                 .expect("body feature"),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Body"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Body"
         ));
     }
     assert_eq!(result.report().losses.len(), 2);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
     assert_valid_document(result.ir());
@@ -555,17 +557,17 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("height position");
     assert!(width_position < height_position);
     let sheet = result.ir().model.spreadsheets.first().expect("sheet state");
-    assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
+    assert_eq!(sheet.feature.as_str(), "fcstd:design:feature#Sheet");
     assert_eq!(sheet.cells.len(), 2);
     assert_eq!(
         sheet.column_widths,
         [
             cadmpeg_ir::SpreadsheetDimension {
-                name: "A".into(),
+                index: 1,
                 pixels: 120,
             },
             cadmpeg_ir::SpreadsheetDimension {
-                name: "B".into(),
+                index: 2,
                 pixels: 80,
             },
         ]
@@ -573,25 +575,27 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         sheet.row_heights,
         [cadmpeg_ir::SpreadsheetDimension {
-            name: "2".into(),
+            index: 2,
             pixels: 45,
         }]
     );
     assert_eq!(
         sheet.merged_ranges,
-        [cadmpeg_ir::SpreadsheetRange {
-            start: "A1".into(),
-            end: "B1".into(),
-        }]
+        [cadmpeg_ir::SpreadsheetRange::new(
+            cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
+            cadmpeg_ir::CellAddress::parse("B1").expect("B1"),
+        )
+        .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
-    corrupted.model.spreadsheets[0]
-        .merged_ranges
-        .push(cadmpeg_ir::SpreadsheetRange {
-            start: "A1".into(),
-            end: "A2".into(),
-        });
+    corrupted.model.spreadsheets[0].merged_ranges.push(
+        cadmpeg_ir::SpreadsheetRange::new(
+            cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
+            cadmpeg_ir::CellAddress::parse("A2").expect("A2"),
+        )
+        .expect("A1:A2"),
+    );
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
@@ -689,7 +693,10 @@ fn rejects_nested_spreadsheet_value_roots() {
 <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><Wrapper><RowInfo Count="1"><Row name="1" height="45"/></RowInfo></Wrapper></Property>"#,
     ] {
         let error = decode(properties).expect_err("nested spreadsheet value root");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 
@@ -783,13 +790,20 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert!(features
         .iter()
         .all(|feature| feature.dependencies.is_empty()));
-    assert!(features.iter().all(|feature| feature.parent.is_none()));
+    assert!(features.iter().all(|feature| {
+        !features.iter().any(|candidate| {
+            matches!(
+                &candidate.definition,
+                FeatureDefinition::TreeNode { children, .. } if children.contains(&feature.id)
+            )
+        })
+    }));
     assert_eq!(
         result
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         2
     );
@@ -831,7 +845,6 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .expect("cyclic expression graph");
     assert!(result.ir().model.features.iter().all(|feature| {
         feature.dependencies.is_empty()
-            && feature.parent.is_none()
             && matches!(feature.definition, FeatureDefinition::Native { .. })
     }));
     let parameters = result
@@ -863,7 +876,7 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         2
     );
@@ -912,7 +925,7 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         1
     );

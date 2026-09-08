@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -60,81 +59,26 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
         byte_offset: scope_at as u64,
-        class_tag: "451".into(),
+        class_tag: crate::records::DesignClassTag::try_from("451".to_owned()).unwrap(),
         record_index: 30,
         frame_length: 399,
-        kind: "Component Insert".into(),
         kind_offset: 0,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: vec![20],
-        reference_member_offsets: vec![scope_at as u64 + 38],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![20],
+            vec![scope_at as u64 + 38],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::feature::DesignFeatureKind::ComponentInsert.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: (scope_at + 399) as u64,
     };
 
@@ -146,10 +90,13 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     assert_eq!(construction.carrier_record_index, 10);
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
-    assert_eq!(construction.transform, transform);
-    assert_eq!(construction.transform_offset, Some((scope_at + 50) as u64));
+    assert_eq!(*construction.transform(), transform);
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.transform_offset(),
+        Some((scope_at + 50) as u64)
+    );
+    assert_eq!(
+        construction.carrier_transform_offset(),
         Some(carrier_transform_at as u64)
     );
 
@@ -188,7 +135,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         );
         let legacy_scope = DesignParameterScope {
             frame_length: frame_length as u64,
-            paired_class_tag: paired_class_tag.into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap(),
             paired_byte_offset: (scope_at + frame_length) as u64,
             ..scope.clone()
         };
@@ -199,10 +147,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         )
         .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
         assert_eq!(
-            construction.transform_offset,
+            construction.transform_offset(),
             Some((scope_at + transform_at) as u64)
         );
-        assert_eq!(construction.transform, transform);
+        assert_eq!(*construction.transform(), transform);
     }
 
     let mut expanded = Vec::new();
@@ -245,10 +193,14 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     header(&mut expanded, b"260", 30);
     let expanded_scope = DesignParameterScope {
         byte_offset: expanded_scope_at as u64,
-        class_tag: "335".into(),
+        class_tag: crate::records::DesignClassTag::try_from("335".to_owned()).unwrap(),
         frame_length: 404,
-        reference_member_offsets: vec![(expanded_scope_at + 42) as u64],
-        paired_class_tag: "260".into(),
+        reference_members: crate::records::ReferenceRun::located(vec![crate::records::Located {
+            value: 20,
+            offset: (expanded_scope_at + 42) as u64,
+        }]),
+        payload: scope.kind().into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: (expanded_scope_at + 404) as u64,
         ..scope.clone()
     };
@@ -266,13 +218,13 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         construction.neutron_role_offset,
         (expanded_role_at + 4) as u64
     );
-    assert_eq!(construction.transform, transform);
+    assert_eq!(*construction.transform(), transform);
     assert_eq!(
-        construction.transform_offset,
+        construction.transform_offset(),
         Some((expanded_scope_at + 54) as u64)
     );
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.carrier_transform_offset(),
         Some(expanded_carrier_transform_at as u64)
     );
 
@@ -322,7 +274,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     let legacy_scope = DesignParameterScope {
         byte_offset: legacy_scope_at as u64,
         frame_length: 381,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: (legacy_scope_at + 381) as u64,
         ..scope
     };
@@ -338,7 +290,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         (legacy_role_at + 4) as u64
     );
     assert_eq!(
-        construction.carrier_transform_offset,
+        construction.carrier_transform_offset(),
         Some(legacy_carrier_transform_at as u64)
     );
     assert_eq!(construction.relation_record_index, 20);
@@ -425,15 +377,19 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        "Component Insert",
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope.byte_offset = scope_at as u64;
-    scope.class_tag = "296".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
     scope.frame_length = 261;
-    scope.reference_members = vec![20];
-    scope.reference_member_offsets = vec![(scope_at + 38) as u64];
-    scope.paired_class_tag = "263".into();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![20],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
     let construction =
@@ -444,9 +400,9 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]
@@ -525,15 +481,19 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        "Component Insert",
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope.byte_offset = scope_at as u64;
-    scope.class_tag = "410".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
     scope.frame_length = 261;
-    scope.reference_members = vec![167];
-    scope.reference_member_offsets = vec![(scope_at + 38) as u64];
-    scope.paired_class_tag = "261".into();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![167],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
     let construction =
@@ -544,9 +504,9 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     bytes[4..7].copy_from_slice(b"382");
     assert!(exact_component_insert_construction(
@@ -634,15 +594,19 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        "Component Insert",
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope.byte_offset = scope_at as u64;
-    scope.class_tag = "434".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("434".to_owned()).unwrap();
     scope.frame_length = 261;
-    scope.reference_members = vec![167];
-    scope.reference_member_offsets = vec![(scope_at + 38) as u64];
-    scope.paired_class_tag = "266".into();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![167],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
     let construction =
@@ -653,9 +617,9 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]
@@ -749,15 +713,19 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        "Component Insert",
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope.byte_offset = scope_at as u64;
-    scope.class_tag = "426".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("426".to_owned()).unwrap();
     scope.frame_length = 261;
-    scope.reference_members = vec![20];
-    scope.reference_member_offsets = vec![(scope_at + 38) as u64];
-    scope.paired_class_tag = "258".into();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![20],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
     let construction =
@@ -768,9 +736,9 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(construction.transform, identity_matrix());
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     let external_role = "cccccccc-dddd-eeee-ffff-000000000000_urn:adsk.test:asset";
     let mut external_bytes = bytes[..155].to_vec();
@@ -786,7 +754,12 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     let external_scope_at = scope_at + carrier_shift;
     let mut external_scope = scope.clone();
     external_scope.byte_offset = external_scope_at as u64;
-    external_scope.reference_member_offsets = vec![(external_scope_at + 38) as u64];
+    external_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        external_scope.reference_members.values().copied().collect(),
+        vec![(external_scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     external_scope.paired_byte_offset = (external_scope_at + 261) as u64;
     let external_construction = exact_component_insert_construction(
         &external_bytes,
@@ -886,15 +859,20 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-            "Component Insert",
+            crate::records::feature::DesignFeatureKind::ComponentInsert,
             30,
         );
         scope.byte_offset = scope_at as u64;
-        scope.class_tag = "283".into();
+        scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
         scope.frame_length = frame_length as u64;
-        scope.reference_members = vec![20];
-        scope.reference_member_offsets = vec![(scope_at + 34) as u64];
-        scope.paired_class_tag = "262".into();
+        scope.reference_members = crate::records::ReferenceRun::from_columns(
+            vec![20],
+            vec![(scope_at + 34) as u64],
+            "reference_members",
+        )
+        .unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
         scope.paired_byte_offset = (scope_at + frame_length) as u64;
         (bytes, scope, scope_at)
     };
@@ -911,9 +889,9 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(construction.transform, identity);
-    assert_eq!(construction.transform_offset, None);
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), identity);
+    assert_eq!(construction.transform_offset(), None);
+    assert_eq!(construction.carrier_transform_offset(), None);
 
     let transformed = [
         [1.0, 0.0, 0.0, -2.1],
@@ -931,9 +909,12 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(construction.transform, transformed);
-    assert_eq!(construction.transform_offset, Some((scope_at + 46) as u64));
-    assert_eq!(construction.carrier_transform_offset, None);
+    assert_eq!(*construction.transform(), transformed);
+    assert_eq!(
+        construction.transform_offset(),
+        Some((scope_at + 46) as u64)
+    );
+    assert_eq!(construction.carrier_transform_offset(), None);
 }
 
 #[test]

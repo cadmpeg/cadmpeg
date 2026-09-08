@@ -15,15 +15,18 @@ cargo add cadmpeg-asm
 
 `asm_header::has_asm_magic` recognizes the 15-byte `ASM BinaryFile4` and
 `ASM BinaryFile8` prefixes. `asm_header::parse` returns a [`KernelHeader`][header]
-with `width`, `save_format_version`, `record_count`, `entity_count`, `flags`,
+with `width`, `save_format_version`, `entity_count`, `flags`,
 product strings, and tolerance fields that the input provides. A missing magic
 returns `None`; a recognized but incomplete header returns a `KernelHeader` with
 unavailable fields set to `None`.
 
 `acis_header::has_acis_magic` recognizes `ACIS BinaryFile`.
 `acis_header::parse` admits its 32-bit header and returns the same
-`KernelHeader` metadata. ACIS save-format majors 217 and 218 use this parser;
-callers keep other save-format bands outside their decode envelope.
+`KernelHeader` metadata. Every ACIS save format uses this parser. Majors 217
+and 218 are the bands the record decoders are verified against, which `dialect`
+states: a stream outside them is framed and decoded the same way, and the host
+labels the result `Admission::Unverified` and charges its
+`source.dialect-unverified` loss.
 
 `BinaryFile4` stores the save-format version, record count, entity count, and
 flags as little-endian `u32` words at offsets 15, 19, 23, and 27. Its string

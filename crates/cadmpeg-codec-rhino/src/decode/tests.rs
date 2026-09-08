@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use super::*;
 use crate::test_support::test_dump::*;
@@ -7,21 +7,46 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
-    NurbsCurve {
-        degree: 1,
-        knots: vec![start, start, end, end],
-        control_points: vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
-        weights: rational.then(|| vec![2.0, 1.0]),
-        periodic: false,
-    }
+    NurbsCurve::new(
+        1,
+        vec![start, start, end, end],
+        vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+        rational.then(|| vec![2.0, 1.0]),
+        false,
+    )
+    .expect("valid test line")
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
-    crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Nurbs(curve),
-        compound: None,
-        warnings: Vec::new(),
-    }
+    crate::curves::DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new())
+}
+
+#[test]
+fn rejected_expansion_discards_every_report_bucket() {
+    let mut report = ReportBuckets::default();
+    report.phase_warnings.push("existing warning".to_string());
+    report
+        .phase_losses
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("existing parse-phase loss"));
+    report
+        .typed_losses
+        .push(RhinoLossCode::IntegrityFailure.note("existing typed loss"));
+    let checkpoint = report.checkpoint();
+
+    report.phase_warnings.push("rejected warning".to_string());
+    report
+        .phase_losses
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("rejected parse-phase loss"));
+    report
+        .typed_losses
+        .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
+    report.rollback(checkpoint);
+
+    assert_eq!(report.phase_warnings, ["existing warning"]);
+    assert_eq!(report.phase_losses.len(), 1);
+    assert_eq!(report.phase_losses[0].message, "existing parse-phase loss");
+    assert_eq!(report.typed_losses.len(), 1);
+    assert_eq!(report.typed_losses[0].message, "existing typed loss");
 }
 
 #[test]
@@ -36,39 +61,39 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
     transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0))
         .expect("required invariant");
-    let CurveGeometry::Nurbs(curve) = curve.geometry else {
+    let CurveGeometry::Nurbs(curve) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
     };
-    assert_eq!(curve.control_points[0], Point3::new(100.0, 200.0, 300.0));
-    assert_eq!(curve.control_points[1], Point3::new(100.0, 220.0, 300.0));
+    assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
+    assert_eq!(curve.control_points()[1], Point3::new(100.0, 220.0, 300.0));
 }
 
 #[test]
 fn body_instance_transform_composes_before_existing_body_transform() {
     let mut body = Body {
-        id: "body".into(),
+        id: "rhino:test:body#1".try_into().expect("valid identity"),
         kind: BodyKind::General,
         regions: Vec::new(),
-        transform: Some(Transform {
-            rows: [
+        transform: Some(
+            Transform::from_rows([
                 [2.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
-            ],
-        }),
+            ])
+            .expect("affine transform"),
+        ),
         name: None,
         color: None,
         visible: None,
     };
-    let instance = Transform {
-        rows: [
-            [1.0, 0.0, 0.0, 10.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let instance = Transform::from_rows([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     compose_body_transform(&mut body, instance);
     assert_eq!(
         body.transform
@@ -88,6 +113,7 @@ fn region_raw(
         expected_type: crate::brep::RawBrepBaseType::Curve,
     };
     crate::brep::RawBrep {
+        losses: Vec::new(),
         minor: 3,
         c2: empty_curves(),
         c3: empty_curves(),
@@ -116,18 +142,10 @@ fn region_raw(
         },
         render_meshes: Vec::new(),
         analysis_meshes: Vec::new(),
-        render_mesh_array_range: 0..0,
-        analysis_mesh_array_range: 0..0,
         is_solid: None,
         face_sides,
         regions,
-        region_wrapper_range: Some(0..0),
         source_range: 0..0,
-        vertex_array_range: 0..0,
-        edge_array_range: 0..0,
-        trim_array_range: 0..0,
-        loop_array_range: 0..0,
-        face_array_range: 0..0,
     }
 }
 
@@ -189,13 +207,11 @@ fn class_uuid(wire: [u8; 16]) -> crate::wire::Uuid {
 fn child(
     class_uuid: crate::wire::Uuid,
     class_data_range: std::ops::Range<usize>,
-    base_type: crate::brep::RawBrepBaseType,
 ) -> crate::brep::RawBrepChild {
     crate::brep::RawBrepChild {
         class_uuid,
         source_range: class_data_range.clone(),
         class_data_range,
-        base_type,
     }
 }
 
@@ -276,11 +292,12 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
     (
         data,
         crate::brep::RawBrep {
+            losses: Vec::new(),
             minor: 2,
             c2: crate::brep::RawBrepChildren {
                 slots: c2_ranges
                     .into_iter()
-                    .map(|range| Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve)))
+                    .map(|range| Some(child(line_uuid, range)))
                     .collect(),
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Curve,
@@ -288,17 +305,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             c3: crate::brep::RawBrepChildren {
                 slots: c3_ranges
                     .into_iter()
-                    .map(|range| Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve)))
+                    .map(|range| Some(child(line_uuid, range)))
                     .collect(),
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Curve,
             },
             surfaces: crate::brep::RawBrepChildren {
-                slots: vec![Some(child(
-                    plane_uuid,
-                    surface_range,
-                    crate::brep::RawBrepBaseType::Surface,
-                ))],
+                slots: vec![Some(child(plane_uuid, surface_range))],
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Surface,
             },
@@ -328,26 +341,22 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: Some(3),
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         },
     )
 }
 
 #[test]
 fn fallback_discards_topology_and_unknown_record_self_link() {
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
-    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0".into();
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0"
+        .try_into()
+        .expect("valid identity");
     let mut staged = BrepDraft {
         links: vec![
             curve_id.to_string(),
@@ -368,7 +377,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         source_object: None,
     });
     staged.draft.model_mut().bodies.push(Body {
-        id: "rhino:object:body#x".into(),
+        id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
         transform: None,
@@ -388,9 +397,11 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
 
 #[test]
 fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
-    let unknown: UnknownId = "rhino:object:record#x".into();
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
-    let mut candidate = CadIr::empty(Units::default());
+    let unknown: UnknownId = "rhino:object:record#x".try_into().expect("valid identity");
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -428,13 +439,15 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
 
 #[test]
 fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
-    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
     let curve = Curve {
         id: curve_id,
         geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
         source_object: None,
     };
-    let mut live = CadIr::empty(Units::default());
+    let mut live = CadIr::empty();
     live.model.curves.push(curve.clone());
     let mut candidate = live.clone();
     let mut staged = BrepDraft::default();
@@ -451,7 +464,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "plane-brep".to_string(),
         name: Some("plane".to_string()),
         color: None,
@@ -459,7 +472,9 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane".into();
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -496,16 +511,16 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(model.points[1].position.x, 25.4);
     assert_eq!(model.vertices[0].tolerance, Some(0.254));
     assert_eq!(model.edges[0].tolerance, Some(0.254));
-    assert_eq!(model.pcurves[0].fit_tolerance, Some(0.02));
-    let PcurveGeometry::Nurbs { control_points, .. } = &model.pcurves[0].geometry else {
+    assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
+    let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
     };
     // Plane parameters are lengths: the native `u = 1.0` trim endpoint
     // scales with the document (inches -> millimeters).
-    assert_eq!(control_points[1].u, 25.4);
+    assert_eq!(nurbs.control_points()[1].u, 25.4);
     assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
     let links = staged.links.clone();
-    let mut candidate = CadIr::empty(Units::default());
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -535,7 +550,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     });
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "free-vertex-brep".to_string(),
         name: None,
         color: None,
@@ -543,7 +558,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#free-vertex".into();
+    let unknown: UnknownId = "rhino:object:record#free-vertex"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -562,10 +579,12 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
     assert_eq!(
         staged.draft.model().shells[0].free_vertices,
-        vec!["rhino:object:vertex#free-vertex.slot-3".into()]
+        vec!["rhino:object:vertex#free-vertex.slot-3"
+            .try_into()
+            .expect("valid identity")]
     );
 
-    let mut candidate = CadIr::empty(Units::default());
+    let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
             "rhino",
@@ -584,11 +603,12 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
 
 #[test]
 fn failed_trim_pcurve_does_not_discard_brep_topology() {
-    let (data, mut raw) = source_shaped_plane_brep();
-    raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
+    let (mut data, raw) = source_shaped_plane_brep();
+    let pcurve = raw.c2.slots[1].as_ref().expect("C2 slot");
+    data[pcurve.class_data_range.start] = 0;
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "plane-brep".to_string(),
         name: None,
         color: None,
@@ -596,7 +616,9 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane".into();
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
     let staged = with_expand_bytes(&data, |expand| {
         stage_brep(BrepTransferInput {
             expand,
@@ -626,8 +648,22 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
         region_shell_groups_without_records(&[1, 0, 1, 0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
-    assert_eq!(grouping.region_labels, vec![0, 1]);
-    assert_eq!(grouping.shell_faces, vec![vec![1, 3], vec![0, 2]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![1, 3], vec![0, 2]]
+    );
 }
 
 #[test]
@@ -691,45 +727,9 @@ fn face_reversal_selects_face_sense() {
 
 #[test]
 fn polymorphic_object_geometry_starts_with_v2() {
-    assert!(!object_geometry_archive(ArchiveVersion::V1));
-    assert!(object_geometry_archive(ArchiveVersion::V2));
-    assert!(object_geometry_archive(ArchiveVersion::V8));
-}
-
-#[test]
-fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(1), Some(200_210_020), false),
-        BodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(2), Some(200_210_020), false),
-        BodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(3), Some(200_210_020), false),
-        BodyKind::Sheet
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(3), Some(200_210_020), true),
-        BodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(0), Some(200_210_020), true),
-        BodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(0), Some(200_210_020), false),
-        BodyKind::Sheet
-    );
-    assert_eq!(
-        serialized_brep_body_kind(1, Some(1), Some(200_210_020), true),
-        BodyKind::Solid
-    );
-    assert_eq!(
-        serialized_brep_body_kind(2, Some(1), Some(200_210_019), false),
-        BodyKind::Sheet
-    );
+    assert!(!ArchiveVersion::V1.is_chunked());
+    assert!(ArchiveVersion::V2.is_chunked());
+    assert!(ArchiveVersion::V8.is_chunked());
 }
 
 #[test]
@@ -756,8 +756,22 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
-    assert_eq!(grouping.region_labels, vec![1]);
-    assert_eq!(grouping.shell_faces, vec![vec![0]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0]]
+    );
 }
 
 #[test]
@@ -783,109 +797,101 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
     );
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);
-    assert_eq!(grouping.region_labels, vec![0]);
-    assert_eq!(grouping.shell_faces, vec![vec![0]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0]]
+    );
 }
 
 #[test]
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
-    let compound = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-                decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
-            ],
-            parameters: vec![10.0, 20.0, 40.0],
-        }),
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (10.0, decoded_nurbs(line_nurbs(0.0, 1.0, true))),
+            (20.0, decoded_nurbs(line_nurbs(-2.0, 2.0, false))),
+        ],
+        end_parameter: 40.0,
         warnings: Vec::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
-    assert_eq!(merged.knots, vec![10.0, 10.0, 20.0, 40.0, 40.0]);
-    assert_eq!(merged.control_points.len(), 3);
-    assert_eq!(merged.weights, Some(vec![2.0, 1.0, 1.0]));
-    assert!(!merged.periodic);
+    assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
+    assert_eq!(merged.control_points().len(), 3);
+    assert_eq!(merged.weights(), Some(&[2.0, 1.0, 1.0][..]));
+    assert!(!merged.periodic());
 }
 
 #[test]
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
-    let nested = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            ],
-            parameters: vec![0.0, 1.0, 2.0],
-        }),
+    let nested = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+            (1.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+        ],
+        end_parameter: 2.0,
         warnings: Vec::new(),
     };
-    let outer = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![nested],
-            parameters: vec![5.0, 9.0],
-        }),
+    let outer = crate::curves::DecodedCurve::Compound {
+        children: vec![(5.0, nested)],
+        end_parameter: 9.0,
         warnings: Vec::new(),
     };
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
         .curve;
-    assert_eq!(merged.knots, vec![5.0, 5.0, 7.0, 9.0, 9.0]);
+    assert_eq!(merged.knots(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
 }
 
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let quadratic = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.5, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
-    let compound = crate::curves::DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(crate::curves::Compound {
-            children: vec![
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-                decoded_nurbs(quadratic),
-            ],
-            parameters: vec![0.0, 1.0, 2.0],
-        }),
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid quadratic");
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+            (1.0, decoded_nurbs(quadratic)),
+        ],
+        end_parameter: 2.0,
         warnings: Vec::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
         .curve;
-    assert_eq!(merged.degree, 2);
-    assert_eq!(merged.control_points.len(), 5);
-    assert_eq!(merged.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+    assert_eq!(merged.degree(), 2);
+    assert_eq!(merged.control_points().len(), 5);
+    assert_eq!(merged.knots(), vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
 }
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start = NurbsCurve {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: points.to_vec(),
-        weights: None,
-        periodic: false,
-    };
+    let start =
+        NurbsCurve::new(1, knots.clone(), points.to_vec(), None, false).expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end = NurbsCurve {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: end_points,
-        weights: None,
-        periodic: false,
-    };
+    let end = NurbsCurve::new(1, knots.clone(), end_points, None, false).expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))
@@ -899,10 +905,12 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     };
     crate::extrusion::ExtrusionBoundary {
         start_curve: decoded_nurbs(start.clone()),
-        start_nurbs: start,
-        end_nurbs: end,
+        start_nurbs: start.clone(),
+        end_nurbs: end.clone(),
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
+        lateral: crate::surfaces::extrusion_nurbs(&start, &end, [0.0, 5.0], false, 0)
+            .expect("valid cap lateral"),
     }
 }
 
@@ -923,7 +931,6 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
     ]);
     crate::extrusion::DecodedExtrusion {
         boundaries: vec![outer, inner],
-        laterals: Vec::new(),
         direction: Vector3::new(0.0, 0.0, 5.0),
         cap_origins: [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)],
         cap_normals: [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 1.0)],
@@ -936,7 +943,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "extrusion".to_string(),
         name: Some("Extrusion".to_string()),
         color: None,
@@ -949,21 +956,26 @@ fn test_association() -> SourceObjectAssociation {
 #[test]
 fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
     for (caps, expected_faces) in [([true, false], 1), ([false, true], 1), ([true, true], 2)] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let association = test_association();
         let extrusion = cap_extrusion(caps);
-        let directrices = extrusion
+        let boundaries = extrusion
             .boundaries
             .iter()
             .enumerate()
             .map(|(index, boundary)| {
-                let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}").into();
+                let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}")
+                    .try_into()
+                    .expect("valid identity");
                 ir.model.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(boundary.start_nurbs.clone()),
                     source_object: Some(association.clone()),
                 });
-                id
+                CommittedExtrusionBoundary {
+                    boundary,
+                    directrix: id,
+                }
             })
             .collect::<Vec<_>>();
         let mut links = Vec::new();
@@ -973,7 +985,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             "caps",
             &association,
             &extrusion,
-            &directrices,
+            &boundaries,
             &mut links,
         ));
         assert_eq!(ir.model.faces.len(), expected_faces);
@@ -990,24 +1002,6 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             0
         );
     }
-}
-
-#[test]
-fn cap_staging_failure_leaves_original_transaction_unmodified() {
-    let original = CadIr::empty(Units::default());
-    let mut candidate = original.clone();
-    let mut links = Vec::new();
-    assert!(!stage_extrusion_caps(
-        &mut candidate,
-        &mut cadmpeg_ir::Annotations::default(),
-        "failure",
-        &test_association(),
-        &cap_extrusion([true, true]),
-        &[],
-        &mut links,
-    ));
-    assert_eq!(candidate, original);
-    assert!(links.is_empty());
 }
 
 /// Phase 5 freeze: draft/instance admit predicates vs shared accept/reject builders.
@@ -1059,7 +1053,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.append_link(0, "rhino:curve#1".to_string()));
         assert!(context.append_link(0, "rhino:curve#2".to_string()));
         assert_eq!(
-            context.unknown(0).expect("required invariant").links,
+            context.unknown(0).expect("required invariant").links(),
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
         );
         assert!(context.mark_decoded(0));
@@ -1069,9 +1063,9 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         context
             .unknown_mut(0)
             .expect("required invariant")
-            .links
+            .links_mut()
             .clear();
-        let result = context.commit();
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result
             .report()
             .losses
@@ -1108,17 +1102,13 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
         let original = context
             .unknown(0)
             .expect("required invariant")
-            .data
-            .clone()
-            .expect("required invariant");
+            .data()
+            .expect("required invariant")
+            .to_vec();
         let findings = context.reject_duplicate_entity_candidate();
         assert!(findings.contains("identity"));
         assert_eq!(
-            context
-                .unknown(0)
-                .expect("required invariant")
-                .data
-                .as_deref(),
+            context.unknown(0).expect("required invariant").data(),
             Some(original.as_slice())
         );
         assert_eq!(context.unknown_count(), 1);
@@ -1127,7 +1117,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             .model
             .points
             .iter()
-            .filter(|point| point.id.0 == "rhino:test:duplicate-point")
+            .filter(|point| point.id.as_str() == "rhino:test:point#duplicate")
             .collect::<Vec<_>>();
         assert_eq!(matching.len(), 1);
         assert_eq!(
@@ -1149,7 +1139,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
     ));
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
 }
 
 #[test]
@@ -1187,4 +1177,149 @@ fn redundant_field_diagnostics_use_the_typed_repair_loss() {
             .local_code(),
         "container.redundant-field-repaired"
     );
+}
+
+/// The body-kind and B-rep domain charges reach the report as typed codes.
+///
+/// Both are produced as typed losses at their parse sites. This asserts the
+/// loss codes that survive the decode pipeline.
+#[test]
+fn missing_stamp_carries_brep_typed_loss_codes() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let decode_archive = |bytes: Vec<u8>| {
+        crate::RhinoCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized 3DM archive should decode")
+    };
+    let solid_brep = crate::test_support::object_record(
+        0x10,
+        crate::test_support::BREP_CLASS,
+        &crate::test_support::solid_flagged_brep_payload(1),
+    );
+
+    let unstamped = decode_archive(crate::test_support::archive(std::slice::from_ref(
+        &solid_brep,
+    )));
+    assert_eq!(unstamped.ir().model.bodies.len(), 1);
+    // The stored flag is trusted, though the three edges carry one trim each.
+    assert_eq!(unstamped.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert!(
+        unstamped
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()),
+        "{:?}",
+        unstamped.report().losses
+    );
+    assert!(
+        unstamped.report().losses.iter().any(|loss| loss.code
+            == RhinoLossCode::SourceWriterStampUnverified.kind()
+            && loss.message.contains("edge domains")),
+        "{:?}",
+        unstamped.report().losses
+    );
+
+    // A stamp older than both cutoffs keeps the same record layout readable and
+    // vouches for the reading, so the body is gauged as a sheet and nothing is
+    // charged. Any newer stamp would also change the edge and trim layout.
+    let stamped = decode_archive(crate::test_support::archive_writer(
+        "50",
+        200_206_170,
+        &[solid_brep],
+    ));
+    assert_eq!(stamped.ir().model.bodies.len(), 1);
+    assert_eq!(stamped.ir().model.bodies[0].kind, BodyKind::Sheet);
+    assert!(
+        !stamped.report().losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()
+                || loss.code == RhinoLossCode::SourceWriterStampUnverified.kind()
+        }),
+        "{:?}",
+        stamped.report().losses
+    );
+}
+
+#[test]
+fn class_report_counts_terminal_outcomes_once() {
+    let archive = ArchiveVersion::V5;
+    let class = crate::hatch::CLASS;
+    let objects = (0..5)
+        .map(|_| object_record(archive, 1, class.to_wire()))
+        .collect::<Vec<_>>();
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("object table");
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        assert!(context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
+        assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
+        assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
+        assert!(context.mark_decoded(0));
+        assert!(context.mark_failed(2));
+        assert!(!context.mark_decoded(2));
+        let result = seal_for_test(context.commit(), false);
+        for (code, message) in [
+            (RhinoLossCode::ObjectRecordCensus, "decoded 1/5 Rhino object records".to_string()),
+            (RhinoLossCode::HatchFillNotTransferred, format!("framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough")),
+            (RhinoLossCode::ObjectFamilyNotTransferred, format!("retained 1 object record(s) for class {class}; geometry is not decoded")),
+            (RhinoLossCode::ObjectFramingUndecodable, format!("1 framed object record(s) for class {class} could not be decoded")),
+        ] {
+            let losses = result.report().losses.iter().filter(|loss| loss.code == code.kind()).collect::<Vec<_>>();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].message, message);
+        }
+    });
+}
+
+#[test]
+fn class_report_preserves_nil_class_source_selection() {
+    let archive = ArchiveVersion::V5;
+    let objects = (0..3)
+        .map(|_| object_record(archive, 1, [0; 16]))
+        .collect::<Vec<_>>();
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("object table");
+    for order in [0, 2] {
+        scan.objects[order] = ObjectRecord::Degraded {
+            range: scan.objects[order].range(),
+            warning: "degraded test object".to_string(),
+        };
+    }
+    for expected_source in [1, 2] {
+        if expected_source == 2 {
+            scan.objects[1] = ObjectRecord::Degraded {
+                range: scan.objects[1].range(),
+                warning: "degraded test object".to_string(),
+            };
+        }
+        with_expand(&scan, |expand| {
+            let context = DecodeContext::new(&scan, expand);
+            let result = seal_for_test(context.commit(), false);
+            let loss = result
+                .report()
+                .losses
+                .iter()
+                .find(|loss| loss.code == RhinoLossCode::ObjectFramingUndecodable.kind())
+                .expect("framing loss");
+            assert_eq!(
+                loss.provenance.as_ref().expect("source location").offset,
+                scan.objects[expected_source].range().start as u64
+            );
+        });
+    }
 }

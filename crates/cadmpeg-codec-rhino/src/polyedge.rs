@@ -27,20 +27,43 @@ const SEGMENT_CLASS: Uuid = Uuid::from_canonical([
 ]);
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Segment {
-    pub(crate) object_id: Uuid,
-    pub(crate) component: [i32; 2],
-    pub(crate) edge_domain: [f64; 2],
-    pub(crate) trim_domain: [f64; 2],
+pub(crate) struct Segment<R> {
+    pub(crate) reference: R,
     pub(crate) reversed: bool,
     pub(crate) domain: [f64; 2],
     pub(crate) proxy_domain: [f64; 2],
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PolyEdge {
+pub(crate) struct EdgeDomains {
+    pub(crate) edge: [f64; 2],
+    pub(crate) trim: [f64; 2],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PersistentReference {
+    pub(crate) object_id: Uuid,
+    pub(crate) component: [i32; 2],
+    pub(crate) domains: EdgeDomains,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct HistoryReference {
+    pub(crate) curve: crate::history::ObjectReference,
+    pub(crate) sub_domain: [f64; 2],
+    pub(crate) domains: Option<EdgeDomains>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PolyEdge<R> {
     pub(crate) parameters: Vec<f64>,
-    pub(crate) segments: Vec<Segment>,
+    pub(crate) segments: Vec<Segment<R>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct HistoryPolyEdge {
+    pub(crate) polyedge: PolyEdge<HistoryReference>,
+    pub(crate) evaluation_mode: i32,
 }
 
 fn refused(offset: usize, error: &CodecError) -> FramingError {
@@ -127,22 +150,22 @@ fn segment(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Segment, FramingError> {
+) -> Result<Segment<PersistentReference>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "invalid polyedge-segment framing",
         ));
     }
     let mut body = root
-        .child(chunk.body.start, chunk.body.end)
+        .child(chunk.body().start, chunk.body().end)
         .ok_or_else(|| {
-            FramingError::structural(chunk.body.start, "polyedge segment body out of range")
+            FramingError::structural(chunk.body().start, "polyedge segment body out of range")
         })?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? < 0 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported polyedge-segment version",
         ));
     }
@@ -158,10 +181,14 @@ fn segment(
         FramingError::structural(body.position(), "polyedge segment suffix overruns body")
     })?;
     Ok(Segment {
-        object_id,
-        component,
-        edge_domain,
-        trim_domain,
+        reference: PersistentReference {
+            object_id,
+            component,
+            domains: EdgeDomains {
+                edge: edge_domain,
+                trim: trim_domain,
+            },
+        },
         reversed,
         domain,
         proxy_domain,
@@ -172,7 +199,7 @@ pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<PolyEdge, FramingError> {
+) -> Result<PolyEdge<PersistentReference>, FramingError> {
     let data = expand.data();
     let mut body = expand
         .root()
@@ -214,13 +241,13 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ExactVec::<Segment>::new(segment_bound)
+    let mut segments = ExactVec::<Segment<PersistentReference>>::new(segment_bound)
         .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
         let class =
-            parse_class_wrapper(data, start..wrapper.next_offset, archive, &mut Vec::new())?;
+            parse_class_wrapper(data, start..wrapper.next_offset(), archive, &mut Vec::new())?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
@@ -235,7 +262,7 @@ pub(crate) fn decode(
                 archive,
             )?)
             .map_err(|error| refused(body.position(), &error))?;
-        body.skip(wrapper.next_offset - start).ok_or_else(|| {
+        body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
     }
@@ -252,16 +279,16 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn semantic_json(polyedge: &PolyEdge) -> Option<String> {
+pub(crate) fn semantic_json(polyedge: &PolyEdge<PersistentReference>) -> Option<String> {
     let segments = polyedge
         .segments
         .iter()
         .map(|segment| {
             serde_json::json!({
-                "object_id": segment.object_id.to_string(),
-                "component": segment.component,
-                "edge_domain": segment.edge_domain,
-                "trim_domain": segment.trim_domain,
+                "object_id": segment.reference.object_id.to_string(),
+                "component": segment.reference.component,
+                "edge_domain": segment.reference.domains.edge,
+                "trim_domain": segment.reference.domains.trim,
                 "reversed": segment.reversed,
                 "domain": segment.domain,
                 "proxy_domain": segment.proxy_domain,

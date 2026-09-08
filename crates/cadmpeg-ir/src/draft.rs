@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-use crate::annotations::{Annotations, ExactnessNote};
+use crate::annotations::{AnnotationBuilder, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model};
@@ -181,47 +181,46 @@ pub enum DraftError {
         /// Missing target identity.
         target: String,
     },
-    /// A B-rep assembly does not contain exactly one closed body graph.
-    #[error("invalid B-rep assembly: {0}")]
-    InvalidBrep(String),
 }
 
 /// Transactional collection of staged model entities and decode accounting.
-///
-/// Plan prose calls this stage `DocumentDraft`. Prefer that name in docs; this
-/// type remains the runtime draft that commits into [`CadIr`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ModelDraft {
     model: Model,
-    identity_index: IdentityIndex,
-    identities_synced: bool,
-    exactness: BTreeMap<String, ExactnessNote>,
+    identity_index: Option<IdentityIndex>,
+    exactness: BTreeMap<String, Exactness>,
     notes: Vec<LossNote>,
     ledger: TransferLedger,
 }
 
-/// Plan name for [`ModelDraft`] in the
-/// `DocumentDraft → CadIr → ValidationReport` state machine.
-pub type DocumentDraft = ModelDraft;
+impl Default for ModelDraft {
+    fn default() -> Self {
+        Self {
+            model: Model::default(),
+            identity_index: Some(IdentityIndex::new()),
+            exactness: BTreeMap::new(),
+            notes: Vec::new(),
+            ledger: TransferLedger::default(),
+        }
+    }
+}
 
 impl ModelDraft {
     /// Creates an empty draft.
     pub fn new() -> Self {
-        Self {
-            identities_synced: true,
-            ..Self::default()
-        }
+        Self::default()
     }
 
     /// Inserts one entity, rejecting draft-local identity collisions immediately.
     pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
-        self.synchronize_identities()?;
+        let mut identity_index = self.take_identity_index()?;
         let identity = entity.identity();
-        if identity_index_contains(&self.model, &self.identity_index, identity) {
+        if identity_index_contains(&self.model, &identity_index, identity) {
+            self.identity_index = Some(identity_index);
             return Err(DraftError::IdentityCollision(identity.to_owned()));
         }
         let index = T::arena(&self.model).len();
-        self.identity_index
+        identity_index
             .entry(identity_hash(identity))
             .or_default()
             .push(IdentitySlot {
@@ -229,6 +228,7 @@ impl ModelDraft {
                 index,
             });
         T::arena_mut(&mut self.model).push(entity);
+        self.identity_index = Some(identity_index);
         Ok(())
     }
 
@@ -239,7 +239,7 @@ impl ModelDraft {
 
     /// Returns the mutable staged arena for one entity type.
     pub fn arena_mut<T: ArenaEntity>(&mut self) -> &mut Vec<T> {
-        self.identities_synced = false;
+        self.identity_index = None;
         T::arena_mut(&mut self.model)
     }
 
@@ -253,7 +253,7 @@ impl ModelDraft {
     /// Commit still checks all identities and references, including entities inserted
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
-        self.identities_synced = false;
+        self.identity_index = None;
         &mut self.model
     }
 
@@ -263,13 +263,7 @@ impl ModelDraft {
         if exactness == Exactness::ByteExact {
             self.exactness.remove(&identity);
         } else {
-            self.exactness.insert(
-                identity,
-                ExactnessNote {
-                    entity: exactness,
-                    fields: BTreeMap::new(),
-                },
-            );
+            self.exactness.insert(identity, exactness);
         }
     }
 
@@ -325,20 +319,18 @@ impl ModelDraft {
             .native
             .0
             .values()
-            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .flat_map(|namespace| namespace.arenas().values().flatten())
         {
             identities.insert(record.id());
         }
         self.validate_with_contains(|identity| identities.contains(identity))
     }
 
-    fn synchronize_identities(&mut self) -> Result<(), DraftError> {
-        if self.identities_synced {
-            return Ok(());
+    fn take_identity_index(&mut self) -> Result<IdentityIndex, DraftError> {
+        match self.identity_index.take() {
+            Some(identity_index) => Ok(identity_index),
+            None => index_model_identities(&self.model),
         }
-        self.identity_index = index_model_identities(&self.model)?;
-        self.identities_synced = true;
-        Ok(())
     }
 
     /// Validates staged identities and references against one identity universe.
@@ -351,7 +343,7 @@ impl ModelDraft {
         &mut self,
         contains: impl Fn(&str) -> bool,
     ) -> Result<(), DraftError> {
-        self.synchronize_identities()?;
+        let identity_index = self.take_identity_index()?;
         macro_rules! check_external_identities {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &self.model.$field {
@@ -370,11 +362,7 @@ impl ModelDraft {
                     entity.visit_references(&mut |reference| {
                         if missing.is_none()
                             && !contains(&reference.target)
-                            && !identity_index_contains(
-                                &self.model,
-                                &self.identity_index,
-                                &reference.target,
-                            )
+                            && !identity_index_contains(&self.model, &identity_index, &reference.target)
                         {
                             missing = Some(reference.target);
                         }
@@ -389,6 +377,7 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(validate_arenas);
+        self.identity_index = Some(identity_index);
         Ok(())
     }
 
@@ -423,8 +412,7 @@ impl ModelDraft {
         let identity_index = index_model_identities(&self.model)?;
         self.exactness
             .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
-        self.identity_index = identity_index;
-        self.identities_synced = true;
+        self.identity_index = Some(identity_index);
         self.commit(base, annotations, notes, ledger)
     }
 
@@ -438,7 +426,6 @@ impl ModelDraft {
         let Self {
             mut model,
             identity_index: _,
-            identities_synced: _,
             exactness,
             notes: staged_notes,
             ledger: staged_ledger,
@@ -449,7 +436,11 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(extend_arenas);
-        annotations.exactness.extend(exactness);
+        let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
+        for (identity, exactness) in exactness {
+            annotation_builder.exactness(identity, exactness);
+        }
+        *annotations = annotation_builder.build();
         notes.extend(staged_notes);
         ledger.entries.extend(staged_ledger.entries);
     }
@@ -498,7 +489,7 @@ impl CommitSession {
             .native
             .0
             .values()
-            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .flat_map(|namespace| namespace.arenas().values().flatten())
         {
             identities
                 .entry(identity_hash(record.id()))
@@ -587,11 +578,10 @@ mod tests {
     use crate::native::NativeRecord;
     use crate::report::TransferLedger;
     use crate::topology::{Point, Vertex};
-    use crate::units::Units;
 
     fn point(id: &str) -> Point {
         Point {
-            id: PointId(id.into()),
+            id: PointId::mint(id).expect("valid identity"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         }
@@ -607,8 +597,8 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft
             .insert(Vertex {
-                id: id.into(),
-                point: point.into(),
+                id: id.try_into().expect("valid identity"),
+                point: point.try_into().expect("valid identity"),
                 tolerance: None,
             })
             .expect("insert vertex into draft");
@@ -617,7 +607,7 @@ mod tests {
 
     #[test]
     fn collision_refuses_without_mutating_any_destination() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new();
         draft
@@ -632,7 +622,7 @@ mod tests {
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
-        assert!(annotations.exactness.is_empty());
+        assert!(annotations.exactness().is_empty());
         assert!(notes.is_empty());
         assert!(ledger.is_empty());
     }
@@ -643,7 +633,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft.model_mut().points.push(point(identity));
         draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_model(&mut ir),
@@ -658,11 +648,11 @@ mod tests {
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
         draft.model_mut().vertices.push(Vertex {
-            id: owner.into(),
-            point: target.into(),
+            id: owner.try_into().expect("valid identity"),
+            point: target.try_into().expect("valid identity"),
             tolerance: None,
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_model(&mut ir),
@@ -680,7 +670,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft.model_mut().points.push(point(identity));
         draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_incomplete(
@@ -697,7 +687,7 @@ mod tests {
 
     #[test]
     fn commit_session_matches_sequential_model_commits() {
-        let mut session_ir = CadIr::empty(Units::default());
+        let mut session_ir = CadIr::empty();
         let mut session = CommitSession::new(&session_ir);
         session
             .commit_model(point_draft("test:model:point#1"), &mut session_ir)
@@ -706,7 +696,7 @@ mod tests {
             .commit_model(point_draft("test:model:point#2"), &mut session_ir)
             .expect("second session commit");
 
-        let mut sequential_ir = CadIr::empty(Units::default());
+        let mut sequential_ir = CadIr::empty();
         point_draft("test:model:point#1")
             .commit_model(&mut sequential_ir)
             .expect("first sequential commit");
@@ -719,7 +709,7 @@ mod tests {
 
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
         let identity = "test:model:point#cross-draft";
         session
@@ -736,7 +726,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_pre_existing_neutral_identity() {
         let identity = "test:model:point#existing";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(point(identity));
         let mut session = CommitSession::new(&ir);
 
@@ -750,10 +740,12 @@ mod tests {
     #[test]
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
-        let mut ir = CadIr::empty(Units::default());
-        ir.native.namespace_mut("test").arenas.insert(
+        let mut ir = CadIr::empty();
+        ir.native.namespace_mut("test").arenas_mut().insert(
             "records".into(),
-            vec![NativeRecord::new(identity, serde_json::Map::new())],
+            vec![
+                NativeRecord::new(identity, serde_json::Map::new()).expect("valid native identity")
+            ],
         );
         let mut session = CommitSession::new(&ir);
 
@@ -768,7 +760,7 @@ mod tests {
     fn commit_session_rejects_unresolved_reference() {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
 
         assert_eq!(
@@ -784,7 +776,7 @@ mod tests {
     #[test]
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
         session
             .commit_model(point_draft(point_id), &mut ir)
@@ -800,7 +792,7 @@ mod tests {
     #[test]
     fn rejected_session_commit_leaves_session_and_base_usable() {
         let rejected_identity = "test:model:vertex#rejected";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let before = ir.clone();
         let mut session = CommitSession::new(&ir);
 
@@ -822,7 +814,7 @@ mod tests {
     fn commit_session_contains_tracks_only_successful_commits() {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
 
         assert!(!session.contains(&ir, committed_identity));
@@ -834,8 +826,10 @@ mod tests {
         let mut rejected = ModelDraft::new();
         rejected
             .insert(Vertex {
-                id: rejected_identity.into(),
-                point: "test:model:point#missing".into(),
+                id: rejected_identity.try_into().expect("valid identity"),
+                point: "test:model:point#missing"
+                    .try_into()
+                    .expect("valid identity"),
                 tolerance: None,
             })
             .expect("insert rejected vertex");

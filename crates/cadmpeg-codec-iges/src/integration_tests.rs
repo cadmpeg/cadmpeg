@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_ir::codec::{Codec, CodecBackend};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -54,7 +54,7 @@ fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -
             .ir()
             .native
             .namespace("iges")
-            .and_then(|namespace| namespace.arenas.get(name))
+            .and_then(|namespace| namespace.arenas().get(name))
             .map_or(0, Vec::len),
     }
 }
@@ -66,83 +66,83 @@ fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> 
             .model
             .bodies
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
             .ir()
             .model
             .coedges
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
             .ir()
             .model
             .curves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
             .ir()
             .model
             .loops
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
             .ir()
             .model
             .points
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
             .ir()
             .model
             .pcurves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
             .ir()
             .model
             .procedural_curves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
             .ir()
             .model
             .procedural_surfaces
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
             .ir()
             .model
             .regions
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
             .ir()
             .model
             .shells
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
             .ir()
             .model
             .surfaces
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::Native(name) => result
             .ir()
             .native
             .namespace("iges")
-            .and_then(|namespace| namespace.arenas.get(name))
+            .and_then(|namespace| namespace.arenas().get(name))
             .into_iter()
             .flatten()
             .map(cadmpeg_ir::NativeRecord::id)
@@ -248,7 +248,7 @@ fn decode_matrix(
             let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
             let scan = crate::card::scan(&bytes).expect("integration fixture cards");
             let (global, _global_losses) = crate::global::parse(&scan).expect("integration global");
-            let (directory, _quarantined) = crate::directory::parse(&scan, global.dialect());
+            let (directory, _quarantined) = crate::directory::parse(&scan, global.global_table());
             let subject_count = directory
                 .iter()
                 .filter(|entry| entry.entity_type == subject_type)
@@ -351,7 +351,7 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("IGES inspection");
-    assert_eq!(summary.format, "iges");
+    assert_eq!(summary.format(), "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
     assert!(summary.notes.iter().any(|note| note.contains("5.3")));
     decode_matrix(vec![
@@ -403,7 +403,7 @@ fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["entities"].len(), 2);
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
             && loss.message
@@ -540,7 +540,7 @@ fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
         .native
         .namespace("iges")
         .expect("IGES native namespace")
-        .arenas["boundary_vertex_sewing"];
+        .arenas()["boundary_vertex_sewing"];
 
     assert!(records.iter().any(|record| {
         record.fields()["sewn"] == true

@@ -6,10 +6,13 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::semantic_annotations::{
-    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind, SemanticAnnotationTarget,
+    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
 };
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord};
+use crate::native::{
+    AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -24,8 +27,11 @@ pub(crate) fn transfer(
     );
     objects
         .iter()
-        .filter_map(|object| annotation_schema(&object.type_name).map(|schema| (object, schema)))
-        .map(|(object, schema)| {
+        .filter_map(|object| {
+            AnnotationRuntimeType::from_label(&object.type_name).map(|kind| (object, kind))
+        })
+        .map(|(object, kind)| {
+            let schema = annotation_schema(kind);
             let mut owned = by_owner
                 .get(object.id.as_str())
                 .cloned()
@@ -33,18 +39,18 @@ pub(crate) fn transfer(
             owned.sort_by_key(|property| (property.byte_start, property.byte_end));
             let references = owned
                 .iter()
-                .filter(|property| !property.links.is_empty())
-                .map(|property| (property.name.clone(), property.links.clone()))
+                .filter(|property| !property.links().is_empty())
+                .map(|property| (property.name.clone(), property.links().to_vec()))
                 .collect();
             let parameters = owned
                 .iter()
-                .filter(|property| property.links.is_empty())
+                .filter(|property| property.links().is_empty())
                 .map(|property| (property.name.clone(), property.raw_xml.clone()))
                 .collect();
             SemanticAnnotationRecord {
                 id: crate::native::native_id("annotation", &object.name),
                 object: object.id.clone(),
-                kind: object.type_name.clone(),
+                kind,
                 text: owned
                     .iter()
                     .filter(|property| schema.text.contains(&property.name.as_str()))
@@ -59,7 +65,7 @@ pub(crate) fn transfer(
                 parameters,
                 side_entries: owned
                     .iter()
-                    .flat_map(|property| &property.side_entries)
+                    .flat_map(|property| property.side_entries())
                     .cloned()
                     .collect(),
             }
@@ -83,54 +89,57 @@ pub(crate) fn transfer_neutral(
         })
         .collect::<HashMap<_, _>>();
     for (order, record) in records.iter().enumerate() {
-        let schema = annotation_schema(&record.kind).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "semantic annotation {} has unsupported runtime type {}",
-                record.id, record.kind
-            ))
-        })?;
+        let schema = annotation_schema(record.kind);
         let owned = properties
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
         validate_text_carriers(&owned, &schema)?;
-        let target = |link: &crate::native::LinkTarget| SemanticAnnotationTarget {
-            target: link
-                .document
-                .is_none()
-                .then(|| {
-                    link.object
-                        .as_ref()
-                        .filter(|object| !object.is_empty())
-                        .map(|object| {
-                            drawing_ids
-                                .get(object.as_str())
-                                .cloned()
-                                .unwrap_or_else(|| object.clone())
-                        })
-                })
-                .flatten(),
-            external_document: link.document.clone(),
-            external_object: link.document.as_ref().and(link.object.clone()),
-            is_null: link.document.is_none() && link.object.as_deref() == Some(""),
-            subelements: link.subelements.clone(),
+        let target = |link: &crate::native::LinkTarget| {
+            let target = match (link.document_name(), link.object()) {
+                (Some(document), Some(object)) => ReferenceTarget::External {
+                    document: document.to_owned(),
+                    object: object.to_owned(),
+                },
+                (None, None) => ReferenceTarget::Null,
+                (None, Some(object)) => ReferenceTarget::Local(
+                    drawing_ids
+                        .get(object)
+                        .cloned()
+                        .unwrap_or_else(|| object.to_owned()),
+                ),
+                _ => {
+                    return Err(CodecError::malformed(
+                        "semantic annotation reference has no complete target",
+                    ));
+                }
+            };
+            Ok(ReferenceSelection::new(target, link.subelements.clone()))
         };
+        let references = record
+            .references
+            .iter()
+            .map(|(role, references)| {
+                let references = references
+                    .iter()
+                    .map(&target)
+                    .collect::<Result<Vec<_>, CodecError>>()?;
+                Ok((role.clone(), references))
+            })
+            .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
         model.semantic_annotations.push(SemanticAnnotation {
-            id: SemanticAnnotationId(crate::native::model_id(
+            id: SemanticAnnotationId::mint(crate::native::model_id(
                 "semantic-annotation",
                 &record.object,
                 "content",
-            )),
+            ))
+            .expect("identity grammar"),
             object: record.object.clone(),
             kind: schema.kind.clone(),
-            runtime_type: record.kind.clone(),
+            runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             text: record.text.clone(),
-            references: record
-                .references
-                .iter()
-                .map(|(role, references)| (role.clone(), references.iter().map(target).collect()))
-                .collect(),
+            references,
             value: None,
             format: match schema.format {
                 Some(name) => string_property(&owned, name, "App::PropertyString")?,
@@ -150,7 +159,7 @@ pub(crate) fn transfer_neutral(
 }
 
 pub(crate) fn is_annotation_type(type_name: &str) -> bool {
-    annotation_schema(type_name).is_some()
+    AnnotationRuntimeType::from_label(type_name).is_some()
 }
 
 #[derive(Clone)]
@@ -181,10 +190,10 @@ const TECHDRAW_POSITION_TYPES: &[&str] = &[
     "App::PropertyFloat",
 ];
 
-fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
+fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
     use SemanticAnnotationKind as Kind;
-    let schema = match runtime_type {
-        "App::Annotation" => AnnotationSchema {
+    match runtime_type {
+        AnnotationRuntimeType::Annotation => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
             text_type: Some("App::PropertyStringList"),
@@ -194,7 +203,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_name: "App::PropertyVector",
             },
         },
-        "App::AnnotationLabel" => AnnotationSchema {
+        AnnotationRuntimeType::AnnotationLabel => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
             text_type: Some("App::PropertyStringList"),
@@ -204,7 +213,8 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_name: "App::PropertyVector",
             },
         },
-        "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython" => AnnotationSchema {
+        AnnotationRuntimeType::DrawViewAnnotation
+        | AnnotationRuntimeType::DrawViewAnnotationPython => AnnotationSchema {
             kind: Kind::Text,
             text: &["Text"],
             text_type: Some("App::PropertyStringList"),
@@ -215,20 +225,22 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython" => AnnotationSchema {
-            kind: Kind::Text,
-            text: &["AnnoText"],
-            text_type: Some("App::PropertyString"),
-            format: None,
-            position: PositionCarrier::Coordinates {
-                x_name: "X",
-                y_name: "Y",
-                type_names: TECHDRAW_POSITION_TYPES,
-            },
-        },
-        "TechDraw::DrawViewDimension"
-        | "TechDraw::DrawViewDimExtent"
-        | "TechDraw::LandmarkDimension" => AnnotationSchema {
+        AnnotationRuntimeType::DrawRichAnno | AnnotationRuntimeType::DrawRichAnnoPython => {
+            AnnotationSchema {
+                kind: Kind::Text,
+                text: &["AnnoText"],
+                text_type: Some("App::PropertyString"),
+                format: None,
+                position: PositionCarrier::Coordinates {
+                    x_name: "X",
+                    y_name: "Y",
+                    type_names: TECHDRAW_POSITION_TYPES,
+                },
+            }
+        }
+        AnnotationRuntimeType::DrawViewDimension
+        | AnnotationRuntimeType::DrawViewDimExtent
+        | AnnotationRuntimeType::LandmarkDimension => AnnotationSchema {
             kind: Kind::Dimension,
             text: &["FormatSpec"],
             text_type: Some("App::PropertyString"),
@@ -239,7 +251,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawViewBalloon" => AnnotationSchema {
+        AnnotationRuntimeType::DrawViewBalloon => AnnotationSchema {
             kind: Kind::Balloon,
             text: &["Text"],
             text_type: Some("App::PropertyString"),
@@ -250,21 +262,23 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawLeaderLine" | "TechDraw::DrawLeaderLinePython" => AnnotationSchema {
-            kind: Kind::Leader,
-            text: &[],
-            text_type: None,
-            format: None,
-            position: PositionCarrier::Coordinates {
-                x_name: "X",
-                y_name: "Y",
-                type_names: TECHDRAW_POSITION_TYPES,
-            },
-        },
-        "TechDraw::DrawViewSymbol"
-        | "TechDraw::DrawViewSymbolPython"
-        | "TechDraw::DrawWeldSymbol"
-        | "TechDraw::DrawWeldSymbolPython" => AnnotationSchema {
+        AnnotationRuntimeType::DrawLeaderLine | AnnotationRuntimeType::DrawLeaderLinePython => {
+            AnnotationSchema {
+                kind: Kind::Leader,
+                text: &[],
+                text_type: None,
+                format: None,
+                position: PositionCarrier::Coordinates {
+                    x_name: "X",
+                    y_name: "Y",
+                    type_names: TECHDRAW_POSITION_TYPES,
+                },
+            }
+        }
+        AnnotationRuntimeType::DrawViewSymbol
+        | AnnotationRuntimeType::DrawViewSymbolPython
+        | AnnotationRuntimeType::DrawWeldSymbol
+        | AnnotationRuntimeType::DrawWeldSymbolPython => AnnotationSchema {
             kind: Kind::Symbol,
             text: &["TailText"],
             text_type: Some("App::PropertyString"),
@@ -275,9 +289,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        _ => return None,
-    };
-    Some(schema)
+    }
 }
 
 fn annotation_position(
@@ -828,7 +840,9 @@ pub(crate) mod tests {
                         &mut Cursor::new(archive(&document)),
                         &DecodeOptions::default(),
                     ),
-                    Err(cadmpeg_core::CodecError::Malformed(_))
+                    Err(cadmpeg_ir::DecodeFailure::Codec(
+                        cadmpeg_core::CodecError::Malformed(_)
+                    ))
                 ),
                 "{case}"
             );
@@ -852,7 +866,7 @@ pub(crate) mod tests {
 
         assert!(matches!(
             error,
-            cadmpeg_core::CodecError::Malformed(message)
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains("position requires both X and Y")
         ));
     }
@@ -929,7 +943,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -956,7 +972,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -1019,9 +1037,7 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#Dimension"))
             .expect("drawing dimension");
         assert_eq!(
-            drawing_dimension.relationships["BaseView"][0]
-                .object
-                .as_deref(),
+            drawing_dimension.relationships["BaseView"][0].object(),
             Some("fcstd:native:object#View")
         );
         assert_eq!(drawing_dimension.sources.len(), 2);
@@ -1079,8 +1095,8 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#View"))
             .expect("neutral view");
         assert_eq!(
-            semantic_note.references["View"][0].target.as_deref(),
-            Some(neutral_view.id.0.as_str())
+            semantic_note.references["View"][0].local_target(),
+            Some(neutral_view.id.as_str())
         );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());

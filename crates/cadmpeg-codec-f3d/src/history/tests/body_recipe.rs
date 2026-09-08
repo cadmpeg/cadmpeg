@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 
 use super::super::*;
 
@@ -10,9 +10,11 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
     let body = |slot| Body {
-        id: BodyId(format!("f3d:brep:body#{slot}")),
+        id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId(format!("region#{slot}"))],
+        regions: vec![
+            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")
+        ],
         transform: None,
         name: None,
         color: None,
@@ -21,53 +23,62 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let bodies = [body(1), body(2)];
     let regions = [
         Region {
-            id: RegionId("region#1".into()),
+            id: RegionId::mint("test:model:region#1").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId("shell#1".into())],
+            shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
         },
         Region {
-            id: RegionId("region#2".into()),
+            id: RegionId::mint("test:model:region#2").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId("shell#2".into())],
+            shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
         },
     ];
     let shells = [
         Shell {
-            id: ShellId("shell#1".into()),
-            region: RegionId("region#1".into()),
-            faces: vec![FaceId("face#1".into())],
+            id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
+            region: RegionId::mint("test:model:region#1").expect("identity grammar"),
+            faces: vec![FaceId::mint("test:model:face#1").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
         Shell {
-            id: ShellId("shell#2".into()),
-            region: RegionId("region#2".into()),
-            faces: vec![FaceId("face#2".into())],
+            id: ShellId::mint("test:model:shell#2").expect("identity grammar"),
+            region: RegionId::mint("test:model:region#2").expect("identity grammar"),
+            faces: vec![FaceId::mint("test:model:face#2").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
     ];
-    let operand = crate::records::DesignBodyRecipeOperand {
+    let operand = crate::records::topology::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
         scope_record_index: 10,
-        owner: crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+        owner: crate::records::topology::DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         },
         record_index: 1,
         byte_offset: 0,
-        class_tag: "365".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
-        selector_tail_offset: None,
-        references: vec![crate::records::DesignBodyRecipeReference {
+
+        references: vec![crate::records::topology::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
             form: 33,
             form_offset: 0,
-            candidate_faces: vec![FaceId("face#1".into()), FaceId("face#2".into())],
+            candidate_faces: vec![
+                FaceId::mint("test:model:face#1").expect("identity grammar"),
+                FaceId::mint("test:model:face#2").expect("identity grammar"),
+            ],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],
@@ -87,9 +98,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         None
     );
 
-    let scope = crate::records::DesignParameterScope::empty(
+    let scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        "Combine",
+        crate::records::feature::DesignFeatureKind::Combine,
         10,
     );
     let native = "f3d:Design/BulkStream.dat:design-record#1".to_owned();

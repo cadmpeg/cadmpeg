@@ -2,9 +2,11 @@
 //! Source-less IR builders and encode/decode helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::SldprtCodec;
 
@@ -21,16 +23,23 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             CurveGeometry::Parabola { vertex, .. } => vertex.x += dx,
             CurveGeometry::Degenerate { point } => point.x += dx,
             CurveGeometry::Nurbs(nurbs) => {
-                for pole in &mut nurbs.control_points {
-                    pole.x += dx;
-                }
+                let _ = nurbs.edit_control_points(|points| {
+                    for pole in points {
+                        pole.x += dx;
+                    }
+                });
             }
-            CurveGeometry::Polyline { points, .. } => {
-                for point in points {
+            CurveGeometry::Polyline(polyline) => {
+                for point in polyline.points_mut() {
                     point.x += dx;
                 }
             }
-            CurveGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
+            CurveGeometry::Transformed { transform, .. } => {
+                let mut rows = transform.rows();
+                rows[0][3] += dx;
+                *transform =
+                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+            }
             CurveGeometry::Composite { .. } => {}
             CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Unknown { .. } => {}
@@ -51,16 +60,23 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 center.x += dx;
             }
             SurfaceGeometry::Nurbs(nurbs) => {
-                for pole in &mut nurbs.control_points {
-                    pole.x += dx;
-                }
+                let _ = nurbs.edit_control_points(|points| {
+                    for pole in points {
+                        pole.x += dx;
+                    }
+                });
             }
-            SurfaceGeometry::Polygonal { vertices, .. } => {
-                for vertex in vertices {
+            SurfaceGeometry::Polygonal(surface) => {
+                for vertex in surface.vertices_mut() {
                     vertex.x += dx;
                 }
             }
-            SurfaceGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
+            SurfaceGeometry::Transformed { transform, .. } => {
+                let mut rows = transform.rows();
+                rows[0][3] += dx;
+                *transform =
+                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+            }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Unknown { .. } => {}
         }
@@ -114,7 +130,10 @@ pub(crate) fn source_less_cube() -> cadmpeg_ir::CadIr {
 pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     SldprtCodec

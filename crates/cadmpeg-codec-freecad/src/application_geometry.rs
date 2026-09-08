@@ -30,16 +30,16 @@ pub(crate) fn transfer(
             "Points::PropertyPointKernel" => GeometryKind::Points,
             _ => continue,
         };
-        if property.side_entries.len() > 1 {
+        if property.side_entries().len() > 1 {
             return Err(CodecError::malformed(format_args!(
                 "geometry property {} references more than one side entry",
                 property.id
             )));
         }
         let root_entry = validate_value_root(property, geometry_kind.value_tag())?;
-        let side_entry_matches_root = property.side_entries.len()
+        let side_entry_matches_root = property.side_entries().len()
             == usize::from(root_entry.is_some())
-            && property.side_entries.first() == root_entry.as_ref();
+            && property.side_entries().first() == root_entry.as_ref();
         if !side_entry_matches_root {
             return Err(CodecError::Malformed(
                 "geometry property has an unowned side-entry reference".into(),
@@ -116,7 +116,7 @@ fn validate_value_root(
 
 fn association(property: &PropertyRecord) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "fcstd".into(),
+        format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: property.owner.clone(),
         name: Some(property.name.clone()),
         color: None,
@@ -163,22 +163,17 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         }
     }
     reader.finish("mesh payload")?;
-    Ok(Tessellation {
-        id: format!("{}:mesh", property.id),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: Some(association(property)),
+    Ok(Tessellation::from_decoded(
+        format!("{}:mesh", property.id),
         vertices,
         triangles,
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    })
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .with_source_object(Some(association(property))))
 }
 
 fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, CodecError> {
@@ -190,11 +185,12 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
         .map(|index| {
             let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
             Ok(Point {
-                id: PointId(crate::native::model_id(
+                id: PointId::mint(crate::native::model_id(
                     "point",
                     &property.id,
                     index.to_string(),
-                )),
+                ))
+                .expect("identity grammar"),
                 position: transform_point(transform, position),
                 source_object: Some(source_object.clone()),
             })
@@ -440,7 +436,7 @@ pub(crate) mod tests {
             .expect("application geometry");
         assert_eq!(result.ir().model.tessellations.len(), 1);
         let mesh = &result.ir().model.tessellations[0];
-        assert_eq!(mesh.triangles, [[0, 1, 2]]);
+        assert_eq!(mesh.triangles(), [[0, 1, 2]]);
         assert_eq!(
             mesh.source_object
                 .as_ref()
@@ -456,7 +452,7 @@ pub(crate) mod tests {
             result.ir().model.points[1].position,
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
-        assert!(result.report().geometry_transferred);
+        assert!(result.report().geometry_transferred());
         assert!(result.report().losses.is_empty());
     }
 
@@ -493,7 +489,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("references more than one side entry")
             ));
         }
@@ -533,7 +529,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("unowned side-entry reference")
             ));
         }
@@ -573,7 +569,7 @@ pub(crate) mod tests {
 
             assert!(matches!(
                 error,
-                cadmpeg_core::CodecError::Malformed(message)
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
                     if message.contains("must contain exactly one")
             ));
         }

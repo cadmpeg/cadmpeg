@@ -19,16 +19,14 @@ fuzz = "required"
 
 [[crate]]
 id = "f3d"
-names = ["F3dCodec", "validate_native"]
+names = ["F3dCodec"]
 fuzz = "absent"
 fuzz_reason = "focused targets call cadmpeg_asm"
 
 [[crate]]
 id = "freecad"
-names = [
-    "FcstdCodec",
-    "FcstdWriteOptions",
-    "validate_native",
+names = ["FcstdCodec"]
+hidden = [
     "FcstdDocumentBuilder",
     "FcstdPropertyValue",
     "FcstdPropertyOwner",
@@ -38,23 +36,28 @@ fuzz_reason = "focused targets call FcstdCodec::decode"
 
 [[crate]]
 id = "iges"
-names = ["IgesCodec", "IgesEncoder", "IgesWriteOptions", "IgesVersion"]
+names = ["IgesCodec", "IgesVersion"]
 fuzz = "required"
 
 [[crate]]
 id = "inventor"
-names = ["InventorCodec", "validate_native"]
+names = ["InventorCodec"]
 fuzz = "required"
 
 [[crate]]
 id = "nx"
 names = ["NxCodec"]
-hidden = ["saved_body_census_evidence", "BodyCensusEvidence"]
+hidden = [
+    "saved_body_census_evidence",
+    "BodyCensusEvaluation",
+    "FeatureBoundary",
+    "UnsupportedBodyCensusReason",
+]
 fuzz = "required"
 
 [[crate]]
 id = "rhino"
-names = ["RhinoCodec", "RhinoArchiveVersion", "RhinoEncoder"]
+names = ["RhinoCodec", "RhinoArchiveVersion"]
 fuzz = "required"
 
 [[crate]]
@@ -65,7 +68,7 @@ fuzz_reason = "focused targets call SatCodec"
 
 [[crate]]
 id = "sldprt"
-names = ["SldprtCodec", "validate_native"]
+names = ["SldprtCodec"]
 fuzz = "required"
 
 [[crate]]
@@ -74,8 +77,5 @@ names = [
     "StepCodec",
     "StepWriteOptions",
     "StepSchema",
-    "StepUnsupportedPolicy",
-    "write_step",
-    "StepError",
 ]
 fuzz = "required"

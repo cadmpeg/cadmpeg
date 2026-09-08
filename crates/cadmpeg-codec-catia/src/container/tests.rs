@@ -3,10 +3,12 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use super::*;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::test_support::{
     append_e5_record, external_reference_segment, finjpl_stream, outer_body_catpart,
@@ -44,7 +46,6 @@ fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor 
     Descriptor {
         name: name.to_string(),
         desc_offset: 0,
-        logical_length: length,
         extents: vec![Extent {
             phys_off: physical_offset,
             phys_len: length,
@@ -412,7 +413,7 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         .iter()
         .find(|descriptor| descriptor.desc_offset == descriptor_start)
         .expect("descriptor at synthesized header");
-    assert_eq!(descriptor.logical_length, extent_count as u32);
+    assert_eq!(descriptor.logical_length(), extent_count as u64);
     assert_eq!(descriptor.extents.len(), extent_count);
 }
 
@@ -421,7 +422,6 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
     let descriptor = Descriptor {
         name: "MAIN".to_string(),
         desc_offset: 0,
-        logical_length: 4,
         extents: vec![
             Extent {
                 phys_off: 1,
@@ -443,10 +443,6 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
     let mut outside = descriptor.clone();
     outside.extents[1].phys_off = 9;
     assert!(reconstruct_logical_stream(b"0123456789", &outside, 0).is_empty());
-
-    let mut wrong_length = descriptor.clone();
-    wrong_length.logical_length = 3;
-    assert!(reconstruct_logical_stream(b"0123456789", &wrong_length, 0).is_empty());
 }
 
 #[test]
@@ -454,7 +450,6 @@ fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
     let descriptor = Descriptor {
         name: "MAIN".to_string(),
         desc_offset: 0,
-        logical_length: 1,
         extents: vec![Extent {
             phys_off: 1,
             phys_len: 1,
@@ -475,7 +470,6 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
             descriptors: vec![Descriptor {
                 name: "MAIN".to_string(),
                 desc_offset: 16,
-                logical_length: 12,
                 extents: vec![
                     Extent {
                         phys_off: 40,
@@ -529,7 +523,6 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
             Descriptor {
                 name: "Data".to_string(),
                 desc_offset: 10,
-                logical_length: data_len,
                 extents: vec![Extent {
                     phys_off: 0,
                     phys_len: data_len,
@@ -539,7 +532,6 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
             Descriptor {
                 name: "1048_62eb7b6f_1825".to_string(),
                 desc_offset: 20,
-                logical_length: 1,
                 extents: vec![Extent {
                     phys_off: data_len,
                     phys_len: 1,
@@ -587,7 +579,6 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     ambiguous_outer.descriptors.push(Descriptor {
         name: "1048_62eb7b6f_1825".to_string(),
         desc_offset: 30,
-        logical_length: 1,
         extents: vec![Extent {
             phys_off: data_len,
             phys_len: 1,
@@ -648,7 +639,6 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
             Descriptor {
                 name: "Data".to_string(),
                 desc_offset: 10,
-                logical_length: data_len,
                 extents: vec![Extent {
                     phys_off: 0,
                     phys_len: data_len,
@@ -658,7 +648,6 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
             Descriptor {
                 name: "1048_62eb7b6f_1825".to_string(),
                 desc_offset: 20,
-                logical_length: 1,
                 extents: vec![Extent {
                     phys_off: data_len,
                     phys_len: 1,
@@ -701,8 +690,7 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let summary =
         crate::container::summarize(&crate::container::scan_bytes(outer_body_catpart(&bytes)));
     assert!(summary.entries.iter().any(|entry| {
-        entry.role == crate::container::role::FINJPL_SEGMENT
-            && entry.name == "CATSummaryInformation"
+        entry.role == ContainerRole::FinjplSegment && entry.name == "CATSummaryInformation"
     }));
 
     let mut truncated = bytes;
@@ -759,14 +747,13 @@ fn storage_property_parser_enumerates_external_catia_documents() {
         summary
             .entries
             .iter()
-            .filter(|entry| entry.role == crate::container::role::EXTERNAL_REFERENCE)
+            .filter(|entry| entry.role == ContainerRole::ExternalReference)
             .map(|entry| entry.name.as_str())
             .collect::<Vec<_>>(),
         ["Support.CATPart", "Assembly.CATProduct"]
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    assert_eq!(native.version, crate::native::CATIA_NATIVE_VERSION);
     assert_eq!(native.external_references.len(), 2);
     assert_eq!(native.external_references[0].target, "Support.CATPart");
     assert_eq!(
@@ -890,7 +877,7 @@ fn inspect_enumerates_streams_and_names_variant() {
     let summary = CatiaCodec
         .inspect(&mut cur, &cadmpeg_core::decode::InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.format, "catia");
+    assert_eq!(summary.format(), "catia");
     assert_eq!(summary.container_kind, "v5-cfv2");
     assert!(summary.entries.iter().any(|e| e.name == "MainDataStream"));
     assert!(summary.entries.iter().any(|e| e.name == "SurfacicReps"));

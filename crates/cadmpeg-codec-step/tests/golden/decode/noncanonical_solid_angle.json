@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,10 +42,7 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": []
-        },
-        "version": 1
+        "unknowns": []
       }
     },
     "source": {
@@ -57,6 +54,22 @@
         "data_sections": "1",
         "entity_instances": "1",
         "schema": "AUTOMOTIVE_DESIGN_CC2"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "unverified": {
+              "using": "step:ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:unknown",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -70,9 +83,34 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "step:ap242-e3"
+          }
+        },
+        "declared": {
+          "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:unknown",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "step"
+        },
+        "message": "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "parse.noncanonical-syntax",
@@ -112,7 +150,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

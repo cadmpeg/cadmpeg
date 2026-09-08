@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
+use crate::container::SectionRole;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
@@ -8,11 +10,10 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use serde::Serialize;
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{self, ContainerScan};
 
 use super::super::native::annotate;
 use super::super::native::emit_arena;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 pub(in super::super) fn preserve_passthrough_sections(
@@ -20,19 +21,16 @@ pub(in super::super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Vec<UnknownRecord> {
     let mut unknowns = Vec::new();
-    for section in scan
-        .framing
-        .sections
-        .iter()
-        .filter(|section| section.role == role::GEOMETRY || section.role == role::THUMBNAIL)
-    {
+    for section in scan.framing.sections.iter().filter(|section| {
+        section.role == SectionRole::PsbGeometry || section.role == SectionRole::Thumbnail
+    }) {
         let end = (section.offset + section.length).min(scan.framing.data.len());
         let section_bytes = &scan.framing.data[section.offset..end];
         let payload_start = section.raw_name.len().saturating_add(2);
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role == role::THUMBNAIL {
+        let (bytes, offset, tag, exactness) = if section.role == SectionRole::Thumbnail {
             if raw_is_compressed {
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
@@ -72,7 +70,8 @@ pub(in super::super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let id = UnknownId(format!("creo:{}:section#{}", section.name, offset));
+        let id = UnknownId::mint(format!("creo:{}:section#{}", section.name, offset))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -81,14 +80,12 @@ pub(in super::super) fn preserve_passthrough_sections(
             tag,
             exactness,
         );
-        unknowns.push(UnknownRecord {
+        unknowns.push(UnknownRecord::retained(
             id,
-            offset: offset as u64,
-            byte_len: bytes.len() as u64,
-            sha256: sha256_hex(bytes),
-            data: Some(bytes.to_vec()),
-            links: Vec::new(),
-        });
+            offset as u64,
+            bytes.to_vec(),
+            Vec::new(),
+        ));
     }
     unknowns
 }
@@ -131,7 +128,7 @@ pub(in super::super) fn emit_legacy_arenas(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let Some(legacy) = &scan.framing.legacy_ascii else {
+    let Some(legacy) = scan.framing.layout.legacy_ascii() else {
         return Ok(());
     };
     emit_arena(

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -143,93 +143,90 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "class_definitions": [
-              {
-                "id": "nx:om-entry-0:class#19",
-                "layout_prefix": [
-                  129,
-                  33
-                ],
-                "layout_terminal": 6,
-                "name": "UGS::FEATURE_RECORD",
-                "ordinal": 0,
-                "registry_suffix": [
-                  129,
-                  33,
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239,
-                  6
-                ],
-                "schema_fingerprint": [
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239
-                ],
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 95,
-                "trailing_code": 160
-              },
-              {
-                "id": "nx:om-entry-0:class#51",
-                "name": "UGS::ModlUtils::BooleanComponent",
-                "ordinal": 1,
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 127,
-                "trailing_code": 101
-              }
-            ],
-            "field_definitions": [
-              {
-                "id": "nx:om-entry-0:field#85",
-                "name": "m_target",
-                "ordinal": 0,
-                "registry_owner_class": 2,
-                "registry_storage_code": 2,
-                "registry_suffix": [
-                  1,
-                  2
-                ],
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 161,
-                "trailing_code": 128
-              },
-              {
-                "id": "nx:om-entry-0:field#97",
-                "name": "m_tools",
-                "ordinal": 1,
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 173,
-                "trailing_code": 129
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          },
-          "version": 189
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#19",
+              "layout_prefix": [
+                129,
+                33
+              ],
+              "layout_terminal": 6,
+              "name": "UGS::FEATURE_RECORD",
+              "ordinal": 0,
+              "registry_suffix": [
+                129,
+                33,
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239,
+                6
+              ],
+              "schema_fingerprint": [
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239
+              ],
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 95,
+              "trailing_code": 160
+            },
+            {
+              "id": "nx:om-entry-0:class#51",
+              "name": "UGS::ModlUtils::BooleanComponent",
+              "ordinal": 1,
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 127,
+              "trailing_code": 101
+            }
+          ],
+          "field_definitions": [
+            {
+              "id": "nx:om-entry-0:field#85",
+              "name": "m_target",
+              "ordinal": 0,
+              "registry_owner_class": 2,
+              "registry_storage_code": 2,
+              "registry_suffix": [
+                1,
+                2
+              ],
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 161,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:field#97",
+              "name": "m_tools",
+              "ordinal": 1,
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 173,
+              "trailing_code": 129
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -242,9 +239,29 @@
           "footer_offset": "430",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@209",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -258,6 +275,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@209",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -278,12 +316,20 @@
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@209 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 430, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 430, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
       ]
     },
@@ -394,12 +440,32 @@
           "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@209",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -442,10 +508,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@209 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 430, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 430, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999",
       "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
     ]
   }

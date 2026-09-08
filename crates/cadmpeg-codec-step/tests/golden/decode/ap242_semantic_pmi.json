@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -145,10 +145,7 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": []
-        },
-        "version": 1
+        "unknowns": []
       }
     },
     "source": {
@@ -160,6 +157,18 @@
         "data_sections": "1",
         "entity_instances": "25",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -173,6 +182,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [
@@ -191,7 +212,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

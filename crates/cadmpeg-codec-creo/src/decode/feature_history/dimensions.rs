@@ -13,6 +13,7 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
+use crate::feature::definitions::SolverSubtable;
 
 use super::super::native::annotate;
 use super::super::sketch_ids::{
@@ -25,10 +26,11 @@ pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
 ) -> ParameterId {
-    ParameterId(format!(
+    ParameterId::mint(format!(
         "creo:featdefs:parameter#{}:{external_id}",
         sketch_identity_scope(sketch),
     ))
+    .expect("identity grammar")
 }
 
 pub(in super::super) fn feature_dimension_parameter_row_id(
@@ -39,11 +41,12 @@ pub(in super::super) fn feature_dimension_parameter_row_id(
     occurrence.map_or_else(
         || feature_dimension_parameter_id(sketch, external_id),
         |occurrence| {
-            ParameterId(format!(
+            ParameterId::mint(format!(
                 "creo:featdefs:parameter#{}:{external_id}:{}",
                 sketch_identity_scope(sketch),
                 occurrence + 1
             ))
+            .expect("identity grammar")
         },
     )
 }
@@ -126,30 +129,13 @@ pub(in super::super) fn feature_relation_table_missing_rows(
         .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
 }
 
-pub(in super::super) fn feature_solver_table_complete(
-    header: Option<&crate::feature::FeatureSolverTableHeader>,
-    row_count: usize,
-) -> bool {
-    header.map_or(row_count == 0, |header| {
-        usize::try_from(header.declared_count).ok() == Some(row_count)
-    })
-}
-
-pub(in super::super) fn feature_solver_table_missing_rows(
-    header: Option<&crate::feature::FeatureSolverTableHeader>,
-    row_count: usize,
-) -> usize {
-    header.map_or(0, |header| {
-        usize::try_from(header.declared_count)
-            .unwrap_or(usize::MAX)
-            .saturating_sub(row_count)
-    })
-}
-
 pub(in super::super) fn feature_skamp_table_complete(
     table: &crate::feature::FeatureRelationTable,
 ) -> bool {
-    feature_solver_table_complete(table.skamp_header.as_ref(), table.skamps.len())
+    table
+        .skamps
+        .as_ref()
+        .is_none_or(SolverSubtable::is_complete)
 }
 
 pub(in super::super) fn feature_dimension_parameter_layout(
@@ -209,7 +195,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
         let sketch = model_sketch_id(scan, definition);
-        let owner = section_owner_feature_id(scan, definition.id, &sketch);
+        let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -221,7 +207,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
     }
     candidates.sort_by_key(|(_, definition, source_ordinal, _)| {
-        (definition.offset, definition.id, *source_ordinal)
+        (definition.offset, definition.identity.id(), *source_ordinal)
     });
     let keys = candidates
         .iter()
@@ -241,21 +227,24 @@ pub(in super::super) fn transfer_feature_dimensions(
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let owner_id = section_owner_feature_id(scan, definition.id, &sketch);
+        let owner_id = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
         if unique_external_ids[&dimension.external_id] == 1 {
             relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
         }
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             dimension.offset as u64,
             "section_dimension",
             Exactness::Derived,
         );
         let mut properties = BTreeMap::from([
-            ("definition_id".to_string(), definition.id.to_string()),
+            (
+                "definition_id".to_string(),
+                definition.identity.id().to_string(),
+            ),
             ("source_ordinal".to_string(), source_ordinal.to_string()),
             ("external_id".to_string(), dimension.external_id.to_string()),
             (
@@ -270,11 +259,11 @@ pub(in super::super) fn transfer_feature_dimensions(
         if let Some(auxiliary) = dimension.auxiliary_value {
             properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
         }
-        if dimension.value.is_none() {
+        if dimension.value.resolved().is_none() {
             properties.insert("value_state".to_string(), "unresolved".to_string());
         }
-        if let Some(token) = &dimension.unresolved_value_token {
-            let encoding = match token.as_slice() {
+        if let Some(token) = dimension.value.unresolved_token() {
+            let encoding = match token {
                 [0x00, _, _] => Some("three_byte_placeholder"),
                 [0x01, _, _, _] => Some("four_byte_placeholder"),
                 _ => None,
@@ -293,12 +282,16 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
         let expression = dimension
             .value
+            .resolved()
             .map_or_else(String::new, |value| value.to_string());
-        let value = dimension.value.map(|value| match dimension.value_unit {
-            crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
-            crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
-            crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
-        });
+        let value = dimension
+            .value
+            .resolved()
+            .map(|value| match dimension.unit() {
+                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
+                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
+                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+            });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
             owner: Some(owner_id.clone()),

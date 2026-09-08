@@ -24,8 +24,7 @@ fn typed_payloads_hide_embedded_schema_marker_bytes() {
                 offset: 5,
             },
             ValueField::Inline {
-                code: 0xea,
-                bytes: vec![0x32, 1, 2],
+                bytes: vec![0x32, 1, 2].try_into().unwrap(),
                 offset: 15,
             },
             ValueField::Marker {
@@ -133,8 +132,8 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
     let blocks = crate::value_block::parse(&bytes);
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pos, 0);
-    assert_eq!(blocks[0].declared_len, 15);
-    assert_eq!(blocks[0].total_len, 16);
+    assert_eq!(blocks[0].declared_len(), 15);
+    assert_eq!(blocks[0].total_len(), 16);
     assert_eq!(blocks[0].payload, payload);
 }
 
@@ -147,4 +146,36 @@ fn native_value_blocks_require_a_complete_adjacent_catalog() {
     assert!(crate::native::CatiaNative::decode(&bytes)
         .value_blocks
         .is_empty());
+}
+
+#[test]
+fn serialized_length_must_match_payload() {
+    let block = ValueBlock {
+        pos: 12,
+        payload: vec![0x87, 0xe8],
+    };
+    let mut wire = serde_json::to_value(&block).unwrap();
+    assert_eq!(wire["declared_len"], 8);
+    assert_eq!(
+        serde_json::from_value::<ValueBlock>(wire.clone()).unwrap(),
+        block
+    );
+    wire["declared_len"] = serde_json::json!(7);
+    assert!(serde_json::from_value::<ValueBlock>(wire).is_err());
+}
+
+#[test]
+fn serialized_inline_code_must_match_the_inline_byte_count() {
+    let bytes = InlineBytes::try_from(vec![1, 2, 3]).unwrap();
+    let mut wire = serde_json::to_value(&bytes).unwrap();
+    assert_eq!(wire["code"], serde_json::json!(0xea));
+    assert_eq!(
+        serde_json::from_value::<InlineBytes>(wire.clone()).unwrap(),
+        bytes
+    );
+
+    wire["code"] = serde_json::json!(0xeb);
+    let error = serde_json::from_value::<InlineBytes>(wire)
+        .expect_err("inline code disagreeing with the byte count");
+    assert!(error.to_string().contains("code"), "{error}");
 }

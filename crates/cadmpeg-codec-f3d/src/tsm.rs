@@ -23,13 +23,84 @@ const FULL_CREASE_SHARPNESS: f64 = 1.0;
 const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1.0e-12;
 const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct HalfEdgeId(usize);
+
 #[derive(Clone, Copy)]
 struct HalfEdge {
+    next: HalfEdgeId,
+    previous: HalfEdgeId,
+    mate: HalfEdgeId,
+    vertex: usize,
+    face: Option<usize>,
+}
+
+impl HalfEdgeId {
+    fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ParsedHalfEdge {
     next: usize,
     previous: usize,
     mate: usize,
     vertex: usize,
     face: i64,
+}
+
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
+fn compact_half_edges(
+    name: &str,
+    slots: Vec<Option<ParsedHalfEdge>>,
+    face_roots: &mut [Option<usize>],
+    edge_roots: &mut [Option<usize>],
+    vertex_roots: &mut [Option<(usize, SubdGripDirection)>],
+) -> Result<Vec<HalfEdge>, CodecError> {
+    let mut map = vec![None; slots.len()];
+    let mut dense = Vec::new();
+    for (old, half) in slots.iter().enumerate() {
+        if let Some(half) = half {
+            map[old] = Some(HalfEdgeId(dense.len()));
+            dense.push(*half);
+        }
+    }
+    let remap = |index: usize| {
+        map.get(index)
+            .copied()
+            .flatten()
+            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))
+    };
+    let half_edges =
+        dense
+            .into_iter()
+            .map(|half| {
+                Ok(HalfEdge {
+                    next: remap(half.next)?,
+                    previous: remap(half.previous)?,
+                    mate: remap(half.mate)?,
+                    vertex: half.vertex,
+                    face: match half.face {
+                        -1 => None,
+                        face => Some(usize::try_from(face).map_err(|_| {
+                            malformed(name, "half-edge face is negative or overflows")
+                        })?),
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+    for root in face_roots.iter_mut().flatten() {
+        *root = remap(*root)?.index();
+    }
+    for root in edge_roots.iter_mut().flatten() {
+        *root = remap(*root)?.index();
+    }
+    for root in vertex_roots.iter_mut().flatten() {
+        root.0 = remap(root.0)?.index();
+    }
+    Ok(half_edges)
 }
 
 #[derive(Clone, Copy)]
@@ -158,26 +229,17 @@ struct ParsedCage {
 #[derive(Debug)]
 struct DerivedGripConnectivity {
     vertex: usize,
-    wedges: usize,
     spoke_lengths: Vec<usize>,
-    grip_indices: Vec<i64>,
+    grip_indices: Vec<Option<usize>>,
 }
 
 #[derive(Clone, Copy)]
-struct FanSlot {
-    half_edge: Option<usize>,
-    face: Option<usize>,
-    phantom: bool,
-}
-
-impl FanSlot {
-    fn phantom() -> Self {
-        Self {
-            half_edge: None,
-            face: None,
-            phantom: true,
-        }
-    }
+enum FanSlot {
+    Phantom,
+    Slot {
+        half_edge: usize,
+        face: Option<usize>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,10 +249,10 @@ enum SymmetryMode {
 }
 
 #[derive(Debug)]
-struct SymmetryBlock {
+struct PartialSymmetryBlock {
     mode: SymmetryMode,
     plane: Option<[f64; 12]>,
-    radial_segments: Option<u32>,
+    radial_segments: Option<std::num::NonZeroU32>,
     radial_sweep: Option<f64>,
     radial_maps: Vec<SubdRadialSymmetryMap>,
     record_kinds: BTreeSet<String>,
@@ -202,7 +264,7 @@ struct SymmetryBlock {
     vertex_reverse: BTreeMap<usize, usize>,
 }
 
-impl SymmetryBlock {
+impl PartialSymmetryBlock {
     fn new(mode: SymmetryMode) -> Self {
         Self {
             mode,
@@ -219,6 +281,26 @@ impl SymmetryBlock {
             vertex_reverse: BTreeMap::new(),
         }
     }
+}
+
+#[derive(Debug)]
+struct SymmetryBlock {
+    plane: [f64; 12],
+    kind: SymmetryKind,
+}
+
+#[derive(Debug)]
+enum SymmetryKind {
+    Correspondence {
+        face: BTreeMap<usize, usize>,
+        edge: BTreeMap<usize, usize>,
+        vertex: BTreeMap<usize, usize>,
+    },
+    Radial {
+        segments: std::num::NonZeroU32,
+        sweep: f64,
+        maps: Vec<SubdRadialSymmetryMap>,
+    },
 }
 
 fn parse_pairs<'a>(
@@ -362,13 +444,11 @@ fn build_fan(
     name: &str,
     vertex: usize,
     root: usize,
-    half_edges: &[Option<HalfEdge>],
+    half_edges: &[HalfEdge],
     face_live: &[bool],
 ) -> Result<Vec<FanSlot>, CodecError> {
-    let root_half = half_edges
-        .get(root)
-        .and_then(Option::as_ref)
-        .ok_or_else(|| malformed(name, "vertex root names a deleted half-edge"))?;
+    let root_id = HalfEdgeId(root);
+    let root_half = &half_edges[root];
     if root_half.vertex != vertex {
         return Err(malformed(
             name,
@@ -378,10 +458,10 @@ fn build_fan(
 
     let mut fan = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut current = root;
+    let mut current = root_id;
     loop {
         if !seen.insert(current) {
-            if current == root {
+            if current == root_id {
                 break;
             }
             return Err(malformed(
@@ -389,56 +469,37 @@ fn build_fan(
                 "vertex half-edge fan repeats before its root",
             ));
         }
-        let half = half_edges
-            .get(current)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| malformed(name, "vertex half-edge fan names a deleted slot"))?;
+        let half = &half_edges[current.index()];
         if half.vertex != vertex {
             return Err(malformed(
                 name,
                 "vertex half-edge fan leaves its terminal vertex",
             ));
         }
-        let face = match half.face {
-            -1 => None,
-            face if face >= 0 && face_live.get(face as usize).copied().unwrap_or(false) => {
-                Some(face as usize)
-            }
-            _ => {
-                return Err(malformed(
-                    name,
-                    "vertex half-edge fan names an invalid face",
-                ))
-            }
-        };
-        fan.push(FanSlot {
-            half_edge: Some(current),
-            face,
-            phantom: false,
+        if half
+            .face
+            .is_some_and(|face| !face_live.get(face).copied().unwrap_or(false))
+        {
+            return Err(malformed(
+                name,
+                "vertex half-edge fan names an invalid face",
+            ));
+        }
+        fan.push(FanSlot::Slot {
+            half_edge: current.index(),
+            face: half.face,
         });
 
-        let next = half_edges
-            .get(half.next)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| malformed(name, "vertex fan next half-edge is deleted"))?;
-        current = half_edges
-            .get(next.mate)
-            .and_then(Option::as_ref)
-            .map(|mate| {
-                if mate.vertex == vertex {
-                    next.mate
-                } else {
-                    usize::MAX
-                }
-            })
-            .ok_or_else(|| malformed(name, "vertex fan mate half-edge is deleted"))?;
-        if current == usize::MAX {
+        let next = &half_edges[half.next.index()];
+        let mate = &half_edges[next.mate.index()];
+        let Some(rotated) = (mate.vertex == vertex).then_some(next.mate) else {
             return Err(malformed(
                 name,
                 "vertex fan rotation leaves its terminal vertex",
             ));
-        }
-        if current == root {
+        };
+        current = rotated;
+        if current == root_id {
             break;
         }
         if seen.len() >= half_edges.len() {
@@ -449,7 +510,10 @@ fn build_fan(
     let gap_positions = fan
         .iter()
         .enumerate()
-        .filter_map(|(index, slot)| slot.face.is_none().then_some(index))
+        .filter_map(|(index, slot)| match slot {
+            FanSlot::Slot { face: None, .. } => Some(index),
+            FanSlot::Phantom | FanSlot::Slot { face: Some(_), .. } => None,
+        })
         .collect::<Vec<_>>();
     if gap_positions.len() > 1 {
         return Err(malformed(
@@ -460,82 +524,44 @@ fn build_fan(
     if let Some(gap) = gap_positions.first().copied() {
         let phantom_count = 4usize.saturating_sub(fan.len());
         for _ in 0..phantom_count {
-            fan.insert(gap + 1, FanSlot::phantom());
+            fan.insert(gap + 1, FanSlot::Phantom);
         }
     }
     Ok(fan)
 }
 
-struct GripDecodeContext<'a> {
-    name: &'a str,
-    vertex: usize,
-    grip_vertices: &'a [GripVertexMarker],
-    grip_points: &'a [Option<GripPoint>],
-    grip_owners: &'a mut [Option<usize>],
-}
-
-impl GripDecodeContext<'_> {
-    fn block(
-        &mut self,
-        indices: &[i64],
-        cursor: &mut usize,
-        count: usize,
-    ) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
-        let end = cursor
-            .checked_add(count)
-            .ok_or_else(|| malformed(self.name, "derived-grip block arity overflows"))?;
-        let values = indices.get(*cursor..end).ok_or_else(|| {
-            malformed(
-                self.name,
-                "derived-grip run is shorter than its declared arity",
-            )
-        })?;
-        *cursor = end;
-        values
-            .iter()
-            .map(|index| match *index {
-                -1 => Ok(None),
-                index if index >= 0 => {
-                    let index = usize::try_from(index)
-                        .map_err(|_| malformed(self.name, "derived-grip index overflows"))?;
-                    if !matches!(
-                        self.grip_vertices.get(index),
-                        Some(GripVertexMarker::Secondary(Some(owner))) if *owner == self.vertex
-                    ) {
-                        return Err(malformed(
-                            self.name,
-                            "derived-grip entry is not a secondary grip of its vertex",
-                        ));
-                    }
-                    let point =
-                        self.grip_points
-                            .get(index)
-                            .copied()
-                            .flatten()
-                            .ok_or_else(|| {
-                                malformed(self.name, "derived-grip entry names a deleted grip")
-                            })?;
-                    let owner_slot = self.grip_owners.get_mut(index).ok_or_else(|| {
-                        malformed(self.name, "derived-grip entry is out of range")
+fn grip_block(
+    name: &str,
+    grip_points: &[Option<GripPoint>],
+    indices: &[Option<usize>],
+    cursor: &mut usize,
+    count: usize,
+) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
+    let end = cursor
+        .checked_add(count)
+        .ok_or_else(|| malformed(name, "derived-grip block arity overflows"))?;
+    let values = indices
+        .get(*cursor..end)
+        .ok_or_else(|| malformed(name, "derived-grip run is shorter than its declared arity"))?;
+    *cursor = end;
+    values
+        .iter()
+        .map(|index| {
+            index
+                .map(|index| {
+                    let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
+                        malformed(name, "derived-grip entry names a deleted grip")
                     })?;
-                    if owner_slot.replace(self.vertex).is_some() {
-                        return Err(malformed(
-                            self.name,
-                            "secondary grip is named more than once",
-                        ));
-                    }
-                    Ok(Some(SubdSecondaryGrip {
-                        source_index: u32::try_from(index).map_err(|_| {
-                            malformed(self.name, "secondary grip index overflows IR")
-                        })?,
+                    Ok(SubdSecondaryGrip {
+                        source_index: u32::try_from(index)
+                            .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
                         point: point.point,
                         weight: point.weight,
-                    }))
-                }
-                _ => Err(malformed(self.name, "derived-grip index is below -1")),
-            })
-            .collect()
-    }
+                    })
+                })
+                .transpose()
+        })
+        .collect()
 }
 
 struct SecondaryLayoutContext<'a> {
@@ -545,7 +571,7 @@ struct SecondaryLayoutContext<'a> {
     vertex_ir: &'a [Option<u32>],
     face_live: &'a [bool],
     face_ir: &'a [Option<u32>],
-    half_edges: &'a [Option<HalfEdge>],
+    half_edges: &'a [HalfEdge],
     edge_by_half: &'a [Option<(u32, bool)>],
     grip_vertices: &'a [GripVertexMarker],
     grip_points: &'a [Option<GripPoint>],
@@ -577,8 +603,6 @@ fn build_secondary_layouts(
     )?;
     let mut secondary_counts =
         ctx.alloc_filled(vertex_live.len(), 0usize, "f3d subd secondary-grip counts")?;
-    let mut grip_owners =
-        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for marker in grip_vertices {
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             *secondary_counts
@@ -605,7 +629,7 @@ fn build_secondary_layouts(
             .flatten()
             .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
         let fan = build_fan(name, vertex, root, half_edges, face_live)?;
-        if connectivity.wedges != fan.len() {
+        if connectivity.spoke_lengths.len() != fan.len() {
             return Err(malformed(
                 name,
                 "derived-grip wedge count does not match the completed vertex fan",
@@ -614,31 +638,33 @@ fn build_secondary_layouts(
 
         let offset = direction_offset(direction);
         let mut cursor = 0usize;
-        let mut wedges = Vec::with_capacity(connectivity.wedges);
-        for wedge in 0..connectivity.wedges {
-            let spoke_count = connectivity.spoke_lengths[wedge];
+        let mut wedges = Vec::with_capacity(connectivity.spoke_lengths.len());
+        for (wedge, &spoke_count) in connectivity.spoke_lengths.iter().enumerate() {
             let sector_count = spoke_count
-                .checked_mul(connectivity.spoke_lengths[(wedge + 1) % connectivity.wedges])
+                .checked_mul(
+                    connectivity.spoke_lengths[(wedge + 1) % connectivity.spoke_lengths.len()],
+                )
                 .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
             let slot = fan[(wedge + offset) % fan.len()];
-            if slot.phantom && spoke_count != 0 {
-                return Err(malformed(
-                    name,
-                    "phantom wedge carries a nonzero spoke length",
-                ));
-            }
-            let edge = match slot.half_edge {
-                Some(half) => Some(
-                    edge_by_half
-                        .get(half)
-                        .copied()
-                        .flatten()
-                        .map(|(edge, _)| edge)
-                        .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
-                ),
-                None => None,
+            let FanSlot::Slot { half_edge, face } = slot else {
+                if spoke_count != 0 {
+                    return Err(malformed(
+                        name,
+                        "phantom wedge carries a nonzero spoke length",
+                    ));
+                }
+                wedges.push(SubdGripWedge::Phantom);
+                continue;
             };
-            let sector_face = match slot.face {
+            let edge = Some(
+                edge_by_half
+                    .get(half_edge)
+                    .copied()
+                    .flatten()
+                    .map(|(edge, _)| edge)
+                    .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
+            );
+            let sector_face = match face {
                 Some(face) => Some(
                     face_ir
                         .get(face)
@@ -648,21 +674,23 @@ fn build_secondary_layouts(
                 ),
                 None => None,
             };
-            let mut grip_context = GripDecodeContext {
+            let spokes = grip_block(
                 name,
-                vertex,
-                grip_vertices,
                 grip_points,
-                grip_owners: &mut grip_owners,
-            };
-            let spokes =
-                grip_context.block(&connectivity.grip_indices, &mut cursor, spoke_count)?;
-            let sectors =
-                grip_context.block(&connectivity.grip_indices, &mut cursor, sector_count)?;
-            wedges.push(SubdGripWedge {
+                &connectivity.grip_indices,
+                &mut cursor,
+                spoke_count,
+            )?;
+            let sectors = grip_block(
+                name,
+                grip_points,
+                &connectivity.grip_indices,
+                &mut cursor,
+                sector_count,
+            )?;
+            wedges.push(SubdGripWedge::Slot {
                 edge,
                 sector_face,
-                phantom: slot.phantom,
                 spokes,
                 sectors,
             });
@@ -681,16 +709,6 @@ fn build_secondary_layouts(
                 name,
                 "secondary-grip ownership does not have exactly one derived-grip record",
             ));
-        }
-    }
-    for (index, marker) in grip_vertices.iter().enumerate() {
-        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
-            if grip_owners[index] != Some(*vertex) {
-                return Err(malformed(
-                    name,
-                    "secondary grip is not named exactly once by derived connectivity",
-                ));
-            }
         }
     }
     Ok(layouts)
@@ -713,7 +731,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_knot_records = Vec::new();
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
-    let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
+    let mut half_edges: Vec<Option<ParsedHalfEdge>> = Vec::new();
     let mut crease_edges = BTreeSet::new();
     let mut grip_vertices: Vec<GripVertexMarker> = Vec::new();
     let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
@@ -726,7 +744,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut selected_grips = BTreeSet::new();
     let mut editor_declarations = BTreeSet::new();
     let mut symmetry_blocks = Vec::new();
-    let mut current_symmetry: Option<SymmetryBlock> = None;
+    let mut current_symmetry: Option<PartialSymmetryBlock> = None;
     let mut terminal_declarations = BTreeSet::new();
     let mut unknown_record_kinds = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -805,7 +823,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("l") => match fields.next() {
                 None => half_edges.push(None),
                 next => {
-                    let half = HalfEdge {
+                    let half = ParsedHalfEdge {
                         next: parse_usize(name, next, "half-edge next index")?,
                         previous: parse_usize(name, fields.next(), "half-edge previous index")?,
                         mate: parse_usize(name, fields.next(), "half-edge mate index")?,
@@ -851,28 +869,37 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 Some("cg") if in_grip_map => {
                     let vertex = parse_usize(name, fields.next(), "derived-grip vertex")?;
                     let wedges = parse_usize(name, fields.next(), "derived-grip wedge count")?;
-                    if wedges == 0 {
-                        return Err(malformed(name, "derived-grip wedge count is zero"));
-                    }
                     let spoke_lengths = (0..wedges)
                         .map(|_| parse_usize(name, fields.next(), "derived-grip spoke length"))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let grip_count = (0..wedges).try_fold(0usize, |count, wedge| {
-                        let cross = spoke_lengths[wedge]
-                            .checked_mul(spoke_lengths[(wedge + 1) % wedges])
-                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
-                        count
-                            .checked_add(spoke_lengths[wedge])
-                            .and_then(|count| count.checked_add(cross))
-                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
-                    })?;
+                    if spoke_lengths.is_empty() {
+                        return Err(malformed(name, "derived-grip wedge count is zero"));
+                    }
+                    let grip_count = spoke_lengths.iter().enumerate().try_fold(
+                        0usize,
+                        |count, (wedge, &spoke_count)| {
+                            let cross = spoke_count
+                                .checked_mul(spoke_lengths[(wedge + 1) % spoke_lengths.len()])
+                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
+                            count
+                                .checked_add(spoke_count)
+                                .and_then(|count| count.checked_add(cross))
+                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
+                        },
+                    )?;
                     let grip_indices = (0..grip_count)
-                        .map(|_| parse_i64(name, fields.next(), "derived-grip index"))
+                        .map(
+                            |_| match parse_i64(name, fields.next(), "derived-grip index")? {
+                                -1 => Ok(None),
+                                index => usize::try_from(index).map(Some).map_err(|_| {
+                                    malformed(name, "derived-grip index is negative or overflows")
+                                }),
+                            },
+                        )
                         .collect::<Result<Vec<_>, _>>()?;
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
                         vertex,
-                        wedges,
                         spoke_lengths,
                         grip_indices,
                     });
@@ -915,7 +942,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     _ => return Err(malformed(name, "unsupported symmetry flags")),
                 };
                 require_end(name, fields, "symmetry header")?;
-                if let Some(block) = current_symmetry.replace(SymmetryBlock::new(mode)) {
+                if let Some(block) = current_symmetry.replace(PartialSymmetryBlock::new(mode)) {
                     symmetry_blocks.push(block);
                 }
             }
@@ -984,16 +1011,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     "segments" => {
                         let segments =
                             parse_usize(name, fields.next(), "radial symmetry segments")?;
-                        if segments == 0 {
-                            return Err(malformed(
-                                name,
-                                "radial symmetry segments is not positive",
-                            ));
-                        }
-                        block.radial_segments =
-                            Some(u32::try_from(segments).map_err(|_| {
+                        block.radial_segments = Some(
+                            std::num::NonZeroU32::new(u32::try_from(segments).map_err(|_| {
                                 malformed(name, "radial symmetry segments exceed u32")
-                            })?);
+                            })?)
+                            .ok_or_else(|| {
+                                malformed(name, "radial symmetry segments is not positive")
+                            })?,
+                        );
                         require_end(name, fields, "radial symmetry segments")?;
                     }
                     "sweep" => {
@@ -1080,7 +1105,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     {
         return Err(malformed(name, "control cage is incomplete"));
     }
-    let populated = |half: usize| half_edges.get(half).is_some_and(Option::is_some);
+    let half_edges = compact_half_edges(
+        name,
+        half_edges,
+        &mut face_roots,
+        &mut edge_roots,
+        &mut vertex_roots,
+    )?;
 
     let face_live = face_roots.iter().map(Option::is_some).collect::<Vec<_>>();
     let edge_live = edge_roots.iter().map(Option::is_some).collect::<Vec<_>>();
@@ -1102,59 +1133,117 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "selected grip is out of range or deleted"));
         }
     }
-    for block in &symmetry_blocks {
-        if block.plane.is_none() {
-            return Err(malformed(name, "symmetry block has no plane"));
-        }
-        if block.mode == SymmetryMode::Correspondence {
-            validate_symmetry_map(
-                name,
-                &block.face_forward,
-                &block.face_reverse,
-                &face_live,
-                "face",
-            )?;
-            validate_symmetry_map(
-                name,
-                &block.edge_forward,
-                &block.edge_reverse,
-                &edge_live,
-                "edge",
-            )?;
-            validate_symmetry_map(
-                name,
-                &block.vertex_forward,
-                &block.vertex_reverse,
-                &vertex_live,
-                "vertex",
-            )?;
-        } else {
-            for required in ["segments", "sweep", "ef", "er", "ff", "fr", "vf", "vr"] {
-                if !block.record_kinds.contains(required) {
-                    return Err(malformed(
+    let symmetry_blocks = symmetry_blocks
+        .into_iter()
+        .map(|block| {
+            let plane = block
+                .plane
+                .ok_or_else(|| malformed(name, "symmetry block has no plane"))?;
+            let kind = match block.mode {
+                SymmetryMode::Correspondence => {
+                    validate_symmetry_map(
                         name,
-                        format!("radial symmetry block is missing {required}"),
-                    ));
+                        &block.face_forward,
+                        &block.face_reverse,
+                        &face_live,
+                        "face",
+                    )?;
+                    validate_symmetry_map(
+                        name,
+                        &block.edge_forward,
+                        &block.edge_reverse,
+                        &edge_live,
+                        "edge",
+                    )?;
+                    validate_symmetry_map(
+                        name,
+                        &block.vertex_forward,
+                        &block.vertex_reverse,
+                        &vertex_live,
+                        "vertex",
+                    )?;
+                    SymmetryKind::Correspondence {
+                        face: block.face_forward,
+                        edge: block.edge_forward,
+                        vertex: block.vertex_forward,
+                    }
                 }
-            }
-        }
-    }
+                SymmetryMode::Radial => {
+                    let segments = block.radial_segments.ok_or_else(|| {
+                        malformed(name, "radial symmetry block is missing segments")
+                    })?;
+                    let sweep = block
+                        .radial_sweep
+                        .ok_or_else(|| malformed(name, "radial symmetry block is missing sweep"))?;
+                    for selector in [
+                        SubdRadialMapSelector::Ef,
+                        SubdRadialMapSelector::Er,
+                        SubdRadialMapSelector::Ff,
+                        SubdRadialMapSelector::Fr,
+                        SubdRadialMapSelector::Vf,
+                        SubdRadialMapSelector::Vr,
+                    ] {
+                        if !block.radial_maps.iter().any(|map| map.selector == selector) {
+                            return Err(malformed(
+                                name,
+                                format!(
+                                    "radial symmetry block is missing {}",
+                                    match selector {
+                                        SubdRadialMapSelector::Ef => "ef",
+                                        SubdRadialMapSelector::Er => "er",
+                                        SubdRadialMapSelector::Ff => "ff",
+                                        SubdRadialMapSelector::Fr => "fr",
+                                        SubdRadialMapSelector::Vf => "vf",
+                                        SubdRadialMapSelector::Vr => "vr",
+                                    }
+                                ),
+                            ));
+                        }
+                    }
+                    SymmetryKind::Radial {
+                        segments,
+                        sweep,
+                        maps: block.radial_maps,
+                    }
+                }
+            };
+            Ok(SymmetryBlock { plane, kind })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut grip_owners =
+        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for connectivity in &derived_grips {
         if !vertex_live
             .get(connectivity.vertex)
             .copied()
             .unwrap_or(false)
-            || connectivity.grip_indices.iter().any(|index| match *index {
-                -1 => false,
-                index if index >= 0 => !matches!(
-                    grip_vertices.get(index as usize),
-                    Some(GripVertexMarker::Secondary(Some(vertex)))
-                        if *vertex == connectivity.vertex
-                ),
-                _ => true,
-            })
         {
             return Err(malformed(name, "derived-grip connectivity is out of range"));
+        }
+        for &index in connectivity.grip_indices.iter().flatten() {
+            if !matches!(grip_vertices.get(index), Some(GripVertexMarker::Secondary(Some(vertex))) if *vertex == connectivity.vertex)
+            {
+                return Err(malformed(
+                    name,
+                    "derived-grip entry is not a secondary grip of its vertex",
+                ));
+            }
+            let owner_slot = grip_owners
+                .get_mut(index)
+                .ok_or_else(|| malformed(name, "derived-grip entry is out of range"))?;
+            if owner_slot.replace(connectivity.vertex).is_some() {
+                return Err(malformed(name, "secondary grip is named more than once"));
+            }
+        }
+    }
+    for (index, marker) in grip_vertices.iter().enumerate() {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            if grip_owners[index] != Some(*vertex) {
+                return Err(malformed(
+                    name,
+                    "secondary grip is not named exactly once by derived connectivity",
+                ));
+            }
         }
     }
     for (marker, point) in grip_vertices.iter().zip(&grip_points) {
@@ -1171,17 +1260,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         }
     }
     for (index, half) in half_edges.iter().enumerate() {
-        let Some(half) = half else { continue };
-        if !populated(half.mate) || !populated(half.next) || !populated(half.previous) {
-            return Err(malformed(name, "half-edge names a deleted slot"));
-        }
-        let mate = half_edges[half.mate].expect("invariant: populated() checked half.mate");
-        let next = half_edges[half.next].expect("invariant: populated() checked half.next");
-        let previous =
-            half_edges[half.previous].expect("invariant: populated() checked half.previous");
-        if mate.mate != index
-            || next.previous != index
-            || previous.next != index
+        let id = HalfEdgeId(index);
+        let mate = &half_edges[half.mate.index()];
+        let next = &half_edges[half.next.index()];
+        let previous = &half_edges[half.previous.index()];
+        if mate.mate != id
+            || next.previous != id
+            || previous.next != id
             || !vertex_live.get(half.vertex).copied().unwrap_or(false)
         {
             return Err(malformed(name, "half-edge topology is inconsistent"));
@@ -1205,35 +1290,27 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let symmetries = symmetry_blocks
         .iter()
         .map(|block| {
-            let plane = symmetry_plane(
-                name,
-                block
-                    .plane
-                    .ok_or_else(|| malformed(name, "symmetry block has no plane"))?,
-            )?;
-            let kind = match block.mode {
-                SymmetryMode::Correspondence => SubdSymmetryKind::Correspondence,
-                SymmetryMode::Radial => SubdSymmetryKind::Radial {
-                    segments: block.radial_segments.ok_or_else(|| {
-                        malformed(name, "radial symmetry block has no segment count")
-                    })?,
-                    sweep: block
-                        .radial_sweep
-                        .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
-                },
-            };
-            let (face_pairs, edge_pairs, vertex_pairs, radial_maps) = match block.mode {
-                SymmetryMode::Correspondence => (
-                    remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
-                    remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
-                    remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
-                    Vec::new(),
+            let plane = symmetry_plane(name, block.plane)?;
+            let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
+                SymmetryKind::Correspondence { face, edge, vertex } => (
+                    SubdSymmetryKind::Correspondence,
+                    remap_symmetry_pairs(name, face, &face_ir, "face")?,
+                    remap_symmetry_pairs(name, edge, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(name, vertex, &vertex_ir, "vertex")?,
                 ),
-                SymmetryMode::Radial => (
+                SymmetryKind::Radial {
+                    segments,
+                    sweep,
+                    maps,
+                } => (
+                    SubdSymmetryKind::Radial {
+                        segments: segments.get(),
+                        sweep: *sweep,
+                        radial_maps: maps.clone(),
+                    },
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
-                    block.radial_maps.clone(),
                 ),
             };
             Ok(SubdSymmetry {
@@ -1242,7 +1319,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 face_pairs,
                 edge_pairs,
                 vertex_pairs,
-                radial_maps,
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1289,26 +1365,19 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_by_half =
         ctx.alloc_filled(half_edges.len(), None, "f3d subd half-edge ownership")?;
     let mut edge_vertices = Vec::with_capacity(live_vertices);
-    for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
-        let Some(root) = root else { continue };
-        if !populated(root) {
-            return Err(malformed(name, "edge root names a deleted slot"));
-        }
-        let half = half_edges[root].expect("invariant: populated() checked the edge root");
-        let edge = edge_ir[edge_slot].expect("invariant: compact() populated this edge slot");
+    for (edge, root) in (0_u32..).zip(edge_roots.iter().copied().flatten()) {
+        let half = &half_edges[root];
         if edge_by_half[root].replace((edge, false)).is_some()
-            || edge_by_half[half.mate].replace((edge, true)).is_some()
+            || edge_by_half[half.mate.index()]
+                .replace((edge, true))
+                .is_some()
         {
             return Err(malformed(name, "edge roots reuse a half-edge"));
         }
-        let mate = half_edges[half.mate].expect("invariant: half-edge validation checked the mate");
+        let mate = &half_edges[half.mate.index()];
         edge_vertices.push([vertex_of(mate.vertex)?, vertex_of(half.vertex)?]);
     }
-    if half_edges
-        .iter()
-        .zip(&edge_by_half)
-        .any(|(half, edge)| half.is_some() && edge.is_none())
-    {
+    if edge_by_half.iter().any(Option::is_none) {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
     }
     if edge_knot_intervals_ir.len() != edge_vertices.len() {
@@ -1335,21 +1404,19 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut faces = Vec::new();
     for (face_slot, start) in face_roots.iter().copied().enumerate() {
         let Some(start) = start else { continue };
-        if !populated(start) {
-            return Err(malformed(name, "face root names a deleted slot"));
-        }
+        let start_id = HalfEdgeId(start);
         let mut ring = Vec::new();
-        let mut current = start;
+        let mut current = start_id;
         loop {
-            let half = half_edges[current].expect("invariant: rings only walk populated slots");
-            if half.face != face_slot as i64 {
+            let half = &half_edges[current.index()];
+            if half.face != Some(face_slot) {
                 return Err(malformed(name, "face ring carries a different face index"));
             }
-            let (edge, reversed) = edge_by_half[current]
+            let (edge, reversed) = edge_by_half[current.index()]
                 .ok_or_else(|| malformed(name, "face half-edge has no edge"))?;
             ring.push(SubdEdgeUse { edge, reversed });
             current = half.next;
-            if current == start {
+            if current == start_id {
                 break;
             }
             if ring.len() > half_edges.len() {
@@ -1413,14 +1480,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: SubdId(format!("f3d:tspline:subd#{source_key}")),
+            id: SubdId::mint(format!("f3d:tspline:subd#{source_key}")).expect("identity grammar"),
             scheme: SubdScheme::CatmullClark,
             vertices,
             edges,
             faces,
             symmetries,
             source_object: Some(SourceObjectAssociation {
-                format: "f3d".into(),
+                format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: name.into(),
                 name: None,
                 color: None,
@@ -1435,6 +1502,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 
 #[cfg(test)]
 mod tests {
+    use super::SubdGripWedge;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     const EPS_KNOT_INTERVAL: f64 = 1.0e-12;
@@ -1519,11 +1587,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             .expect("secondary grip layout");
         assert_eq!(layout.direction, cadmpeg_ir::SubdGripDirection::North);
         assert_eq!(layout.wedges.len(), 4);
-        assert_eq!(layout.wedges[0].spokes[0].as_ref().unwrap().source_index, 4);
+        let SubdGripWedge::Slot { spokes, .. } = &layout.wedges[0] else {
+            panic!("first wedge is a fan slot");
+        };
+        assert_eq!(spokes[0].as_ref().unwrap().source_index, 4);
         assert!(layout.wedges[2..]
             .iter()
-            .all(|wedge| wedge.phantom && wedge.spokes.is_empty()));
-        assert!(layout.wedges[1].sector_face.is_none());
+            .all(|wedge| matches!(wedge, SubdGripWedge::Phantom)));
+        assert!(matches!(
+            &layout.wedges[1],
+            SubdGripWedge::Slot {
+                sector_face: None,
+                ..
+            }
+        ));
 
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
@@ -1579,16 +1656,31 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             .secondary_grips
             .as_ref()
             .expect("secondary grip layout");
-        assert_eq!(layout.wedges[0].spokes.len(), 2);
-        assert_eq!(layout.wedges[0].sectors.len(), 2);
-        assert_eq!(layout.wedges[1].spokes.len(), 1);
-        assert!(layout.wedges[1].sectors.is_empty());
+        let SubdGripWedge::Slot {
+            spokes: first_spokes,
+            sectors: first_sectors,
+            ..
+        } = &layout.wedges[0]
+        else {
+            panic!("first wedge is a fan slot");
+        };
+        let SubdGripWedge::Slot {
+            spokes: second_spokes,
+            sectors: second_sectors,
+            ..
+        } = &layout.wedges[1]
+        else {
+            panic!("second wedge is a fan slot");
+        };
+        assert_eq!(first_spokes.len(), 2);
+        assert_eq!(first_sectors.len(), 2);
+        assert_eq!(second_spokes.len(), 1);
+        assert!(second_sectors.is_empty());
         assert_eq!(
-            layout.wedges[0]
-                .spokes
+            first_spokes
                 .iter()
-                .chain(layout.wedges[0].sectors.iter())
-                .chain(layout.wedges[1].spokes.iter())
+                .chain(first_sectors)
+                .chain(second_spokes)
                 .map(|grip| grip.as_ref().unwrap().source_index)
                 .collect::<Vec<_>>(),
             vec![4, 5, 6, 7, 8]
@@ -1696,13 +1788,15 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert_quad(&cage.surface);
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
-        assert_eq!(
-            symmetry.kind,
-            cadmpeg_ir::SubdSymmetryKind::Radial {
-                segments: 4,
-                sweep: 1.0
-            }
-        );
+        let cadmpeg_ir::SubdSymmetryKind::Radial {
+            segments,
+            sweep,
+            radial_maps,
+        } = &symmetry.kind
+        else {
+            panic!("radial symmetry kind");
+        };
+        assert_eq!((*segments, *sweep), (4, 1.0));
         assert_eq!(
             symmetry.plane.origin,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
@@ -1719,7 +1813,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert!(symmetry.edge_pairs.is_empty());
         assert!(symmetry.vertex_pairs.is_empty());
         assert_eq!(
-            symmetry.radial_maps,
+            *radial_maps,
             vec![
                 cadmpeg_ir::SubdRadialSymmetryMap {
                     selector: cadmpeg_ir::SubdRadialMapSelector::Ef,
@@ -1763,8 +1857,12 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let replacement = format!("105r ef {native_id} {native_id}\n");
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
-        let ef = cage.surface.symmetries[0]
-            .radial_maps
+        let cadmpeg_ir::SubdSymmetryKind::Radial { radial_maps, .. } =
+            &cage.surface.symmetries[0].kind
+        else {
+            panic!("radial symmetry kind");
+        };
+        let ef = radial_maps
             .iter()
             .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
             .expect("ef radial map");

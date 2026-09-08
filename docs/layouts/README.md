@@ -54,9 +54,13 @@ The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_
   `tests` segment: a pin is a claim that a parser agrees with the table.
 - **`parsed_by` names a parser.** The path must exist and must not be a test
   file. It is a locator, not a substring check.
+- **Every `dialects` id is a declared row.** A record may key on
+  `docs/dialects.toml` ids; each must exist there. A table cannot key on a
+  dialect that does not exist, and a row deleted from the registry breaks
+  every table that named it.
 
 `layout_validator_rejects_broken_tables` runs the same validator over
-seventeen deliberately-broken fixtures in
+eighteen deliberately-broken fixtures in
 `crates/cadmpeg/tests/fixtures/layout-invalid/`, one per rule, so the rules
 are proven to fire rather than assumed to.
 
@@ -105,6 +109,7 @@ anchor = "`0x13` | POSITION | 24 B | 3D point (3×f64)"
 [[record]]
 name = "body"
 kind = "byte"                       # byte | slot | column
+dialects = ["acis:asm-binaryfile-8"]  # optional; registry ids that read it
 section = "6.2"
 anchor = "**Body (61 B):**"
 size = 61                           # optional; enforced for byte and column
@@ -122,6 +127,18 @@ decoder for a stateless reader. It does not verify a substring.
   arithmetic is enforced; `size` is recorded as metadata.
 - `column` — 1-based inclusive character columns, for fixed-column text records
   such as the IGES card. Columns must tile `1..=size`.
+
+`dialects` names the `docs/dialects.toml` rows whose grammar reads this record
+at these offsets. It is a positive claim about those rows and only those rows:
+an empty list says the table has not scoped the record, never that the record
+is dialect-invariant. A version word carried *inside* a record is not a
+dialect — key only on discriminants the document declares once, document-wide.
+
+Version scoping used to live in record names alone (`long_chunk_header_v50`),
+where nothing could check it: applying a fixed offset to the wrong version was
+invisible to every test. Where a name still carries a version, prefer the name
+that states the seam (`long_chunk_header_narrow` / `_wide`, the length-word
+width) and let the key carry the versions.
 
 ### `[[record.field]]`
 

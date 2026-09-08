@@ -9,8 +9,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_codec_step::{StepCodec, StepSchema};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::CadIr;
-use cadmpeg_codec_step::{write_step, StepWriteOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -31,5 +32,10 @@ fuzz_target!(|data: &[u8]| {
 
     // Write to STEP - should handle degenerate geometry gracefully
     let mut out = Cursor::new(Vec::new());
-    let _ = write_step(&ir, &mut out, &StepWriteOptions::default());
+    let _ = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut out));
 });

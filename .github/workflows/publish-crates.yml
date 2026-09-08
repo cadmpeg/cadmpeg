@@ -37,6 +37,7 @@ jobs:
           crates=(
             cadmpeg-core
             cadmpeg-container
+            cadmpeg-parasolid
             cadmpeg-protein
             cadmpeg-ir
             cadmpeg-asm
@@ -51,6 +52,7 @@ jobs:
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
+            cadmpeg-registry
             cadmpeg
           )
           version="${GITHUB_REF_NAME#v}"

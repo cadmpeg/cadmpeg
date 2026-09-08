@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section-equation scalar constraints, seeds, and resolved scalar values.
 
+use super::axis::SectionAxis;
+
+use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::{
     feature_dimension_table_complete, feature_relation_table_complete,
-};
-use super::super::sketch_transfer::{
-    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
 };
 use super::coordinates::resolved_section_coordinates;
 use super::equations_coordinate::{
     approximately_equal, section_equation_function_six_distance_values,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distances,
     SectionCoordinateEquation, SectionCoordinateVariable,
+};
+use crate::decode::sketch_transfer::constraints::{
+    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
 };
 
 const EPS_RADIAL_VALUE: f64 = 1.0e-9;
@@ -26,7 +29,7 @@ const EPS_SCALAR_EQUALITY: f64 = 1.0e-9;
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(u32, u32, usize)> {
+) -> Vec<(u32, u32, SectionAxis)> {
     section_equation_coordinate_equality_rows(definition, ambiguous_point_ids)
         .into_iter()
         .filter(|constraint| constraint.active)
@@ -38,7 +41,7 @@ pub(crate) fn section_equation_coordinate_equalities(
 pub(crate) struct SectionEquationCoordinateEquality {
     pub(crate) first: u32,
     pub(crate) second: u32,
-    pub(crate) axis: usize,
+    pub(crate) axis: SectionAxis,
     pub(crate) function_id: u32,
     pub(crate) equation_id: u32,
     pub(crate) offset: usize,
@@ -50,7 +53,7 @@ fn section_equation_function_ten_axis_alignment(
     equation: &crate::feature::FeatureEquation,
     variables: &crate::feature::FeatureVariableTable,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Option<(u32, u32, usize)> {
+) -> Option<(u32, u32, SectionAxis)> {
     if equation.function_id != 10 || equation.arguments.len() != 7 {
         return None;
     }
@@ -84,10 +87,13 @@ fn section_equation_function_ten_axis_alignment(
     else {
         return None;
     };
-    if !matches!(first_axis.variable_type, 1 | 2)
+    if !matches!(first_axis.variable_type, VariableType::U | VariableType::V)
         || first_axis.variable_type != second_axis.variable_type
         || first_axis.variable_type != target_axis.variable_type
-        || !matches!(first_ordinate.variable_type, 1 | 2)
+        || !matches!(
+            first_ordinate.variable_type,
+            VariableType::U | VariableType::V
+        )
         || first_ordinate.variable_type == first_axis.variable_type
         || first_ordinate.variable_type != second_ordinate.variable_type
         || first_axis.key != first_ordinate.key
@@ -95,8 +101,8 @@ fn section_equation_function_ten_axis_alignment(
         || first_axis.key == second_axis.key
         || target_axis.key == first_axis.key
         || target_axis.key == second_axis.key
-        || first_auxiliary.variable_type != 7
-        || second_auxiliary.variable_type != 7
+        || first_auxiliary.variable_type != VariableType::Auxiliary
+        || second_auxiliary.variable_type != VariableType::Auxiliary
         || [first_axis.key, second_axis.key, target_axis.key]
             .into_iter()
             .any(|point_id| ambiguous_point_ids.contains(&point_id))
@@ -107,7 +113,7 @@ fn section_equation_function_ten_axis_alignment(
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let auxiliary_is_zero = |row: &crate::feature::FeatureVariableRow| {
         reconcile_equation_value(
-            row.value,
+            row.value.value(),
             scalar_equality_values
                 .get(&(row.variable_type, row.key))
                 .copied()
@@ -126,12 +132,12 @@ fn section_equation_function_ten_axis_alignment(
     let first_point = points.get(&first_axis.key).copied()?;
     let second_point = points.get(&second_axis.key).copied()?;
     let target_point = points.get(&target_axis.key).copied()?;
-    let axis = usize::from(first_axis.variable_type == 2);
-    let constant_axis = 1usize.saturating_sub(axis);
-    let first_varying = first_point[axis];
-    let second_varying = second_point[axis];
-    let first_constant = first_point[constant_axis];
-    let second_constant = second_point[constant_axis];
+    let axis = SectionAxis::from_variable(first_axis.variable_type)?;
+    let constant_axis = axis.other();
+    let first_varying = first_point[axis.index()];
+    let second_varying = second_point[axis.index()];
+    let first_constant = first_point[constant_axis.index()];
+    let second_constant = second_point[constant_axis.index()];
     let (Some(first_varying), Some(second_varying), Some(first_constant), Some(second_constant)) = (
         first_varying,
         second_varying,
@@ -150,8 +156,8 @@ fn section_equation_function_ten_axis_alignment(
     .all(f64::is_finite)
         || approximately_equal(first_varying, second_varying)
         || !approximately_equal(first_constant, second_constant)
-        || target_point[axis].is_none()
-        || target_point[constant_axis].is_some()
+        || target_point[axis.index()].is_none()
+        || target_point[constant_axis.index()].is_some()
     {
         return None;
     }
@@ -228,15 +234,16 @@ pub(crate) fn section_equation_coordinate_equality_rows(
                     .copied()
                     .unwrap_or(Ok(None))
                     .ok()?;
-                if auxiliary.variable_type != 7
-                    || reconcile_equation_value(auxiliary.value, equality_value).ok()? != Some(0.0)
+                if auxiliary.variable_type != VariableType::Auxiliary
+                    || reconcile_equation_value(auxiliary.value.value(), equality_value).ok()?
+                        != Some(0.0)
                 {
                     return None;
                 }
             }
             if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, 1 | 2)
-                || auxiliary.is_some() && first.variable_type != 2
+                || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                || auxiliary.is_some() && first.variable_type != VariableType::V
                 || ambiguous_point_ids.contains(&first.key)
                 || ambiguous_point_ids.contains(&second.key)
                 || first.key == second.key
@@ -246,7 +253,7 @@ pub(crate) fn section_equation_coordinate_equality_rows(
             Some(SectionEquationCoordinateEquality {
                 first: first.key,
                 second: second.key,
-                axis: usize::from(first.variable_type == 2),
+                axis: SectionAxis::from_variable(first.variable_type)?,
                 function_id: equation.function_id,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
@@ -256,7 +263,7 @@ pub(crate) fn section_equation_coordinate_equality_rows(
         .collect()
 }
 
-pub(crate) type SectionScalarVariable = (u32, u32);
+pub(crate) type SectionScalarVariable = (VariableType, u32);
 
 #[derive(Clone, Copy)]
 pub(crate) struct SectionEquationMidpointConstraint {
@@ -319,14 +326,16 @@ pub(crate) fn section_equation_auxiliary_constraints(
                     continue;
                 };
                 if first.variable_type != second.variable_type
-                    || !matches!(first.variable_type, 1 | 2)
-                    || result.variable_type != 6
+                    || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                    || result.variable_type != VariableType::Result
                     || ambiguous_point_ids.contains(&first.key)
                     || ambiguous_point_ids.contains(&second.key)
                 {
                     continue;
                 }
-                let coordinate = usize::from(first.variable_type == 2);
+                let Some(coordinate) = SectionAxis::from_variable(first.variable_type) else {
+                    continue;
+                };
                 constraints
                     .midpoints
                     .push(SectionEquationMidpointConstraint {
@@ -344,11 +353,11 @@ pub(crate) fn section_equation_auxiliary_constraints(
                 ) else {
                     continue;
                 };
-                if first_u.variable_type != 1
-                    || first_v.variable_type != 2
+                if first_u.variable_type != VariableType::U
+                    || first_v.variable_type != VariableType::V
                     || first_u.key != first_v.key
-                    || second_u.variable_type != 6
-                    || second_v.variable_type != 6
+                    || second_u.variable_type != VariableType::Result
+                    || second_v.variable_type != VariableType::Result
                     || second_u.key == second_v.key
                     || ambiguous_point_ids.contains(&first_u.key)
                 {
@@ -374,7 +383,7 @@ pub(crate) fn section_equation_auxiliary_constraints(
 pub(crate) struct SectionFunctionFortyTwoMidpointCoordinate {
     pub(crate) first: u32,
     pub(crate) second: u32,
-    pub(crate) coordinate: usize,
+    pub(crate) coordinate: SectionAxis,
     pub(crate) value: Option<f64>,
     pub(crate) equation_id: u32,
     pub(crate) offset: usize,
@@ -452,21 +461,21 @@ pub(crate) fn section_equation_function_forty_two_midpoint_coordinate_rows(
                 return None;
             };
             if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, 1 | 2)
-                || result.variable_type != 6
+                || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                || result.variable_type != VariableType::Result
                 || ambiguous_point_ids.contains(&first.key)
                 || ambiguous_point_ids.contains(&second.key)
             {
                 return None;
             }
-            let coordinate = usize::from(first.variable_type == 2);
+            let coordinate = SectionAxis::from_variable(first.variable_type)?;
             let solved = coordinates
                 .get(&first.key)
-                .and_then(|point| point[coordinate])
+                .and_then(|point| point[coordinate.index()])
                 .zip(
                     coordinates
                         .get(&second.key)
-                        .and_then(|point| point[coordinate]),
+                        .and_then(|point| point[coordinate.index()]),
                 )
                 .map(|(first, second)| f64::midpoint(first, second));
             let result_variable = (result.variable_type, result.key);
@@ -475,7 +484,7 @@ pub(crate) fn section_equation_function_forty_two_midpoint_coordinate_rows(
                 .copied()
                 .unwrap_or(Ok(None))
                 .ok()?;
-            let stored = reconcile_equation_value(result.value, equality_value).ok()?;
+            let stored = reconcile_equation_value(result.value.value(), equality_value).ok()?;
             let value = reconcile_equation_value(stored, solved).ok()?;
             Some(SectionFunctionFortyTwoMidpointCoordinate {
                 first: first.key,
@@ -539,11 +548,11 @@ pub(crate) fn section_equation_function_thirty_one_point_coordinate_rows(
             ) else {
                 return None;
             };
-            if first_u.variable_type != 1
-                || first_v.variable_type != 2
+            if first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
                 || first_u.key != first_v.key
-                || second_u.variable_type != 6
-                || second_v.variable_type != 6
+                || second_u.variable_type != VariableType::Result
+                || second_v.variable_type != VariableType::Result
                 || second_u.key == second_v.key
                 || ambiguous_point_ids.contains(&first_u.key)
             {
@@ -562,12 +571,12 @@ pub(crate) fn section_equation_function_thirty_one_point_coordinate_rows(
                 .ok()?;
             let values = [
                 reconcile_equation_value(
-                    reconcile_equation_value(second_u.value, u_equality).ok()?,
+                    reconcile_equation_value(second_u.value.value(), u_equality).ok()?,
                     point[0],
                 )
                 .ok()?,
                 reconcile_equation_value(
-                    reconcile_equation_value(second_v.value, v_equality).ok()?,
+                    reconcile_equation_value(second_v.value.value(), v_equality).ok()?,
                     point[1],
                 )
                 .ok()?,
@@ -638,20 +647,21 @@ pub(crate) fn section_relation_radius_scalar_values(
             let dimension = dimensions
                 .rows
                 .get(usize::try_from(relation.dimension_id).ok()?)?;
-            if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !matches!(dimension.dimension_type, 1..=5)
-            {
+            if !matches!(dimension.dimension_type, 1..=5) {
                 return None;
             }
             let value = dimension
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)?;
             let value = if dimension.dimension_type == 4 {
                 value / 2.0
             } else {
                 value
             };
-            value.is_finite().then_some(((3, radius), value))
+            value
+                .is_finite()
+                .then_some(((VariableType::Radius, radius), value))
         })
         .collect()
 }
@@ -669,11 +679,11 @@ pub(crate) fn section_equation_scalar_seed_values(
     let ambiguous_point_ids = variables.reconciled_points().1;
     let mut values = BTreeMap::new();
     for row in &variables.rows {
-        if matches!(row.variable_type, 1 | 2) {
+        if matches!(row.variable_type, VariableType::U | VariableType::V) {
             continue;
         }
         let variable = (row.variable_type, row.key);
-        match row.value {
+        match row.value.value() {
             Some(value) if value.is_finite() => {
                 merge_scalar_value_candidate(&mut values, variable, value);
             }
@@ -803,7 +813,7 @@ pub(crate) fn append_section_equation_auxiliary_coordinate_constraints(
         let mut values = [None; 2];
         let mut underdetermined = false;
         let mut invalid = false;
-        for (coordinate, variable) in constraint.coordinates.into_iter().enumerate() {
+        for (coordinate, variable) in SectionAxis::ALL.into_iter().zip(constraint.coordinates) {
             match scalar_values.get(&variable) {
                 Some(Some(value)) => {
                     if stored_coordinates
@@ -813,7 +823,7 @@ pub(crate) fn append_section_equation_auxiliary_coordinate_constraints(
                         invalid = true;
                         break;
                     }
-                    values[coordinate] = Some(*value);
+                    values[coordinate.index()] = Some(*value);
                 }
                 Some(None) => {
                     invalid = true;
@@ -828,9 +838,9 @@ pub(crate) fn append_section_equation_auxiliary_coordinate_constraints(
         if invalid || underdetermined {
             continue;
         }
-        for (coordinate, value) in values
+        for (coordinate, value) in SectionAxis::ALL
             .into_iter()
-            .enumerate()
+            .zip(values)
             .filter_map(|(coordinate, value)| Some((coordinate, value?)))
         {
             equations.push(SectionCoordinateEquation::point_value(
@@ -861,10 +871,10 @@ pub(crate) fn section_equation_scalar_values_from_coordinates(
         let (Some(Some(first)), Some(Some(second))) = (
             coordinates
                 .get(&constraint.first.0)
-                .map(|point| point[constraint.first.1]),
+                .map(|point| point[constraint.first.1.index()]),
             coordinates
                 .get(&constraint.second.0)
-                .map(|point| point[constraint.second.1]),
+                .map(|point| point[constraint.second.1.index()]),
         ) else {
             continue;
         };
@@ -879,8 +889,8 @@ pub(crate) fn section_equation_scalar_values_from_coordinates(
         };
         let mut invalid = false;
         let mut candidates = Vec::new();
-        for (coordinate, variable) in constraint.coordinates.into_iter().enumerate() {
-            let Some(value) = point[coordinate] else {
+        for (coordinate, variable) in SectionAxis::ALL.into_iter().zip(constraint.coordinates) {
+            let Some(value) = point[coordinate.index()] else {
                 continue;
             };
             if !compatible(variable, value) {
@@ -952,9 +962,9 @@ fn direct_function_five_scalar_rows<'a>(
     else {
         return None;
     };
-    (first.variable_type == 6
-        && second.variable_type == 6
-        && selector.variable_type == 5
+    (first.variable_type == VariableType::Result
+        && second.variable_type == VariableType::Result
+        && selector.variable_type == VariableType::Selector
         && first.key != second.key)
         .then_some((first, second, selector))
 }
@@ -1002,7 +1012,7 @@ pub(crate) fn section_equation_scalar_equality_components(
                 (first.variable_type, first.key),
                 (second.variable_type, second.key),
                 (selector.variable_type, selector.key),
-                selector.value,
+                selector.value.value(),
             ));
             continue;
         }
@@ -1024,7 +1034,7 @@ pub(crate) fn section_equation_scalar_equality_components(
             continue;
         };
         if first.variable_type != second.variable_type
-            || matches!(first.variable_type, 1 | 2)
+            || matches!(first.variable_type, VariableType::U | VariableType::V)
             || first.key == second.key
         {
             continue;
@@ -1086,11 +1096,11 @@ fn scalar_equality_values_for_components(
     let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
     let mut invalid = BTreeSet::<SectionScalarVariable>::new();
     for row in rows {
-        if matches!(row.variable_type, 1 | 2) {
+        if matches!(row.variable_type, VariableType::U | VariableType::V) {
             continue;
         }
         let variable = (row.variable_type, row.key);
-        match row.value {
+        match row.value.value() {
             Some(value) if value.is_finite() => values.entry(variable).or_default().push(value),
             Some(_) => {
                 invalid.insert(variable);
@@ -1158,8 +1168,8 @@ pub(crate) fn section_equation_scalar_equality_values(
 pub(crate) struct SectionRadialConstraint {
     pub(crate) first: u32,
     pub(crate) second: u32,
-    pub(crate) radius: (u32, u32),
-    pub(crate) angle: (u32, u32),
+    pub(crate) radius: SectionScalarVariable,
+    pub(crate) angle: SectionScalarVariable,
     pub(crate) radius_value: Option<f64>,
     pub(crate) angle_value: Option<f64>,
     pub(crate) equation_id: u32,
@@ -1266,15 +1276,15 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
             let second_v = variables.rows.get(usize::try_from(*second_v).ok()?)?;
             let radius = variables.rows.get(usize::try_from(*radius).ok()?)?;
             let angle = variables.rows.get(usize::try_from(*angle).ok()?)?;
-            if first_u.variable_type != 1
-                || first_v.variable_type != 2
-                || second_u.variable_type != 1
-                || second_v.variable_type != 2
+            if first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
+                || second_u.variable_type != VariableType::U
+                || second_v.variable_type != VariableType::V
                 || first_u.key != first_v.key
                 || second_u.key != second_v.key
                 || first_u.key == second_u.key
-                || !matches!(radius.variable_type, 0 | 3)
-                || !matches!(angle.variable_type, 4 | 6)
+                || !matches!(radius.variable_type, VariableType::Dimension | VariableType::Radius)
+                || !matches!(angle.variable_type, VariableType::Parameter | VariableType::Result)
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
             {
@@ -1286,7 +1296,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                     .copied()
                     .unwrap_or(Ok(None))
                     .ok()?;
-                let resolved = reconcile_equation_value(row.value, equality_value).ok()?;
+                let resolved = reconcile_equation_value(row.value.value(), equality_value).ok()?;
                 let Some(scalar_values) = scalar_values else {
                     return Some(resolved);
                 };
@@ -1360,13 +1370,13 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
 
 pub(crate) fn resolved_section_scalar_values(
     definition: &crate::feature::FeatureDefinition,
-) -> BTreeMap<(u32, u32), f64> {
+) -> BTreeMap<SectionScalarVariable, f64> {
     let coordinates = resolved_section_coordinates(definition);
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
-    let mut values = BTreeMap::<(u32, u32), Option<f64>>::new();
+    let mut values = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     for (variable, value) in section_equation_scalar_equalities(definition) {
         values.insert(variable, Some(value));
     }
@@ -1472,7 +1482,7 @@ pub(crate) fn section_equation_function_five_scalar_equality_rows(
                 &variables.rows,
             )?;
             let selector_value = reconcile_equation_value(
-                selector.value,
+                selector.value.value(),
                 scalar_equality_values
                     .get(&(selector.variable_type, selector.key))
                     .copied()
@@ -1485,7 +1495,7 @@ pub(crate) fn section_equation_function_five_scalar_equality_rows(
             }
             for scalar in [first, second] {
                 reconcile_equation_value(
-                    scalar.value,
+                    scalar.value.value(),
                     scalar_equality_values
                         .get(&(scalar.variable_type, scalar.key))
                         .copied()
@@ -1570,7 +1580,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
                 return None;
             };
             let first_value = reconcile_equation_value(
-                first.value,
+                first.value.value(),
                 scalar_equality_values
                     .get(&(first.variable_type, first.key))
                     .copied()
@@ -1579,7 +1589,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
             )
             .ok()?;
             let second_value = reconcile_equation_value(
-                second.value,
+                second.value.value(),
                 scalar_equality_values
                     .get(&(second.variable_type, second.key))
                     .copied()
@@ -1588,7 +1598,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
             )
             .ok()?;
             let difference_value = reconcile_equation_value(
-                difference.value,
+                difference.value.value(),
                 scalar_equality_values
                     .get(&(difference.variable_type, difference.key))
                     .copied()
@@ -1597,7 +1607,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
             )
             .ok()?;
             let selector_value = reconcile_equation_value(
-                selector.value,
+                selector.value.value(),
                 scalar_equality_values
                     .get(&(selector.variable_type, selector.key))
                     .copied()
@@ -1605,10 +1615,10 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
                     .ok()?,
             )
             .ok()?;
-            if first.variable_type != 4
-                || second.variable_type != 4
-                || difference.variable_type != 0
-                || selector.variable_type != 5
+            if first.variable_type != VariableType::Parameter
+                || second.variable_type != VariableType::Parameter
+                || difference.variable_type != VariableType::Dimension
+                || selector.variable_type != VariableType::Selector
                 || selector_value != Some(0.0)
             {
                 return None;
@@ -1645,7 +1655,7 @@ pub(crate) fn section_equation_function_sixteen_angle_difference_rows(
 pub(crate) struct SectionFunctionFortyThreeAxisDistance {
     pub(crate) first: u32,
     pub(crate) second: u32,
-    pub(crate) coordinate: usize,
+    pub(crate) coordinate: SectionAxis,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
     pub(crate) equation_id: u32,
@@ -1736,25 +1746,25 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
             else {
                 return None;
             };
-            if first_u.variable_type != 1
-                || first_v.variable_type != 2
+            if first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
                 || first_u.key != first_v.key
-                || second_u.variable_type != 1
-                || second_v.variable_type != 2
+                || second_u.variable_type != VariableType::U
+                || second_v.variable_type != VariableType::V
                 || second_u.key != second_v.key
                 || first_u.key == second_u.key
-                || !matches!(first_auxiliary.variable_type, 4 | 5)
-                || !matches!(second_auxiliary.variable_type, 4 | 5)
-                || distance.variable_type != 0
-                || final_auxiliary.variable_type != 5
+                || !matches!(first_auxiliary.variable_type, VariableType::Parameter | VariableType::Selector)
+                || !matches!(second_auxiliary.variable_type, VariableType::Parameter | VariableType::Selector)
+                || distance.variable_type != VariableType::Dimension
+                || final_auxiliary.variable_type != VariableType::Selector
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
                 || [first_auxiliary, second_auxiliary, final_auxiliary]
                     .into_iter()
                     .any(|row| {
-                        row.value.is_some_and(|value| {
+                        row.value.value().is_some_and(|value| {
                             !value.is_finite()
-                                || row.variable_type == 5 && value.abs() > EPS_AXIS_ZERO
+                                || row.variable_type == VariableType::Selector && value.abs() > EPS_AXIS_ZERO
                         })
                     })
             {
@@ -1762,7 +1772,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
             }
             let auxiliary_value = |row: &crate::feature::FeatureVariableRow| {
                 reconcile_equation_value(
-                    row.value,
+                    row.value.value(),
                     scalar_equality_values
                         .get(&(row.variable_type, row.key))
                         .copied()
@@ -1777,7 +1787,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                 (final_auxiliary, auxiliary_value(final_auxiliary)?),
             ];
             if auxiliary_values.into_iter().any(|(row, value)| {
-                value.is_some_and(|value| row.variable_type == 5 && value.abs() > EPS_AXIS_ZERO)
+                value.is_some_and(|value| row.variable_type == VariableType::Selector && value.abs() > EPS_AXIS_ZERO)
             }) {
                 return None;
             }
@@ -1787,7 +1797,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                 .unwrap_or(Ok(None))
                 .ok()?;
             let distance_value =
-                reconcile_equation_value(distance.value, distance_equality).ok()?;
+                reconcile_equation_value(distance.value.value(), distance_equality).ok()?;
             let first = coordinates
                 .get(&first_u.key)
                 .and_then(|point| Some([point[0]?, point[1]?]))?;
@@ -1802,7 +1812,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                 return None;
             }
             let matches_distance = |value: f64| {
-                deltas.iter().enumerate().filter_map(move |(coordinate, delta)| {
+                SectionAxis::ALL.into_iter().zip(deltas.iter()).filter_map(move |(coordinate, delta)| {
                     let scale = value.abs().max(delta.abs()).max(1.0);
                     ((*delta - value).abs() <= EPS_AXIS_DISTANCE * scale)
                         .then_some((coordinate, *delta))
@@ -1816,9 +1826,7 @@ pub(crate) fn section_equation_function_forty_three_axis_distance_rows(
                 let value = matches.next()?;
                 matches.next().is_none().then_some(value)?
             } else {
-                let mut nonzero = deltas
-                    .iter()
-                    .enumerate()
+                let mut nonzero = SectionAxis::ALL.into_iter().zip(deltas.iter())
                     .filter_map(|(coordinate, delta)| {
                         (*delta > EPS_AXIS_ZERO).then_some((coordinate, *delta))
                     });

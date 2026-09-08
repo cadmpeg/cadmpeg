@@ -11,11 +11,12 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 use crate::legacy_geometry::LegacySurfaceNamespace;
+use crate::surface::SurfaceParameterRecord;
 
-use super::super::analytic::{cross, dot};
 use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
+use crate::vecmath::{cross, dot};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 
@@ -98,7 +99,10 @@ pub(in super::super) fn prototype_local_frame(
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
     let first_norm = dot(first, first).sqrt();
     let reference = normalized(first)?;
-    let torus = matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus);
+    let torus = matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Torus(_)
+    );
     let mut second_candidates =
         [(middle, torus), (third, true)]
             .into_iter()
@@ -190,11 +194,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             crate::surface::SurfacePrototypeFamily::Cylinder => {
                 crate::surface::SurfaceKind::Cylinder
             }
-            crate::surface::SurfacePrototypeFamily::Torus => {
+            crate::surface::SurfacePrototypeFamily::Torus(_) => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
             crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
-            crate::surface::SurfacePrototypeFamily::Spline => crate::surface::SurfaceKind::Spline,
+            crate::surface::SurfacePrototypeFamily::Spline(_) => {
+                crate::surface::SurfaceKind::Spline
+            }
             _ => continue,
         };
         let Some(section) = scan.framing.sections.iter().find(|section| {
@@ -271,7 +277,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     radius,
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Torus => {
+            crate::surface::SurfacePrototypeFamily::Torus(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
@@ -290,7 +296,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let radii =
                     crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
                         .filter(|parameter| parameter.offset == row.offset)
-                        .and_then(|parameter| parameter.torus_radius_overrides(row.type_byte))
+                        .and_then(SurfaceParameterRecord::torus_radius_overrides)
                         .map(|overrides| [overrides.radius1, overrides.radius2])
                         .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
@@ -330,7 +336,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     half_angle: frame.half_angle,
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Spline => {
+            crate::surface::SurfacePrototypeFamily::Spline(_) => {
                 let Some(nurbs) = prototype_spline_nurbs(record) else {
                     continue;
                 };
@@ -338,7 +344,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             }
             _ => unreachable!("prototype family was filtered above"),
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -354,7 +361,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("{}:{}", section.name, row.id),
                 name: None,
                 color: None,
@@ -453,7 +460,8 @@ pub(in super::super) fn transfer_positional_spline_replays(
         ) else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -469,7 +477,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             id,
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("{}:{}", section.name, row.id),
                 name: None,
                 color: None,
@@ -488,7 +496,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+    if !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) {
         return 0;
     }
     let mut carrier_counts = BTreeMap::<u32, usize>::new();
@@ -595,11 +606,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             }
             _ => continue,
         };
-        let id = SurfaceId(format!(
+        let id = SurfaceId::mint(format!(
             "{}{}",
             carrier.namespace.ir_prefix(),
             carrier.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -615,7 +627,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!(
                     "{}{}",
                     carrier.namespace.source_prefix(),

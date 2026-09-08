@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -1568,66 +1568,63 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:surf#2",
-                  "nx:s0:surf#3",
-                  "nx:s0:surf#4",
-                  "nx:s0:surf#5",
-                  "nx:s0:surf#6",
-                  "nx:s0:surf#7",
-                  "nx:s0:surf#8",
-                  "nx:s0:surf#9",
-                  "nx:s0:surf#10",
-                  "nx:s0:surf#11",
-                  "nx:s0:surf#12",
-                  "nx:s0:surf#13",
-                  "nx:s0:surf#14",
-                  "nx:s0:surf#15",
-                  "nx:s0:surf#16",
-                  "nx:s0:surf#17",
-                  "nx:s0:surf#18",
-                  "nx:s0:surf#19",
-                  "nx:s0:surf#20",
-                  "nx:s0:surf#21",
-                  "nx:s0:surf#22",
-                  "nx:s0:surf#23",
-                  "nx:s0:surf#24",
-                  "nx:s0:surf#25",
-                  "nx:s0:surf#26",
-                  "nx:s0:surf#27",
-                  "nx:s0:surf#28",
-                  "nx:s0:surf#29",
-                  "nx:s0:surf#30",
-                  "nx:s0:surf#31",
-                  "nx:s0:surf#32",
-                  "nx:s0:surf#33",
-                  "nx:s0:surf#34",
-                  "nx:s0:surf#35",
-                  "nx:s0:surf#36",
-                  "nx:s0:surf#37",
-                  "nx:s0:surf#38",
-                  "nx:s0:surf#39",
-                  "nx:s0:surf#40",
-                  "nx:s0:surf#41",
-                  "nx:s0:surf#42",
-                  "nx:s0:surf#43",
-                  "nx:s0:surf#44",
-                  "nx:s0:surf#45",
-                  "nx:s0:surf#46",
-                  "nx:s0:surf#47",
-                  "nx:s0:surf#48",
-                  "nx:s0:surf#49"
-                ]
-              }
-            ]
-          },
-          "version": 1
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:surf#2",
+                "nx:s0:surf#3",
+                "nx:s0:surf#4",
+                "nx:s0:surf#5",
+                "nx:s0:surf#6",
+                "nx:s0:surf#7",
+                "nx:s0:surf#8",
+                "nx:s0:surf#9",
+                "nx:s0:surf#10",
+                "nx:s0:surf#11",
+                "nx:s0:surf#12",
+                "nx:s0:surf#13",
+                "nx:s0:surf#14",
+                "nx:s0:surf#15",
+                "nx:s0:surf#16",
+                "nx:s0:surf#17",
+                "nx:s0:surf#18",
+                "nx:s0:surf#19",
+                "nx:s0:surf#20",
+                "nx:s0:surf#21",
+                "nx:s0:surf#22",
+                "nx:s0:surf#23",
+                "nx:s0:surf#24",
+                "nx:s0:surf#25",
+                "nx:s0:surf#26",
+                "nx:s0:surf#27",
+                "nx:s0:surf#28",
+                "nx:s0:surf#29",
+                "nx:s0:surf#30",
+                "nx:s0:surf#31",
+                "nx:s0:surf#32",
+                "nx:s0:surf#33",
+                "nx:s0:surf#34",
+                "nx:s0:surf#35",
+                "nx:s0:surf#36",
+                "nx:s0:surf#37",
+                "nx:s0:surf#38",
+                "nx:s0:surf#39",
+                "nx:s0:surf#40",
+                "nx:s0:surf#41",
+                "nx:s0:surf#42",
+                "nx:s0:surf#43",
+                "nx:s0:surf#44",
+                "nx:s0:surf#45",
+                "nx:s0:surf#46",
+                "nx:s0:surf#47",
+                "nx:s0:surf#48",
+                "nx:s0:surf#49"
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -1640,9 +1637,29 @@
           "footer_offset": "1632",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@76",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -1656,6 +1673,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@76",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -1667,12 +1705,20 @@
           },
           "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 50 analytic surface carrier(s) (50 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 0 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 1632, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 1632, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -2827,12 +2873,32 @@
           "sha256": "b81dfdb957911ef478fbd8843995c0dda70bd9de72a0ab7fbbee211480130da4",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@76",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -2875,10 +2941,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 1632, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 1632, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

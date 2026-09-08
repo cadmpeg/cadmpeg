@@ -11,6 +11,51 @@ if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
   python3 scripts/check-doc-anchors.py
 fi
 
+# Dialect ids are pinned forever, so a bad edit to the registry must not reach
+# a commit. Run the checker's own synthesized-violation suite first: it is the
+# only thing that proves the rules still fire.
+if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$|^crates/[^/]+/src/.*\.rs$'; then
+  echo "pre-commit: scripts/check-dialects.py"
+  python3 scripts/check-dialects.py --self-test
+  python3 scripts/check-dialects.py
+fi
+
+# The capability registry cross-references the identity registry, fixture tree,
+# and golden snapshots. Run its docs-only checks whenever an input is staged.
+if git diff --cached --name-only \
+    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
+  echo "pre-commit: scripts/check-dialect-support.py"
+  python3 scripts/check-dialect-support.py --self-test
+  python3 scripts/check-dialect-support.py
+fi
+
+# The compiled registry test owns write-catalog and alias policy. A support-only
+# edit does not enter the general Rust gate below, so run this focused test here.
+if git diff --cached --name-only | grep -qE '^docs/dialect-support\.toml$'; then
+  echo "pre-commit: compiled_write_catalogs_match_registry_policy"
+  cargo test -q -p cadmpeg-registry compiled_write_catalogs_match_registry_policy
+fi
+
+# Public API ledger rows and snapshots move together. Crate source changes also
+# run the structural check so this gate remains attached to the API inputs.
+if git diff --cached --name-only \
+    | grep -qE '^docs/public-api-ledger\.toml$|^docs/api-baseline/.*\.txt$|^crates/[^/]+/src/|^scripts/(check-public-api-ledger\.py|test_check_public_api_ledger\.py)$'; then
+  echo "pre-commit: scripts/check-public-api-ledger.py"
+  python3 scripts/check-public-api-ledger.py --self-test
+  python3 scripts/check-public-api-ledger.py
+fi
+
+# Every published capability table is rendered from the two registries. A
+# registry edit without a re-render, or a hand edit inside a generated region,
+# must not reach a commit. Run it whenever a registry, the renderer, or a file
+# that owns a generated region is staged.
+if git diff --cached --name-only \
+    | grep -qE '^docs/(dialects?(-support)?|evaluations)\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
+  echo "pre-commit: scripts/render-format-support.py --check"
+  python3 scripts/render-format-support.py --self-test
+  python3 scripts/render-format-support.py --check
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit

@@ -13,12 +13,12 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{
-    pcurve_edge_endpoint_evidence, placed_carriers, solved_topological_vertices, CarrierEquation,
-    PlaneEquation,
-};
 use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
+use crate::decode::analytic::carriers::placed_carriers;
+use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
+use crate::decode::analytic::pcurves::pcurve_edge_endpoint_evidence;
+use crate::decode::analytic::vertices::solved_topological_vertices;
 
 use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
@@ -93,9 +93,12 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let [Some(first_face), Some(second_face)] = row.faces else {
+            continue;
+        };
         let (Some(first), Some(second)) = (
-            carriers.get(&row.faces[0]).copied(),
-            carriers.get(&row.faces[1]).copied(),
+            carriers.get(&first_face.get()).copied(),
+            carriers.get(&second_face.get()).copied(),
         ) else {
             continue;
         };
@@ -107,7 +110,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ];
             Some(points)
         })();
-        let curve_id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let curve_id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         let allow_unresolved_endpoint_witness = endpoint_evidence
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
@@ -146,7 +150,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             id: id.clone(),
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -189,16 +193,21 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         shared_extrusion_generator_count: 0,
     };
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[0])
+        let [Some(first_face), Some(second_face)] = row.faces else {
+            continue;
+        };
+        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, first_face.get())
         else {
             continue;
         };
-        let Some(second) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[1])
+        let Some(second) =
+            crate::surface::unique_surface_row(&scan.surfaces.rows, second_face.get())
         else {
             continue;
         };
         let geometry = |surface_id| {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar");
             exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))
                 .map(|surface| &surface.geometry)
         };
@@ -210,14 +219,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         };
         let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
             (
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
                 crate::surface::SurfaceKind::Plane,
                 SurfaceGeometry::Nurbs(nurbs),
                 SurfaceGeometry::Plane { origin, normal, .. },
             )
             | (
                 crate::surface::SurfaceKind::Plane,
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
                 SurfaceGeometry::Plane { origin, normal, .. },
                 SurfaceGeometry::Nurbs(nurbs),
             ) => {
@@ -234,8 +243,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 }
             }
             (
-                crate::surface::SurfaceKind::Extrusion,
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
+                crate::surface::SurfaceKind::Extrusion(_),
                 SurfaceGeometry::Nurbs(first),
                 SurfaceGeometry::Nurbs(second),
             ) => shared_extrusion_generator_curve(first, second)
@@ -245,7 +254,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         let Some((geometry, kind)) = resolved else {
             continue;
         };
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -267,7 +277,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             id: id.clone(),
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -300,12 +310,11 @@ mod tests {
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
     use super::transfer_nurbs_boundary_curves;
     use super::{resolve_carrier_intersection_curve, transfer_carrier_intersection_curves};
-    use crate::decode::analytic::{CarrierEquation, PlaneEquation};
+    use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
     use crate::{container, curve, surface};
 
@@ -337,11 +346,10 @@ mod tests {
             .into_iter()
             .map(|id| surface::SurfaceRow {
                 id,
-                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             })
@@ -351,13 +359,13 @@ mod tests {
             type_byte: 0,
             feature_id: 0,
             directions: [0x01, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [10, 10],
             offset: 0,
         }];
         scan.curves.pcurves = vec![curve::PcurveEndpoints {
             curve_id: 10,
-            faces: [1, 3],
+            faces: [1, 3].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[0.0, 1.0], [1.0, 1.0]],
             face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]],
             offset: 0,
@@ -366,17 +374,17 @@ mod tests {
             HalfEdge {
                 id: HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
-                face_id: 1,
+                face_id: std::num::NonZeroU32::new(1),
                 next: None,
             },
             HalfEdge {
                 id: HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
-                face_id: 2,
+                face_id: std::num::NonZeroU32::new(2),
                 next: None,
             },
         ];
@@ -385,14 +393,14 @@ mod tests {
                 id: 1,
                 half_edges: vec![HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 }],
             },
             TopologicalVertex {
                 id: 2,
                 half_edges: vec![HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 }],
             },
         ];
@@ -400,7 +408,7 @@ mod tests {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 10,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
                 start_vertex_id: 1,
                 end_vertex_id: Some(2),
@@ -408,17 +416,18 @@ mod tests {
             HalfEdgeVertexIncidence {
                 half_edge: HalfEdgeId {
                     curve_id: 10,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
                 start_vertex_id: 2,
                 end_vertex_id: Some(1),
             },
         ];
 
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 2.0, 0.0),
                     normal: Vector3::new(0.0, 1.0, 0.0),
@@ -427,7 +436,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -436,7 +446,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#3".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#3".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown { record: None },
                 source_object: None,
             },
@@ -450,13 +461,15 @@ mod tests {
         );
         assert_eq!(
             transferred,
-            BTreeSet::from([CurveId("creo:visibgeom:curve#10".to_string())])
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
+            ])
         );
         assert!(matches!(
             ir.model
                 .curves
                 .iter()
-                .find(|curve| curve.id == CurveId("creo:visibgeom:curve#10".to_string()))
+                .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Line { origin, direction })
                 if origin.x == 0.0
@@ -474,21 +487,19 @@ mod tests {
         scan.surfaces.rows = vec![
             surface::SurfaceRow {
                 id: 1,
-                type_byte: surface::SurfaceKind::Extrusion.canonical_type_byte(),
-                kind: surface::SurfaceKind::Extrusion,
+                kind: surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
             surface::SurfaceRow {
                 id: 2,
-                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
@@ -498,35 +509,38 @@ mod tests {
             type_byte: 0,
             feature_id: 0,
             directions: [0; 2],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [10, 10],
             offset: 0,
         }];
 
         let extrusion = Surface {
-            id: SurfaceId("creo:visibgeom:surface#1".to_string()),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 1.0),
-                    Point3::new(1.0, 1.0, 1.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 1.0),
+                        Point3::new(1.0, 1.0, 1.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid test surface"),
+            ),
             source_object: None,
         };
         let plane = Surface {
-            id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -534,7 +548,7 @@ mod tests {
             },
             source_object: None,
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model
             .surfaces
             .extend([extrusion.clone(), extrusion, plane]);

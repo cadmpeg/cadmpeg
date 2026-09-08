@@ -3,13 +3,12 @@
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
 use super::records::TolerantCoedgeExtension;
-use crate::nurbs;
 use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
@@ -78,7 +77,7 @@ pub(crate) fn is_analytic_curve(head: &str) -> bool {
 pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     let c = collect_carrier(rec);
     let origin = *c.positions.first()?;
-    match rec.head.as_str() {
+    match rec.head() {
         "plane" => {
             let normal = *c.vectors.first()?;
             let normal = unit(normal);
@@ -204,15 +203,15 @@ pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
 }
 
 pub(crate) fn is_vertex_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "vertex" | "tvertex")
+    matches!(record.head(), "vertex" | "tvertex")
 }
 
 pub(crate) fn is_edge_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "edge" | "tedge")
+    matches!(record.head(), "edge" | "tedge")
 }
 
 pub(crate) fn is_coedge_record(record: &Record) -> bool {
-    matches!(record.head.as_str(), "coedge" | "tcoedge")
+    matches!(record.head(), "coedge" | "tcoedge")
 }
 
 pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
@@ -342,10 +341,10 @@ pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
 /// carrier's knot domain. The full knot domain is the final fallback.
 pub(crate) fn pcurve_ranges_on_domain(
-    candidate: &nurbs::pcurve::NurbsPcurve,
+    candidate: &cadmpeg_ir::geometry::PcurveNurbs,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
-    let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
+    let (&first, &last) = (candidate.knots().first()?, candidate.knots().last()?);
     let tolerance = EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9 * (last - first).abs().max(1.0);
     let mut ranges = edge
         .and_then(edge_pcurve_parameter_ranges)
@@ -379,7 +378,7 @@ pub(crate) fn pcurve_ranges_on_domain(
 pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let carrier = collect_carrier(rec);
     let base = *carrier.positions.first()?;
-    match rec.head.as_str() {
+    match rec.head() {
         "straight" => Some(CurveGeometry::Line {
             origin: scale_point(base),
             direction: unit(*carrier.vectors.first()?),
@@ -442,35 +441,9 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
         .or_else(|| {
             // A plain `intcurve` companion has no subtype scope after its
             // base header; its sense remains the fourth payload value.
-            (rec.head == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
+            (rec.head() == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
         })
         .unwrap_or(false)
-}
-
-/// Reparameterize a cached B-spline to its record's reversed sense,
-/// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
-pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
-    curve.control_points.reverse();
-    if let Some(weights) = curve.weights.as_mut() {
-        weights.reverse();
-    }
-    curve.knots.reverse();
-    for knot in &mut curve.knots {
-        *knot = -*knot;
-    }
-}
-
-/// Reparameterize a referenced pcurve to its opposite orientation, preserving
-/// its UV chart while negating the parameterization.
-pub(crate) fn reverse_nurbs_pcurve(curve: &mut nurbs::pcurve::NurbsPcurve) {
-    curve.control_points.reverse();
-    if let Some(weights) = curve.weights.as_mut() {
-        weights.reverse();
-    }
-    curve.knots.reverse();
-    for knot in &mut curve.knots {
-        *knot = -*knot;
-    }
 }
 
 /// Reverse a curve carrier to its opposite orientation, `C'(t) = C(-t)`.
@@ -485,7 +458,7 @@ pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
         CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
             *axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         }
-        CurveGeometry::Nurbs(curve) => reverse_nurbs_curve(curve),
+        CurveGeometry::Nurbs(curve) => curve.reverse_parameterization(),
         _ => {}
     }
 }
@@ -556,10 +529,14 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         | DecodedProceduralSurfaceDefinition::Sum { .. }
         | DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
-        DecodedProceduralSurfaceDefinition::Sweep(construction) => construction
-            .revision_form
-            .as_ref()
-            .is_some_and(|form| form.tail_enum == 2),
+        DecodedProceduralSurfaceDefinition::Sweep(construction) => {
+            construction.revision_form.as_ref().is_some_and(|form| {
+                matches!(
+                    form.cache,
+                    cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+                )
+            })
+        }
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
@@ -573,9 +550,16 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         DecodedProceduralSurfaceDefinition::Blend {
             native: Some(construction),
             ..
-        } => construction.tail_enum == 2,
+        } => matches!(
+            construction.cache,
+            cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+        ),
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-            construction.tail_enum == 2 || construction.shape_prefix == 0
+            matches!(
+                construction.cache,
+                cadmpeg_ir::geometry::VariableBlendCache::Parameterization { .. }
+                    | cadmpeg_ir::geometry::VariableBlendCache::Stale
+            )
         }
         _ => false,
     }
@@ -624,9 +608,14 @@ fn analytic_rolling_ball_surface(
         return None;
     }
     let support = |index: usize| {
-        supports[index]
-            .as_ref()
-            .or_else(|| native.and_then(|native| native.sides[index].surface.as_ref()))
+        supports[index].as_ref().or_else(|| {
+            native.and_then(|native| {
+                native.sides[index]
+                    .surface
+                    .as_ref()
+                    .map(|support| &support.surface)
+            })
+        })
     };
     let first = support(0)?;
     let second = support(1)?;
@@ -681,30 +670,36 @@ fn analytic_rolling_ball_surface(
         });
     }
 
-    let ((plane @ SurfaceGeometry::Plane { .. }, cylinder @ SurfaceGeometry::Cylinder { .. })
-    | (cylinder @ SurfaceGeometry::Cylinder { .. }, plane @ SurfaceGeometry::Plane { .. })) =
-        (first, second)
+    let ((
+        SurfaceGeometry::Plane {
+            origin: plane_origin,
+            normal: plane_normal,
+            ..
+        },
+        SurfaceGeometry::Cylinder {
+            origin: cylinder_origin,
+            axis: cylinder_axis,
+            radius: cylinder_radius,
+            ..
+        },
+    )
+    | (
+        SurfaceGeometry::Cylinder {
+            origin: cylinder_origin,
+            axis: cylinder_axis,
+            radius: cylinder_radius,
+            ..
+        },
+        SurfaceGeometry::Plane {
+            origin: plane_origin,
+            normal: plane_normal,
+            ..
+        },
+    )) = (first, second)
     else {
         return None;
     };
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
-    let SurfaceGeometry::Plane {
-        origin: plane_origin,
-        normal: plane_normal,
-        ..
-    } = plane
-    else {
-        unreachable!()
-    };
-    let SurfaceGeometry::Cylinder {
-        origin: cylinder_origin,
-        axis: cylinder_axis,
-        radius: cylinder_radius,
-        ..
-    } = cylinder
-    else {
-        unreachable!()
-    };
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
@@ -730,23 +725,20 @@ fn analytic_rolling_ball_surface(
 }
 
 fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point3, Vector3)> {
-    if curve.degree == 0
-        || curve.periodic
-        || curve.control_points.len() <= curve.degree as usize
-        || curve.knots.len() != curve.control_points.len() + curve.degree as usize + 1
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
+    if curve.degree() == 0
+        || curve.periodic()
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
         || curve
-            .control_points
+            .control_points()
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
     {
         return None;
     }
-    if let Some(weights) = curve.weights.as_deref() {
+    if let Some(weights) = curve.weights() {
         let first_sign = weights.first()?.signum();
         if first_sign == 0.0
-            || weights.len() != curve.control_points.len()
             || weights
                 .iter()
                 .any(|weight| !weight.is_finite() || weight.signum() != first_sign)
@@ -754,9 +746,9 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
             return None;
         }
     }
-    let origin = curve.control_points[0];
+    let origin = curve.control_points()[0];
     let (_, farthest) = curve
-        .control_points
+        .control_points()
         .iter()
         .copied()
         .map(|point| (point_vector(origin, point).norm(), point))
@@ -768,7 +760,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
     let axis = point_vector(origin, farthest).unit()?;
     let tolerance = EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10 * extent.max(1.0);
     if curve
-        .control_points
+        .control_points()
         .iter()
         .any(|point| axis.cross(point_vector(origin, *point)).norm() > tolerance)
     {
@@ -780,27 +772,25 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
 pub(crate) fn rational_four_arc_circle(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
-    let weights = curve.weights.as_deref()?;
-    let degree = curve.degree as usize;
+    let weights = curve.weights()?;
+    let degree = curve.degree() as usize;
     if degree < 2
-        || curve.periodic
-        || curve.control_points.len() != 4 * degree + 1
-        || weights.len() != curve.control_points.len()
-        || curve.knots.len() != curve.control_points.len() + degree + 1
-        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.periodic()
+        || curve.control_points().len() != 4 * degree + 1
+        || curve.knots().iter().any(|knot| !knot.is_finite())
     {
         return None;
     }
     let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
-        * (curve.knots[curve.knots.len() - 1] - curve.knots[0])
+        * (curve.knots()[curve.knots().len() - 1] - curve.knots()[0])
             .abs()
             .max(1.0);
     let spans = [
-        curve.knots[0],
-        curve.knots[degree + 1],
-        curve.knots[2 * degree + 1],
-        curve.knots[3 * degree + 1],
-        curve.knots[4 * degree + 1],
+        curve.knots()[0],
+        curve.knots()[degree + 1],
+        curve.knots()[2 * degree + 1],
+        curve.knots()[3 * degree + 1],
+        curve.knots()[4 * degree + 1],
     ];
     if spans
         .windows(2)
@@ -809,11 +799,11 @@ pub(crate) fn rational_four_arc_circle(
             let range = if span == 0 {
                 0..degree + 1
             } else if span == 4 {
-                4 * degree + 1..curve.knots.len()
+                4 * degree + 1..curve.knots().len()
             } else {
                 span * degree + 1..(span + 1) * degree + 1
             };
-            curve.knots[range]
+            curve.knots()[range]
                 .iter()
                 .any(|value| (*value - spans[span]).abs() > knot_tolerance)
         })
@@ -821,7 +811,7 @@ pub(crate) fn rational_four_arc_circle(
         return None;
     }
     let homogeneous = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| {
@@ -986,8 +976,8 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         .iter()
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) => {
-                let (first, last) = (nurbs.knots.first()?, nurbs.knots.last()?);
-                Some((curve.id.0.as_str(), [*first, *last]))
+                let (first, last) = (nurbs.knots().first()?, nurbs.knots().last()?);
+                Some((curve.id.as_str(), [*first, *last]))
             }
             _ => None,
         })
@@ -999,7 +989,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         let Some([first, last]) = edge
             .curve
             .as_ref()
-            .and_then(|curve| domains.get(curve.0.as_str()))
+            .and_then(|curve| domains.get(curve.as_str()))
         else {
             continue;
         };
@@ -1052,7 +1042,7 @@ pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
         let Some(body) = loop_bodies.get(&loop_.id) else {
             continue;
         };
-        for coedge in &loop_.coedges {
+        for coedge in loop_.coedges() {
             coedge_bodies.insert(coedge.clone(), body.clone());
         }
     }
@@ -1095,7 +1085,7 @@ mod analytic_surface_tests {
         Record {
             index: 1,
             name: format!("{head}-surface"),
-            head: head.into(),
+
             tokens: Arc::from(tokens),
             offset: 0,
             len: 0,

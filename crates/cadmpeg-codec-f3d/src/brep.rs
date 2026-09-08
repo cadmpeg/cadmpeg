@@ -107,7 +107,7 @@ impl Brep {
             if let Some(previous) = resolved.insert(body.clone(), *selector) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
-                    body.0
+                    body.as_str()
                 )));
             }
         }
@@ -134,12 +134,12 @@ impl Brep {
             .asm
             .body_native_keys
             .iter()
-            .map(|native| native.body.0.as_str())
+            .map(|native| native.body.as_str())
             .collect::<HashSet<_>>();
         let mut roots = self
             .body_selectors_for(selected_keys)?
             .into_keys()
-            .map(|body| body.0)
+            .map(cadmpeg_ir::ids::BodyId::into_string)
             .collect::<HashSet<_>>();
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key
@@ -148,8 +148,8 @@ impl Brep {
             self.asm
                 .bodies
                 .iter()
-                .filter(|body| !native_body_ids.contains(body.id.0.as_str()))
-                .map(|body| body.id.0.clone()),
+                .filter(|body| !native_body_ids.contains(body.id.as_str()))
+                .map(|body| body.id.as_str().to_owned()),
         );
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
         collect_entity_adjacency(&value, &owned, &mut adjacency);
@@ -168,10 +168,6 @@ impl Brep {
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
-        retained
-            .asm
-            .body_keys
-            .retain(|body, _| reachable.contains(&body.0));
         retained.asm.annotation_records = annotations
             .into_iter()
             .filter(|annotation| reachable.contains(&annotation.id))
@@ -471,14 +467,14 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
         .into_iter()
         .enumerate()
         .map(
-            |(ordinal, (entity_kind, design_id, design_reference))| PersistentDesignLink {
+            |(ordinal, (_, design_id, design_reference))| PersistentDesignLink {
                 id: format!(
                     "f3d:design:persistent-design-link#{}:{ordinal}",
                     attribute_key(attribute)
                 ),
                 target: attribute.target.clone(),
                 design_id,
-                entity_kind,
+
                 design_reference,
                 ordinal: ordinal as u32,
                 is_current: ordinal == last,
@@ -596,13 +592,13 @@ fn generic_tag_payload(
 fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<String>) -> bool {
     match target {
         AttributeTarget::Document => true,
-        AttributeTarget::Body(id) => reachable.contains(&id.0),
-        AttributeTarget::Face(id) => reachable.contains(&id.0),
-        AttributeTarget::Shell(id) => reachable.contains(&id.0),
-        AttributeTarget::Loop(id) => reachable.contains(&id.0),
-        AttributeTarget::Coedge(id) => reachable.contains(&id.0),
-        AttributeTarget::Edge(id) => reachable.contains(&id.0),
-        AttributeTarget::Vertex(id) => reachable.contains(&id.0),
+        AttributeTarget::Body(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Face(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Shell(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Loop(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Coedge(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Edge(id) => reachable.contains(id.as_str()),
+        AttributeTarget::Vertex(id) => reachable.contains(id.as_str()),
     }
 }
 
@@ -631,7 +627,7 @@ pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<Creation
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_asm::brep::AnnotationRecord;
+    use cadmpeg_asm::brep::annotations::AnnotationRecord;
     use cadmpeg_ir::ids::{FaceId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
 
@@ -642,7 +638,7 @@ mod tests {
         groups: Vec<AttributeValue>,
     ) -> SourceAttribute {
         SourceAttribute {
-            id: "f3d:brep:attribute#1".into(),
+            id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
             target,
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: [
@@ -685,7 +681,7 @@ mod tests {
             ),
         ] {
             let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId("f3d:face#1".into())),
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
                 (version, version),
                 1,
                 groups,
@@ -709,7 +705,7 @@ mod tests {
         ];
         for versions in [(2, 3), (1, 1), (4, 4)] {
             let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId("f3d:face#1".into())),
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
                 versions,
                 1,
                 groups.clone(),
@@ -721,7 +717,7 @@ mod tests {
     #[test]
     fn generic_tag_payload_binds_modern_body_design_links() {
         let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId("f3d:body#1".into())),
+            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
             (2, 2),
             1,
             vec![
@@ -740,7 +736,7 @@ mod tests {
     #[test]
     fn generic_tag_payload_binds_legacy_body_design_links() {
         let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId("f3d:body#1".into())),
+            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
             (3, 3),
             1,
             vec![
@@ -756,8 +752,8 @@ mod tests {
 
     #[test]
     fn brep_qualification_rewrites_owned_ids_and_cross_references() {
-        let body = BodyId("f3d:brep:entity#1".into());
-        let region = RegionId("f3d:brep:entity#2".into());
+        let body = BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
+        let region = RegionId::mint("f3d:brep:entity#2").expect("identity grammar");
         let mut brep = Brep {
             asm: AsmBrep {
                 bodies: vec![Body {
@@ -774,9 +770,12 @@ mod tests {
                     body: body.clone(),
                     shells: Vec::new(),
                 }],
-                body_keys: HashMap::from([(body.clone(), 7)]),
+
                 body_native_keys: vec![BodyNativeKey {
-                    id: "f3d:asm:body-native-key#1".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
                     body,
                     record_index: 1,
                     body_ordinal: 0,
@@ -787,7 +786,7 @@ mod tests {
                     id: "f3d:brep:entity#1".into(),
                     stream: "asset/BREP.source.smbh".into(),
                     offset: 10,
-                    tag: "body".into(),
+                    tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("body".into()),
                     derived_fields: Vec::new(),
                 }],
                 ..AsmBrep::default()
@@ -798,12 +797,19 @@ mod tests {
         brep.qualify_ids(crate::ids::ID_FORMAT, "source")
             .expect("qualify BREP");
 
-        let qualified = BodyId("f3d:brep/source/brep:entity#1".into());
+        let qualified = BodyId::mint("f3d:brep/source/brep:entity#1").expect("identity grammar");
         assert_eq!(brep.asm.bodies[0].id, qualified);
         assert_eq!(brep.asm.regions[0].body, qualified);
         assert_eq!(brep.asm.body_native_keys[0].body, qualified);
-        assert_eq!(brep.asm.body_keys.get(&qualified), Some(&7));
-        assert_eq!(brep.asm.annotation_records[0].id, qualified.0);
+        assert_eq!(
+            brep.asm
+                .body_native_keys
+                .iter()
+                .find(|record| record.body == qualified)
+                .and_then(|record| record.asm_body_key.as_ref()),
+            Some(&7)
+        );
+        assert_eq!(brep.asm.annotation_records[0].id, qualified.as_str());
         assert_eq!(
             brep.asm.body_native_keys[0].source_brep.as_deref(),
             Some("BREP.source.smbh")
@@ -813,17 +819,21 @@ mod tests {
     #[test]
     fn body_key_retention_keeps_only_the_selected_connected_graph() {
         let body = |index, region| Body {
-            id: BodyId(format!("f3d:brep:entity#{index}")),
+            id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             kind: BodyKind::default(),
-            regions: vec![RegionId(format!("f3d:brep:entity#{region}"))],
+            regions: vec![
+                RegionId::mint(format!("f3d:brep:entity#{region}")).expect("identity grammar")
+            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
         };
         let native_key = |index, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{index}"),
-            body: BodyId(format!("f3d:brep:entity#{index}")),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             record_index: index,
             body_ordinal: index - 1,
             source_brep: Some("BREP.source.smbh".into()),
@@ -834,20 +844,17 @@ mod tests {
                 bodies: vec![body(1, 2), body(3, 4)],
                 regions: vec![
                     Region {
-                        id: RegionId("f3d:brep:entity#2".into()),
-                        body: BodyId("f3d:brep:entity#1".into()),
+                        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+                        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
                         shells: Vec::new(),
                     },
                     Region {
-                        id: RegionId("f3d:brep:entity#4".into()),
-                        body: BodyId("f3d:brep:entity#3".into()),
+                        id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
+                        body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
                         shells: Vec::new(),
                     },
                 ],
-                body_keys: HashMap::from([
-                    (BodyId("f3d:brep:entity#1".into()), 10),
-                    (BodyId("f3d:brep:entity#3".into()), 20),
-                ]),
+
                 body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
                 ..AsmBrep::default()
             },
@@ -858,17 +865,24 @@ mod tests {
             .expect("retain body graph");
 
         assert_eq!(brep.asm.bodies.len(), 1);
-        assert_eq!(brep.asm.bodies[0].id.0, "f3d:brep:entity#3");
+        assert_eq!(brep.asm.bodies[0].id.as_str(), "f3d:brep:entity#3");
         assert_eq!(brep.asm.regions.len(), 1);
-        assert_eq!(brep.asm.regions[0].id.0, "f3d:brep:entity#4");
+        assert_eq!(brep.asm.regions[0].id.as_str(), "f3d:brep:entity#4");
         assert_eq!(brep.asm.body_native_keys.len(), 1);
-        assert_eq!(brep.asm.body_keys.len(), 1);
+        assert_eq!(
+            brep.asm
+                .body_native_keys
+                .iter()
+                .filter(|record| record.asm_body_key.is_some())
+                .count(),
+            1
+        );
     }
 
     #[test]
     fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         let body = |index| Body {
-            id: BodyId(format!("f3d:brep:entity#{index}")),
+            id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             kind: BodyKind::default(),
             regions: Vec::new(),
             transform: None,
@@ -877,21 +891,24 @@ mod tests {
             visible: None,
         };
         let native_key = |index, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{index}"),
-            body: BodyId(format!("f3d:brep:entity#{index}")),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
             record_index: index,
             body_ordinal: index - 1,
             source_brep: Some("BREP.source.smbh".into()),
             asm_body_key: Some(key),
         };
-        let target = |index| AttributeTarget::Body(BodyId(format!("f3d:brep:entity#{index}")));
+        let target = |index| {
+            AttributeTarget::Body(
+                BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
+            )
+        };
         let mut brep = Brep {
             asm: AsmBrep {
                 bodies: vec![body(1), body(3)],
-                body_keys: HashMap::from([
-                    (BodyId("f3d:brep:entity#1".into()), 10),
-                    (BodyId("f3d:brep:entity#3".into()), 20),
-                ]),
+
                 body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
                 ..AsmBrep::default()
             },
@@ -920,7 +937,7 @@ mod tests {
                     id: "design-retained".into(),
                     target: target(1),
                     design_id: "301".into(),
-                    entity_kind: 3,
+
                     design_reference: 1,
                     ordinal: 0,
                     is_current: true,
@@ -929,7 +946,7 @@ mod tests {
                     id: "design-dropped".into(),
                     target: target(3),
                     design_id: "303".into(),
-                    entity_kind: 3,
+
                     design_reference: 3,
                     ordinal: 0,
                     is_current: true,
@@ -981,8 +998,8 @@ mod tests {
 
     #[test]
     fn body_key_retention_preserves_selectorless_neutral_roots() {
-        let native_body = BodyId("f3d:brep:entity#1".into());
-        let projected_body = BodyId("f3d:brep:saved-edge-body#5".into());
+        let native_body = BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
+        let projected_body = BodyId::mint("f3d:brep:saved-edge-body#5").expect("identity grammar");
         let mut brep = Brep {
             asm: AsmBrep {
                 bodies: vec![
@@ -1005,9 +1022,12 @@ mod tests {
                         visible: None,
                     },
                 ],
-                body_keys: HashMap::from([(native_body.clone(), 10)]),
+
                 body_native_keys: vec![BodyNativeKey {
-                    id: "f3d:asm:body-native-key#1".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
                     body: native_body,
                     record_index: 1,
                     body_ordinal: 0,
@@ -1029,8 +1049,10 @@ mod tests {
     #[test]
     fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         let native_key = |ordinal, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{ordinal}"),
-            body: BodyId(format!("f3d:brep:entity#{ordinal}")),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
             record_index: ordinal,
             body_ordinal: ordinal,
             source_brep: Some("BREP.source.smb".into()),
@@ -1046,22 +1068,27 @@ mod tests {
 
         assert_eq!(brep.body_selectors().len(), 2);
         assert_eq!(
-            brep.body_selectors()[&BodyId("f3d:brep:entity#1".into())],
+            brep.body_selectors()[&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
             1
         );
 
         brep.asm.body_native_keys[1].asm_body_key = Some(7);
         assert_eq!(
             brep.body_selectors(),
-            HashMap::from([(BodyId("f3d:brep:entity#1".into()), 7)])
+            HashMap::from([(
+                BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+                7
+            )])
         );
     }
 
     #[test]
     fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         let native_key = |ordinal, key| BodyNativeKey {
-            id: format!("f3d:asm:body-native-key#{ordinal}"),
-            body: BodyId(format!("f3d:brep:entity#{ordinal}")),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
             record_index: ordinal,
             body_ordinal: ordinal,
             source_brep: Some("BREP.source.smb".into()),
@@ -1077,13 +1104,19 @@ mod tests {
 
         assert_eq!(
             brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-            HashMap::from([(BodyId("f3d:brep:entity#1".into()), 0)])
+            HashMap::from([(
+                BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+                0
+            )])
         );
 
         brep.asm.body_native_keys = vec![native_key(0, 436)];
         assert_eq!(
             brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-            HashMap::from([(BodyId("f3d:brep:entity#0".into()), 0)])
+            HashMap::from([(
+                BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
+                0
+            )])
         );
     }
 }

@@ -2,8 +2,8 @@
 //! Copious point, linear-path, and presentation tuple projection.
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
-use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::directory::{DirectoryEntry, UseFlag};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -53,8 +53,8 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
-fn presentation_use_flag_valid(form: i64, use_flag: u8) -> bool {
-    !presentation_form(form) || use_flag == 1
+fn presentation_use_flag_valid(form: i64, use_flag: Option<UseFlag>) -> bool {
+    !presentation_form(form) || use_flag == Some(UseFlag::Annotation)
 }
 
 fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
@@ -178,7 +178,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        if !presentation_use_flag_valid(entry.form, entry.status.use_flag) {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag()) {
             losses.push(entity_loss(
                 entry,
                 "Type 106 presentation forms require Entity Use Flag 01",
@@ -225,7 +225,7 @@ pub(super) fn project(
             continue;
         }
         if matches!(entry.form, 11..=13) {
-            let minimum_tuple_count = if matches!(global.dialect(), Dialect::V4_0) {
+            let minimum_tuple_count = if matches!(global.global_table(), GlobalTable::V4_0) {
                 1
             } else {
                 2
@@ -234,7 +234,7 @@ pub(super) fn project(
                 losses.push(entity_loss(
                     entry,
                     format!(
-                        "linear paths require at least {minimum_tuple_count} tuple(s) under the declared dialect"
+            "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
                     ),
                 ));
                 continue;
@@ -331,19 +331,21 @@ pub(super) fn project(
         let projects_as_points = matches!(entry.form, 1..=3)
             || (matches!(entry.form, 11..=13)
                 && tuple_count == 1
-                && matches!(global.dialect(), Dialect::V4_0));
+                && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
-                let point = PointId(format!(
+                let point = PointId::mint(format!(
                     "iges:model:point#D{}-{}",
                     entry.sequence,
                     index + 1
-                ));
-                let vertex = VertexId(format!(
+                ))
+                .expect("identity grammar");
+                let vertex = VertexId::mint(format!(
                     "iges:model:vertex#D{}-{}",
                     entry.sequence,
                     index + 1
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.points.push(Point {
                     source_object: None,
                     id: point.clone(),
@@ -393,16 +395,19 @@ pub(super) fn project(
         let start = points[0];
         let end = points[points.len() - 1];
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
         let end_vertex = if entry.form == 63 {
             start_vertex.clone()
         } else {
-            VertexId(format!("iges:model:vertex#{stem}-end"))
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar")
         };
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.push(Point {
             source_object: None,
             id: start_point.clone(),
@@ -427,13 +432,11 @@ pub(super) fn project(
         }
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots,
-                control_points: points,
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(1, knots, points, None, false).map_err(|error| {
+                    CodecError::malformed(format_args!("copious-data curve: {error}"))
+                })?,
+            ),
             source_object: Some(source_object(entry)),
         });
         ir.model.edges.push(Edge {

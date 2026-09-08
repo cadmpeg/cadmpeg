@@ -2,7 +2,6 @@
 //! Byte and predicate helpers shared by the source-less generator and the
 //! edit-and-patch engine.
 
-use crate::history_records::AsmEntityChangeKind;
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -10,14 +9,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
 pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
-    if let Some(namespace) = ir.native.namespace("f3d") {
-        if namespace.version != crate::native::F3D_NATIVE_VERSION {
-            let version = namespace.version;
-            return Err(CodecError::malformed(format_args!(
-                "unsupported F3D native namespace version {version}"
-            )));
-        }
-    }
     ir.native
         .namespace("f3d")
         .map(F3dNative::load)
@@ -97,20 +88,6 @@ pub(crate) fn native_bool(value: bool) -> u8 {
         0x0a
     } else {
         0x0b
-    }
-}
-
-pub(crate) fn history_change_kind(
-    old_ref: Option<i64>,
-    new_ref: Option<i64>,
-) -> Result<AsmEntityChangeKind, CodecError> {
-    match (old_ref, new_ref) {
-        (None, Some(_)) => Ok(AsmEntityChangeKind::Insert),
-        (Some(_), None) => Ok(AsmEntityChangeKind::Delete),
-        (Some(_), Some(_)) => Ok(AsmEntityChangeKind::Update),
-        (None, None) => Err(CodecError::Malformed(
-            "ASM entity change cannot have two null references".into(),
-        )),
     }
 }
 

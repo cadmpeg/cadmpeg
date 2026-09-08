@@ -5,10 +5,13 @@ use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{format_identity, PmiId};
-use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue};
+use cadmpeg_ir::pmi::{
+    DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
+};
 
 use crate::entity_table::{RangeInterval, RangeIntervalSlot};
-use crate::native::{CatiaEntityRecord, CatiaNative, CatiaRangeInterval};
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::{CatiaNative, CatiaRangeInterval};
 
 /// Transfer complete CATIA dimension productions.
 ///
@@ -54,7 +57,7 @@ pub(crate) fn transfer_dimensions(
 }
 
 fn pmi_id(source_offset: u64) -> PmiId {
-    PmiId(
+    PmiId::mint(
         format_identity(
             "catia",
             "model",
@@ -63,11 +66,12 @@ fn pmi_id(source_offset: u64) -> PmiId {
         )
         .expect("CATIA PMI source offset produces a valid identity"),
     )
+    .expect("identity grammar")
 }
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
     let range = entity.range_interval.as_ref()?;
-    if entity.constraint_range.is_some() {
+    if entity.constraint_range().is_some() {
         return None;
     }
     range_only_dimension_definition(entity, range)
@@ -98,7 +102,7 @@ fn range_only_dimension_definition(
         return None;
     };
     let source = owner.source_entity.as_ref()?;
-    if source.is_null || source.entity.is_none() {
+    if source.is_null() || source.entity().is_none() {
         return None;
     }
     let dimension = match definition.name.as_deref()? {
@@ -113,9 +117,10 @@ fn range_only_dimension_definition(
     Some(PmiDefinition::Dimension {
         dimension,
         nominal: Some(nominal),
-        lower_deviation: Some(lower_deviation),
-        upper_deviation: Some(upper_deviation),
-        limits_and_fits: None,
+        tolerance: Some(DimensionTolerance::PlusMinus {
+            lower: lower_deviation,
+            upper: upper_deviation,
+        }),
     })
 }
 
@@ -163,14 +168,14 @@ fn finite_length(bits: u64) -> Option<PmiValue> {
 mod tests {
     use super::*;
     use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+    use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
     use crate::native::{
         CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,
-        CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityRecord,
-        CatiaEntityReference, CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection,
-        CatiaObjectRecordReferenceSource, CatiaRangeNominal, CatiaRangeNominalFraming,
+        CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityReference,
+        CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource,
+        CatiaRangeNominal, CatiaRangeNominalFraming,
     };
     use cadmpeg_ir::pmi::PmiDefinition;
-    use cadmpeg_ir::units::Units;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
         CatiaEntitySchemaValue {
@@ -191,20 +196,11 @@ mod tests {
             object_record: "catia:object#dimension".to_string(),
             ordinal: 0,
             byte_offset: 0,
-            byte_len: 0,
             lead: 2,
-            inline_body: None,
-            definition_len: 0,
-            definition_prefix: Vec::new(),
+            body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),
             entity_id: 1,
-            definition_suffix: Vec::new(),
-            value_len: 0,
-            value_payload: Vec::new(),
-            value_fields: Vec::new(),
             value_schema_selections: Vec::new(),
-            relation_expression: None,
-            parameter_value: None,
             range_interval: Some(CatiaRangeInterval {
                 range: schema_value("Range"),
                 interval: RangeInterval {
@@ -228,27 +224,23 @@ mod tests {
                 incoming_references: Vec::new(),
                 incoming_storage_references: Vec::new(),
             }),
-            constraint_range: Some(CatiaConstraintRange {
-                range: schema_value("Range"),
-                constraint: schema_value("CstAttr_Dimension"),
-                framing: CatiaConstraintRangeFraming::DimensionDC,
-                evaluation: CatiaEntityEvaluation::Scalar { bits: nominal },
-                evaluation_opcode_offset: 0,
-                incoming_references: Vec::new(),
-                incoming_storage_references: Vec::new(),
-            }),
-            definition_value: None,
-            definition_chain_value: None,
-            relation_program_instance: None,
-            schema_configuration_record: None,
-            schema_configuration_row_link: None,
-            formula_relation: None,
-            value_packets: Vec::new(),
-            numeric_pair: None,
+            value_production: Some(
+                crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(
+                    CatiaConstraintRange {
+                        range: schema_value("Range"),
+                        constraint: schema_value("CstAttr_Dimension"),
+                        framing: CatiaConstraintRangeFraming::DimensionDC,
+                        evaluation: CatiaEntityEvaluation::Scalar { bits: nominal },
+                        evaluation_opcode_offset: 0,
+                        incoming_references: Vec::new(),
+                        incoming_storage_references: Vec::new(),
+                    },
+                ),
+            ),
+            object_production: None,
+
             reference_signature: None,
-            record_suffix: Vec::new(),
-            suffix_value: None,
-            suffix_framing: None,
+            suffix: None,
             suffix_schema_selection: None,
         }
     }
@@ -281,22 +273,22 @@ mod tests {
         };
         range.incoming_references = vec![CatiaEntityIncomingReference {
             object_record: "catia:object#owner".to_string(),
-            source_entity: Some(CatiaEntityReference {
-                entity_id: 2,
-                is_null: false,
-                entity: Some("catia:entity#owner".to_string()),
-                class_name: None,
-            }),
+            source_entity: Some(CatiaEntityReference::from_parts(
+                2,
+                false,
+                Some("catia:entity#owner".to_string()),
+                None,
+            )),
             payload_offset: 7,
             source: CatiaObjectRecordReferenceSource::Field,
         }];
-        entity.constraint_range = None;
+        entity.value_production = None;
         entity
     }
 
     #[test]
     fn constraint_ranges_remain_native_without_a_physical_quantity() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let native = CatiaNative {
             entity_records: vec![entity_record()],
             ..CatiaNative::default()
@@ -318,7 +310,7 @@ mod tests {
             entity_records: vec![diameter, size],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
@@ -331,15 +323,18 @@ mod tests {
             .map(|annotation| match &annotation.definition {
                 PmiDefinition::Dimension {
                     dimension,
-                    nominal,
-                    lower_deviation,
-                    upper_deviation,
+                    nominal: Some(nominal),
+                    tolerance:
+                        Some(DimensionTolerance::PlusMinus {
+                            lower: lower_deviation,
+                            upper: upper_deviation,
+                        }),
                     ..
                 } => (
                     dimension,
-                    nominal.expect("finite nominal").value,
-                    lower_deviation.expect("finite lower deviation").value,
-                    upper_deviation.expect("finite upper deviation").value,
+                    nominal.value,
+                    lower_deviation.value,
+                    upper_deviation.value,
                 ),
                 _ => panic!("dimension annotation"),
             })
@@ -378,15 +373,15 @@ mod tests {
             .incoming_references
             .push(second_owner);
         let mut unresolved_owner = range_only_entity("FeatureRSUR");
-        unresolved_owner
+        let unresolved_source = unresolved_owner
             .range_interval
             .as_mut()
             .expect("Range interval")
             .incoming_references[0]
             .source_entity
             .as_mut()
-            .expect("source entity")
-            .entity = None;
+            .expect("source entity");
+        *unresolved_source = unresolved_source.clone().without_entity();
         let mut unset_deviation = range_only_entity("DiameterThread");
         unset_deviation
             .range_interval
@@ -408,7 +403,7 @@ mod tests {
             ],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             transfer_dimensions(&mut ir, &native, None, &HashSet::new()),

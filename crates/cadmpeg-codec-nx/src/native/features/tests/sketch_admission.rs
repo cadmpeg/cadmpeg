@@ -1,22 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
 use super::*;
+use crate::native::features::payload_name::FeaturePayloadName;
+use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
 fn sketch_fixed_points_require_one_owned_finite_point_pair() {
-    let name = FeatureSketchPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        type_code: Some(1),
-        raw_type_code: Some(vec![1]),
-        type_code_payload_offset: Some(1),
-        type_code_source_offset: Some(1001),
-        payload_leading: false,
-        value: "Point1".to_string(),
-        payload_offset: 0,
+        frame: crate::om::name_field::NameField::new(
+            "Point1".to_string(),
+            0,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
+                target: Some(1001),
+            }),
+        )
+        .unwrap(),
         source_offset: 1000,
     };
     let record = FeatureSketchPayloadNamedRecord {
@@ -30,20 +33,21 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         payload_start_offset: 0,
         payload_end_offset: 100,
     };
-    let pair = |id: &str, discriminator: u8| FeatureSketchPayloadFixedPair {
+    let pair = |id: &str, form: SketchPairForm| FeatureSketchPayloadFixedPair {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        values: [0.5, -0.5],
-        raw_values: [[0; 7]; 2],
-        discriminator: vec![discriminator],
-        payload_offset: 20,
-        value_payload_offsets: [28, 37],
+        values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]]
+            .map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
+        position: PairPosition::new(form, 20).unwrap(),
         source_offset: 1020,
         value_source_offsets: [1028, 1037],
     };
-    let pairs = [pair("pair-1", 0x04), pair("pair-2", 0x08)];
+    let pairs = [
+        pair("pair-1", SketchPairForm::Legacy),
+        pair("pair-2", SketchPairForm::Short),
+    ];
     assert!(feature_sketch_fixed_points(&[record], std::slice::from_ref(&name), &pairs).is_empty());
 
     let mut foreign = pairs[0].clone();
@@ -65,18 +69,20 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
 
 #[test]
 fn sketch_points_require_owned_finite_scalar_fields() {
-    let name = FeatureSketchPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        type_code: Some(1),
-        raw_type_code: Some(vec![1]),
-        type_code_payload_offset: Some(1),
-        type_code_source_offset: Some(1001),
-        payload_leading: false,
-        value: "Point1".to_string(),
-        payload_offset: 0,
+        frame: crate::om::name_field::NameField::new(
+            "Point1".to_string(),
+            0,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
+                target: Some(1001),
+            }),
+        )
+        .unwrap(),
         source_offset: 1000,
     };
     let record = FeatureSketchPayloadNamedRecord {
@@ -90,14 +96,19 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         payload_start_offset: 0,
         payload_end_offset: 100,
     };
-    let scalar = |id: &str, value: f64| FeatureSketchPayloadScalar {
+    let scalar = |id: &str, value: f64| FeaturePayloadScalar {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
-        construction_payload: "payload".to_string(),
+        payload: crate::native::features::FeatureScalarPayload::Construction {
+            construction_payload: "payload".to_string(),
+        },
         ordinal: 0,
         field_code: 100,
-        value,
-        raw_value: [0; 8],
+        scalar: {
+            let mut raw = value.to_be_bytes();
+            raw[0] -= 0x10;
+            crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+        },
         payload_offset: 20,
         source_offset: 1020,
     };
@@ -125,8 +136,4 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         &[foreign, scalars[1].clone()]
     )
     .is_empty());
-
-    let mut nonfinite = scalars;
-    nonfinite[1].value = f64::NAN;
-    assert!(feature_sketch_points(&[record], &[name], &nonfinite).is_empty());
 }

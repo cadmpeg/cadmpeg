@@ -2,18 +2,19 @@
 //! STEP semantic product-manufacturing information.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, LimitsAndFits,
-    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
+    LimitsAndFits, PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -162,7 +163,7 @@ pub(super) fn decode(
             .iter()
             .enumerate()
             .filter_map(|(index, constituent)| {
-                let precedence = u32::try_from(index + 1).ok()?;
+                let precedence = u32::try_from(index + 1).ok().and_then(NonZeroU32::new)?;
                 Some(datum_references(
                     constituent,
                     precedence,
@@ -269,9 +270,7 @@ pub(super) fn decode(
             PmiDefinition::Dimension {
                 dimension: kind,
                 nominal,
-                lower_deviation: None,
-                upper_deviation: None,
-                limits_and_fits: None,
+                tolerance: None,
             },
         );
         typed.insert(id);
@@ -364,25 +363,34 @@ pub(super) fn decode(
                 .parameters()
                 .get(1)
                 .and_then(|value| measure(value, exchange, &mut measurements));
-            if let PmiDefinition::Dimension {
-                lower_deviation,
-                upper_deviation,
-                ..
-            } = &mut ir.model.pmi[index].definition
-            {
-                *lower_deviation = lower;
-                *upper_deviation = upper;
+            if let (Some(lower), Some(upper)) = (lower, upper) {
+                if set_dimension_tolerance(
+                    &mut ir.model.pmi[index].definition,
+                    DimensionTolerance::PlusMinus { lower, upper },
+                ) {
+                    typed.insert(id);
+                    typed.extend(refs);
+                } else {
+                    warnings.push(format!(
+                        "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
+                    ));
+                }
+            } else {
+                warnings.push(format!(
+                    "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
+                ));
             }
-            typed.insert(id);
-            typed.extend(refs);
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
-            if let PmiDefinition::Dimension {
-                limits_and_fits, ..
-            } = &mut ir.model.pmi[index].definition
-            {
-                *limits_and_fits = Some(fit);
+            if set_dimension_tolerance(
+                &mut ir.model.pmi[index].definition,
+                DimensionTolerance::Fit(fit),
+            ) {
+                typed.extend([id, fit_id]);
+            } else {
+                warnings.push(format!(
+                    "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
+                ));
             }
-            typed.extend([id, fit_id]);
         } else {
             warnings.push(format!(
                 "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
@@ -693,6 +701,25 @@ pub(super) fn decode(
     }
 }
 
+fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionTolerance) -> bool {
+    let PmiDefinition::Dimension { tolerance, .. } = definition else {
+        return false;
+    };
+    let merged = match (tolerance.take(), value) {
+        (None, value) => value,
+        (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit(fit))
+        | (Some(DimensionTolerance::Fit(fit)), DimensionTolerance::PlusMinus { lower, upper }) => {
+            DimensionTolerance::PlusMinusFit { lower, upper, fit }
+        }
+        (Some(existing), _) => {
+            *tolerance = Some(existing);
+            return false;
+        }
+    };
+    *tolerance = Some(merged);
+    true
+}
+
 fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
@@ -818,7 +845,7 @@ fn resolve_geometric_item_usages(
             .insert(relating);
     }
 
-    for record in exchange.records.values() {
+    for (&id, record) in &exchange.records {
         let Some(partial) = record
             .partials
             .iter()
@@ -862,7 +889,7 @@ fn resolve_geometric_item_usages(
                 }
             }
         }
-        typed.insert(record.id);
+        typed.insert(id);
     }
 }
 
@@ -974,7 +1001,7 @@ fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
 
 fn datum_references(
     value: &Value,
-    precedence: u32,
+    precedence: NonZeroU32,
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
     typed: &mut HashSet<u64>,
@@ -1009,7 +1036,7 @@ fn datum_references(
             .iter()
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>();
-        let common_group = (element_ids.len() >= 2).then_some(precedence);
+        let common_group = (element_ids.len() >= 2).then_some(precedence.get());
         return element_ids
             .into_iter()
             .filter_map(|element_id| {
@@ -1337,7 +1364,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId(StepIdentity::presentation("pmi", id))
+    PmiId::mint(ids::presentation("pmi", id)).expect("identity grammar")
 }
 
 fn datum_target_form(value: &str) -> DatumTargetForm {
@@ -1708,7 +1735,7 @@ fn characteristic_measure_values<'a>(
             let name = exchange
                 .records
                 .get(&id)
-                .and_then(|record| measure_item_name(record, exchange, measurements.losses));
+                .and_then(|record| measure_item_name(id, record, exchange, measurements.losses));
             Some((name, value))
         })
         .collect::<Vec<_>>();
@@ -1771,6 +1798,7 @@ fn collect_measure_ids(
 }
 
 fn measure_item_name(
+    id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
@@ -1792,7 +1820,7 @@ fn measure_item_name(
                 exchange,
                 value,
                 losses,
-                record.id,
+                id,
                 "measure item name",
                 StepLossCode::MetadataStringInvalid,
             )
@@ -1807,16 +1835,8 @@ fn measure_context<'a>(
     graph_limit: usize,
 ) -> MeasureContext<'a> {
     MeasureContext {
-        length_scale: geometry
-            .length_scales
-            .get(&id)
-            .copied()
-            .unwrap_or(geometry.length_scale),
-        angle_scale: geometry
-            .plane_angle_scales
-            .get(&id)
-            .copied()
-            .unwrap_or(geometry.plane_angle_scale),
+        length_scale: geometry.units.length([id]),
+        angle_scale: geometry.units.angle([id]),
         graph_limit,
         losses,
     }
@@ -2001,10 +2021,7 @@ impl RecordExt for RawRecord {
             .join("+")
     }
     fn parameters(&self) -> &[Value] {
-        self.partials
-            .first()
-            .map(|partial| partial.parameters.as_slice())
-            .unwrap_or_default()
+        self.partials.first().parameters.as_slice()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

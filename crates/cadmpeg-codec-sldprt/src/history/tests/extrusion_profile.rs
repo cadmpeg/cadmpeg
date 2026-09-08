@@ -26,7 +26,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(12.7),
                     },
                     ..
@@ -41,7 +41,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -50,16 +50,17 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Compact" Type="Extrusion" id="9"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -70,9 +71,12 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact extrusion".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -82,7 +86,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -93,7 +97,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_extrusion_termination() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
 
     fn compact_extrusion_payload(through_all: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]);
@@ -141,7 +145,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -157,7 +161,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ThroughAll,
+                    termination: LinearTermination::ThroughAll,
                     ..
                 }
             },
@@ -172,7 +176,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -203,9 +207,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     edited.model.configurations[1]
         .feature_states
         .insert(feature_id, replacement);
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &edited,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -455,7 +462,7 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
 #[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -472,7 +479,7 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.0),
                     },
                     ..

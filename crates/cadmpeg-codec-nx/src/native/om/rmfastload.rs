@@ -15,7 +15,6 @@ fn value_identity_ignores_member_order() {
                 ordinal: ordinal as u32,
                 value: *value,
                 stable_identity: None,
-                raw: value.to_le_bytes(),
                 source_offset: ordinal as u64,
             })
             .collect::<Vec<_>>()
@@ -49,7 +48,6 @@ fn duplicate_values_have_no_stable_identity() {
             ordinal: 0,
             value: 17,
             stable_identity: None,
-            raw: 17u32.to_le_bytes(),
             source_offset: 0,
         },
         RmFastLoadObjectId {
@@ -58,7 +56,6 @@ fn duplicate_values_have_no_stable_identity() {
             ordinal: 1,
             value: 17,
             stable_identity: None,
-            raw: 17u32.to_le_bytes(),
             source_offset: 4,
         },
     ];

@@ -96,21 +96,20 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     let bytes = standard_catpart_with_formula_relation(4, false);
     let native = crate::native::CatiaNative::decode(&bytes);
     let output_entity = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .output_entity
         .reference;
-    assert_eq!(output_entity.entity_id, 4);
-    assert!(output_entity.entity.is_some());
+    assert_eq!(output_entity.entity_id(), 4);
+    assert!(output_entity.entity().is_some());
     assert_eq!(
-        output_entity.class_name,
+        output_entity.class_name().map(str::to_owned),
         native
             .object_graphs
             .iter()
             .flat_map(|graph| &graph.records)
-            .find(|record| record.entity_id == Some(4))
-            .and_then(|record| record.class_name.clone())
+            .find(|record| record.entity_id() == Some(4))
+            .and_then(|record| record.class_name().map(str::to_owned))
     );
 
     let decoded = CatiaCodec
@@ -155,21 +154,20 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded
             .report()
             .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
-        usize::from(output_entity.class_name.is_some())
+        usize::from(output_entity.class_name().is_some())
     );
     assert_eq!(
         decoded
             .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
-        usize::from(output_entity.class_name.is_none())
+        usize::from(output_entity.class_name().is_none())
     );
     let expression_classified = native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .expression_entity
         .reference
-        .class_name
+        .class_name()
         .is_some();
     assert_eq!(
         decoded
@@ -184,8 +182,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         usize::from(!expression_classified)
     );
     let dependency_candidate = &native.entity_records[0]
-        .formula_relation
-        .as_ref()
+        .formula_relation()
         .expect("complete formula relation")
         .parameter_dependencies[0]
         .candidates[0];
@@ -199,13 +196,13 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
-        usize::from(dependency_candidate.class_name.is_some())
+        usize::from(dependency_candidate.class_name().is_some())
     );
     assert_eq!(
         decoded.report().coverage_count(
             crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
-        usize::from(dependency_candidate.class_name.is_none())
+        usize::from(dependency_candidate.class_name().is_none())
     );
     assert_eq!(
         decoded
@@ -248,15 +245,16 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness[&input.id.0].fields["expression"],
+        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["expression"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness[&input.id.0].fields["properties"],
+        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness[&output.id.0].fields["properties"],
+        decoded.source_fidelity().annotations.exactness()[output.id.as_str()].fields()
+            ["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert!(
@@ -332,9 +330,9 @@ fn decode_transfers_a_closed_constant_formula() {
     assert!(decoded
         .source_fidelity()
         .annotations
-        .exactness
-        .get(&output.id.0)
-        .is_none_or(|annotation| !annotation.fields.contains_key("expression")));
+        .exactness()
+        .get(output.id.as_str())
+        .is_none_or(|annotation| !annotation.fields().contains_key("expression")));
 }
 
 #[test]
@@ -508,7 +506,8 @@ fn decode_transfers_dimensionless_real_formula() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     for parameter in [input, output] {
         assert_eq!(
-            decoded.source_fidelity().annotations.exactness[&parameter.id.0].fields["properties"],
+            decoded.source_fidelity().annotations.exactness()[parameter.id.as_str()].fields()
+                ["properties"],
             cadmpeg_ir::Exactness::Derived
         );
     }
@@ -802,7 +801,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut excluded_ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::Annotations::default();
     let excluded = crate::formula::transfer_parameters(
         &mut excluded_ir,

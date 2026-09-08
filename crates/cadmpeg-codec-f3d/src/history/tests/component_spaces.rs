@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -38,14 +38,12 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 bulletin_boards: Vec::new(),
                 records: Vec::new(),
                 entity_versions: Vec::new(),
-                record_table_complete: true,
-                topology: Some(topology),
+                topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
                 transition: None,
             }],
             id,
             byte_offset: 0,
-            stream_size: None,
-            history_entry_count: None,
+            preamble: None,
             record_table_binding_budget_exceeded: false,
             projection_finalized: false,
         }
@@ -57,14 +55,20 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
             byte_offset: 0,
             component_record_index: 10,
-            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 12,
         },
         crate::records::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
             byte_offset: 100,
             component_record_index: 20,
-            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".into(),
+            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 112,
         },
     ];
@@ -89,26 +93,30 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         history("BREP.a.smbh", 1, AsmHistoricalEntityKind::Edge),
         history("BREP.b.smbh", 2, AsmHistoricalEntityKind::Loop),
     ];
-    let mut members = vec![crate::records::DesignExtrudeSelectionMember {
+    let mut members = vec![crate::records::topology::DesignExtrudeSelectionMember {
         id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
         group_record_index: 1,
         group_member_ordinal: 0,
         record_index: 2,
         byte_offset: 400,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         local_id: 42,
         local_id_offset: 421,
-        asset_id: "11111111-2222-4333-8444-555555555555".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "11111111-2222-4333-8444-555555555555".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 429,
-        context_id: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 505,
         tail_slot_present: false,
         tail_slot_offset: 581,
         resolved_geometry: None,
         operand_identity_ids: Vec::new(),
-        historical_entity_kind: None,
-        historical_entity_ref: None,
-        historical_state_ids: Vec::new(),
+        historical: None,
         next_record_index: 3,
         next_byte_offset: 590,
     }];
@@ -116,11 +124,17 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     bind_extrude_selection_history(&mut members, &naming_spaces, &body_bindings, &histories);
 
     assert_eq!(
-        members[0].historical_entity_kind,
+        members[0].historical.as_ref().map(|binding| binding.kind),
         Some(AsmHistoricalEntityKind::Loop)
     );
-    assert_eq!(members[0].historical_entity_ref, Some(42));
-    assert_eq!(members[0].historical_state_ids, [2]);
+    assert_eq!(
+        members[0]
+            .historical
+            .as_ref()
+            .map(|binding| binding.entity_ref),
+        Some(42)
+    );
+    assert_eq!(members[0].historical.as_ref().unwrap().state_ids, [2]);
 }
 
 #[test]
@@ -153,7 +167,10 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         token_offset: 4,
         design_reference: 301,
         design_reference_offset: 8,
-        candidate_faces: vec![cadmpeg_ir::ids::FaceId("wrong-active-face".into())],
+        candidate_faces: vec![
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#wrong-active-face")
+                .expect("identity grammar"),
+        ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -164,13 +181,18 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     assert_eq!(
         reference.candidate_faces,
         [
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10)),
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(11)),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
+                .expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11))
+                .expect("identity grammar"),
         ]
     );
     assert_eq!(
         reference.candidate_edges,
-        [cadmpeg_ir::ids::EdgeId(crate::ids::brep_entity_id(20))]
+        [
+            cadmpeg_ir::ids::EdgeId::mint(crate::ids::brep_entity_id(20))
+                .expect("identity grammar")
+        ]
     );
     assert!(reference.alternate_selector_faces.is_empty());
     assert!(reference.alternate_selector_edges.is_empty());
@@ -187,7 +209,10 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
         design_reference_offset: 0,
         candidate_faces: faces
             .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .map(|face| {
+                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                    .expect("identity grammar")
+            })
             .collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -202,8 +227,8 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
             203,
         ),
         Some(vec![
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(7)),
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(8)),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(8)).expect("identity grammar"),
         ])
     );
     assert!(direct_face_recipe_candidates(
@@ -266,18 +291,21 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         design_reference_offset: 0,
         candidate_faces: faces
             .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .map(|face| {
+                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                    .expect("identity grammar")
+            })
             .collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = crate::records::DesignVertexRecipe {
+    let recipe = crate::records::feature::DesignVertexRecipe {
         record_index: 1,
         byte_offset: 0,
-        class_tag: "264".into(),
+        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 11,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 4,
         recipe_record_byte_offset: 44,
         recipe_id: "recipe".into(),
@@ -286,8 +314,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         recipe_references: vec![reference("rim", &[10, 11]), reference("end", &[12])],
         recipe_program_offset: 66,
         recipe_program: vec![0, -1],
-        recipe_state_id: None,
-        resolved_vertex_slot: None,
+        resolution: None,
         next_record_index: 6,
         next_byte_offset: 77,
     };

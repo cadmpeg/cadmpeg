@@ -15,77 +15,82 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .faces
         .iter()
-        .map(|face| face.surface.0.as_str())
+        .map(|face| face.surface.as_str())
         .collect::<HashSet<_>>();
     let mut curves = ir
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.as_str()))
+        .filter_map(|edge| edge.curve.as_ref().map(super::super::ids::CurveId::as_str))
         .collect::<HashSet<_>>();
     curves.extend(
         ir.model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.use_curve.as_ref().map(|id| id.0.as_str())),
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())),
     );
     surfaces.extend(
         ir.model
             .surfaces
             .iter()
             .filter(|surface| surface.source_object.is_some())
-            .map(|surface| surface.id.0.as_str()),
+            .map(|surface| surface.id.as_str()),
     );
     curves.extend(
         ir.model
             .curves
             .iter()
             .filter(|curve| curve.source_object.is_some())
-            .map(|curve| curve.id.0.as_str()),
+            .map(|curve| curve.id.as_str()),
     );
     let mut pcurves = ir
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
-        .chain(ir.model.loops.iter().flat_map(|loop_| {
-            loop_
-                .vertex_uses
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+        .chain(
+            ir.model
+                .loops
                 .iter()
-                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
-        }))
+                .flat_map(crate::topology::Loop::vertex_pcurves)
+                .map(|pcurve| pcurve.pcurve.as_str()),
+        )
         .collect::<HashSet<_>>();
     for surface in &ir.model.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
-        } = &surface.definition
+        } = surface.definition()
         {
-            pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.0.as_str()));
+            pcurves.extend(
+                boundary_pcurves
+                    .iter()
+                    .map(super::super::ids::PcurveId::as_str),
+            );
         }
     }
     let mut points = ir
         .model
         .vertices
         .iter()
-        .map(|vertex| vertex.point.0.as_str())
+        .map(|vertex| vertex.point.as_str())
         .collect::<HashSet<_>>();
     points.extend(
         ir.model
             .points
             .iter()
             .filter(|point| point.source_object.is_some())
-            .map(|point| point.id.0.as_str()),
+            .map(|point| point.id.as_str()),
     );
     for binding in &ir.model.appearance_bindings {
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
-                surfaces.insert(id.0.as_str());
+                surfaces.insert(id.as_str());
             }
             crate::appearance::AppearanceTarget::Curve(id) => {
-                curves.insert(id.0.as_str());
+                curves.insert(id.as_str());
             }
             crate::appearance::AppearanceTarget::Point(id) => {
-                points.insert(id.0.as_str());
+                points.insert(id.as_str());
             }
             _ => {}
         }
@@ -98,44 +103,56 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     {
         match item {
             crate::presentation::PresentationItem::Surface { surface } => {
-                surfaces.insert(surface.0.as_str());
+                surfaces.insert(surface.as_str());
             }
             crate::presentation::PresentationItem::Curve { curve } => {
-                curves.insert(curve.0.as_str());
+                curves.insert(curve.as_str());
             }
             crate::presentation::PresentationItem::Point { point } => {
-                points.insert(point.0.as_str());
+                points.insert(point.as_str());
             }
             _ => {}
         }
     }
 
     for procedural in &ir.model.procedural_surfaces {
-        surfaces.insert(&procedural.surface.0);
-        match &procedural.definition {
+        if let Some(surface) = ir.model.procedural_surface_owner(&procedural.id) {
+            surfaces.insert(surface.as_str());
+        }
+        match procedural.definition() {
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
-                surfaces.extend(components.iter().map(|component| component.0.as_str()));
+                surfaces.extend(
+                    components
+                        .iter()
+                        .map(|component| component.component.as_str()),
+                );
             }
             ProceduralSurfaceDefinition::SubSurface { support, .. } => {
-                surfaces.insert(&support.0);
+                surfaces.insert(support.as_str());
             }
             ProceduralSurfaceDefinition::Taper {
                 support, reference, ..
             } => {
-                surfaces.insert(&support.0);
-                curves.insert(&reference.0);
+                surfaces.insert(support.as_str());
+                curves.insert(reference.as_str());
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
                     if let Some(curve) = &entry.path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(curve.id.as_str());
                     }
-                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    curves.extend(
+                        entry
+                            .path
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &entry.profile {
-                        curves.insert(&member.curve.0);
-                        if let Some(surface) = &member.data.surface {
-                            surfaces.insert(&surface.0);
+                        curves.insert(member.curve.id.as_str());
+                        if let Some(surface) = member.form.surface() {
+                            surfaces.insert(surface.as_str());
                         }
                     }
                 }
@@ -146,7 +163,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
-                        curves.insert(&curve.0);
+                        curves.insert(curve.as_str());
                     }
                     crate::geometry::CompoundLoftTail::Seven {
                         first_scale,
@@ -157,19 +174,24 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         scales.push(second_scale.as_ref());
                     }
                     crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
-                            curves.insert(&curve.0);
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
+                            curves.insert(curve.as_str());
                         }
                     }
                 }
                 for scale in scales {
-                    curves.insert(&scale.path.0);
-                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    curves.insert(scale.path.as_str());
+                    curves.extend(
+                        scale
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &scale.members {
-                        curves.insert(&member.curve.0);
-                        if let Some(surface) = &member.data.surface {
-                            surfaces.insert(&surface.0);
-                        }
+                        curves.insert(member.curve.as_str());
+                        surfaces.insert(member.data.surface.as_str());
                     }
                 }
             }
@@ -190,23 +212,28 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         ..
                     } => {
                         scales.extend(scale.iter().map(Box::as_ref));
-                        curves.insert(&curve.0);
+                        curves.insert(curve.as_str());
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve } = direction {
-                            curves.insert(&curve.0);
+                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                            direction
+                        {
+                            curves.insert(curve.as_str());
                         }
                     }
                 }
-                curves.insert(&construction.tail_curve.0);
+                curves.insert(construction.tail_curve.as_str());
                 for scale in scales {
-                    curves.insert(&scale.path.0);
-                    curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    curves.insert(scale.path.as_str());
+                    curves.extend(
+                        scale
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &scale.members {
-                        curves.insert(&member.curve.0);
-                        if let Some(surface) = &member.data.surface {
-                            surfaces.insert(&surface.0);
-                        }
+                        curves.insert(member.curve.as_str());
+                        surfaces.insert(member.data.surface.as_str());
                     }
                 }
             }
@@ -217,7 +244,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.id.as_str());
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -229,12 +256,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
-                        curves.insert(&path.0);
+                        curves.insert(path.as_str());
                         for profile in profiles {
-                            curves.insert(&profile.curve.0);
-                            if let Some(surface) = &profile.data.surface {
-                                surfaces.insert(&surface.0);
-                            }
+                            curves.insert(profile.curve.as_str());
+                            surfaces.insert(profile.data.surface.as_str());
                         }
                     }
                     crate::geometry::SkinSurfaceLayout::Compact {
@@ -242,12 +267,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         secondary_curve,
                         ..
                     } => {
-                        curves.insert(&curve.0);
-                        curves.insert(&secondary_curve.0);
+                        curves.insert(curve.as_str());
+                        curves.insert(secondary_curve.as_str());
                     }
                 }
-                curves.insert(&construction.parameter_curve.0);
-                for variable in &construction.formula.variables {
+                curves.insert(construction.parameter_curve.as_str());
+                for variable in construction.formula.variables() {
                     collect_law_curves(variable, &mut curves);
                 }
             }
@@ -258,7 +283,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.id.as_str());
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -271,7 +296,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect_law_curves(variable, &mut curves);
                     }
                 }
@@ -283,7 +308,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.id.as_str());
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -299,55 +324,63 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .flat_map(|section| &section.entries)
                 {
                     if let Some(curve) = &entry.path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(curve.id.as_str());
                     }
-                    curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    curves.extend(
+                        entry
+                            .path
+                            .auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                     for member in &entry.profile {
-                        curves.insert(&member.curve.0);
-                        if let Some(surface) = &member.data.surface {
-                            surfaces.insert(&surface.0);
+                        curves.insert(member.curve.id.as_str());
+                        if let Some(surface) = member.form.surface() {
+                            surfaces.insert(surface.as_str());
                         }
                     }
                 }
                 for formula in construction.formulas.iter() {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect_law_curves(variable, &mut curves);
                     }
                 }
             }
             ProceduralSurfaceDefinition::G2Blend { construction } => {
                 for side in [&construction.first, &construction.second] {
-                    surfaces.insert(&side.surface.0);
-                    curves.insert(&side.curve.0);
+                    surfaces.insert(side.surface.as_str());
+                    curves.insert(side.curve.as_str());
                 }
-                surfaces.insert(&construction.second_exact_surface.0);
-                curves.insert(&construction.center_curve.0);
+                surfaces.insert(construction.second_exact_surface.as_str());
+                curves.insert(construction.center_curve.as_str());
                 if let crate::geometry::G2BlendFirstShape::Full {
-                    surface: Some(surface),
-                    ..
+                    support: Some(support),
                 } = &construction.first_shape
                 {
-                    surfaces.insert(&surface.0);
+                    surfaces.insert(support.surface.as_str());
                 }
             }
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.surface.as_str());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(curve.curve.as_str());
                     }
                 }
-                curves.insert(construction.slice.0.as_str());
+                curves.insert(construction.slice.as_str());
                 curves.extend(
                     [
-                        construction.secondary_curve.as_ref(),
+                        construction
+                            .secondary_curve
+                            .as_ref()
+                            .map(|curve| &curve.curve),
                         construction.post_curve.as_ref(),
                     ]
                     .into_iter()
                     .flatten()
-                    .map(|curve| curve.0.as_str()),
+                    .map(super::super::ids::CurveId::as_str),
                 );
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
@@ -356,51 +389,60 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    curves.insert(&member.curve.0);
-                    if let Some(surface) = &member.data.surface {
-                        surfaces.insert(&surface.0);
+                    curves.insert(member.curve.id.as_str());
+                    if let Some(surface) = member.form.surface() {
+                        surfaces.insert(surface.as_str());
                     }
                 }
                 for path in std::iter::once(&construction.base_path)
                     .chain(construction.entries.iter().map(|entry| &entry.path))
                 {
                     if let Some(curve) = &path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(curve.id.as_str());
                     }
-                    curves.extend(path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                    curves.extend(
+                        path.auxiliaries
+                            .iter()
+                            .map(super::super::ids::CurveId::as_str),
+                    );
                 }
                 curves.extend(
                     [
-                        construction.direction_curve.as_ref(),
-                        construction.trailing_curve.as_ref(),
+                        match &construction.direction {
+                            crate::geometry::CompoundLoftDirection::Vector { .. } => None,
+                            crate::geometry::CompoundLoftDirection::Curve { curve, .. } => {
+                                Some(curve)
+                            }
+                        },
+                        construction.tail.curve(),
                     ]
                     .into_iter()
                     .flatten()
-                    .map(|curve| curve.0.as_str()),
+                    .map(super::super::ids::CurveId::as_str),
                 );
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.surface.as_str());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(curve.curve.as_str());
                     }
                 }
-                curves.insert(construction.center.0.as_str());
+                curves.insert(construction.center.as_str());
             }
             ProceduralSurfaceDefinition::VertexBlend { construction } => {
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.as_str());
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
                             surface, ..
                         } => {
-                            surfaces.insert(&surface.0);
+                            surfaces.insert(surface.as_str());
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
                     }
@@ -410,7 +452,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. }
             | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
-                curves.insert(&directrix.0);
+                curves.insert(directrix.as_str());
             }
             ProceduralSurfaceDefinition::Sweep {
                 profile,
@@ -423,7 +465,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.id.as_str());
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -433,7 +475,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
-                curves.extend([profile.0.as_str(), spine.0.as_str()]);
+                curves.extend([profile.as_str(), spine.as_str()]);
                 if let Some(native) = native {
                     let formulas: Vec<_> = match &native.layout {
                         crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
@@ -447,7 +489,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
-                            curves.insert(&guide_curve.0);
+                            curves.insert(guide_curve.as_str());
                             Vec::new()
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitSurface {
@@ -455,9 +497,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                             auxiliary_curve,
                             ..
                         } => {
-                            surfaces.insert(&support_surface.0);
+                            surfaces.insert(support_surface.as_str());
                             if let Some(curve) = auxiliary_curve {
-                                curves.insert(&curve.0);
+                                curves.insert(curve.as_str());
                             }
                             Vec::new()
                         }
@@ -473,27 +515,27 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         }
                     };
                     for formula in formulas {
-                        for variable in &formula.variables {
+                        for variable in formula.variables() {
                             collect_law_curves(variable, &mut curves);
                         }
                     }
                 }
             }
             ProceduralSurfaceDefinition::Offset { support, .. } => {
-                surfaces.insert(&support.0);
+                surfaces.insert(support.as_str());
             }
             ProceduralSurfaceDefinition::Replica {
                 source: support, ..
             }
             | ProceduralSurfaceDefinition::Subset { support, .. }
             | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
-                surfaces.insert(&support.0);
+                surfaces.insert(support.as_str());
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
-                curves.extend([first.0.as_str(), second.0.as_str()]);
+                curves.extend([first.as_str(), second.as_str()]);
             }
             ProceduralSurfaceDefinition::Sum { first, second, .. } => {
-                curves.extend([first.0.as_str(), second.0.as_str()]);
+                curves.extend([first.as_str(), second.as_str()]);
             }
             ProceduralSurfaceDefinition::Blend {
                 supports,
@@ -502,24 +544,24 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ..
             } => {
                 for support in supports.iter().flatten() {
-                    surfaces.insert(&support.surface.0);
+                    surfaces.insert(support.surface.as_str());
                 }
                 if let Some(spine) = spine {
-                    curves.insert(&spine.0);
+                    curves.insert(spine.as_str());
                 }
                 if let Some(native) = native {
-                    curves.insert(&native.slice.0);
+                    curves.insert(native.slice.as_str());
                     for side in native.sides.iter() {
                         if let Some(curve) = &side.curve {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.curve.as_str());
                         }
                         if let Some(surface) = &side.surface {
-                            surfaces.insert(&surface.0);
+                            surfaces.insert(surface.surface.as_str());
                         }
                     }
                     if let Some(side) = &native.third {
-                        curves.insert(&side.curve.0);
-                        surfaces.insert(&side.surface.0);
+                        curves.insert(side.curve.as_str());
+                        surfaces.insert(side.surface.as_str());
                     }
                 }
             }
@@ -533,26 +575,28 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 boundaries,
                 ..
             } => {
-                surfaces.insert(&support.0);
-                curves.extend(boundaries.iter().map(|curve| curve.0.as_str()));
+                surfaces.insert(support.as_str());
+                curves.extend(boundaries.iter().map(super::super::ids::CurveId::as_str));
             }
             ProceduralSurfaceDefinition::Deformable { construction } => {
-                surfaces.insert(&construction.support.0);
+                surfaces.insert(construction.support.as_str());
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
                 }
                 | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
                     &construction.data
                 {
-                    surfaces.insert(&surface.0);
-                    curves.insert(&curve.0);
+                    surfaces.insert(surface.as_str());
+                    curves.insert(curve.as_str());
                 }
             }
         }
     }
     for procedural in &ir.model.procedural_curves {
-        curves.insert(&procedural.curve.0);
-        match &procedural.definition {
+        if let Some(curve) = ir.model.procedural_curve_owner(&procedural.id) {
+            curves.insert(curve.as_str());
+        }
+        match procedural.definition() {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
             ProceduralCurveDefinition::Law {
                 context,
@@ -566,7 +610,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(curve.id.as_str());
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -578,39 +622,43 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect(variable, &mut curves);
                     }
                 }
             }
             ProceduralCurveDefinition::Compound { components, .. } => {
-                curves.extend(components.iter().map(|component| component.0.as_str()));
+                curves.extend(
+                    components
+                        .iter()
+                        .map(|component| component.component.as_str()),
+                );
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
-                surfaces.extend(supports.iter().map(|surface| surface.0.as_str()));
+                surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
-            ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
-                for side in &context.sides {
+            ProceduralCurveDefinition::SurfaceCurve { family } => {
+                for side in &family.context().sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
@@ -619,87 +667,102 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 cast_surface,
                 ..
             } => {
-                surfaces.insert(&cast_surface.0);
+                surfaces.insert(cast_surface.as_str());
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
-                curves.insert(&base.0);
+                curves.insert(base.as_str());
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { context, .. } => {
-                for side in &context.sides {
-                    if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+            ProceduralCurveDefinition::Spring { layout, .. } => match layout {
+                crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
+                    for support in supports {
+                        if let crate::geometry::SpringSupport::Surface(surface) = support {
+                            surfaces.insert(surface.as_str());
+                        }
                     }
                 }
-            }
+                crate::geometry::SpringLayout::CacheFirst { context, .. } => {
+                    for side in &context.sides {
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(surface.as_str());
+                        }
+                    }
+                }
+            },
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {
                 if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
-                    curves.insert(&curve.0);
+                    curves.insert(curve.as_str());
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {
-                curves.insert(&source.0);
+                curves.insert(source.as_str());
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::Offset {
                 source,
-                support,
-                distance_law,
+                side,
+                range,
                 ..
             } => {
-                curves.insert(&source.0);
-                if let Some(support) = support {
-                    surfaces.insert(&support.0);
-                }
-                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                    function, ..
-                }) = distance_law
+                curves.insert(source.as_str());
+                if let crate::geometry::OffsetSide::Direction {
+                    support: Some(support),
+                    ..
+                } = side
                 {
-                    curves.insert(&function.0);
+                    surfaces.insert(support.as_str());
+                }
+                if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    distance_law:
+                        crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                    ..
+                }) = range
+                {
+                    curves.insert(function.as_str());
                 }
             }
             ProceduralCurveDefinition::SpatialOffset { source, .. } => {
-                curves.insert(&source.0);
+                curves.insert(source.as_str());
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.0.as_str());
+                        surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::VectorOffset { source, .. } => {
-                curves.insert(&source.0);
+                curves.insert(source.as_str());
             }
             ProceduralCurveDefinition::Replica { source, .. }
             | ProceduralCurveDefinition::Subset { source, .. } => {
-                curves.insert(&source.0);
+                curves.insert(source.as_str());
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
-                    surfaces.insert(&surface.0);
+                    surfaces.insert(surface.as_str());
                 }
             }
             ProceduralCurveDefinition::Unknown { .. } => {}
@@ -725,10 +788,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Composite { segments, .. } => Some((
-                curve.id.0.as_str(),
+                curve.id.as_str(),
                 segments
                     .iter()
-                    .map(|segment| segment.curve.0.as_str())
+                    .map(|segment| segment.curve.as_str())
                     .collect::<Vec<_>>(),
             )),
             _ => None,
@@ -747,28 +810,28 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .surfaces
         .iter()
-        .filter(|entity| !surfaces.contains(entity.id.0.as_str()))
-        .map(|entity| ("surface", entity.id.0.as_str()))
+        .filter(|entity| !surfaces.contains(entity.id.as_str()))
+        .map(|entity| ("surface", entity.id.as_str()))
         .chain(
             ir.model
                 .curves
                 .iter()
-                .filter(|entity| !curves.contains(entity.id.0.as_str()))
-                .map(|entity| ("curve", entity.id.0.as_str())),
+                .filter(|entity| !curves.contains(entity.id.as_str()))
+                .map(|entity| ("curve", entity.id.as_str())),
         )
         .chain(
             ir.model
                 .pcurves
                 .iter()
-                .filter(|entity| !pcurves.contains(entity.id.0.as_str()))
-                .map(|entity| ("pcurve", entity.id.0.as_str())),
+                .filter(|entity| !pcurves.contains(entity.id.as_str()))
+                .map(|entity| ("pcurve", entity.id.as_str())),
         )
         .chain(
             ir.model
                 .points
                 .iter()
-                .filter(|entity| !points.contains(entity.id.0.as_str()))
-                .map(|entity| ("point", entity.id.0.as_str())),
+                .filter(|entity| !points.contains(entity.id.as_str()))
+                .map(|entity| ("point", entity.id.as_str())),
         )
     {
         findings.push(Finding {
@@ -785,7 +848,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .curves
         .iter()
-        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     for edge in &ir.model.edges {
         let Some([start, end]) = edge.param_range else {
@@ -798,7 +861,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if edge.curve.is_some() {
             valid &= start <= end;
         }
-        if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.0.as_str())) {
+        if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
                 CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
@@ -817,7 +880,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 CurveGeometry::Nurbs(nurbs) => {
                     valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
                         |[lower, upper]| {
-                            if nurbs.periodic {
+                            if nurbs.periodic() {
                                 let period = upper - lower;
                                 let tolerance = 1.0e-9_f64.max(
                                     period.abs()
@@ -839,7 +902,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::ParameterDomain,
                 severity: Severity::Error,
                 message: "edge parameter range is outside its canonical carrier domain".into(),
-                entity: Some(edge.id.0.clone()),
+                entity: Some(edge.id.as_str().to_owned()),
             });
         }
     }
@@ -847,22 +910,12 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .pcurves
         .iter()
-        .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
+        .map(|pcurve| (pcurve.id.as_str(), &pcurve.geometry))
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
-        if coedge.use_curve.is_some() != coedge.use_curve_parameter_range.is_some() {
-            findings.push(Finding {
-                check: Check::ParameterDomain,
-                severity: Severity::Error,
-                message: "coedge use curve and parameter range must occur together".into(),
-                entity: Some(coedge.id.0.clone()),
-            });
-        }
-        if let Some([start, end]) = coedge.use_curve_parameter_range {
-            let geometry = coedge
-                .use_curve
-                .as_ref()
-                .and_then(|id| curves.get(id.0.as_str()));
+        if let Some(use_curve) = &coedge.use_curve {
+            let [start, end] = use_curve.parameter_range;
+            let geometry = curves.get(use_curve.curve.as_str());
             let mut valid =
                 start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
             if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
@@ -875,7 +928,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                     check: Check::ParameterDomain,
                     severity: Severity::Error,
                     message: "coedge use-curve range is outside its carrier domain".into(),
-                    entity: Some(coedge.id.0.clone()),
+                    entity: Some(coedge.id.as_str().to_owned()),
                 });
             }
         }
@@ -883,7 +936,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let Some([start, end]) = use_.parameter_range else {
                 continue;
             };
-            let geometry = pcurves.get(use_.pcurve.0.as_str());
+            let geometry = pcurves.get(use_.pcurve.as_str());
             let mut valid =
                 start.is_finite() && end.is_finite() && start != end && geometry.is_some();
             if let Some(geometry) = geometry {
@@ -905,7 +958,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                     check: Check::ParameterDomain,
                     severity: Severity::Error,
                     message: "coedge pcurve range is outside its carrier domain".into(),
-                    entity: Some(coedge.id.0.clone()),
+                    entity: Some(coedge.id.as_str().to_owned()),
                 });
             }
         }
@@ -922,20 +975,16 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            ..
-        } => crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            ..
-        } => {
-            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
-        }
+        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points().len(),
+        ),
+        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.poles().len(),
+        ),
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
         _ => None,
     }

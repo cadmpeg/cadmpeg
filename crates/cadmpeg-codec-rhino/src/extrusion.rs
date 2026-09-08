@@ -43,6 +43,8 @@ pub(crate) struct ExtrusionBoundary {
     pub(crate) start_pcurve: CapPcurve,
     /// Exact cap pcurve at the end.
     pub(crate) end_pcurve: CapPcurve,
+    /// Solved lateral tensor surface for this boundary.
+    pub(crate) lateral: NurbsSurface,
 }
 
 /// Exact parameter-space curve for one planar cap.
@@ -65,8 +67,6 @@ pub(crate) struct CapPcurve {
 pub(crate) struct DecodedExtrusion {
     /// Ordered outer then inner profile boundaries.
     pub(crate) boundaries: Vec<ExtrusionBoundary>,
-    /// One solved lateral tensor surface per boundary.
-    pub(crate) laterals: Vec<NurbsSurface>,
     /// Effective model-space path direction from trimmed start to end.
     pub(crate) direction: Vector3,
     /// Effective cap origins.
@@ -101,10 +101,10 @@ pub(crate) fn decode(
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
     let outer = chunk_at(data, range.start, range.end, archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(error(range.start, "invalid extrusion anonymous framing"));
     }
-    let mut reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version_offset = reader.position();
     let major = reader.i32()?;
     let minor = reader.i32()?;
@@ -243,7 +243,6 @@ pub(crate) fn decode(
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
     let mut boundaries = Vec::with_capacity(source_boundaries.len());
-    let mut laterals = Vec::with_capacity(source_boundaries.len());
     let mut orientations = Vec::with_capacity(source_boundaries.len());
     for source in source_boundaries {
         orientations.push(exact_orientation(&source, version_offset)?);
@@ -267,28 +266,28 @@ pub(crate) fn decode(
             active_miters[1],
             version_offset,
         )?;
-        let start_curve = DecodedCurve {
-            geometry: CurveGeometry::Nurbs(start_nurbs.clone()),
-            compound: None,
-            warnings: source.warnings,
-        };
+        let start_curve = DecodedCurve::leaf(
+            CurveGeometry::Nurbs(start_nurbs.clone()),
+            source.warnings().to_vec(),
+        );
         let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
         let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
         let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
-        laterals.push(crate::surfaces::extrusion_nurbs(
+        let lateral = crate::surfaces::extrusion_nurbs(
             &start_nurbs,
             &end_nurbs,
             path_domain,
             transposed,
             version_offset,
-        )?);
+        )?;
         boundaries.push(ExtrusionBoundary {
             start_curve,
             start_nurbs,
             end_nurbs,
             start_pcurve,
             end_pcurve,
+            lateral,
         });
     }
     if (orientations.len() > 1
@@ -321,7 +320,6 @@ pub(crate) fn decode(
     ];
     Ok(DecodedExtrusion {
         boundaries,
-        laterals,
         direction,
         cap_origins,
         cap_normals: [cap_frames[0].2, cap_frames[1].2],
@@ -340,24 +338,24 @@ fn split_profiles(
     if profile_count == 1 {
         return Ok(vec![profile]);
     }
-    let Some(compound) = profile.compound else {
+    let DecodedCurve::Compound { children, .. } = profile else {
         return Err(error(
             offset,
             "multiple extrusion profiles require an exact polycurve",
         ));
     };
-    if compound.children.len() != profile_count {
+    if children.len() != profile_count {
         return Err(error(offset, "extrusion profile count mismatch"));
     }
-    Ok(compound.children)
+    Ok(children.into_iter().map(|(_, child)| child).collect())
 }
 
 fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, GeometryError> {
     let curve = exact_nurbs(curve, offset)?;
-    if curve.control_points.len() < 2 || curve.degree == 0 {
+    if curve.control_points().len() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if curve.control_points.iter().any(|point| point.z != 0.0) {
+    if curve.control_points().iter().any(|point| point.z != 0.0) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     let domain = nurbs_curve_parameter_domain(&curve)
@@ -384,10 +382,10 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         }
     }
 
-    let degree = usize::try_from(curve.degree)
+    let degree = usize::try_from(curve.degree())
         .map_err(|_| error(offset, "extrusion profile degree is too large"))?;
     let span_count = curve
-        .knots
+        .knots()
         .windows(2)
         .filter(|pair| pair[0] < pair[1] && pair[1] > domain[0] && pair[0] < domain[1])
         .count();
@@ -417,7 +415,7 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
 
     let mut previous = end;
     let mut twice_area = 0.0;
-    for pair in curve.knots.windows(2) {
+    for pair in curve.knots().windows(2) {
         let span_start = pair[0].max(domain[0]);
         let span_end = pair[1].min(domain[1]);
         if span_start >= span_end {
@@ -446,15 +444,15 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
 }
 
 fn source_periodic(curve: &NurbsCurve) -> bool {
-    if !curve.periodic || curve.degree <= 1 {
+    if !curve.periodic() || curve.degree() <= 1 {
         return false;
     }
-    let degree = curve.degree as usize;
-    curve.control_points.len() >= degree
+    let degree = curve.degree() as usize;
+    curve.control_points().len() >= degree
         && (0..degree).all(|offset| {
             points_coincident(
-                curve.control_points[degree - 1 - offset],
-                curve.control_points[curve.control_points.len() - 1 - offset],
+                curve.control_points()[degree - 1 - offset],
+                curve.control_points()[curve.control_points().len() - 1 - offset],
             )
         })
 }
@@ -465,10 +463,10 @@ fn evaluate_profile_point(
     offset: usize,
 ) -> Result<Point3, GeometryError> {
     nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         parameter,
     )
     .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
@@ -490,7 +488,7 @@ fn points_coincident(first: Point3, second: Point3) -> bool {
 }
 
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
-    if curve.control_points.iter().any(|point| point.z != 0.0) {
+    if curve.control_points().iter().any(|point| point.z != 0.0) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     Ok(())
@@ -506,9 +504,15 @@ fn transform_nurbs(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut result = curve.clone();
-    for point in &mut result.control_points {
-        *point = transform_local(*point, origin, xaxis, yaxis, zaxis, miter, offset)?;
-    }
+    let transformed = result
+        .control_points()
+        .iter()
+        .copied()
+        .map(|point| transform_local(point, origin, xaxis, yaxis, zaxis, miter, offset))
+        .collect::<Result<Vec<_>, _>>()?;
+    result
+        .edit_control_points(|points| points.copy_from_slice(&transformed))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(result)
 }
 
@@ -557,8 +561,8 @@ fn cap_pcurve(
     frame: (Vector3, Vector3, Vector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let mut points = Vec::with_capacity(curve.control_points.len());
-    for point in &curve.control_points {
+    let mut points = Vec::with_capacity(curve.control_points().len());
+    for point in curve.control_points() {
         let delta = point.vector_from(origin);
         let distance = delta.dot(frame.2);
         if distance.abs() > EPS_EXTRUSION_POSITION {
@@ -567,11 +571,11 @@ fn cap_pcurve(
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
     Ok(CapPcurve {
-        degree: curve.degree,
-        knots: curve.knots.clone(),
+        degree: curve.degree(),
+        knots: curve.knots().to_vec(),
         control_points: points,
-        weights: curve.weights.clone(),
-        periodic: curve.periodic,
+        weights: curve.weights().map(<[f64]>::to_vec),
+        periodic: curve.periodic(),
     })
 }
 
@@ -612,7 +616,7 @@ fn read_mesh_cache(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
     let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
-    let mut cache_reader = BoundedReader::new(data, cache.body.start, cache.body.end)?;
+    let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
     require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
     let mut meshes = Vec::new();
     let mut cache_children = Vec::new();
@@ -630,14 +634,14 @@ fn read_mesh_cache(
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
         cache_children.push(item.range());
-        let mut item_reader = BoundedReader::new(data, item.body.start, item.body.end)?;
+        let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
         let (class, userdata) =
             parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
-        item_reader.skip(wrapper.next_offset - wrapper_start)?;
+        item_reader.skip(wrapper.next_offset() - wrapper_start)?;
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
         }
@@ -692,10 +696,14 @@ fn read_v5_mesh_cache(
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
-    let Some(cache) = userdata.iter().find(|value| {
-        value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-            && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-    }) else {
+    let Some(cache) = userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .find(|value| {
+            value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+        })
+    else {
         return Ok(Vec::new());
     };
 
@@ -729,7 +737,7 @@ fn read_v5_mesh_cache(
                 ));
             }
         }
-        offset = wrapper.next_offset;
+        offset = wrapper.next_offset();
     }
     // `ON_V5ExtrusionDisplayMeshCache::Read` returns after its three
     // `ReadObject` calls. The enclosing anonymous-chunk end operation then
@@ -745,7 +753,7 @@ fn anonymous_chunk(
     name: &str,
 ) -> Result<Chunk, GeometryError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             &format!("expected anonymous {name} chunk"),
@@ -764,7 +772,7 @@ fn finish_anonymous(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -774,7 +782,7 @@ fn finish_anonymous(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -786,7 +794,7 @@ fn finish_payload(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -895,10 +903,11 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 pub(crate) mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
-    use crate::curves::Compound;
+    use crate::curves::DecodedCurve;
     use crate::layout::anonymous_version_prefix as anon_ver;
-    use crate::layout::long_chunk_header_v50 as long_v50;
+    use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
+    use crate::objects::ClassUserdata;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1209,17 +1218,19 @@ pub(crate) mod tests {
             points.reverse();
         }
         let count = points.len();
-        DecodedCurve {
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: (0..count + 2).map(|value| value as f64).collect(),
-                control_points: points,
-                weights: None,
-                periodic: false,
-            }),
-            compound: None,
-            warnings: Vec::new(),
-        }
+        DecodedCurve::leaf(
+            CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    (0..count + 2).map(|value| value as f64).collect(),
+                    points,
+                    None,
+                    false,
+                )
+                .expect("valid polygon curve"),
+            ),
+            Vec::new(),
+        )
     }
 
     fn decoded_quadratic_circle(clockwise: bool) -> DecodedCurve {
@@ -1250,17 +1261,19 @@ pub(crate) mod tests {
             points.reverse();
             weights.reverse();
         }
-        DecodedCurve {
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
-                control_points: points,
-                weights: Some(weights),
-                periodic: false,
-            }),
-            compound: None,
-            warnings: Vec::new(),
-        }
+        DecodedCurve::leaf(
+            CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+                    points,
+                    Some(weights),
+                    false,
+                )
+                .expect("valid circle curve"),
+            ),
+            Vec::new(),
+        )
     }
 
     #[test]
@@ -1277,7 +1290,10 @@ pub(crate) mod tests {
             )
             .expect("required invariant");
             assert_eq!(decoded.boundaries.len(), 1);
-            assert_eq!(decoded.laterals[0].v_knots, vec![4.0, 4.0, 9.0, 9.0]);
+            assert_eq!(
+                decoded.boundaries[0].lateral.v_knots(),
+                vec![4.0, 4.0, 9.0, 9.0]
+            );
             assert_eq!(
                 decoded.caps,
                 if minor < 2 {
@@ -1319,7 +1335,7 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(decoded.cap_origins[0], Point3::new(254.0, 508.0, 825.5));
         assert_eq!(decoded.cap_origins[1], Point3::new(254.0, 508.0, 952.5));
-        let first = decoded.boundaries[0].start_nurbs.control_points[1];
+        let first = decoded.boundaries[0].start_nurbs.control_points()[1];
         assert_eq!(first, Point3::new(304.8, 508.0, 825.5));
         assert_eq!(decoded.direction, Vector3::new(0.0, 0.0, 127.0));
     }
@@ -1338,7 +1354,7 @@ pub(crate) mod tests {
         )
         .expect("required invariant");
         assert_eq!(decoded.caps, [false, false]);
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         let capped = payload_with_profile(2, [true, false], None, open);
         assert!(decode(
             &capped,
@@ -1374,10 +1390,16 @@ pub(crate) mod tests {
             -1
         );
         let mut off_plane = decoded_polygon(false, true);
-        let CurveGeometry::Nurbs(curve) = &mut off_plane.geometry else {
+        let crate::curves::DecodedCurve::Leaf {
+            geometry: CurveGeometry::Nurbs(curve),
+            ..
+        } = &mut off_plane
+        else {
             unreachable!()
         };
-        curve.control_points[1].z = 1.0;
+        curve
+            .edit_control_points(|points| points[1].z = 1.0)
+            .expect("valid test curve edit");
         assert!(exact_orientation(&off_plane, 0).is_err());
     }
 
@@ -1385,12 +1407,9 @@ pub(crate) mod tests {
     fn multiple_profiles_require_exact_polycurve_count_and_outer_hole_orientation() {
         let outer = decoded_polygon(false, true);
         let inner = decoded_polygon(true, true);
-        let profile = DecodedCurve {
-            geometry: CurveGeometry::Unknown { record: None },
-            compound: Some(Compound {
-                children: vec![outer, inner],
-                parameters: vec![0.0, 1.0, 2.0],
-            }),
+        let profile = DecodedCurve::Compound {
+            children: vec![(0.0, outer), (1.0, inner)],
+            end_parameter: 2.0,
             warnings: Vec::new(),
         };
         assert_eq!(
@@ -1405,7 +1424,7 @@ pub(crate) mod tests {
     #[test]
     fn strict_flags_trim_domains_and_later_minor_versions_are_accepted() {
         let valid = payload(2, [false, false], None);
-        let body_start = long_v50::LEN;
+        let body_start = long_wide::LEN;
         let profile_len = polyline_wrapper(false, true).len();
         let common = body_start + anon_ver::LEN + profile_len;
         let trim_start = common + 48;
@@ -1520,7 +1539,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         assert!(decoded.meshes.is_empty());
         assert_eq!(decoded.warnings.len(), 1);
     }
@@ -1537,7 +1556,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         assert_eq!(decoded.meshes.len(), 1);
         assert!(decoded.warnings.is_empty());
     }
@@ -1547,7 +1566,7 @@ pub(crate) mod tests {
         let mut bytes = one_mesh_wrapper();
         bytes.extend(null_object_wrapper());
         bytes.extend(null_object_wrapper());
-        let descriptor = crate::objects::UserdataDescriptor {
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
@@ -1555,12 +1574,9 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..bytes.len(),
-            unknown_version: false,
-        };
+        });
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
             read_v5_mesh_cache(
                 expand,
@@ -1583,7 +1599,7 @@ pub(crate) mod tests {
         bytes.extend(null_object_wrapper());
         bytes.extend(null_object_wrapper());
         bytes.extend([0xa5, 0x5a]);
-        let descriptor = crate::objects::UserdataDescriptor {
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
@@ -1591,12 +1607,9 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..bytes.len(),
-            unknown_version: false,
-        };
+        });
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
             read_v5_mesh_cache(
                 expand,

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -77,404 +77,217 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "outline_planes": [
-            {
-              "id": "creo:surface:outline_plane#122:7",
-              "normal": [
-                0.0,
-                0.0,
-                -1.0
-              ],
-              "offset": 122,
-              "origin": [
-                0.0,
-                0.0,
-                1.0
-              ],
-              "source_section": "VisibGeom",
-              "surface_id": 7,
-              "u_axis": [
-                0.0,
-                1.0,
-                0.0
-              ]
-            }
-          ],
-          "plane_envelopes": [
-            {
-              "body": [
-                15,
-                15,
-                15,
-                15,
-                67,
-                240,
-                0,
-                67,
-                240,
-                0,
-                228,
-                228,
-                47,
-                0,
-                0,
-                228
-              ],
-              "corner_coordinate_equal": [
-                false,
-                false,
-                true
-              ],
-              "envelope": {
-                "bounds_2d": [
-                  [
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0
-                  ]
-                ],
-                "corners_3d": [
-                  [
-                    -1.0,
-                    -1.0,
-                    1.0
-                  ],
-                  [
-                    1.0,
-                    2.0,
-                    1.0
-                  ]
-                ],
-                "kind": "standard"
-              },
-              "id": "creo:surface:plane_envelope#122:7",
-              "offset": 122,
-              "row_offset": 116,
-              "scalar_tokens": [
+        "outline_planes": [
+          {
+            "id": "creo:surface:outline_plane#122:7",
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "offset": 122,
+            "origin": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "source_section": "VisibGeom",
+            "surface_id": 7,
+            "u_axis": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        ],
+        "plane_envelopes": [
+          {
+            "body": [
+              15,
+              15,
+              15,
+              15,
+              67,
+              240,
+              0,
+              67,
+              240,
+              0,
+              228,
+              228,
+              47,
+              0,
+              0,
+              228
+            ],
+            "corner_coordinate_equal": [
+              false,
+              false,
+              true
+            ],
+            "envelope": {
+              "bounds_2d": [
                 [
-                  15
+                  0.0,
+                  0.0
                 ],
                 [
-                  15
-                ],
-                [
-                  15
-                ],
-                [
-                  15
-                ],
-                [
-                  67,
-                  240,
-                  0
-                ],
-                [
-                  67,
-                  240,
-                  0
-                ],
-                [
-                  228
-                ],
-                [
-                  228
-                ],
-                [
-                  47,
-                  0,
-                  0
-                ],
-                [
-                  228
+                  0.0,
+                  0.0
                 ]
               ],
-              "source_section": "VisibGeom",
-              "surface_id": 7
-            }
-          ],
-          "plane_local_systems": [
-            {
-              "body": [
-                15,
-                228,
-                15,
-                228,
-                15,
-                15,
-                15,
-                15,
-                15,
-                70,
-                8,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                15,
+              "corners_3d": [
+                [
+                  -1.0,
+                  -1.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  2.0,
+                  1.0
+                ]
+              ],
+              "kind": "standard"
+            },
+            "id": "creo:surface:plane_envelope#122:7",
+            "offset": 122,
+            "row_offset": 116,
+            "scalar_tokens": [
+              [
+                15
+              ],
+              [
+                15
+              ],
+              [
+                15
+              ],
+              [
+                15
+              ],
+              [
+                67,
+                240,
+                0
+              ],
+              [
+                67,
+                240,
+                0
+              ],
+              [
                 228
               ],
-              "classification": "simple",
-              "id": "creo:surface:plane_local_system#139:7",
-              "normal": [
-                0.0,
-                0.0,
-                -1.0
+              [
+                228
               ],
-              "offset": 139,
-              "origin": [
-                3.0,
-                0.0,
-                1.0
-              ],
-              "row_offset": 116,
-              "slots": [
-                0.0,
-                1.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                3.0,
-                0.0,
-                1.0
-              ],
-              "source_section": "VisibGeom",
-              "surface_id": 7,
-              "u_axis": [
-                0.0,
-                1.0,
-                0.0
-              ]
-            }
-          ],
-          "surface_parameters": [
-            {
-              "body": [
-                15,
-                15,
-                15,
-                15,
-                67,
-                240,
-                0,
-                67,
-                240,
-                0,
-                228,
-                228,
+              [
                 47,
                 0,
-                0,
+                0
+              ],
+              [
                 228
-              ],
-              "body_offset": 122,
-              "boundary": "compound_close",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 116,
-              "scalar_frames": [
-                {
-                  "offset": 0,
-                  "slots": [
-                    {
-                      "length": 1,
-                      "offset": 0,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 1,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 2,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 3,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 3,
-                      "offset": 4,
-                      "raw": [
-                        67,
-                        240,
-                        0
-                      ],
-                      "value": -1.0
-                    },
-                    {
-                      "length": 3,
-                      "offset": 7,
-                      "raw": [
-                        67,
-                        240,
-                        0
-                      ],
-                      "value": -1.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 10,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 11,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    },
-                    {
-                      "length": 3,
-                      "offset": 12,
-                      "raw": [
-                        47,
-                        0,
-                        0
-                      ],
-                      "value": 2.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 15,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 1,
-                  "offset": 0,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 1,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 2,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 3,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 3,
-                  "offset": 4,
-                  "raw": [
-                    67,
-                    240,
-                    0
-                  ],
-                  "value": -1.0
-                },
-                {
-                  "length": 3,
-                  "offset": 7,
-                  "raw": [
-                    67,
-                    240,
-                    0
-                  ],
-                  "value": -1.0
-                },
-                {
-                  "length": 1,
-                  "offset": 10,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                },
-                {
-                  "length": 1,
-                  "offset": 11,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                },
-                {
-                  "length": 3,
-                  "offset": 12,
-                  "raw": [
-                    47,
-                    0,
-                    0
-                  ],
-                  "value": 2.0
-                },
-                {
-                  "length": 1,
-                  "offset": 15,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "plane",
-              "surface_id": 7,
-              "surface_type_byte": 34,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": {
+              ]
+            ],
+            "source_section": "VisibGeom",
+            "surface_id": 7
+          }
+        ],
+        "plane_local_systems": [
+          {
+            "body": [
+              15,
+              228,
+              15,
+              228,
+              15,
+              15,
+              15,
+              15,
+              15,
+              70,
+              8,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              15,
+              228
+            ],
+            "classification": "simple",
+            "id": "creo:surface:plane_local_system#139:7",
+            "normal": [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            "offset": 139,
+            "origin": [
+              3.0,
+              0.0,
+              1.0
+            ],
+            "row_offset": 116,
+            "slots": [
+              0.0,
+              1.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              3.0,
+              0.0,
+              1.0
+            ],
+            "source_section": "VisibGeom",
+            "surface_id": 7,
+            "u_axis": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        ],
+        "surface_parameters": [
+          {
+            "body": [
+              15,
+              15,
+              15,
+              15,
+              67,
+              240,
+              0,
+              67,
+              240,
+              0,
+              228,
+              228,
+              47,
+              0,
+              0,
+              228
+            ],
+            "body_offset": 122,
+            "boundary": "compound_close",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 116,
+            "scalar_frames": [
+              {
                 "offset": 0,
                 "slots": [
                   {
@@ -564,35 +377,219 @@
                     "value": 1.0
                   }
                 ]
+              }
+            ],
+            "slots": [
+              {
+                "length": 1,
+                "offset": 0,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
               },
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 116,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "plane",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 34
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+              {
+                "length": 1,
+                "offset": 1,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 2,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 3,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 3,
+                "offset": 4,
+                "raw": [
+                  67,
+                  240,
+                  0
+                ],
+                "value": -1.0
+              },
+              {
+                "length": 3,
+                "offset": 7,
+                "raw": [
+                  67,
+                  240,
+                  0
+                ],
+                "value": -1.0
+              },
+              {
+                "length": 1,
+                "offset": 10,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              },
+              {
+                "length": 1,
+                "offset": 11,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              },
+              {
+                "length": 3,
+                "offset": 12,
+                "raw": [
+                  47,
+                  0,
+                  0
+                ],
+                "value": 2.0
+              },
+              {
+                "length": 1,
+                "offset": 15,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "plane",
+            "surface_id": 7,
+            "surface_type_byte": 34,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": {
+              "offset": 0,
+              "slots": [
+                {
+                  "length": 1,
+                  "offset": 0,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 1,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 2,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 3,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 3,
+                  "offset": 4,
+                  "raw": [
+                    67,
+                    240,
+                    0
+                  ],
+                  "value": -1.0
+                },
+                {
+                  "length": 3,
+                  "offset": 7,
+                  "raw": [
+                    67,
+                    240,
+                    0
+                  ],
+                  "value": -1.0
+                },
+                {
+                  "length": 1,
+                  "offset": 10,
+                  "raw": [
+                    228
+                  ],
+                  "value": 1.0
+                },
+                {
+                  "length": 1,
+                  "offset": 11,
+                  "raw": [
+                    228
+                  ],
+                  "value": 1.0
+                },
+                {
+                  "length": 3,
+                  "offset": 12,
+                  "raw": [
+                    47,
+                    0,
+                    0
+                  ],
+                  "value": 2.0
+                },
+                {
+                  "length": 1,
+                  "offset": 15,
+                  "raw": [
+                    228
+                  ],
+                  "value": 1.0
+                }
+              ]
+            },
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 116,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "plane",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 34
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -601,7 +598,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "159",
-        "layout": "unknown",
         "section.0.length": "83",
         "section.0.name": "VisibGeom",
         "section.0.offset": "76",
@@ -610,6 +606,17 @@
         "section_count": "1",
         "srf_array_count": "1",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -986,9 +993,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": true,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -1101,7 +1128,6 @@
         "sha256": "1d1dd11de39303ac7ff4274b9b6d592e048cbe3bb674ec7dad1a56b609bd7125",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

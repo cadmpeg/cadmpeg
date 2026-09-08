@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -63,272 +63,184 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                40,
-                141,
-                7,
-                27,
-                210,
-                101,
-                111,
-                108,
-                24,
-                148,
-                63,
-                2,
-                112,
-                22,
-                190,
-                252,
-                0,
-                18,
-                32,
-                71,
-                19,
-                204,
-                70,
-                49,
-                61,
-                112,
-                163,
-                215,
-                10,
-                62,
-                58,
-                177,
-                71,
-                186,
-                46,
-                19,
-                204,
-                70,
-                48,
-                189,
-                112,
-                163,
-                215,
-                10,
-                62,
-                46,
-                19,
-                204
-              ],
-              "body_offset": 122,
-              "boundary": "compound_close",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 1,
-                  "offset": 0,
-                  "raw": [
-                    40
-                  ]
-                },
-                {
-                  "length": 11,
-                  "offset": 8,
-                  "raw": [
-                    24,
-                    148,
-                    63,
-                    2,
-                    112,
-                    22,
-                    190,
-                    252,
-                    0,
-                    18,
-                    32
-                  ]
-                },
-                {
-                  "length": 1,
-                  "offset": 30,
-                  "raw": [
-                    58
-                  ]
-                },
-                {
-                  "length": 7,
-                  "offset": 38,
-                  "raw": [
-                    48,
-                    189,
-                    112,
-                    163,
-                    215,
-                    10,
-                    62
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 116,
-              "scalar_frames": [
-                {
-                  "offset": 1,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 1,
-                      "raw": [
-                        141,
-                        7,
-                        27,
-                        210,
-                        101,
-                        111,
-                        108
-                      ],
-                      "value": 0.00004407630756705222
-                    }
-                  ]
-                },
-                {
-                  "offset": 19,
-                  "slots": [
-                    {
-                      "length": 3,
-                      "offset": 19,
-                      "raw": [
-                        71,
-                        19,
-                        204
-                      ],
-                      "value": -4.949999999999999
-                    },
-                    {
-                      "length": 8,
-                      "offset": 22,
-                      "raw": [
-                        70,
-                        49,
-                        61,
-                        112,
-                        163,
-                        215,
-                        10,
-                        62
-                      ],
-                      "value": 17.240000000000002
-                    }
-                  ]
-                },
-                {
-                  "offset": 31,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 31,
-                      "raw": [
-                        177,
-                        71,
-                        186,
-                        46,
-                        19,
-                        204,
-                        70
-                      ],
-                      "value": -0.0007240986811629102
-                    }
-                  ]
-                },
-                {
-                  "offset": 45,
-                  "slots": [
-                    {
-                      "length": 3,
-                      "offset": 45,
-                      "raw": [
-                        46,
-                        19,
-                        204
-                      ],
-                      "value": 4.949999999999999
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 7,
-                  "offset": 1,
-                  "raw": [
-                    141,
-                    7,
-                    27,
-                    210,
-                    101,
-                    111,
-                    108
-                  ],
-                  "value": 0.00004407630756705222
-                },
-                {
-                  "length": 3,
-                  "offset": 19,
-                  "raw": [
-                    71,
-                    19,
-                    204
-                  ],
-                  "value": -4.949999999999999
-                },
-                {
-                  "length": 8,
-                  "offset": 22,
-                  "raw": [
-                    70,
-                    49,
-                    61,
-                    112,
-                    163,
-                    215,
-                    10,
-                    62
-                  ],
-                  "value": 17.240000000000002
-                },
-                {
-                  "length": 7,
-                  "offset": 31,
-                  "raw": [
-                    177,
-                    71,
-                    186,
-                    46,
-                    19,
-                    204,
-                    70
-                  ],
-                  "value": -0.0007240986811629102
-                },
-                {
-                  "length": 3,
-                  "offset": 45,
-                  "raw": [
-                    46,
-                    19,
-                    204
-                  ],
-                  "value": 4.949999999999999
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_type_byte": 38,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": {
+        "surface_parameters": [
+          {
+            "body": [
+              40,
+              141,
+              7,
+              27,
+              210,
+              101,
+              111,
+              108,
+              24,
+              148,
+              63,
+              2,
+              112,
+              22,
+              190,
+              252,
+              0,
+              18,
+              32,
+              71,
+              19,
+              204,
+              70,
+              49,
+              61,
+              112,
+              163,
+              215,
+              10,
+              62,
+              58,
+              177,
+              71,
+              186,
+              46,
+              19,
+              204,
+              70,
+              48,
+              189,
+              112,
+              163,
+              215,
+              10,
+              62,
+              46,
+              19,
+              204
+            ],
+            "body_offset": 122,
+            "boundary": "compound_close",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 1,
+                "offset": 0,
+                "raw": [
+                  40
+                ]
+              },
+              {
+                "length": 11,
+                "offset": 8,
+                "raw": [
+                  24,
+                  148,
+                  63,
+                  2,
+                  112,
+                  22,
+                  190,
+                  252,
+                  0,
+                  18,
+                  32
+                ]
+              },
+              {
+                "length": 1,
+                "offset": 30,
+                "raw": [
+                  58
+                ]
+              },
+              {
+                "length": 7,
+                "offset": 38,
+                "raw": [
+                  48,
+                  189,
+                  112,
+                  163,
+                  215,
+                  10,
+                  62
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 116,
+            "scalar_frames": [
+              {
+                "offset": 1,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 1,
+                    "raw": [
+                      141,
+                      7,
+                      27,
+                      210,
+                      101,
+                      111,
+                      108
+                    ],
+                    "value": 0.00004407630756705222
+                  }
+                ]
+              },
+              {
+                "offset": 19,
+                "slots": [
+                  {
+                    "length": 3,
+                    "offset": 19,
+                    "raw": [
+                      71,
+                      19,
+                      204
+                    ],
+                    "value": -4.949999999999999
+                  },
+                  {
+                    "length": 8,
+                    "offset": 22,
+                    "raw": [
+                      70,
+                      49,
+                      61,
+                      112,
+                      163,
+                      215,
+                      10,
+                      62
+                    ],
+                    "value": 17.240000000000002
+                  }
+                ]
+              },
+              {
+                "offset": 31,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 31,
+                    "raw": [
+                      177,
+                      71,
+                      186,
+                      46,
+                      19,
+                      204,
+                      70
+                    ],
+                    "value": -0.0007240986811629102
+                  }
+                ]
+              },
+              {
                 "offset": 45,
                 "slots": [
                   {
@@ -342,43 +254,128 @@
                     "value": 4.949999999999999
                   }
                 ]
-              },
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": {
-                "offset": 19,
-                "values": [
-                  -4.949999999999999,
-                  17.240000000000002,
-                  16.740000000000002,
-                  4.949999999999999
-                ]
               }
+            ],
+            "slots": [
+              {
+                "length": 7,
+                "offset": 1,
+                "raw": [
+                  141,
+                  7,
+                  27,
+                  210,
+                  101,
+                  111,
+                  108
+                ],
+                "value": 0.00004407630756705222
+              },
+              {
+                "length": 3,
+                "offset": 19,
+                "raw": [
+                  71,
+                  19,
+                  204
+                ],
+                "value": -4.949999999999999
+              },
+              {
+                "length": 8,
+                "offset": 22,
+                "raw": [
+                  70,
+                  49,
+                  61,
+                  112,
+                  163,
+                  215,
+                  10,
+                  62
+                ],
+                "value": 17.240000000000002
+              },
+              {
+                "length": 7,
+                "offset": 31,
+                "raw": [
+                  177,
+                  71,
+                  186,
+                  46,
+                  19,
+                  204,
+                  70
+                ],
+                "value": -0.0007240986811629102
+              },
+              {
+                "length": 3,
+                "offset": 45,
+                "raw": [
+                  46,
+                  19,
+                  204
+                ],
+                "value": 4.949999999999999
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_type_byte": 38,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": {
+              "offset": 45,
+              "slots": [
+                {
+                  "length": 3,
+                  "offset": 45,
+                  "raw": [
+                    46,
+                    19,
+                    204
+                  ],
+                  "value": 4.949999999999999
+                }
+              ]
+            },
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": {
+              "offset": 19,
+              "values": [
+                -4.949999999999999,
+                17.240000000000002,
+                16.740000000000002,
+                4.949999999999999
+              ]
             }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 116,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 38
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 116,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 38
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -387,7 +384,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "171",
-        "layout": "unknown",
         "section.0.length": "95",
         "section.0.name": "VisibGeom",
         "section.0.offset": "76",
@@ -396,6 +392,17 @@
         "section_count": "1",
         "srf_array_count": "1",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -772,9 +779,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 1
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -896,7 +923,6 @@
         "sha256": "23f1de02324b2c3df511d362beefa22ff865d9d2188a433de00e1699b211406b",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

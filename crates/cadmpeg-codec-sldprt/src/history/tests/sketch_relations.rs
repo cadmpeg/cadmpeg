@@ -31,9 +31,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     let cadmpeg_ir::features::FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
-        sketch: Some(sketch),
-        ..
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
     } = &feature.definition
     else {
         panic!("bound sketch feature");
@@ -90,13 +88,12 @@ fn decode_projects_owned_native_sketch_relation() {
     ));
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -116,7 +113,7 @@ fn decode_groups_compact_relation_scalar_pair() {
     let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
         panic!("one compact relation instance");
     };
-    assert_eq!(relation.scalar_refs.len(), 2);
+    assert_eq!(relation.scalar_refs().len(), 2);
     let driving = native.feature_input_lanes[0]
         .scalars
         .iter()
@@ -127,14 +124,8 @@ fn decode_groups_compact_relation_scalar_pair() {
         .iter()
         .find(|scalar| scalar.role == crate::records::FeatureInputScalarRole::Display)
         .expect("display scalar");
-    assert_eq!(
-        relation.parameter_scalar_ref.as_deref(),
-        Some(driving.id.as_str())
-    );
-    assert_eq!(
-        relation.display_scalar_ref.as_deref(),
-        Some(display.id.as_str())
-    );
+    assert_eq!(relation.parameter_scalar_ref(), Some(driving.id.as_str()));
+    assert_eq!(relation.display_scalar_ref(), Some(display.id.as_str()));
     assert_eq!(relation.operands.len(), 2);
     assert_eq!(relation.operands[0].entity_index, 0);
     assert_eq!(relation.operands[1].entity_index, 2);
@@ -158,13 +149,12 @@ fn decode_groups_compact_relation_scalar_pair() {
                     && candidate.native_ref.as_deref() == Some(driving.id.as_str())
             })
     ));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -189,7 +179,7 @@ fn decode_starts_another_relation_after_two_repeated_operand_scalars() {
         native.feature_input_lanes[0]
             .relation_instances
             .iter()
-            .map(|relation| relation.scalar_refs.len())
+            .map(|relation| relation.scalar_refs().len())
             .collect::<Vec<_>>(),
         vec![2, 1]
     );
@@ -265,13 +255,12 @@ fn decode_groups_native_tagged_point_line_relations() {
             && operands[0].native_kind == "7b83"
             && operands[1].native_kind == "8683"
     ));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -397,7 +386,7 @@ fn decode_groups_unary_circle_diameter_relations() {
         .find(|parameter| parameter.name == "D2")
         .expect("diameter parameter");
     assert_eq!(
-        relation.parameter_scalar_ref.as_deref(),
+        relation.parameter_scalar_ref(),
         parameter.native_ref.as_deref()
     );
     assert!(decoded
@@ -420,13 +409,12 @@ fn decode_groups_unary_circle_diameter_relations() {
                         && operands[0].native_kind == "fe83"
                 )
         }));
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]

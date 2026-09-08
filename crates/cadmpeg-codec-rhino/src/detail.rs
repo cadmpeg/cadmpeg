@@ -30,22 +30,22 @@ fn anonymous<'a>(
     family: &str,
 ) -> Result<(BoundedReader<'a>, usize, i32), GeometryError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
             format!("{family} is not anonymous"),
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 {
         return Err(GeometryError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported {family} version {major}.{minor}"),
         });
     }
-    Ok((reader, chunk.next_offset, minor))
+    Ok((reader, chunk.next_offset(), minor))
 }
 
 pub(crate) fn decode(
@@ -88,11 +88,7 @@ pub(crate) fn decode(
     Ok(Detail {
         source_range: range,
         view_range,
-        boundary: DecodedCurve {
-            geometry: CurveGeometry::Nurbs(geometry),
-            compound: None,
-            warnings: Vec::new(),
-        },
+        boundary: DecodedCurve::leaf(CurveGeometry::Nurbs(geometry), Vec::new()),
         page_per_model_ratio,
     })
 }
@@ -159,10 +155,10 @@ mod tests {
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[1].x, 2.0);
+        assert_eq!(boundary.control_points()[1].x, 2.0);
     }
 
     #[test]
@@ -191,10 +187,10 @@ mod tests {
 
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V5).expect("required invariant");
-        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.reported_geometry() else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[0].z, 7.0);
-        assert_eq!(boundary.control_points[1].z, 8.0);
+        assert_eq!(boundary.control_points()[0].z, 7.0);
+        assert_eq!(boundary.control_points()[1].z, 8.0);
     }
 }

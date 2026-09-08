@@ -8,12 +8,13 @@ use super::geometry::{
 };
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::*;
+use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Loop, LoopBoundaryRole, Shell};
+use cadmpeg_ir::topology::{Loop, Shell};
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat<'static> = IdFormat("f3d");
@@ -21,10 +22,10 @@ const FORMAT: IdFormat<'static> = IdFormat("f3d");
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
-    cadmpeg_ir::geometry::NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
-        control_points: vec![
+    cadmpeg_ir::geometry::NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+        vec![
             point(5.0, 0.0),
             point(5.0, 5.0),
             point(0.0, 5.0),
@@ -35,7 +36,7 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
             point(5.0, -5.0),
             point(5.0, 0.0),
         ],
-        weights: Some(vec![
+        Some(vec![
             1.0,
             std::f64::consts::FRAC_1_SQRT_2,
             1.0,
@@ -46,8 +47,9 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
             std::f64::consts::FRAC_1_SQRT_2,
             1.0,
         ]),
-        periodic: false,
-    }
+        false,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -77,15 +79,17 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!((radius - 5.0).abs() < 1.0e-12);
     assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
     let mut approximate = exact_circle_directrix();
-    approximate.control_points[3].x += 1.0e-5;
+    approximate
+        .edit_control_points(|points| points[3].x += 1.0e-5)
+        .unwrap();
     assert!(rational_four_arc_circle(&approximate).is_none());
 }
 
 fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
     let quadratic = exact_circle_directrix();
-    let weights = quadratic.weights.as_deref().unwrap();
+    let weights = quadratic.weights().unwrap();
     let homogeneous = |index: usize| {
-        let point = quadratic.control_points[index];
+        let point = quadratic.control_points()[index];
         let weight = weights[index] * 7.0;
         [point.x * weight, point.y * weight, point.z * weight, weight]
     };
@@ -126,23 +130,28 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
             )
         })
         .unzip();
-    cadmpeg_ir::geometry::NurbsCurve {
-        degree: 3,
-        knots: vec![
+    cadmpeg_ir::geometry::NurbsCurve::new(
+        3,
+        vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
         ],
         control_points,
-        weights: Some(weights),
-        periodic: false,
-    }
+        Some(weights),
+        false,
+    )
+    .unwrap()
 }
 
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let mut scaled = exact_circle_directrix();
-    for weight in scaled.weights.as_mut().unwrap() {
-        *weight *= 7.0;
-    }
+    scaled
+        .edit_weights(|weights| {
+            for weight in weights {
+                *weight *= 7.0;
+            }
+        })
+        .unwrap();
     assert!(rational_four_arc_circle(&scaled).is_some());
 
     let mut elevated = degree_elevated_circle();
@@ -159,7 +168,9 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         ),
         Some(SurfaceGeometry::Cylinder { .. })
     ));
-    elevated.control_points[5].x += 1.0e-5;
+    elevated
+        .edit_control_points(|points| points[5].x += 1.0e-5)
+        .unwrap();
     assert!(rational_four_arc_circle(&elevated).is_none());
 }
 
@@ -181,13 +192,14 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
 }
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
-    cadmpeg_ir::geometry::NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: points,
-        weights: None,
-        periodic: false,
-    }
+    cadmpeg_ir::geometry::NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        points,
+        None,
+        false,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -234,18 +246,24 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
     else {
         unreachable!()
     };
-    spine.control_points[1].x = 2.1;
+    spine
+        .edit_control_points(|points| points[1].x = 2.1)
+        .unwrap();
     assert!(analytic_procedural_surface(&definition).is_none());
 }
 
 #[test]
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     let mut circle = exact_circle_directrix();
-    for point in &mut circle.control_points {
-        point.x -= 2.0;
-        point.y -= 3.0;
-        point.z -= 3.0;
-    }
+    circle
+        .edit_control_points(|points| {
+            for point in points {
+                point.x -= 2.0;
+                point.y -= 3.0;
+                point.z -= 3.0;
+            }
+        })
+        .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
             Some(plane(
@@ -319,19 +337,18 @@ fn asm_stream_delimiters_are_not_application_records() {
 
 #[test]
 fn saved_top_level_edge_projects_as_a_wire_body() {
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(0, "asmheader", "asmheader", Vec::new()),
+        record(0, "asmheader", Vec::new()),
         record(
             1,
-            "edge",
             "edge",
             vec![
                 Token::Ref(-1),
@@ -349,7 +366,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             2,
             "vertex",
-            "vertex",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -361,7 +377,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         ),
         record(
             3,
-            "vertex",
             "vertex",
             vec![
                 Token::Ref(-1),
@@ -375,7 +390,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             4,
             "point",
-            "point",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -385,7 +399,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         ),
         record(
             5,
-            "point",
             "point",
             vec![
                 Token::Ref(-1),
@@ -397,7 +410,6 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         record(
             6,
             "straight-curve",
-            "straight",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -425,7 +437,10 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
-    assert_eq!(brep.shells[0].wire_edges, vec![EdgeId(id(FORMAT, 1))]);
+    assert_eq!(
+        brep.shells[0].wire_edges,
+        vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
+    );
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.vertices.len(), 2);
     assert_eq!(brep.points.len(), 2);
@@ -440,7 +455,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     let current_attribute = |index, owner| Record {
         index,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        head: "ATTRIB_CUSTOM".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),
@@ -455,7 +470,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     let legacy_attribute = |index, owner| Record {
         index,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        head: "ATTRIB_CUSTOM".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(-1),
@@ -469,7 +484,8 @@ fn nested_attributes_inherit_their_topology_owner() {
     let parent = current_attribute(7, 3);
     let child = legacy_attribute(8, 7);
     let records = HashMap::from([(7, &parent), (8, &child)]);
-    let expected = AttributeTarget::Edge(EdgeId("edge".into()));
+    let expected =
+        AttributeTarget::Edge(EdgeId::mint("test:model:edge#0").expect("identity grammar"));
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
@@ -506,7 +522,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         Record {
             index,
             name: name.into(),
-            head: name.split('-').next().unwrap().into(),
+
             tokens: tokens.into(),
             offset: 0,
             len: 0,
@@ -515,7 +531,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let entity = Record {
         index: 0,
         name: "face".into(),
-        head: "face".into(),
+
         tokens: vec![Token::Ref(1)].into(),
         offset: 0,
         len: 0,
@@ -585,7 +601,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId("face".into())),
+        &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -617,7 +633,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let entity = Record {
         index: 0,
         name: "face".into(),
-        head: "face".into(),
+
         tokens: vec![Token::Ref(1)].into(),
         offset: 0,
         len: 0,
@@ -625,7 +641,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let color = Record {
         index: 1,
         name: "rgb_color-st-attrib".into(),
-        head: "rgb_color".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(2),
@@ -642,7 +658,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let name = Record {
         index: 2,
         name: "string_attrib-name_attrib-gen-attrib".into(),
-        head: "string_attrib".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Ref(-1),
@@ -673,7 +689,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId("face".into())),
+        &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -695,45 +711,40 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(0, "asmheader", "asmheader", vec![]),
-        record(
-            1,
-            "ATTRIB_CUSTOM-attrib",
-            "ATTRIB_CUSTOM",
-            vec![Token::Ref(-1)],
-        ),
-        record(
-            2,
-            "ATTRIB_CUSTOM-attrib",
-            "ATTRIB_CUSTOM",
-            vec![Token::Ref(-1)],
-        ),
-        record(3, "shell", "shell", vec![Token::Ref(1)]),
-        record(4, "loop", "loop", vec![Token::Ref(2)]),
+        record(0, "asmheader", vec![]),
+        record(1, "ATTRIB_CUSTOM-attrib", vec![Token::Ref(-1)]),
+        record(2, "ATTRIB_CUSTOM-attrib", vec![Token::Ref(-1)]),
+        record(3, "shell", vec![Token::Ref(1)]),
+        record(4, "loop", vec![Token::Ref(2)]),
     ];
     let mut brep = AsmBrep {
         shells: vec![Shell {
-            id: ShellId(id(FORMAT, 3)),
-            region: RegionId("region".into()),
+            id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
+            region: RegionId::mint("test:model:region#0").expect("identity grammar"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
         loops: vec![Loop {
-            id: LoopId(id(FORMAT, 4)),
-            face: FaceId("face".into()),
-            boundary_role: LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
+            face: FaceId::mint("test:model:face#0").expect("identity grammar"),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
         }],
         ..AsmBrep::default()
     };
@@ -750,14 +761,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT),
         HashSet::from([1, 2])
     );
-    assert!(brep
-        .attributes
-        .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(FORMAT, 3)))));
-    assert!(brep
-        .attributes
-        .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(FORMAT, 4)))));
+    assert!(brep.attributes.iter().any(|attribute| attribute.target
+        == AttributeTarget::Shell(ShellId::mint(id(FORMAT, 3)).expect("identity grammar"))));
+    assert!(brep.attributes.iter().any(|attribute| attribute.target
+        == AttributeTarget::Loop(LoopId::mint(id(FORMAT, 4)).expect("identity grammar"))));
 }
 
 #[test]
@@ -766,19 +773,18 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
 
-    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
         name: name.into(),
-        head: head.into(),
+
         tokens: tokens.into(),
         offset: 0,
         len: 0,
     };
     let records = vec![
-        record(1, "body", "body", vec![Token::Ref(-1)]),
+        record(1, "body", vec![Token::Ref(-1)]),
         record(
             2,
-            "lump",
             "lump",
             vec![
                 Token::Ref(-1),
@@ -792,7 +798,6 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         record(
             3,
             "name_attrib-gen-attrib",
-            "name",
             vec![
                 Token::Ref(-1),
                 Token::Long(-1),
@@ -811,19 +816,19 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         .iter()
         .map(|record| (record.index as i64, record))
         .collect();
-    let body_id = BodyId(id(FORMAT, 1));
+    let body_id = BodyId::mint(id(FORMAT, 1)).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId(id(FORMAT, 2))],
+            regions: vec![RegionId::mint(id(FORMAT, 2)).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
         }],
         regions: vec![Region {
-            id: RegionId(id(FORMAT, 2)),
+            id: RegionId::mint(id(FORMAT, 2)).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
         }],
@@ -842,7 +847,8 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     assert_eq!(
         brep.attributes,
         vec![SourceAttribute {
-            id: cadmpeg_ir::ids::AttributeId("f3d:brep:attribute#3".into()),
+            id: cadmpeg_ir::ids::AttributeId::mint("f3d:brep:attribute#3")
+                .expect("identity grammar"),
             target: AttributeTarget::Body(body_id),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
@@ -890,8 +896,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
 
-    let records =
-        crate::sab::frame(&bytes, 0, bytes.len(), 8).expect("generated subshell bytes must frame");
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+        .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
         .map(|record| (record.index as i64, record))
@@ -901,8 +907,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     assert_eq!(
         shell_faces(&records[1], &by_index, &kept, FORMAT),
         vec![
-            FaceId("f3d:brep:entity#4".into()),
-            FaceId("f3d:brep:entity#5".into())
+            FaceId::mint("f3d:brep:entity#4").expect("identity grammar"),
+            FaceId::mint("f3d:brep:entity#5").expect("identity grammar")
         ]
     );
     assert_eq!(
@@ -922,7 +928,7 @@ fn subshell_wires_project_onto_the_nearest_shell() {
     record(&mut bytes, "wire", &[]); // 5
     record(&mut bytes, "wire", &[]); // 6
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8)
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()
@@ -936,7 +942,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
     let edge = Record {
         index: 1,
         name: "edge".into(),
-        head: "edge".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),
@@ -958,16 +964,17 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = nurbs::pcurve::NurbsPcurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
+    let candidate = cadmpeg_ir::geometry::PcurveNurbs::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
             cadmpeg_ir::math::Point2::new(0.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),
         Some(vec![[0.55, 0.60], [0.0, 1.0]])
@@ -979,7 +986,7 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     let edge = Record {
         index: 1,
         name: "edge".into(),
-        head: "edge".into(),
+
         tokens: vec![
             Token::Ref(-1),
             Token::Long(-1),
@@ -1021,4 +1028,38 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.edges[0].curve, None);
     assert_eq!(brep.edges[0].param_range, Some([1.0, 0.0]));
+}
+
+#[test]
+fn append_preserves_body_ordinals_within_each_source_brep() {
+    let key = |source: &str| BodyNativeKey {
+        source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
+        record_index: 17,
+        body: if source == "first" {
+            "f3d:brep:entity#17"
+        } else {
+            "f3d:brep:entity#18"
+        }
+        .try_into()
+        .expect("valid identity"),
+        body_ordinal: 0,
+        source_brep: Some(source.into()),
+        asm_body_key: Some(23),
+    };
+    let mut first = AsmBrep::default();
+    first.body_native_keys.push(key("first"));
+    let mut second = AsmBrep::default();
+    second.body_native_keys.push(key("second"));
+    first.append(second);
+    assert_eq!(first.body_native_keys.len(), 2);
+    assert_eq!(first.body_native_keys[0].body_ordinal, 0);
+    assert_eq!(first.body_native_keys[1].body_ordinal, 0);
+    assert_eq!(
+        first.body_native_keys[0].source_brep.as_deref(),
+        Some("first")
+    );
+    assert_eq!(
+        first.body_native_keys[1].source_brep.as_deref(),
+        Some("second")
+    );
 }

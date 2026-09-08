@@ -11,9 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -27,7 +30,8 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     use cadmpeg_ir::topology::Color;
 
     let visual_guid = "11111111-2222-3333-4444-555555555555";
-    let appearance_id = AppearanceId("generated:appearance#0".into());
+    let appearance_id =
+        AppearanceId::mint("generated:test:appearance#0").expect("identity grammar");
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     source_less.model.appearances = vec![Appearance {
         id: appearance_id.clone(),
@@ -52,10 +56,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     }];
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Protein appearance encode");
     let round_trip = F3dCodec
@@ -97,26 +98,25 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
-        id: "generated:material-assignment#0".into(),
+        id: "f3d:generated:material-assignment#0".into(),
         asm_body_key: 42,
         asm_body_key_offset: 0,
-        entity_suffix: 985,
+
         entity_suffix_offset: 0,
-        entity_id: "0_985".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 0,
         visual_guid: "11111111-2222-3333-4444-555555555555".into(),
         visual_guid_offset: 0,
-        physical_token: Some("PrismMaterial-Generated".into()),
-        physical_token_offset: None,
+        physical_token: Some(crate::records::RecordedValue {
+            value: "PrismMaterial-Generated".into(),
+            offset: None,
+        }),
         visual_preset: None,
-        visual_preset_offset: None,
     }];
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("an incomplete generated presentation graph must be refused");
     assert!(error
@@ -133,7 +133,7 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         .into_iter()
         .enumerate()
         .map(|(ordinal, entity_suffix)| crate::records::BodyVisibility {
-            id: format!("generated:body-visibility#{ordinal}"),
+            id: format!("f3d:generated:body-visibility#{ordinal}"),
             body: body.clone(),
             stream: "generated/Design1/BulkStream.dat".into(),
             byte_offset: 0,
@@ -145,10 +145,7 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         .collect();
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("conflicting body-map rows must not collapse");
     assert!(error
@@ -164,11 +161,14 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .expect("generated material decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.design_material_assignments[0].physical_token = Some("PrismMaterial-019".into());
+        native.design_material_assignments[0]
+            .physical_token
+            .as_mut()
+            .expect("material field")
+            .value = "PrismMaterial-019".into();
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -182,12 +182,11 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let assignment = &mut native.design_material_assignments[0];
-        assignment.entity_id = "0_986".into();
-        assignment.entity_suffix = 986;
+        assignment.entity_id =
+            crate::records::DesignEntityId::try_from("0_986".to_owned()).expect("valid entity ID");
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("a partial presentation-graph identity edit must fail");
     assert!(error.to_string().contains(
         "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
@@ -205,9 +204,12 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     invalid.model.appearances[0]
         .properties
         .insert("refraction_index".into(), 0.5);
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&invalid, decoded.source_fidelity(), &mut Vec::new())
-        .expect_err("out-of-range refraction must be refused");
+    let error = crate::test_support::plan_inherited_write(
+        &invalid,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .expect_err("out-of-range refraction must be refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("refraction_index"))
     );
@@ -216,8 +218,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     structural.model.appearances[0]
         .properties
         .insert("unserialized_property".into(), 0.5);
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&structural, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
         .expect_err("new Protein property must be refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
@@ -252,8 +253,7 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("multi-Protein appearance regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -298,8 +298,7 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .insert("refraction_index".into(), 2.25);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("Prism scalar regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

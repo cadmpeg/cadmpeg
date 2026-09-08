@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parses IR JSON, applies one of 15 deterministic semantic mutations selected
+//! Parses IR JSON, applies one of 14 deterministic semantic mutations selected
 //! by the first input byte, and validates the result. Validation findings are
 //! expected; panics are failures.
 
@@ -27,7 +27,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
 
-    match strategy % 15 {
+    match strategy % 14 {
         0 => {
             // Mutate vertex positions with NaN/infinity
             for point in &mut ir.model.points {
@@ -39,20 +39,30 @@ fuzz_target!(|data: &[u8]| {
         1 => {
             // Create invalid cross-references
             if !ir.model.vertices.is_empty() {
-                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId("nonexistent".to_string());
+                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId::mint("fuzz:missing:point#0")
+                    .expect("identity grammar");
             }
         }
         2 => {
-            // Break coedge ring topology
-            if ir.model.coedges.len() >= 2 {
-                ir.model.coedges[0].next = ir.model.coedges[1].id.clone();
-                ir.model.coedges[1].previous = ir.model.coedges[0].id.clone();
+            if let Some(loop_) = ir
+                .model
+                .loops
+                .iter_mut()
+                .find(|loop_| !loop_.coedges().is_empty())
+            {
+                let mut coedges = loop_.coedges().to_vec();
+                if coedges.len() >= 2 {
+                    coedges.swap(0, 1);
+                    let vertex_uses = loop_.anchored_vertex_uses().to_vec();
+                    let _ = loop_.replace_ring(coedges, vertex_uses);
+                }
             }
         }
         3 => {
             // Create inconsistent edge references
             if !ir.model.edges.is_empty() {
-                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId("nonexistent".to_string());
+                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId::mint("fuzz:missing:vertex#0")
+                    .expect("identity grammar");
             }
         }
         4 => {
@@ -80,51 +90,42 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         7 => {
-            // Create loop with no coedges
-            if !ir.model.loops.is_empty() {
-                ir.model.loops[0].coedges.clear();
-            }
-        }
-        8 => {
             // Mutate tolerances to invalid values
             ir.tolerances.linear = -1.0;
             ir.tolerances.angular = f64::NAN;
         }
-        9 => {
+        8 => {
             // Clear all geometry but keep topology
             ir.model.points.clear();
             ir.model.curves.clear();
             ir.model.surfaces.clear();
         }
-        10 => {
+        9 => {
             // Break a radial ring with an unresolved coedge.
             if let Some(coedge) = ir.model.coedges.first_mut() {
-                coedge.radial_next = cadmpeg_ir::ids::CoedgeId("nonexistent".to_string());
+                coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("fuzz:missing:coedge#0")
+                    .expect("identity grammar");
             }
         }
-        11 => {
+        10 => {
             // Violate canonical arena ordering.
             ir.model.coedges.reverse();
         }
-        12 => {
+        11 => {
             // Put a coedge-owned edge into a shell's wire set.
             if let (Some(shell), Some(edge)) = (ir.model.shells.first_mut(), ir.model.edges.first())
             {
                 shell.wire_edges.push(edge.id.clone());
             }
         }
-        13 => {
+        12 => {
             // Add an annotation for an entity that does not exist.
-            source_fidelity.annotations.provenance.insert(
-                "nonexistent".to_string(),
-                cadmpeg_ir::annotations::StreamProvenance {
-                    stream: u32::MAX,
-                    offset: u64::MAX,
-                    tag: None,
-                },
-            );
+            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+            let stream = annotations.stream("fuzz:nonexistent");
+            annotations.note("nonexistent", stream, u64::MAX);
+            source_fidelity.annotations.append(annotations.build());
         }
-        14 => {
+        13 => {
             // Put an invalid range on a canonical curve parameterization.
             if let Some(edge) = ir.model.edges.first_mut() {
                 edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);
@@ -133,5 +134,9 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    let _ = cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new());
+    let _ = cadmpeg_ir::validate::validate_neutral_with_source_fidelity(
+        &ir,
+        &source_fidelity,
+        Vec::new(),
+    );
 });

@@ -59,7 +59,9 @@ pub(crate) enum ArchiveVersion {
 }
 
 impl ArchiveVersion {
-    fn classify(value: u64) -> Self {
+    /// Partitions the archive-version word. The sole read discriminant of this
+    /// format; `crate::dialect` assigns the result its registry identity.
+    pub(crate) fn from_word(value: u64) -> Self {
         match value {
             1 => Self::V1,
             2 => Self::V2,
@@ -95,6 +97,11 @@ impl ArchiveVersion {
     /// Returns whether chunks use eight-byte values.
     pub(crate) fn uses_eight_byte_values(self) -> bool {
         self.value() >= 50
+    }
+
+    /// Returns whether the archive word selects the chunked grammar.
+    pub(crate) const fn is_chunked(self) -> bool {
+        !matches!(self, Self::V1)
     }
 
     /// Returns whether V1's optional EOF marker is allowed.
@@ -205,7 +212,7 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
     }
     Ok(Header {
         start_offset,
-        archive_version: ArchiveVersion::classify(value),
+        archive_version: ArchiveVersion::from_word(value),
     })
 }
 
@@ -420,15 +427,22 @@ pub(crate) fn checked_count_bytes(
     Ok(bytes)
 }
 
-/// Whether checksum validation is selected for a chunk.
+/// Trailing checksum algorithm selected for a long chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChecksumKind {
-    /// No checksum is present.
-    None,
     /// V1 CRC-CCITT checksum, stored in two bytes.
     Crc16,
     /// V2+ IEEE CRC32 checksum, stored in four bytes.
     Crc32,
+}
+
+impl ChecksumKind {
+    fn width(self) -> usize {
+        match self {
+            Self::Crc16 => 2,
+            Self::Crc32 => 4,
+        }
+    }
 }
 
 /// Selects the checksum algorithm without treating V1's CRC bit as CRC32.
@@ -436,19 +450,33 @@ pub(crate) fn checksum_kind(
     archive: ArchiveVersion,
     typecode: u32,
     class_uuid: bool,
-) -> ChecksumKind {
+) -> Option<ChecksumKind> {
     if archive == ArchiveVersion::V1
         && (typecode & 0x0001_0000 != 0
             || typecode == TCODE_SUMMARY
             || class_uuid
             || typecode == TCODE_V1_OPENNURBS_CLASS_UUID)
     {
-        ChecksumKind::Crc16
+        Some(ChecksumKind::Crc16)
     } else if archive.value() >= 2 && (typecode & TCODE_CRC != 0 || class_uuid) {
-        ChecksumKind::Crc32
+        Some(ChecksumKind::Crc32)
     } else {
-        ChecksumKind::None
+        None
     }
+}
+
+/// Short inline value, or long body plus optional trailing checksum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ChunkBody {
+    /// Short chunk: the inline value, and no payload bytes.
+    Short { value: i64, end: usize },
+    /// Long chunk: payload range and optional trailing checksum.
+    Long {
+        /// Body bytes excluding a trailing checksum.
+        body: std::ops::Range<usize>,
+        /// Trailing checksum algorithm, when selected.
+        checksum: Option<ChecksumKind>,
+    },
 }
 
 /// A parsed chunk header and all ranges derived from its declared boundary.
@@ -458,28 +486,61 @@ pub(crate) struct Chunk {
     pub(crate) header_start: usize,
     /// Raw typecode.
     pub(crate) typecode: u32,
-    /// Whether the short bit is set.
-    pub(crate) short: bool,
-    /// Short value, or long body length.
-    pub(crate) value: i64,
-    /// Offset immediately after the typecode and value/length field.
-    pub(crate) body_start: usize,
-    /// End of the declared span, exclusive.
-    pub(crate) declared_end: usize,
-    /// Body bytes excluding a trailing checksum.
-    pub(crate) body: std::ops::Range<usize>,
-    /// Trailing checksum bytes, when selected.
-    pub(crate) checksum: Option<std::ops::Range<usize>>,
-    /// Offset of the next chunk.
-    pub(crate) next_offset: usize,
-    /// Checksum algorithm selected by the archive and typecode.
-    pub(crate) checksum_kind: ChecksumKind,
+    /// Short value or long payload.
+    form: ChunkBody,
 }
 
 impl Chunk {
     /// Returns the complete chunk range, including header and checksum.
     pub(crate) fn range(&self) -> std::ops::Range<usize> {
-        self.header_start..self.next_offset
+        self.header_start..self.next_offset()
+    }
+
+    /// Returns whether this chunk carries an inline short value.
+    pub(crate) fn short(&self) -> bool {
+        matches!(self.form, ChunkBody::Short { .. })
+    }
+
+    /// Returns the inline value of a short chunk.
+    pub(crate) fn short_value(&self) -> Option<i64> {
+        match self.form {
+            ChunkBody::Short { value, .. } => Some(value),
+            ChunkBody::Long { .. } => None,
+        }
+    }
+
+    /// Returns the short value, or the declared long-body length.
+    pub(crate) fn value(&self) -> i64 {
+        match &self.form {
+            ChunkBody::Short { value, .. } => *value,
+            ChunkBody::Long { body, checksum } => {
+                // chunk_at derives this span from a nonnegative i64 length.
+                (body.len() + checksum.map_or(0, ChecksumKind::width)) as i64
+            }
+        }
+    }
+
+    /// Returns the payload range. Short chunks have an empty range at the header end.
+    pub(crate) fn body(&self) -> std::ops::Range<usize> {
+        match &self.form {
+            ChunkBody::Short { end, .. } => *end..*end,
+            ChunkBody::Long { body, .. } => body.clone(),
+        }
+    }
+
+    /// Returns the exclusive end of the declared span.
+    pub(crate) fn declared_end(&self) -> usize {
+        self.next_offset()
+    }
+
+    /// Returns the offset of the next chunk.
+    pub(crate) fn next_offset(&self) -> usize {
+        match &self.form {
+            ChunkBody::Short { end, .. } => *end,
+            ChunkBody::Long { body, checksum } => {
+                body.end + checksum.map_or(0, ChecksumKind::width)
+            }
+        }
     }
 }
 
@@ -512,32 +573,14 @@ pub(crate) fn chunk_at(
         i64::from(reader.i32()?)
     };
     let body_start = reader.position();
-    if short {
+    if short || value < 0 {
         return Ok(Chunk {
             header_start: offset,
             typecode,
-            short: true,
-            value,
-            body_start,
-            declared_end: body_start,
-            body: body_start..body_start,
-            checksum: None,
-            next_offset: body_start,
-            checksum_kind: ChecksumKind::None,
-        });
-    }
-    if value < 0 {
-        return Ok(Chunk {
-            header_start: offset,
-            typecode,
-            short: true,
-            value,
-            body_start,
-            declared_end: body_start,
-            body: body_start..body_start,
-            checksum: None,
-            next_offset: body_start,
-            checksum_kind: ChecksumKind::None,
+            form: ChunkBody::Short {
+                value,
+                end: body_start,
+            },
         });
     }
     let declared_length = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
@@ -558,11 +601,7 @@ pub(crate) fn chunk_at(
         });
     }
     let kind = checksum_kind(archive, typecode, class_uuid);
-    let checksum_width = match kind {
-        ChecksumKind::None => 0,
-        ChecksumKind::Crc16 => 2,
-        ChecksumKind::Crc32 => 4,
-    };
+    let checksum_width = kind.map_or(0, ChecksumKind::width);
     if declared_length < checksum_width {
         return Err(FramingError::Truncated {
             offset: body_start,
@@ -573,14 +612,10 @@ pub(crate) fn chunk_at(
     Ok(Chunk {
         header_start: offset,
         typecode,
-        short: false,
-        value,
-        body_start,
-        declared_end,
-        body: body_start..body_end,
-        checksum: (checksum_width != 0).then_some(body_end..declared_end),
-        next_offset: declared_end,
-        checksum_kind: kind,
+        form: ChunkBody::Long {
+            body: body_start..body_end,
+            checksum: kind,
+        },
     })
 }
 
@@ -614,7 +649,8 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
 
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
 pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
-    verify_checksum_ranges(bytes, chunk, std::slice::from_ref(&chunk.body))
+    let body = chunk.body();
+    verify_checksum_ranges(bytes, chunk, std::slice::from_ref(&body))
 }
 
 /// Verifies a chunk checksum over its direct byte ranges.
@@ -626,20 +662,25 @@ pub(crate) fn verify_checksum_ranges(
     chunk: &Chunk,
     ranges: &[std::ops::Range<usize>],
 ) -> Result<ChecksumStatus, FramingError> {
-    let Some(checksum) = chunk.checksum.as_ref() else {
+    let ChunkBody::Long {
+        body,
+        checksum: Some(kind),
+    } = &chunk.form
+    else {
         return Ok(ChecksumStatus::NotPresent);
     };
+    let checksum = body.end..body.end + kind.width();
     let stored = &bytes[checksum.clone()];
     if ranges
         .iter()
-        .any(|range| range.start < chunk.body.start || range.end > chunk.body.end)
+        .any(|range| range.start < body.start || range.end > body.end)
     {
         return Err(FramingError::Structural {
-            offset: chunk.body.start,
+            offset: body.start,
             message: "checksum range escapes chunk body".to_string(),
         });
     }
-    match chunk.checksum_kind {
+    match kind {
         ChecksumKind::Crc16 => {
             let actual = u32::from(View::u16_le_at(stored, 0).ok_or(FramingError::Truncated {
                 offset: checksum.start,
@@ -672,7 +713,6 @@ pub(crate) fn verify_checksum_ranges(
                 ChecksumStatus::Mismatch { expected, actual }
             })
         }
-        ChecksumKind::None => Ok(ChecksumStatus::NotPresent),
     }
 }
 
@@ -721,12 +761,6 @@ pub(crate) fn checksum_children_through_class_end(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset <= start {
-            return Err(FramingError::structural(
-                start,
-                format!("{context} child did not advance"),
-            ));
-        }
         if children.len() >= CHECKSUM_CHILD_CAP {
             return Err(FramingError::InvalidLength {
                 offset: start,
@@ -734,9 +768,9 @@ pub(crate) fn checksum_children_through_class_end(
             });
         }
         children.push(child.range());
-        reader.skip(child.next_offset - start)?;
+        reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {
-            if !child.short || child.value != 0 {
+            if !child.short() || child.value() != 0 {
                 return Err(FramingError::structural(
                     start,
                     format!("{context} class end must be a short zero chunk"),
@@ -783,9 +817,10 @@ pub(crate) fn parse_eof(
         return Err(FramingError::MissingEof);
     }
     let chunk = chunk_at(bytes, offset, bytes.len(), archive, false)?;
+    let body = chunk.body();
     if chunk.typecode != TCODE_ENDOFFILE
-        || chunk.short
-        || chunk.body.len()
+        || chunk.short()
+        || body.len()
             < if archive.uses_eight_byte_values() {
                 8
             } else {
@@ -794,7 +829,7 @@ pub(crate) fn parse_eof(
     {
         return Err(FramingError::MissingEof);
     }
-    let mut body = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
+    let mut body = BoundedReader::new(bytes, body.start, body.end)?;
     let file_size = if archive.uses_eight_byte_values() {
         body.u64()?
     } else {

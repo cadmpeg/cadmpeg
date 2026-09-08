@@ -6,12 +6,15 @@ fn direct_surface_fixture(
     definition: ProceduralSurfaceDefinition,
     surface_name: &str,
 ) -> (CadIr, SurfaceId) {
-    let construction_id = ProceduralSurfaceId(format!("{surface_name}-construction"));
-    let surface_id = SurfaceId(surface_name.into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let construction_id =
+        ProceduralSurfaceId::mint(format!("test:model:construction#{surface_name}"))
+            .expect("valid identity");
+    let surface_id =
+        SurfaceId::mint(format!("test:model:surface#{surface_name}")).expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
-            id: CurveId("first".into()),
+            id: CurveId::mint("test:model:entity#first").expect("valid identity"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 direction: Vector3::new(2.0, 0.0, 0.0),
@@ -19,7 +22,7 @@ fn direct_surface_fixture(
             source_object: None,
         },
         Curve {
-            id: CurveId("second".into()),
+            id: CurveId::mint("test:model:entity#second").expect("valid identity"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(5.0, 10.0, 13.0),
                 direction: Vector3::new(0.0, 3.0, 0.0),
@@ -31,13 +34,13 @@ fn direct_surface_fixture(
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        surface: surface_id.clone(),
-        definition,
+        definition: definition,
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -48,8 +51,8 @@ fn direct_surface_fixture(
 fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
     let (ir, surface_id) = direct_surface_fixture(
         ProceduralSurfaceDefinition::Ruled {
-            first: CurveId("first".into()),
-            second: CurveId("second".into()),
+            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
+            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
         },
         "ruled",
     );
@@ -75,8 +78,8 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
 fn cacheless_sum_surface_adds_independent_curve_parameters() {
     let (ir, surface_id) = direct_surface_fixture(
         ProceduralSurfaceDefinition::Sum {
-            first: CurveId("first".into()),
-            second: CurveId("second".into()),
+            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
+            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
             basepoint: Vector3::new(0.5, 1.0, 2.0),
             revision_form: None,
         },

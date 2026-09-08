@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
     let mut frame = vec![0; length];
@@ -161,9 +159,8 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
                 &bytes,
                 &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             )
-            .by_surface
-            .get(&8304),
-            Some(&Some(entry_name.into()))
+            .entry_name(8304),
+            Some(entry_name)
         );
     }
 }
@@ -187,9 +184,8 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
         )
-        .by_surface
-        .get(&8304),
-        Some(&Some(entry_name.into()))
+        .entry_name(8304),
+        Some(entry_name)
     );
 
     let mut wrong_pair = bytes.clone();
@@ -198,7 +194,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
-    .by_surface
+    .index
     .contains_key(&8304));
 
     let mut nonzero_tail = bytes;
@@ -207,7 +203,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &nonzero_tail,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
-    .by_surface
+    .index
     .contains_key(&8304));
 }
 
@@ -370,8 +366,13 @@ fn reads_class_328_form_envelope() {
     chunks.extend((4000..4019).map(|record| indexed_frame(b"320", record, 15)));
     let bytes = chunks.concat();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-    let mut scope = crate::records::DesignParameterScope::empty("scope", "Form", scope_record);
-    scope.reference_members = vec![group_record, metadata_record];
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Form,
+        scope_record,
+    );
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
@@ -422,7 +423,7 @@ fn reads_class_325_cage_table_entries() {
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             scope_record,
-            &[owner_record],
+            [owner_record].into_iter(),
         ),
         Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
     );
@@ -433,7 +434,7 @@ fn reads_class_325_cage_table_entries() {
             &duplicate_discriminator,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&duplicate_discriminator),
             scope_record,
-            &[owner_record],
+            [owner_record].into_iter(),
         ),
         None
     );
@@ -539,27 +540,28 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     let parameter = crate::records::DesignParameter {
         id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
         byte_offset: 0,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 7,
-        family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: Some(8),
+        source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None)
+            .unwrap(),
         expression: "12.5 mm".into(),
         expression_offset: 0,
-        source_kind: "AlongDistance".into(),
         source_kind_offset: 0,
-        kind: crate::records::DesignParameterKind::Feature,
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+
+        unit: Some(crate::records::RecordedValue {
+            value: "mm".into(),
+            offset: Some(0),
+        }),
         name: "distance".into(),
         name_offset: 0,
         evaluated_value: 1.25,
         evaluated_value_offset: 0,
     };
-    let scope = crate::records::DesignParameterScope::empty(
+    let scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-        "Unsupported",
+        crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
+            .expect("native family name"),
         9,
     );
 

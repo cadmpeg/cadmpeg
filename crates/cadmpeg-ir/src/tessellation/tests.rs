@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+
+use super::*;
+
+fn mesh() -> Tessellation {
+    Tessellation::new(
+        "test:mesh:tessellation#0",
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2], [0, 2, 3]],
+        TessellationTopology::List,
+        TessellationNormals::None,
+        Vec::new(),
+    )
+    .unwrap()
+}
+
+fn rejects_wire_field(field: &str, value: impl serde::Serialize) {
+    let mut wire = serde_json::to_value(mesh()).unwrap();
+    wire[field] = serde_json::to_value(value).unwrap();
+    assert!(serde_json::from_value::<Tessellation>(wire).is_err());
+}
+
+fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
+    TessellationTriangleGroup {
+        source_id: source_id.map(str::to_owned),
+        triangles,
+    }
+}
+
+fn assignment(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTextureAssignment {
+    TessellationTextureAssignment {
+        source_id: source_id.map(str::to_owned),
+        texture: "test:mesh:asset#0".try_into().unwrap(),
+        triangles,
+    }
+}
+
+#[test]
+fn feature_edge_admission_rejects_invalid_pairs_order_duplicates_and_bounds() {
+    for edges in [
+        vec![[0, 0]],
+        vec![[1, 0]],
+        vec![[0, 4]],
+        vec![[1, 2], [0, 1]],
+        vec![[0, 1], [0, 1]],
+    ] {
+        assert!(mesh().with_feature_edges(edges.clone()).is_err());
+        rejects_wire_field("feature_edges", edges);
+    }
+}
+
+#[test]
+fn triangle_groups_require_a_complete_disjoint_partition_and_unique_source_ids() {
+    for groups in [
+        vec![group(None, Vec::new())],
+        vec![group(None, vec![0, 2])],
+        vec![group(None, vec![1, 0])],
+        vec![group(None, vec![0, 0, 1])],
+        vec![group(None, vec![0, 1]), group(None, vec![1])],
+        vec![group(None, vec![0])],
+        vec![group(Some("a"), vec![0]), group(Some("a"), vec![1])],
+        vec![group(Some(""), vec![0, 1])],
+    ] {
+        assert!(mesh().with_triangle_groups(groups.clone()).is_err());
+        rejects_wire_field("triangle_groups", groups);
+    }
+}
+
+#[test]
+fn texture_assignment_admission_rejects_overlaps_and_ambiguous_resources() {
+    for assignments in [
+        vec![assignment(None, Vec::new())],
+        vec![assignment(None, vec![2])],
+        vec![assignment(None, vec![1, 0])],
+        vec![assignment(None, vec![0, 0])],
+        vec![
+            assignment(Some("a"), vec![0]),
+            assignment(Some("b"), vec![0]),
+        ],
+        vec![
+            assignment(Some("a"), vec![0]),
+            assignment(Some("a"), vec![1]),
+        ],
+        vec![assignment(None, vec![0]), assignment(None, vec![1])],
+        vec![assignment(Some(""), vec![0])],
+    ] {
+        assert!(mesh()
+            .with_texture_assignments(assignments.clone())
+            .is_err());
+        rejects_wire_field("texture_assignments", assignments);
+    }
+}
+
+#[test]
+fn valid_metadata_retains_group_order_and_distinct_resources_for_one_asset() {
+    let groups = vec![group(Some("b"), vec![1]), group(Some("a"), vec![0])];
+    let assignments = vec![
+        assignment(Some("a"), vec![0]),
+        assignment(Some("b"), vec![1]),
+    ];
+    let value = mesh()
+        .with_feature_edges(vec![[0, 1], [2, 3]])
+        .unwrap()
+        .with_triangle_groups(groups.clone())
+        .unwrap()
+        .with_texture_assignments(assignments.clone())
+        .unwrap();
+    assert_eq!(value.triangle_groups(), groups);
+    assert_eq!(value.texture_assignments(), assignments);
+    let wire = serde_json::to_value(&value).unwrap();
+    let decoded: Tessellation = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(decoded, value);
+    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+}
+
+#[test]
+fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
+    let base = mesh();
+    let channel = TessellationChannel::new(ChannelAddressing::Vertex, 1, 0, 0, vec![7]).unwrap();
+    let value = Tessellation::new(
+        "test:mesh:tessellation#auxiliary",
+        base.vertices().to_vec(),
+        base.triangles().to_vec(),
+        TessellationTopology::List,
+        TessellationNormals::None,
+        vec![channel],
+    )
+    .unwrap();
+    assert_eq!(value.channels()[0].count(), 1);
+    assert_eq!(value.vertices().len(), 4);
+    assert_eq!(
+        serde_json::from_value::<Tessellation>(serde_json::to_value(&value).unwrap()).unwrap(),
+        value
+    );
+}

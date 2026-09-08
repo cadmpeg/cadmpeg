@@ -3,7 +3,8 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::write::{Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
@@ -79,7 +80,7 @@ fn container_pipeline_handles_stored_deflated_streaming_and_zip64_layouts() {
                 &cadmpeg_core::decode::InspectOptions::default(),
             )
             .expect("FCStd inspection");
-        assert_eq!(summary.format, "fcstd");
+        assert_eq!(summary.format(), "fcstd");
         assert!(summary.notes.iter().any(|note| note == "SchemaVersion=4"));
         let result = decode(bytes);
         assert_valid(&result);
@@ -136,16 +137,11 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
             "Edited & encoded",
         )
         .unwrap();
-    FcstdCodec
-        .replace_side_entry(&mut ir, "Payload.bin", b"second payload".to_vec())
-        .unwrap();
+    crate::mutation::replace_entry(&mut ir, "Payload.bin", b"second payload".to_vec()).unwrap();
 
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);
@@ -221,14 +217,14 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
             },
         )
         .expect("container-only FCStd decode");
-    assert!(result.report().container_only);
+    assert!(result.report().container_only());
     assert!(result.ir().model.features.is_empty());
     assert!(result
         .ir()
         .native
         .namespace("fcstd")
         .unwrap()
-        .arenas
+        .arenas()
         .contains_key("physical_ledger"));
     assert_valid(&result);
 }
@@ -345,5 +341,230 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
         let native_findings = crate::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(first.ir());
+    }
+}
+
+/// Every reported dialect path, end to end through the public codec surface.
+///
+/// The unit tests in `dialect/tests.rs` pin `classify` against the registry.
+/// This one pins what a caller sees: the match on the container summary, the
+/// match and the loss on the decode report, and the `SourceMeta` mirror, for a
+/// declared schema and for one outside the declared rows.
+#[test]
+fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
+    let unverified = crate::loss::FreecadLossCode::SourceDialectUnverified
+        .note(String::new())
+        .code;
+    let body = "<Objects Count=\"0\"></Objects><ObjectData Count=\"0\"></ObjectData>";
+
+    // A declared schema: its own row, admitted, no dialect loss.
+    let bytes = archive(&format!(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\">{body}</Document>"
+    ));
+    let summary = FcstdCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("FCStd inspection");
+    let matched = summary
+        .dialects()
+        .as_ref()
+        .expect("FCStd inspection reports dialect layers")
+        .primary();
+    assert_eq!(matched.format(), "fcstd");
+    assert_eq!(matched.dialect().as_str(), "fcstd:schema-4");
+    assert_eq!(
+        matched.admission().clone(),
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let result = decode(bytes);
+    assert_eq!(result.report().dialects(), summary.dialects());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != unverified));
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.dialect(), Some(matched));
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "4");
+    assert_eq!(source.dialect().unwrap().declared()["file_version"], "1");
+    assert_eq!(
+        source.dialect().unwrap().declared()["program_version"],
+        "1.0"
+    );
+    assert!(!source.attributes.contains_key("schema_version"));
+    assert!(!source.attributes.contains_key("file_version"));
+
+    // A schema outside the declared rows: the totality row, admitted with the
+    // schema-4 vocabulary substituted, and the loss naming the substitution.
+    let bytes = archive(&format!(
+        "<Document SchemaVersion=\"5\" FileVersion=\"1\">{body}</Document>"
+    ));
+    let summary = FcstdCodec
+        .inspect(
+            &mut Cursor::new(&bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect("FCStd inspection of an undeclared schema");
+    assert_eq!(
+        summary
+            .dialects()
+            .as_ref()
+            .expect("FCStd inspection reports dialect layers")
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:unknown"
+    );
+    assert_eq!(
+        summary
+            .dialects()
+            .as_ref()
+            .expect("FCStd inspection reports dialect layers")
+            .primary()
+            .admission()
+            .clone(),
+        cadmpeg_core::dialect::Admission::Unverified {
+            using: cadmpeg_core::dialect::Grammar::of(&crate::dialect::FcstdDialect::Schema4.id(),),
+        }
+    );
+
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("container-only decode of an undeclared schema");
+    assert_eq!(result.report().dialects(), summary.dialects());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == unverified)
+            .count(),
+        1
+    );
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "5");
+    assert!(!source
+        .dialect()
+        .unwrap()
+        .declared()
+        .contains_key("program_version"));
+
+    // A full decode attempts the nearest declared strategy rather than
+    // refusing on the discriminant, and reports the same match and loss.
+    let result = decode(bytes);
+    assert_eq!(result.report().dialects(), summary.dialects());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == unverified)
+            .count(),
+        1
+    );
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(source.dialect().unwrap().declared()["schema_version"], "5");
+}
+
+/// A document that differs from a schema-4 document only in its declared
+/// version decodes to the same model.
+///
+/// This is what separates an attempt from a label: the undeclared version runs
+/// the schema-4 parse path, so the recovered content is byte-identical to the
+/// schema-4 baseline while the identity, admission, and charged loss differ.
+#[test]
+fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
+    let baseline = decode(CORE_OPERATIONS.to_vec());
+    let drifted = decode(rewrite_schema_version(CORE_OPERATIONS, "5"));
+
+    let model = |result: &cadmpeg_ir::codec::DecodeResult| {
+        serde_json::to_string(&result.ir().model).expect("serialize model")
+    };
+    assert_eq!(model(&drifted), model(&baseline));
+    assert!(!drifted.ir().model.bodies.is_empty());
+
+    assert_eq!(
+        baseline
+            .report()
+            .dialects()
+            .as_ref()
+            .expect("FCStd decode reports dialect layers")
+            .primary()
+            .admission()
+            .clone(),
+        cadmpeg_core::dialect::Admission::Admitted
+    );
+    assert_eq!(
+        drifted
+            .report()
+            .dialects()
+            .as_ref()
+            .expect("FCStd decode reports dialect layers")
+            .primary()
+            .admission()
+            .clone(),
+        cadmpeg_core::dialect::Admission::Unverified {
+            using: cadmpeg_core::dialect::Grammar::of(&crate::dialect::FcstdDialect::Schema4.id(),),
+        }
+    );
+
+    let unverified = crate::loss::FreecadLossCode::SourceDialectUnverified
+        .note(String::new())
+        .code;
+    let charged = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == unverified)
+            .count()
+    };
+    // The declared versions carry no dialect loss; only the drifted one does.
+    assert_eq!(charged(&baseline), 0);
+    assert_eq!(charged(&drifted), 1);
+    // Schema 2 is excluded: it selects the `Features` vocabulary, which this
+    // `Objects` document does not carry, so the version cannot be varied alone.
+    // `schema_two_uses_the_feature_envelope_and_common_property_grammar` covers
+    // that row on a document of its own.
+    for version in ["3", "4"] {
+        let declared = decode(rewrite_schema_version(CORE_OPERATIONS, version));
+        assert_eq!(charged(&declared), 0, "schema {version} charged a loss");
+        assert_eq!(
+            declared
+                .report()
+                .dialects()
+                .as_ref()
+                .expect("FCStd decode reports dialect layers")
+                .primary()
+                .admission()
+                .clone(),
+            cadmpeg_core::dialect::Admission::Admitted
+        );
+    }
+}
+
+/// The attempt is self-limiting: an element vocabulary that does not fit still
+/// fails, under an undeclared version exactly as under schema 4.
+#[test]
+fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
+    // The schema-2 `Features` vocabulary is alien to the `Objects` strategy the
+    // undeclared version attempts, so the parse fails on the missing section.
+    let alien = "<Features Count=\"0\"></Features><FeatureData Count=\"0\"></FeatureData>";
+    for version in ["5", "4"] {
+        let bytes = archive(&format!(
+            "<Document SchemaVersion=\"{version}\" FileVersion=\"1\">{alien}</Document>"
+        ));
+        FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect_err("alien element vocabulary must fail");
     }
 }

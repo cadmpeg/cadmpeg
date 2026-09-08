@@ -7,6 +7,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use crate::curve::CurveTopologyRow;
 
@@ -21,6 +22,48 @@ pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveT
         .collect()
 }
 
+/// One of the two native curve suffix sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Side {
+    /// The `F0`/`E0` suffix side.
+    Zero,
+    /// The `F1`/`E1` suffix side.
+    One,
+}
+
+impl Side {
+    /// The opposite side of this curve.
+    pub const fn flip(self) -> Self {
+        match self {
+            Self::Zero => Self::One,
+            Self::One => Self::Zero,
+        }
+    }
+
+    /// Index into the two-element face and successor arrays.
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Zero => 0,
+            Self::One => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.index().fmt(formatter)
+    }
+}
+
+impl serde::Serialize for Side {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(match self {
+            Self::Zero => 0,
+            Self::One => 1,
+        })
+    }
+}
+
 /// A curve identifier paired with one of its two native sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HalfEdgeId {
@@ -28,7 +71,7 @@ pub struct HalfEdgeId {
     pub curve_id: u32,
     /// The half-edge side: `0` for the `F0`/`E0` suffix fields, `1` for
     /// `F1`/`E1`.
-    pub side: u8,
+    pub side: Side,
 }
 
 /// A native half-edge, its face, and its uniquely resolved successor.
@@ -38,7 +81,7 @@ pub struct HalfEdge {
     pub id: HalfEdgeId,
     /// The `srf_array` face identifier this half-edge side bounds (the
     /// corresponding `F0`/`F1` suffix field).
-    pub face_id: u32,
+    pub face_id: Option<NonZeroU32>,
     /// The next half-edge on the same face, when exactly one candidate
     /// successor matched the row's `E0`/`E1` next-edge field on that face.
     /// `None` when the successor is absent or ambiguous.
@@ -49,7 +92,7 @@ pub struct HalfEdge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loop {
     /// The `srf_array` face identifier this loop bounds.
-    pub face_id: u32,
+    pub face_id: Option<NonZeroU32>,
     /// The ring of half-edges in traversal order, starting from the first
     /// half-edge encountered for this face.
     pub half_edges: Vec<HalfEdgeId>,
@@ -95,14 +138,8 @@ pub struct HalfEdgeVertexIncidence {
 pub fn edge_start_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
     let mut by_curve = BTreeMap::<u32, [Vec<u32>; 2]>::new();
     for binding in incidence {
-        let Some(side) = by_curve
-            .entry(binding.half_edge.curve_id)
-            .or_default()
-            .get_mut(usize::from(binding.half_edge.side))
-        else {
-            continue;
-        };
-        side.push(binding.start_vertex_id);
+        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
+            .push(binding.start_vertex_id);
     }
     by_curve
         .into_iter()
@@ -142,12 +179,12 @@ pub fn vertex_incident_faces(
                         *half_edge,
                         HalfEdgeId {
                             curve_id: half_edge.curve_id,
-                            side: 1 - half_edge.side,
+                            side: half_edge.side.flip(),
                         },
                     ]
                 })
-                .filter_map(|half_edge| by_id.get(&half_edge).copied())
-                .filter(|face_id| *face_id != 0)
+                .filter_map(|half_edge| by_id.get(&half_edge).copied().flatten())
+                .map(NonZeroU32::get)
                 .collect();
             (vertex.id, faces)
         })
@@ -160,14 +197,8 @@ pub fn vertex_incident_faces(
 pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
     let mut by_curve = BTreeMap::<u32, [Vec<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
-        let Some(side) = by_curve
-            .entry(binding.half_edge.curve_id)
-            .or_default()
-            .get_mut(usize::from(binding.half_edge.side))
-        else {
-            continue;
-        };
-        side.push(binding);
+        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
+            .push(binding);
     }
     by_curve
         .into_iter()
@@ -216,7 +247,7 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
         }
         let twin_previous = HalfEdgeId {
             curve_id: previous[0].curve_id,
-            side: 1 - previous[0].side,
+            side: previous[0].side.flip(),
         };
         if !by_id.contains_key(&twin_previous) {
             continue;
@@ -279,24 +310,25 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
     (vertices, incidence)
 }
 
-/// Group non-null face references connected by uniquely identified curve
+/// Group bounded face references connected by uniquely identified curve
 /// topology rows.
 ///
-/// Face identifier zero is a boundary sentinel, never a shell face. A curve
-/// contributes to a component when either of its sides names a nonzero face.
+/// A curve contributes to a component when either of its sides names a face.
 pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     let rows = uniquely_identified_rows(rows);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
         let [left, right] = row.faces;
-        for face in [left, right].into_iter().filter(|face| *face != 0) {
+        for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
             adjacency.entry(face).or_default();
             face_curves.entry(face).or_default().insert(row.id);
         }
-        if left != 0 && right != 0 && left != right {
-            adjacency.entry(left).or_default().insert(right);
-            adjacency.entry(right).or_default().insert(left);
+        if let (Some(left), Some(right)) = (left, right) {
+            if left != right {
+                adjacency.entry(left.get()).or_default().insert(right.get());
+                adjacency.entry(right.get()).or_default().insert(left.get());
+            }
         }
     }
     let mut seen = BTreeSet::new();
@@ -350,33 +382,33 @@ pub(crate) fn selected_body_count(
 /// Ambiguous or missing successors remain `None` and cannot form loops.
 pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     let rows = uniquely_identified_rows(rows);
-    let mut face_sides: BTreeMap<u32, Vec<HalfEdgeId>> = BTreeMap::new();
+    let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
-        for side in 0..2 {
+        for side in [Side::Zero, Side::One] {
             face_sides
-                .entry(row.faces[side])
+                .entry(row.faces[side.index()])
                 .or_default()
                 .push(HalfEdgeId {
                     curve_id: row.id,
-                    side: side as u8,
+                    side,
                 });
         }
     }
     let mut edges = Vec::new();
     for row in rows {
-        for side in 0..2 {
-            let face_id = row.faces[side];
+        for side in [Side::Zero, Side::One] {
+            let face_id = row.faces[side.index()];
             let candidates = face_sides
                 .get(&face_id)
                 .into_iter()
                 .flatten()
-                .filter(|id| id.curve_id == row.next_edges[side])
+                .filter(|id| id.curve_id == row.next_edges[side.index()])
                 .copied()
                 .collect::<Vec<_>>();
             edges.push(HalfEdge {
                 id: HalfEdgeId {
                     curve_id: row.id,
-                    side: side as u8,
+                    side,
                 },
                 face_id,
                 next: (candidates.len() == 1)

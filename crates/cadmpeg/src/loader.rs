@@ -4,44 +4,31 @@
 use std::fs::File;
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
-use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use anyhow::{anyhow, Context};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::CadIr;
+use serde_json::Value;
 
-use crate::application::{
-    ArtifactStore, ForcedInput, InputCatalog, LoadOrigin, LoadedDocument, ResolvedSource,
+use cadmpeg_registry::{
+    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
-/// Leading byte window available to content-based codec detection.
-pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
+use crate::application::artifact_store;
+use crate::application::document::LoadedDocument;
+use crate::application::refusal::ApplicationError;
 
-/// Non-fatal notice produced while loading an input.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoadNotice {
-    /// Content detection succeeded below high confidence.
-    LowConfidenceDetection {
-        /// Selected codec id.
-        format_id: &'static str,
-        /// Detection confidence.
-        confidence: Confidence,
-    },
-}
-
-/// A loaded document plus presentation notices for the CLI.
-#[derive(Debug)]
-pub struct LoadOutcome {
-    /// Loaded document.
-    pub document: LoadedDocument,
-    /// Notices the presentation layer may print.
-    pub notices: Vec<LoadNotice>,
-}
-
-/// Read the bounded byte image used for content-based format detection.
-pub fn read_detection_input(path: &Path, n: usize, max_bytes: u64) -> Result<Vec<u8>> {
-    ArtifactStore::read_detection_input(path, n, max_bytes)
+/// Restates a detection failure with the flag that overrides it.
+///
+/// The registry states the fact; naming `--input-format` is this crate's job,
+/// because the flag is this crate's. Ambiguity is the only resolution error.
+pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
+    anyhow!("{error}; pass --input-format")
 }
 
 /// Load CADIR from a native CAD file or CADIR JSON.
+///
+/// A native decode failure is classified into an [`ApplicationError`] here,
+/// at the only site that knows the path and the selected codec.
 ///
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
@@ -51,49 +38,36 @@ pub fn load_artifact(
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<LoadOutcome> {
-    let prefix = ArtifactStore::read_detection_input(
+) -> Result<LoadedDocument, ApplicationError> {
+    let prefix = artifact_store::read_detection_input(
         path,
         DETECTION_PREFIX_LEN,
         options.policy.limits.max_input_bytes,
     )?;
     let resolved = catalog
         .resolve_source(&prefix, forced)
-        .map_err(|error| anyhow!(error.to_string()))?;
-    let mut notices = Vec::new();
+        .map_err(|error| detection_failure(&error))?;
     match resolved {
-        ResolvedSource::Native {
-            codec,
-            format_id,
-            confidence,
-        } => {
-            if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {
-                notices.push(LoadNotice::LowConfidenceDetection {
-                    format_id,
-                    confidence,
-                });
-            }
+        ResolvedSource::Native { codec, selection } => {
+            let format_id = codec.id();
             let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-            let result = codec
-                .decode(&mut f, &options)
-                .with_context(|| format!("decoding {} as {}", path.display(), format_id))?;
-            return Ok(LoadOutcome {
-                document: LoadedDocument::decoded(result),
-                notices,
-            });
+            let result = codec.decode(&mut f, &options).map_err(|failure| {
+                ApplicationError::from_decode_failure(path, format_id, failure)
+            })?;
+            return Ok(LoadedDocument::decoded(result, selection));
         }
         ResolvedSource::Cadir => {}
-    }
-
-    if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
-        return Err(anyhow!(
-            "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, .cadir.json; use --input-format to override detection",
-            path.display()
-        ));
+        ResolvedSource::Unrecognized => {
+            return Err(anyhow!(
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, .cadir.json; use --input-format to override detection",
+                path.display()
+            )
+            .into());
+        }
     }
 
     let max_bytes = options.policy.limits.max_input_bytes;
-    let text = ArtifactStore::read_bounded_text(path, max_bytes)
+    let text = artifact_store::read_bounded_text(path, max_bytes)
         .with_context(|| format!("reading {} as a .cadir.json document", path.display()))?;
     let ir = CadIr::from_json(&text).map_err(|e| {
         anyhow!(
@@ -101,50 +75,93 @@ pub fn load_artifact(
             path.display()
         )
     })?;
-    let Some(sidecar) = ArtifactStore::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
+    validate_cadir_witnesses(&ir).with_context(|| {
+        format!(
+            "{} is not a consistent .cadir.json document",
+            path.display()
+        )
+    })?;
+    let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
-        return Ok(LoadOutcome {
-            document: LoadedDocument::neutral(ir),
-            notices,
-        });
+        return Ok(LoadedDocument::neutral(ir));
     };
-    Ok(LoadOutcome {
-        document: LoadedDocument {
-            ir,
-            origin: LoadOrigin::Decoded {
-                report: sidecar.report,
-                fidelity: sidecar.fidelity,
-            },
-        },
-        notices,
-    })
+    Ok(LoadedDocument::restored(
+        ir,
+        sidecar.report,
+        sidecar.fidelity,
+    ))
+}
+
+/// Reject contradictory duplicate facts at the CADIR wire boundary.
+///
+/// Native decoders author the `FCStd` source declaration and retained document
+/// record from one scan. Only deserialization can produce different values.
+fn validate_cadir_witnesses(ir: &CadIr) -> anyhow::Result<()> {
+    let Some(source) = ir
+        .source
+        .as_ref()
+        .filter(|source| source.format() == "fcstd")
+    else {
+        return Ok(());
+    };
+    let Some(source_schema) = source
+        .dialect()
+        .and_then(|dialect| dialect.declared().get("schema_version"))
+    else {
+        return Ok(());
+    };
+    let Some(documents) = ir
+        .native
+        .namespace("fcstd")
+        .and_then(|namespace| namespace.arenas().get("document"))
+    else {
+        return Ok(());
+    };
+    let [document] = documents.as_slice() else {
+        return Ok(());
+    };
+    let Some(Value::String(document_schema)) = document.field("schema_version") else {
+        return Ok(());
+    };
+    if document_schema != *source_schema {
+        return Err(anyhow!(
+            "FCStd source schema_version {source_schema:?} disagrees with native document \
+             schema_version {document_schema:?}"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 #[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::units::Units;
+    use crate::application::document::LoadOrigin;
+    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+    use cadmpeg_ir::document::SourceMeta;
+    use cadmpeg_ir::native::NativeRecord;
     use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
+    use serde_json::Map;
+    use std::collections::BTreeMap;
 
     #[test]
     fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
-        let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
+        let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report = DecodeReport {
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: false,
-            coverage: Default::default(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-        };
-        let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+            "format": "test",
+            "container_only": false,
+            "geometry_transferred": false,
+            "losses": [],
+            "notes": [],
+            "dialects": null,
+        }))
+        .unwrap();
+        let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            ArtifactStore::sidecar_path(&path),
+            cadmpeg_ir::decode_sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
@@ -156,10 +173,7 @@ mod tests {
             Some(ForcedInput::Cadir),
         )
         .unwrap();
-        assert!(matches!(
-            outcome.document.origin,
-            LoadOrigin::Decoded { .. }
-        ));
+        assert!(matches!(outcome.origin, LoadOrigin::Restored { .. }));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(
@@ -170,5 +184,40 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("does not match"));
+    }
+
+    #[test]
+    fn cadir_reader_refuses_conflicting_fcstd_schema_witnesses() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.cadir.json");
+        let mut ir = CadIr::empty();
+        let mut declared = BTreeMap::new();
+        declared.insert("schema_version".to_owned(), "4".to_owned());
+        ir.source = Some(SourceMeta::classified(
+            DialectLayers::of(
+                DialectMatch::admitted(DialectId::pinned("fcstd:schema-4")).with_declared(declared),
+            ),
+            BTreeMap::new(),
+        ));
+        let mut fields = Map::new();
+        fields.insert("schema_version".to_owned(), Value::String("3".to_owned()));
+        ir.native.namespace_mut("fcstd").arenas_mut().insert(
+            "document".to_owned(),
+            vec![
+                NativeRecord::new("fcstd:test:document#0", fields).expect("valid native identity"),
+            ],
+        );
+        std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
+
+        let error = load_artifact(
+            &InputCatalog::with_builtins(),
+            &path,
+            DecodeOptions::default(),
+            Some(ForcedInput::Cadir),
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains(
+            "FCStd source schema_version \"4\" disagrees with native document schema_version \"3\""
+        ));
     }
 }

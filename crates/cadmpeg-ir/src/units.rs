@@ -8,29 +8,18 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// The canonical IR length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct CanonicalUnitsWire {
+    length: CanonicalLengthUnitWire,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum LengthUnit {
-    /// Millimeter, the IR canonical length unit.
+enum CanonicalLengthUnitWire {
+    #[default]
     Millimeter,
-}
-
-/// Unit declaration for stored document coordinates.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Units {
-    /// Unit the stored coordinate values are expressed in.
-    pub length: LengthUnit,
-}
-
-impl Default for Units {
-    fn default() -> Self {
-        Units {
-            length: LengthUnit::Millimeter,
-        }
-    }
 }
 
 /// Maximum distance, in the document's length unit, between an evaluated

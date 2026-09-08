@@ -10,7 +10,7 @@
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter;
-use crate::design::decode::sketch::{bind_sketch_graph, identity_matrix};
+use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::sketch_project::project_sketch_design;
@@ -21,132 +21,94 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_point_id,
 };
 use crate::records::{
-    DesignEntityHeader, DesignSketchPlacement, SketchConstraintKind, SketchPoint, SketchRelation,
-    DESIGN_MODULE_SKETCH,
+    DesignEntityHeader, DesignSketchPlacement, SketchPoint, SketchRelation, SketchRelationMember,
+    SketchRelationReturnMember, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashSet;
 
 #[test]
 fn feature_family_tokens_are_localized() {
-    assert_eq!(
-        design_feature_family("As-built"),
-        Some(DesignFeatureFamily::Assemble)
-    );
-    assert_eq!(
-        design_feature_family("Esquisse"),
-        Some(DesignFeatureFamily::Sketch)
-    );
-    assert_eq!(
-        design_feature_family("Extrusion"),
-        Some(DesignFeatureFamily::Extrude)
-    );
-    assert_eq!(
-        design_feature_family("Extrusão"),
-        Some(DesignFeatureFamily::Extrude)
-    );
+    use crate::records::feature::DesignFeatureKind;
+    let family = |token: &str| {
+        design_feature_family(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
+    let treatment = |token: &str| {
+        has_typed_edge_treatment_group(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
+    let localized = |token: &str| {
+        is_localized_edge_treatment_kind(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
+    assert_eq!(family("As-built"), Some(DesignFeatureFamily::Assemble));
+    assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
+    assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
+    assert_eq!(family("Extrusão"), Some(DesignFeatureFamily::Extrude));
     for token in ["Skizze", "Esboço"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::Sketch)
-        );
+        assert_eq!(family(token), Some(DesignFeatureFamily::Sketch));
     }
-    assert_eq!(
-        design_feature_family("Congé"),
-        Some(DesignFeatureFamily::Fillet)
-    );
+    assert_eq!(family("Congé"), Some(DesignFeatureFamily::Fillet));
     for token in ["Abrundung", "Arredondamento"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::Fillet)
-        );
-        assert!(has_typed_edge_treatment_group(token));
+        assert_eq!(family(token), Some(DesignFeatureFamily::Fillet));
+        assert!(treatment(token));
     }
-    assert_eq!(
-        design_feature_family("Chanfrein"),
-        Some(DesignFeatureFamily::Chamfer)
-    );
+    assert_eq!(family("Chanfrein"), Some(DesignFeatureFamily::Chamfer));
     for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
-        assert!(is_localized_edge_treatment_kind(token));
+        assert!(localized(token));
     }
     for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
-        assert!(!is_localized_edge_treatment_kind(token));
+        assert!(!localized(token));
     }
     for token in ["C-Pattern", "Réseau C"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::CircularPattern)
-        );
+        assert_eq!(family(token), Some(DesignFeatureFamily::CircularPattern));
     }
+    assert_eq!(family("Symétrie miroir"), Some(DesignFeatureFamily::Mirror));
     assert_eq!(
-        design_feature_family("Symétrie miroir"),
-        Some(DesignFeatureFamily::Mirror)
-    );
-    assert_eq!(
-        design_feature_family("DécalerLesFaces"),
+        family("DécalerLesFaces"),
         Some(DesignFeatureFamily::OffsetFaces)
     );
     assert_eq!(
-        design_feature_family("ReplaceFace"),
+        family("ReplaceFace"),
         Some(DesignFeatureFamily::ReplaceFace)
     );
-    assert_eq!(
-        design_feature_family("Schale"),
-        Some(DesignFeatureFamily::Shell)
-    );
-    assert_eq!(
-        design_feature_family("SpirePrimitive"),
-        Some(DesignFeatureFamily::Coil)
-    );
-    assert_eq!(
-        design_feature_family("Hem"),
-        Some(DesignFeatureFamily::SheetMetalHem)
-    );
+    assert_eq!(family("Schale"), Some(DesignFeatureFamily::Shell));
+    assert_eq!(family("SpirePrimitive"), Some(DesignFeatureFamily::Coil));
+    assert_eq!(family("Hem"), Some(DesignFeatureFamily::SheetMetalHem));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "Hem"
+        &DesignFeatureKind::Hem
     ));
     assert_eq!(
-        design_feature_family("SurfacePatch"),
+        family("SurfacePatch"),
         Some(DesignFeatureFamily::SurfacePatch)
     );
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "SurfacePatch"
+        &DesignFeatureKind::SurfacePatch
     ));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "WorkPoint"
+        &DesignFeatureKind::WorkPoint
     ));
     assert_eq!(
-        design_feature_family("SurfaceRuled"),
+        family("SurfaceRuled"),
         Some(DesignFeatureFamily::SurfaceRuled)
     );
     assert_eq!(
-        design_feature_family("BoundaryFill"),
+        family("BoundaryFill"),
         Some(DesignFeatureFamily::BoundaryFill)
     );
     assert_eq!(
-        design_feature_family("SurfaceTrim"),
+        family("SurfaceTrim"),
         Some(DesignFeatureFamily::SurfaceTrim)
     );
-    assert_eq!(
-        design_feature_family("Hole"),
-        Some(DesignFeatureFamily::Hole)
-    );
-    assert_eq!(
-        design_feature_family("Split"),
-        Some(DesignFeatureFamily::Split)
-    );
-    assert_eq!(
-        design_feature_family("Loft"),
-        Some(DesignFeatureFamily::Loft)
-    );
-    assert_eq!(
-        design_feature_family("Sweep"),
-        Some(DesignFeatureFamily::Sweep)
-    );
-    assert_eq!(
-        design_feature_family("Pipe"),
-        Some(DesignFeatureFamily::Pipe)
-    );
+    assert_eq!(family("Hole"), Some(DesignFeatureFamily::Hole));
+    assert_eq!(family("Split"), Some(DesignFeatureFamily::Split));
+    assert_eq!(family("Loft"), Some(DesignFeatureFamily::Loft));
+    assert_eq!(family("Sweep"), Some(DesignFeatureFamily::Sweep));
+    assert_eq!(family("Pipe"), Some(DesignFeatureFamily::Pipe));
 }
 
 #[test]
@@ -164,12 +126,12 @@ fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
 
     let localized = neutral_feature_id_parts("Design Name", "Symétrie miroir", 1, 41);
     let literal_escape = neutral_feature_id_parts("Design%20Name", "Symétrie%20miroir", 1, 41);
-    assert!(!localized.0.chars().any(char::is_whitespace));
-    assert!(localized.0.contains("Design%20Name"));
-    assert!(localized.0.contains("Symétrie%20miroir"));
+    assert!(!localized.as_str().chars().any(char::is_whitespace));
+    assert!(localized.as_str().contains("Design%20Name"));
+    assert!(localized.as_str().contains("Symétrie%20miroir"));
     assert_ne!(localized, literal_escape);
     assert!(!feature_input_topology_id(&localized, 2)
-        .0
+        .as_str()
         .chars()
         .any(char::is_whitespace));
 }
@@ -242,12 +204,13 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 
 #[test]
 fn governing_dimension_identity_uses_parameter_identity() {
-    let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#Design/A:12".into());
+    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12")
+        .expect("identity grammar");
     let relocated = neutral_dimension_constraint_id(&parameter, "pair");
     let same = neutral_dimension_constraint_id(&parameter, "pair");
     let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
     let other_parameter = neutral_dimension_constraint_id(
-        &cadmpeg_ir::features::ParameterId("parameter:Design/A".into()),
+        &cadmpeg_ir::features::ParameterId::mint("parameter:Design/A").expect("identity grammar"),
         "12:pair",
     );
 
@@ -260,78 +223,84 @@ fn governing_dimension_identity_uses_parameter_identity() {
 #[test]
 fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placement = |stream: &str| DesignSketchPlacement {
-        member_run_head: false,
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
+
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: format!("{stream}_100"),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+            .expect("valid entity ID"),
+
         visibility: None,
-        byte_offset: 0,
-        class_tag: "356".into(),
+
+        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
-        frame_length: 201,
-        transform: identity_matrix(),
-        transform_offset: None,
-        paired_class_tag: "259".into(),
-        paired_byte_offset: 201,
+
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
         byte_offset: 0,
-        entity_suffix: 100,
-        entity_id: format!("{stream}_100"),
-        class_tag: "300".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+            .expect("valid entity ID"),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        declared_reference_count: Some(1),
-        reference_indices: vec![30],
-        reference_offsets: vec![0],
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: None,
+                record_reference_offset: 0,
+                references: vec![30]
+                    .into_iter()
+                    .zip(vec![0])
+                    .map(|(value, offset)| crate::records::Located { value, offset })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let point = |stream: &str| SketchPoint {
         id: format!("f3d:{stream}:sketch-point#0"),
         record_index: 20,
         owner_reference: None,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
-        entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(20),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            20,
+            crate::records::SketchPointClosure::Selector0State0,
+            None,
+            0.0,
+            None,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(1.0, 2.0),
-        depth: 0.0,
-        closure: None,
-        companion: None,
     };
     let relation = |stream: &str| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#30"),
         record_index: 30,
-        class_tag: "302".into(),
+        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 100,
-        owner_entity_id: String::new(),
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        owner_entity_id: None,
+        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: vec![20],
-        resolved_members: Vec::new(),
-        member_offsets: vec![0],
+        members: (vec![SketchRelationMember::from_index(20)])
+            .try_into()
+            .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        state: 0,
-        constraint_kinds: vec![SketchConstraintKind::Coincident],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
+        definition: crate::records::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![20],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: vec![0],
+        return_members: (vec![SketchRelationReturnMember::from_index(20)])
+            .try_into()
+            .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
 
@@ -346,12 +315,24 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         &mut relations,
     )
     .expect("stream-local sketch graphs bind independently");
-    assert_eq!(relations[0].owner_entity_id, "A_100");
-    assert_eq!(relations[1].owner_entity_id, "B_100");
+    assert_eq!(
+        relations[0]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("A_100")
+    );
+    assert_eq!(
+        relations[1]
+            .owner_entity_id
+            .as_ref()
+            .map(cadmpeg_ir::NonEmptyString::as_str),
+        Some("B_100")
+    );
 
     let mut overflowing_header = header("A");
-    overflowing_header.entity_suffix = u64::from(u32::MAX) + 101;
-    overflowing_header.entity_id = "A_overflow".into();
+    overflowing_header.entity_id =
+        crate::records::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
     assert!(bind_sketch_graph(
         &[overflowing_header],
         &mut [point("A")],
@@ -379,7 +360,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     assert_eq!(
         entities
             .iter()
-            .map(|item| &item.id)
+            .map(cadmpeg_ir::SketchEntity::id)
             .collect::<HashSet<_>>()
             .len(),
         2
@@ -452,7 +433,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     for constraint in &mut constraints {
         constraint.native_ref = None;
     }
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.sketches = sketches;
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;

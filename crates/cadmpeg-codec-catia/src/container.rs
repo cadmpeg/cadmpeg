@@ -12,13 +12,16 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::View;
-use cadmpeg_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::extent_struct as extent;
 use crate::layout::fbb_face_row as fbb_row;
@@ -584,18 +587,6 @@ const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x0
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// A named logical stream catalogued by the inner directory.
-    pub const STREAM: &str = "stream";
-    /// JPEG preview embedded in the outer summary-information segment.
-    pub const PREVIEW: &str = "preview";
-    /// Referenced CATIA document.
-    pub const EXTERNAL_REFERENCE: &str = "external-reference";
-    /// Named outer FINJPL block.
-    pub const FINJPL_SEGMENT: &str = "finjpl-segment";
-}
-
 /// One physical extent of a logical stream. `phys_off` is measured from the
 /// directory's physical storage base.
 #[derive(Debug, Clone)]
@@ -616,10 +607,18 @@ pub struct Descriptor {
     pub name: String,
     /// Offset of the descriptor header within the directory region.
     pub desc_offset: usize,
-    /// Logical stream length (equals the sum of extent `log_len`s).
-    pub logical_length: u32,
     /// Physical extents, in `log_off` order.
     pub extents: Vec<Extent>,
+}
+
+impl Descriptor {
+    /// Logical stream length from the physical extents.
+    pub fn logical_length(&self) -> u64 {
+        self.extents
+            .iter()
+            .map(|extent| u64::from(extent.phys_len))
+            .sum()
+    }
 }
 
 /// A parsed stream directory. `inner` is the physical storage base: zero for
@@ -895,7 +894,6 @@ fn parse_directory_region(
                         descriptors.push(Descriptor {
                             name: descriptor_name(dirbuf, ds),
                             desc_offset: ds,
-                            logical_length,
                             extents,
                         });
                     }
@@ -1028,9 +1026,6 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
     else {
         return Vec::new();
     };
-    if logical_length != descriptor.logical_length as usize {
-        return Vec::new();
-    }
     let mut out = Vec::with_capacity(logical_length);
     for extent in &descriptor.extents {
         let start = inner + extent.phys_off as usize;
@@ -1222,11 +1217,12 @@ fn unique_largest_descriptor<'a>(
     let mut selected_length = 0;
     let mut equal_count = 0;
     for descriptor in descriptors {
-        if selected.is_none() || descriptor.logical_length > selected_length {
+        let logical_length = descriptor.logical_length();
+        if selected.is_none() || logical_length > selected_length {
             selected = Some(descriptor);
-            selected_length = descriptor.logical_length;
+            selected_length = logical_length;
             equal_count = 1;
-        } else if descriptor.logical_length == selected_length {
+        } else if logical_length == selected_length {
             equal_count += 1;
         }
     }
@@ -1416,17 +1412,17 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                     );
                 }
             }
-            let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
+            let phys = d.logical_length();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
                     format!("{directory}-stream@{}", d.desc_offset)
                 } else {
                     d.name.clone()
                 },
-                role: role::STREAM.to_string(),
-                compression: "none".to_string(),
+                role: ContainerRole::Stream,
+                compression: EntryCompression::None,
                 compressed_size: phys,
-                uncompressed_size: d.logical_length as u64,
+                uncompressed_size: phys,
                 attributes,
             });
         }
@@ -1439,8 +1435,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("components".to_string(), preview.components.to_string());
         entries.push(ContainerEntry {
             name: format!("CATPreview#{index}"),
-            role: role::PREVIEW.to_string(),
-            compression: "jpeg".to_string(),
+            role: ContainerRole::Preview,
+            compression: EntryCompression::Jpeg,
             compressed_size: (preview.range.end - preview.range.start) as u64,
             uncompressed_size: 0,
             attributes,
@@ -1451,8 +1447,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
         entries.push(ContainerEntry {
             name: reference.target.clone(),
-            role: role::EXTERNAL_REFERENCE.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::ExternalReference,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -1479,14 +1475,29 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 .name
                 .clone()
                 .unwrap_or_else(|| format!("FINJPL#{index}")),
-            role: role::FINJPL_SEGMENT.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::FinjplSegment,
+            compression: EntryCompression::None,
             compressed_size: (segment.range.end - segment.range.start) as u64,
             uncompressed_size: (segment.range.end - segment.range.start) as u64,
             attributes,
         });
     }
 
+    let notes = notes(scan);
+
+    let matched = crate::dialect::classify(scan);
+    let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched),
+        cadmpeg_ir::ContainerKind::V5Cfv2,
+        entries,
+        losses,
+        notes,
+    )
+}
+
+/// Build the diagnostic notes shared by inspection and decode reports.
+pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
     let mut notes = vec![format!(
         "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
         scan.outer_dir_offset,
@@ -1541,17 +1552,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         ));
     }
     notes.push(
-        "container-level enumeration; run `decode` to build geometry from the standard-nested \
-         BREP stream (other variants are container-only)"
+        "container-level enumeration; `decode` applies the identified storage family's \
+         standard, freeform, E5, zero-entity, or metadata-fallback route"
             .to_string(),
     );
 
-    ContainerSummary {
-        format: "catia".to_string(),
-        container_kind: "v5-cfv2".to_string(),
-        entries,
-        notes,
-    }
+    notes
 }
 
 #[cfg(test)]

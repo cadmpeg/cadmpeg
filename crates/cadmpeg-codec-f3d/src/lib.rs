@@ -2,15 +2,17 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write Autodesk Fusion `.f3d` archives.
 //!
-//! [`F3dCodec`] implements [`Codec`] and [`Encoder`]. Decoding produces a
+//! [`F3dCodec`] implements [`cadmpeg_ir::codec::Codec`] and
+//! [`cadmpeg_ir::codec::write::Encoder`]. Decoding produces a
 //! [`CadIr`] document with B-rep topology, analytic and cached NURBS geometry,
 //! body transforms, design and sketch records, construction history, and
 //! appearances. Encoding replays an unchanged decoded archive byte for byte,
 //! applies supported semantic edits to retained source data, or creates an
 //! archive from the supported source-less profile.
 //!
-//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability f3d -->
+//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+//! <!-- /generated: capability f3d -->
 //!
 //! # Decode
 //!
@@ -37,7 +39,9 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions, Encoder};
+//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::Encoder;
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,10 +50,10 @@
 //! // Edit supported fields in result.ir().
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(cadmpeg_ir::codec::EncodeInput {
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
 //!         ir: result.ir(),
 //!         fidelity: Some(result.source_fidelity()),
-//!     })?
+//!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -83,12 +87,11 @@
 mod act;
 pub(crate) mod brep;
 mod bytes;
-#[allow(dead_code)] // Internal container records remain available to crate tests.
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod design;
+pub(crate) mod dialect;
 mod error;
-#[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
 pub(crate) mod f3z;
 pub(crate) mod history;
 mod history_records;
@@ -102,8 +105,8 @@ pub(crate) mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-#[allow(dead_code)] // Native record surface remains behind the codec facade.
 pub(crate) mod records;
+mod report;
 mod tsm;
 pub(crate) mod validate;
 mod value_tree;
@@ -113,20 +116,16 @@ mod zip_write;
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{FidelityResolution, WritePath};
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
+#[cfg(test)]
 use crate::loss::F3dLossCode;
-
-/// Validate the typed Fusion-native namespace.
-pub fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
-    validate::validate_native(ir)
-}
 
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
@@ -135,60 +134,42 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 #[derive(Debug, Default, Clone, Copy)]
 pub struct F3dCodec;
 
-impl F3dCodec {
-    /// Write a decoded F3D document using its source-fidelity sidecar.
-    pub fn write_preserved_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: &cadmpeg_ir::SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<WritePath, CodecError> {
-        let record = source_fidelity
-            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
-            .ok_or_else(|| {
-                CodecError::NotImplemented("sidecar has no retained F3D source image".into())
-            })?;
-        let data = record.data.as_ref().ok_or_else(|| {
-            CodecError::Malformed("retained F3D source image has no bytes".into())
-        })?;
-        Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreservedWritePath {
+    Patched,
+    VerbatimReplay,
+}
 
+impl F3dCodec {
     /// Replay retained source bytes when the document baseline still matches;
     /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
-        byte_len: u64,
-        sha256: &str,
         writer: &mut dyn Write,
-    ) -> Result<WritePath, CodecError> {
+    ) -> Result<PreservedWritePath, CodecError> {
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
-        let hash = sha256_hex(data);
-        if data.len() as u64 != byte_len || hash != sha256 {
-            return Err(CodecError::Malformed(
-                "retained F3D source image failed integrity validation".into(),
-            ));
-        }
         if decode::document_local_sha256(ir) != *expected {
             writer::patch::write_semantic(ir, data, writer)?;
-            return Ok(WritePath::Patched);
+            return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
-        Ok(WritePath::VerbatimReplay)
+        Ok(PreservedWritePath::VerbatimReplay)
     }
 }
 
 impl CodecBackend for F3dCodec {
-    fn id(&self) -> &'static str {
-        "f3d"
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
+        validate::validate_native(ir)
     }
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(ZIP_MAGIC) {
             return Confidence::No;
         }
@@ -212,74 +193,30 @@ impl CodecBackend for F3dCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        match &scan.kind {
+            container::F3dContainerKind::MultiDocument { .. } => f3z::inspect(ctx, &scan),
+            container::F3dContainerKind::Document { .. } => {
+                Ok(report::build_inspection_summary(&scan))
+            }
+        }
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }
 
-impl Encoder for F3dCodec {
-    fn id(&self) -> &'static str {
-        "f3d"
-    }
+impl EncoderBackend for F3dCodec {
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        let replay = input
-            .fidelity
-            .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-            .is_some();
-        let mut bytes = Vec::new();
-        let write_path = if let Some(sidecar) = input.fidelity.filter(|_| replay) {
-            self.write_preserved_with_source_fidelity(input.ir, sidecar, &mut bytes)?
-        } else {
-            writer::generate::write_new(input.ir, &mut bytes)?;
-            WritePath::Synthesized
-        };
-        let path_note = match write_path {
-            WritePath::VerbatimReplay => "preserved source container replayed verbatim",
-            WritePath::Patched => "preserved source container replayed with semantic patches",
-            WritePath::Synthesized => "source container regenerated from IR",
-        };
-        let expects_preserved_source = input
-            .ir
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format == "f3d");
-        let fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
-            (_, true) => FidelityResolution::Replayed,
-            (true, false) => FidelityResolution::Degraded {
-                reason: "preserved F3D source image is unavailable".into(),
-            },
-            (false, false) => FidelityResolution::NotProvided,
-        };
-        let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
-            .then(|| {
-                F3dLossCode::SourcePreservedImageUnavailable
-                    .note("preserved F3D source image is unavailable; regenerated from IR")
-            })
-            .into_iter()
-            .collect();
-        let report = ExportReport {
-            format: "f3d".into(),
-            census: cadmpeg_ir::EntityCensus {
-                basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: input.ir.census(),
-            },
-            fidelity,
-            write_path,
-            losses,
-            notes: vec![
-                path_note.into(),
-                "entity counts are derived from the IR".into(),
-            ],
-        };
-        Ok(ExportPlan::buffered(report, bytes))
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

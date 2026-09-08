@@ -8,7 +8,8 @@
 //! identities. It then adds appearances, display meshes, document attributes,
 //! feature history, feature-input lanes, provenance, and retained source data.
 //!
-//! The returned [`DecodeResult`] contains both the IR and its diagnostics.
+//! The returned [`Decoded`] carries the IR and its diagnostics body; the sealed
+//! codec wrapper stamps the identity the IR source authored onto the report.
 //! Untyped surface and curve carriers become opaque geometry linked to the
 //! retained Parasolid source record. If no body stream yields geometry, decoding returns a
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
@@ -20,64 +21,20 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
-use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::SldprtLossCode;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::configuration_index;
 
 use crate::brep::{self, Brep};
-use crate::container::{self, Block, CompoundStream, ContainerScan};
+use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
-
-struct BodyStream<'a> {
-    origin: BodyOrigin<'a>,
-    payload: &'a [u8],
-    header: StreamHeader,
-}
-
-#[derive(Clone, Copy)]
-enum BodyOrigin<'a> {
-    Block(&'a Block),
-    Compound(&'a CompoundStream),
-}
-
-impl BodyOrigin<'_> {
-    fn name(self) -> String {
-        match self {
-            Self::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            Self::Compound(stream) => stream.path.clone(),
-        }
-    }
-
-    fn unknown_id(self) -> UnknownId {
-        match self {
-            Self::Block(block) => UnknownId(format!("sldprt:file:block#{}", block.offset)),
-            Self::Compound(stream) => UnknownId(format!(
-                "sldprt:file:compound-stream#{}",
-                stream.directory_id
-            )),
-        }
-    }
-
-    fn site_key(self) -> String {
-        match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
-        }
-    }
-}
 
 struct DecodedBrep {
     /// Representative stream whose header is common to every merged site.
@@ -116,9 +73,11 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 ///
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
-/// through [`DecodeResult::report`] when a partial result can be represented.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+/// through the decode body when a partial result can be represented.
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
+    let classification = crate::dialect::classify_layers(&scan);
+    let form_padding = classification.host().form_code_padding();
     // Charge container cardinality before BREP/IR construction so max_entities
     // can refuse the expensive path rather than only the finalizer.
     let container_entities =
@@ -127,9 +86,14 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) =
-            build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
-        let mut report = build_container_report(&scan, true);
+        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+            ctx,
+            &scan,
+            &classification,
+            form_padding,
+            &mut admitted_entities,
+        )?;
+        let mut report = build_container_report(&scan, &classification);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -137,16 +101,17 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
+        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification) {
             let source_header = decoded
                 .metadata_stream
-                .and_then(|index| streams.get(index).map(|stream| &stream.header));
+                .and_then(|index| streams.get(index).map(|stream| stream.header));
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &scan,
+                &classification,
                 source_header,
-                decoded.brep,
-                &decoded.configuration_bodies,
+                decoded,
+                form_padding,
                 &mut admitted_entities,
             )?;
             report.losses.append(&mut pmi_losses);
@@ -156,15 +121,20 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) =
-        build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
-    let mut report = build_container_report(&scan, false);
+    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+        ctx,
+        &scan,
+        &classification,
+        form_padding,
+        &mut admitted_entities,
+    )?;
+    let mut report = build_container_report(&scan, &classification);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ir, report, annotations, unknowns)
 }
 
-fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
+fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     let unresolved = ir
         .model
         .tessellations
@@ -182,21 +152,25 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
 
 fn decode_result(
     mut ir: CadIr,
-    report: DecodeReport,
+    body: DecodeBody,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
-        .position(|record| record.id.0 == "sldprt:file:source-image#0")
+        .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
     stamp_local_digests(&mut ir);
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 fn incomplete_pattern(
@@ -206,7 +180,13 @@ fn incomplete_pattern(
     use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
 
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
             direction.is_none()
         }
@@ -274,11 +254,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::Symmetric { .. }
         | Constraint::PointSymmetric { .. }
         | Constraint::Horizontal { .. }
-        | Constraint::HorizontalLoci { .. }
         | Constraint::Vertical { .. }
-        | Constraint::VerticalLoci { .. }
-        | Constraint::HorizontalPoints { .. }
-        | Constraint::VerticalPoints { .. }
         | Constraint::Parallel { .. }
         | Constraint::Perpendicular { .. }
         | Constraint::Tangent { .. }
@@ -339,11 +315,11 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
-fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
+fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
-        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
-        RevolveExtent, SplitFaceTool, Termination,
+        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
+        PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -356,7 +332,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active.is_active())
+        .filter(|configuration| configuration.active)
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
         report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
@@ -374,7 +350,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         ir.model
             .configurations
             .iter()
-            .find(|configuration| configuration.active.is_active())
+            .find(|configuration| configuration.active)
             .is_some_and(|configuration| {
                 configuration.source_index.as_ref() != Some(active_partition)
             })
@@ -544,22 +520,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )));
     }
-    let incoherent_configuration_suppression =
-        ir.model
-            .configurations
-            .iter()
-            .filter(|configuration| {
-                let mut suppressed = std::collections::HashSet::new();
-                configuration
-                    .suppressed_features
-                    .iter()
-                    .any(|feature| !feature_ids.contains(feature) || !suppressed.insert(feature))
-                    || (!configuration.feature_states.is_empty()
-                        && configuration.feature_states.iter().any(|(feature, state)| {
-                            state.suppressed != suppressed.contains(feature)
-                        }))
+    let incoherent_configuration_suppression = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            configuration.feature_states.iter().any(|(id, state)| {
+                !feature_ids.contains(id)
+                    || (configuration.active
+                        && ir
+                            .model
+                            .features
+                            .iter()
+                            .find(|feature| feature.id == *id)
+                            .is_some_and(|feature| {
+                                feature.suppressed.is_some_and(|suppressed| {
+                                    suppressed != state.evaluation.is_suppressed()
+                                })
+                            }))
             })
-            .count();
+        })
+        .count();
     let incoherent_configuration_overrides = ir
         .model
         .configurations
@@ -767,7 +748,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         EvaluatedFeatureState {
                             feature,
                             dependencies: &state.dependencies,
-                            outputs: &state.outputs,
+                            outputs: state.evaluation.outputs(),
                             definition: &state.definition,
                         }
                     })
@@ -790,7 +771,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .filter(|state| {
             let feature = state.feature;
-            let parent_incoherent = feature.parent.as_ref().is_some_and(|parent| {
+            let parent_incoherent = ir.model.feature_parent(&feature.id).is_some_and(|parent| {
                 feature_positions
                     .get(parent)
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
@@ -852,7 +833,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     !children.insert(child)
                         || features_by_id.get(child).is_none_or(|child| {
                             child.ordinal <= feature.ordinal
-                                || child.parent.as_ref() != Some(&feature.id)
+                                || ir.model.feature_parent(&child.id) != Some(&feature.id)
                         })
                 }
             })
@@ -1007,12 +988,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
-        BodySelection::Bodies(bodies)
-        | BodySelection::Resolved { bodies, .. }
-        | BodySelection::ResolvedSet { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. }
-        | BodySelection::HistoricalSet { bodies, .. }
-        | BodySelection::HistoricalUnorderedSet { bodies, .. } => bodies.is_empty(),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
@@ -1047,34 +1027,45 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 | cadmpeg_ir::features::VertexSelection::Native(_)
         )
     };
-    let incomplete_termination = |termination: &Termination| match termination {
-        Termination::Unresolved => true,
-        Termination::ToFace { face, .. }
-        | Termination::OffsetFromFace { face, .. }
-        | Termination::ToShape { target: face } => incomplete_face_selection(face),
-        Termination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
-        Termination::Blind { .. }
-        | Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast
-        | Termination::Angle { .. } => false,
+    let incomplete_linear_termination = |termination: &LinearTermination| match termination {
+        LinearTermination::Unresolved => true,
+        LinearTermination::ToFace { face, .. }
+        | LinearTermination::OffsetFromFace { face, .. }
+        | LinearTermination::ToShape { target: face } => incomplete_face_selection(face),
+        LinearTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        LinearTermination::Blind { .. }
+        | LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast => false,
+    };
+    let incomplete_angular_termination = |termination: &AngularTermination| match termination {
+        AngularTermination::Unresolved => true,
+        AngularTermination::ToFace { face, .. }
+        | AngularTermination::OffsetFromFace { face, .. }
+        | AngularTermination::ToShape { target: face } => incomplete_face_selection(face),
+        AngularTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast
+        | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-            incomplete_termination(&side.termination)
+            incomplete_linear_termination(&side.termination)
         }
         ExtrudeExtent::TwoSided { first, second } => {
-            incomplete_termination(&first.termination)
-                || incomplete_termination(&second.termination)
+            incomplete_linear_termination(&first.termination)
+                || incomplete_linear_termination(&second.termination)
         }
     };
     let incomplete_revolve_extent = |extent: &RevolveExtent| match extent {
         RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
-            incomplete_termination(termination)
+            incomplete_angular_termination(termination)
         }
         RevolveExtent::TwoSided { first, second } => {
-            incomplete_termination(first) || incomplete_termination(second)
+            incomplete_angular_termination(first) || incomplete_angular_termination(second)
         }
     };
     let incomplete_typed_features = evaluated_feature_states
@@ -1128,10 +1119,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::PlanarPatch { .. } => false,
             FeatureDefinition::Polyline { points, .. } => points.len() < 2,
             FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
-            FeatureDefinition::FaceFromShapes {
-                sources,
-                face_maker_class,
-            } => incomplete_body_selection(sources) || face_maker_class.trim().is_empty(),
+            FeatureDefinition::FaceFromShapes { sources, .. } => incomplete_body_selection(sources),
             FeatureDefinition::Block {
                 dimensions,
                 placement,
@@ -1151,12 +1139,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     cadmpeg_ir::features::CoilPlacement::Native { .. }
                 ) || match result {
                     cadmpeg_ir::features::CoilResult::NewBody => false,
-                    cadmpeg_ir::features::CoilResult::Boolean {
-                        operation,
-                        targets,
-                    } => {
-                        *operation == BooleanOp::Unresolved
-                            || incomplete_body_selection(targets)
+                    cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
+                        incomplete_body_selection(targets)
                     }
                 }
             }
@@ -1180,9 +1164,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 .as_ref()
                 .is_none_or(|reference| match reference {
                     cadmpeg_ir::features::DatumPlaneReference::Feature(_) => false,
-                    cadmpeg_ir::features::DatumPlaneReference::Face { face, .. } => {
+                    cadmpeg_ir::features::DatumPlaneReference::Face(face) => {
                         incomplete_face_selection(face)
                     }
+                    cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
                 }),
             FeatureDefinition::ProjectedCurve {
                 source,
@@ -1205,16 +1190,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::HelixNativeAxis { .. } => true,
             FeatureDefinition::Wrap {
-                profile,
-                face,
-                mode,
-                depth,
+                profile, face, ..
             } => {
-                incomplete_profile(profile)
-                    || incomplete_face_selection(face)
-                    || (*mode != cadmpeg_ir::features::WrapMode::Scribe && depth.is_none())
+                incomplete_profile(profile) || incomplete_face_selection(face)
             }
-            FeatureDefinition::Sketch { sketch, .. } => sketch.is_none(),
+            FeatureDefinition::Sketch { sketch, .. } => sketch.id().is_none(),
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
             FeatureDefinition::Extrude {
                 profile,
@@ -1222,7 +1202,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 start,
                 extent,
                 op,
-                direction_source,
                 ..
             } => {
                 incomplete_profile(profile)
@@ -1236,18 +1215,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
                     }
                     || matches!(
-                        direction_source,
-                        Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference })
+                        direction,
+                        cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                            source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
+                            ..
+                        }
                             if incomplete_path(reference)
                     )
                     || incomplete_extrude_extent(extent)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Revolve { construction, op } => {
-                construction.profile.as_ref().is_none_or(incomplete_profile)
-                    || construction.axis.is_none()
-                    || construction.extent.as_ref().is_none_or(incomplete_revolve_extent)
-                    || *op == BooleanOp::Unresolved
+                match construction {
+                    cadmpeg_ir::features::RevolveConstruction::Unresolved(_) => true,
+                    cadmpeg_ir::features::RevolveConstruction::Resolved {
+                        profile, extent, ..
+                    } => {
+                        incomplete_profile(profile)
+                            || incomplete_revolve_extent(extent)
+                            || *op == BooleanOp::Unresolved
+                    }
+                }
             }
             FeatureDefinition::Sweep {
                 section,
@@ -1270,7 +1258,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                             if incomplete_path(path)
                     )
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
-                    || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
             FeatureDefinition::HelicalSweep { construction, op } => {
                 incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
@@ -1311,8 +1298,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Loft {
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 ..
             } => {
@@ -1322,8 +1308,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Native(_)) => true,
                         cadmpeg_ir::features::LoftSection::Point(_) => false,
                     })
-                    || guides.iter().any(incomplete_path)
-                    || centerline.as_ref().is_some_and(incomplete_path)
+                    || match guidance {
+                        cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                            guides.iter().any(incomplete_path)
+                        }
+                        cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                            incomplete_path(centerline)
+                        }
+                    }
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
@@ -1345,7 +1337,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 groups.is_empty()
                     || groups.iter().any(|group| {
                         incomplete_edge_selection(&group.edges)
-                            || matches!(group.radius, RadiusSpec::Unresolved { .. })
+                            || group.radius.is_unresolved()
                             || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
                     })
             }
@@ -1376,7 +1368,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     })
             }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
-                incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
+                incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
             }),
             FeatureDefinition::FaceBlend {
                 first_faces,
@@ -1385,7 +1377,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             } => {
                 incomplete_face_selection(first_faces)
                     || incomplete_face_selection(second_faces)
-                    || matches!(radius, RadiusSpec::Unresolved { .. })
+                    || radius.is_unresolved()
                     || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
             }
             FeatureDefinition::Shell {
@@ -1471,14 +1463,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
                     cadmpeg_ir::features::SurfaceBoundary::Path(path) => incomplete_path(path),
                 })
-                    || if *continuity
+                    || if continuity.uniform_value()
                         == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
                         incomplete_face_selection(support_faces)
                     }
-                    || continuity.is_none()
+                    || continuity.is_unresolved()
                     || merge_result.is_none()
             }
             FeatureDefinition::TrimSurface {
@@ -1506,28 +1498,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Draft {
                 faces,
-                neutral_plane,
-                parting_tool,
-                pull_plane: _,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
             } => {
                 incomplete_face_selection(faces)
-                    || parting_tool.as_ref().map_or_else(
-                        || incomplete_face_selection(neutral_plane),
-                        incomplete_face_selection,
-                    )
-                    || pull_direction.is_none()
+                    || match anchor {
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                            incomplete_face_selection(plane)
+                        }
+                        cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                            incomplete_face_selection(tool)
+                        }
+                    }
+                    || anchor.pull().is_none()
                     || angle.is_none()
-                    || (parting_tool.is_none() && outward.is_none())
+                    || (matches!(
+                        anchor,
+                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
+                    ) && outward.is_none())
             }
-            FeatureDefinition::Combine {
-                target, tools, op, ..
-            } => {
-                incomplete_body_selection(target)
-                    || incomplete_body_selection(tools)
-                    || *op == BooleanOp::Unresolved
+            FeatureDefinition::Combine { target, tools, .. } => {
+                incomplete_body_selection(target) || incomplete_body_selection(tools)
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
                 incomplete_body_selection(tools)
@@ -1583,7 +1575,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Flex { axis, mode } => {
                 axis.is_none()
-                    || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
+                || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved(_))
             }
             FeatureDefinition::Scale {
                 bodies,
@@ -1600,19 +1592,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 profile,
                 face,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
                 ..
             } => {
+                let exit_kind_is_unresolved = exit_kind
+                    .as_ref()
+                    .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
                 profile.as_ref().is_some_and(incomplete_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
-                    || placements.is_empty()
-                    || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
-                    || matches!(exit_kind, Some(cadmpeg_ir::features::HoleKind::Unresolved { .. }))
+                    || placements.is_none()
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                            if kind.is_unresolved()
+                    )
+                    || exit_kind_is_unresolved
                     || diameter.is_none()
-                    || extent.as_ref().is_none_or(incomplete_termination)
+                    || extent
+                        .as_ref()
+                        .is_none_or(incomplete_linear_termination)
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 seeds.is_empty()
@@ -1632,35 +1633,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
             // Unresolved construction retained as native.
-            FeatureDefinition::DatumAxisUnresolved
-            | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::BridgeCurveUnresolved
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::ThroughCurveMeshUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::ExtractFaceUnresolved
-            | FeatureDefinition::CopyFaceUnresolved
-            | FeatureDefinition::LinkedFaceUnresolved
-            | FeatureDefinition::FillHoleUnresolved
-            | FeatureDefinition::MoveFaceUnresolved
-            | FeatureDefinition::MoveObjectUnresolved
-            | FeatureDefinition::CylinderUnresolved
-            | FeatureDefinition::ConeUnresolved
-            | FeatureDefinition::SphereUnresolved
-            | FeatureDefinition::ThreadUnresolved
-            | FeatureDefinition::DetailedThreadUnresolved
-            | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
-                | FeatureDefinition::BrepUnresolved
-                | FeatureDefinition::MirrorFaceUnresolved
-                | FeatureDefinition::SubdivisionBodyUnresolved
-                | FeatureDefinition::TopologyOptimizationUnresolved
-                | FeatureDefinition::DeleteFaceUnresolved
-                | FeatureDefinition::ExtrudeUnresolved
-                | FeatureDefinition::RevolveUnresolved
-                | FeatureDefinition::FilletUnresolved => true,
+            FeatureDefinition::Unresolved { .. } => true,
             }
         })
         .count();
@@ -1756,7 +1729,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .flat_map(|lane| {
             lane.classes
                 .iter()
-                .filter(|class| class.role == FeatureInputClassRole::Feature)
+                .filter(|class| class.role() == FeatureInputClassRole::Feature)
                 .filter_map(move |class| {
                     let name_offset = class.offset + 6 + class.name.len() as u64;
                     lane.names
@@ -1770,7 +1743,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                 source_counts.get(&id).copied() == Some(1)
                     && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
                         || native_object_class(&class.name)
-                            .feature
+                            .feature()
                             .is_some_and(|expected| {
                                 native
                                     .feature_histories
@@ -1868,7 +1841,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                         .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
                         && !lane.relation_instances.iter().any(|relation| {
                             relation.class_ref == binding.class_ref
-                                && relation.scalar_refs.contains(&binding.scalar_ref)
+                                && relation.scalar_refs().contains(&binding.scalar_ref)
                         })
                 })
                 .count();
@@ -1952,42 +1925,25 @@ fn multiply_projected_sketch_relation_records(
 }
 
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
-fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
-    let block_streams = scan.blocks.iter().flat_map(|block| {
-        block.ps_streams.iter().filter_map(move |payload| {
-            let header = crate::parasolid::stream_header(payload)?;
-            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-            if crate::parasolid::is_body_stream(&header)
-                && !section.contains("ghost")
-                && !section.contains("resolvedfeatures")
-            {
-                Some(BodyStream {
-                    origin: BodyOrigin::Block(block),
-                    payload,
-                    header,
+fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSite<'a>> {
+    let mut streams = scan
+        .sections()
+        .flat_map(|section| {
+            section.ps_streams().iter().filter_map(move |stream| {
+                let name = section.name().unwrap_or("").to_ascii_lowercase();
+                (crate::parasolid::is_body_stream(&stream.header)
+                    && !name.contains("ghost")
+                    && !name.contains("resolvedfeatures"))
+                .then_some(ActiveParasolidSite {
+                    section,
+                    payload: &stream.payload,
+                    header: &stream.header,
                 })
-            } else {
-                None
-            }
-        })
-    });
-    let compound_streams = scan.compound_streams.iter().flat_map(|stream| {
-        stream.ps_streams.iter().filter_map(move |payload| {
-            let header = crate::parasolid::stream_header(payload)?;
-            let section = stream.path.to_ascii_lowercase();
-            (crate::parasolid::is_body_stream(&header)
-                && !section.contains("ghost")
-                && !section.contains("resolvedfeatures"))
-            .then_some(BodyStream {
-                origin: BodyOrigin::Compound(stream),
-                payload,
-                header,
             })
         })
-    });
-    let mut streams = block_streams.chain(compound_streams).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     streams.sort_by_key(|stream| {
-        let section = stream.origin.name().to_ascii_lowercase();
+        let section = stream.name().to_ascii_lowercase();
         (
             !section.contains("partition"),
             !stream
@@ -2005,22 +1961,20 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
 /// partition/deltas model, so the caller falls back to metadata.
 fn try_decode_brep(
     scan: &ContainerScan,
-    streams: &[BodyStream<'_>],
-) -> Option<(DecodedBrep, DecodeReport)> {
+    streams: &[ActiveParasolidSite<'_>],
+    classification: &crate::dialect::LayerClassification,
+) -> Option<(DecodedBrep, DecodeBody)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
-        sites
-            .entry(stream.origin.site_key())
-            .or_default()
-            .push(index);
+        sites.entry(stream.site_key()).or_default().push(index);
     }
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let name = streams[first].origin.name();
+        let name = streams[first].name();
         let bodies: Vec<_> = indices
             .iter()
-            .map(|index| (streams[*index].payload, &streams[*index].header))
+            .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
         let decoded = brep::decode_bodies(&bodies, &name);
         decoded_sites.push((site.clone(), first, decoded));
@@ -2085,11 +2039,11 @@ fn try_decode_brep(
     let active_stream = resolved_active_site.map(|site| decoded_sites[site].1);
     let metadata_stream = active_stream.or_else(|| {
         let first = decoded_sites.first()?.1;
-        let first_header = &streams[first].header;
+        let first_header = streams[first].header;
         decoded_sites
             .iter()
             .all(|(_, representative, _)| {
-                let header = &streams[*representative].header;
+                let header = streams[*representative].header;
                 header.schema == first_header.schema
                     && header.description == first_header.description
             })
@@ -2099,9 +2053,12 @@ fn try_decode_brep(
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key);
     }
-    bind_opaque_geometry(&mut decoded, &streams[selected].origin.unknown_id());
+    bind_opaque_geometry(
+        &mut decoded,
+        &UnknownId::mint(streams[selected].section.native_id()).expect("identity grammar"),
+    );
     let mut configuration_bodies = Vec::new();
-    if let Some(index) = configuration_index(&streams[selected].origin.name()) {
+    if let Some(index) = configuration_index(&streams[selected].name()) {
         configuration_bodies.push((
             index,
             decoded.bodies.iter().map(|body| body.id.clone()).collect(),
@@ -2109,8 +2066,11 @@ fn try_decode_brep(
     }
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site);
-        bind_opaque_geometry(&mut alternate, &streams[first].origin.unknown_id());
-        if let Some(index) = configuration_index(&streams[first].origin.name()) {
+        bind_opaque_geometry(
+            &mut alternate,
+            &UnknownId::mint(streams[first].section.native_id()).expect("identity grammar"),
+        );
+        if let Some(index) = configuration_index(&streams[first].name()) {
             configuration_bodies.push((
                 index,
                 alternate
@@ -2125,7 +2085,7 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate);
     }
-    let report = build_geometry_report(scan, &decoded);
+    let report = build_geometry_report(scan, &decoded, classification);
     Some((
         DecodedBrep {
             metadata_stream,
@@ -2156,22 +2116,7 @@ fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
 fn merge_brep(target: &mut Brep, mut source: Brep) {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
-    let stream_base = target.annotations.streams.len() as u32;
-    target
-        .annotations
-        .streams
-        .append(&mut source.annotations.streams);
-    for provenance in source.annotations.provenance.values_mut() {
-        provenance.stream += stream_base;
-    }
-    target
-        .annotations
-        .provenance
-        .append(&mut source.annotations.provenance);
-    target
-        .annotations
-        .exactness
-        .append(&mut source.annotations.exactness);
+    target.annotations.append(source.annotations);
     target.bodies.append(&mut source.bodies);
     target.regions.append(&mut source.regions);
     target.shells.append(&mut source.shells);
@@ -2215,13 +2160,14 @@ fn ensure_display_appearance(
     }) {
         return existing.id.clone();
     }
-    let id = AppearanceId(format!(
+    let id = AppearanceId::mint(format!(
         "sldprt:appearance:displaylist#{section_ordinal}:{}",
         definition.record_offset
-    ));
+    ))
+    .expect("identity grammar");
     crate::annotations::note(
         annotations,
-        id.0.clone(),
+        id.as_str().to_owned(),
         definition.source_name.clone(),
         definition.record_offset as u64,
         "displaylist_visual_properties",
@@ -2246,9 +2192,10 @@ fn ensure_display_appearance(
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-    mut brep: Brep,
-    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    decoded: DecodedBrep,
+    form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
     (
@@ -2259,19 +2206,18 @@ fn build_geometry_ir(
     ),
     CodecError,
 > {
-    let mut ir = CadIr::empty(Units::default());
+    let DecodedBrep {
+        metadata_stream: _,
+        mut brep,
+        configuration_bodies,
+    } = decoded;
     let appearance_definitions = crate::appearance::definitions(scan);
-    ir.source = Some(source_meta(scan, header));
+    let mut ir = CadIr::decoded(source_meta(scan, classification, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -2280,7 +2226,14 @@ fn build_geometry_ir(
     );
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
+    project_design_history(
+        &mut ir,
+        &histories,
+        &lanes,
+        &pmi_dimensions,
+        scan,
+        form_padding,
+    );
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -2455,7 +2408,6 @@ fn build_geometry_ir(
     attributes.extend(crate::history::custom_property_attributes(&histories));
     lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
         pmi_dimensions,
@@ -2494,31 +2446,11 @@ fn build_geometry_ir(
     let face_identities = brep
         .face_atoms
         .iter()
-        .filter_map(|atom| {
-            atom.target
-                .clone()
-                .map(|target| (target, atom.feature_source_id, atom.local_face_id))
-        })
-        .collect::<Vec<_>>();
-    let persistent_face_identities = brep
-        .face_atoms
-        .iter()
-        .filter_map(|atom| {
-            atom.target.clone().map(|target| {
-                (
-                    target,
-                    crate::brep::PersistentFaceIdentity {
-                        feature_source_id: atom.feature_source_id,
-                        local_id: atom.local_face_id,
-                        trailing_fields: atom.persistent_tail.clone(),
-                    },
-                )
-            })
-        })
+        .map(|atom| (atom.face.clone(), atom.identity.clone()))
         .collect::<Vec<_>>();
     let face_producers = face_identities
         .iter()
-        .map(|(target, source, _)| (target.clone(), *source))
+        .map(|(target, identity)| (target.as_str().to_owned(), identity.feature_source_id))
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2646,7 +2578,7 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    assign_configuration_bodies(&mut ir, configuration_bodies);
+    assign_configuration_bodies(&mut ir, &configuration_bodies);
     crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
@@ -2708,13 +2640,14 @@ fn build_geometry_ir(
         header.description.as_str()
     });
     for face_color in brep.face_colors {
-        let id = AppearanceId(format!(
+        let id = AppearanceId::mint(format!(
             "sldprt:appearance:entity53#{}",
             face_color.color_attr
-        ));
+        ))
+        .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             annotation_source,
             face_color.offset as u64,
             "00_53_color",
@@ -2753,11 +2686,13 @@ fn build_geometry_ir(
                 .model
                 .appearance_bindings
                 .iter()
-                .any(|binding| binding.id == binding_id)
+                .any(|binding| binding.id.as_str() == binding_id)
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: binding_id,
-                    target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
+                    id: binding_id.try_into().expect("valid identity"),
+                    target: AppearanceTarget::Face(
+                        cadmpeg_ir::ids::FaceId::mint(target).expect("identity grammar"),
+                    ),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
@@ -2768,10 +2703,11 @@ fn build_geometry_ir(
         }
     }
     for (index, definition) in appearance_definitions.into_iter().enumerate() {
-        let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
+        let id = AppearanceId::mint(format!("sldprt:appearance:material#{index}"))
+            .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             definition.source_name,
             definition.record_offset as u64,
             "moVisualProperties_c",
@@ -2803,7 +2739,7 @@ fn build_geometry_ir(
         if display_faces.is_empty() {
             continue;
         }
-        for face in &display_faces {
+        for (table_index, face) in display_faces.iter().enumerate() {
             let candidates = face
                 .surface_references
                 .iter()
@@ -2813,7 +2749,7 @@ fn build_geometry_ir(
                 conflicting_display_references.push(format!(
                     "{}::DisplayFace[{}] ({})",
                     display.display_name(),
-                    face.table_index,
+                    table_index,
                     candidates
                         .iter()
                         .map(u32::to_string)
@@ -2826,11 +2762,11 @@ fn build_geometry_ir(
             crate::appearance::resolve_display_appearances(scan, display, &display_faces);
         matched_feature_sources.extend(resolved.matched_feature_sources);
         let mut display_links = Vec::with_capacity(display_faces.len());
-        for display_face in display_faces {
+        for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
                 display.ordinal(),
-                display_face.table_index
+                table_index
             );
             if let Some(identity) = display_face.persistent_surface_identity() {
                 persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
@@ -2848,7 +2784,7 @@ fn build_geometry_ir(
                 Exactness::ByteExact,
             );
             display_links.push(id.clone());
-            if let Some(definition) = resolved.by_face.get(&display_face.table_index) {
+            if let Some(definition) = resolved.by_face.get(&table_index) {
                 let appearance = ensure_display_appearance(
                     &mut ir,
                     definition,
@@ -2859,14 +2795,16 @@ fn build_geometry_ir(
                     id: format!(
                         "sldprt:appearance:binding#display:{}:{}",
                         display.ordinal(),
-                        display_face.table_index
-                    ),
+                        table_index
+                    )
+                    .try_into()
+                    .expect("valid identity"),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
                     source_entity_id: Some(format!(
                         "{}::DisplayFace[{}]",
                         display.display_name(),
-                        display_face.table_index
+                        table_index
                     )),
                     object_type: Some("DisplayFace".into()),
                     visible: None,
@@ -2874,24 +2812,18 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model
-                .tessellations
-                .push(cadmpeg_ir::tessellation::Tessellation {
+            ir.model.tessellations.push(
+                cadmpeg_ir::tessellation::Tessellation::from_decoded(
                     id,
-                    body: None,
-                    faces: Vec::new(),
-                    chordal_deflection: None,
-                    source_object: None,
-                    vertices: mesh.vertices,
-                    triangles: mesh.triangles,
-                    feature_edges: Vec::new(),
-                    strip_lengths: mesh.strip_lengths,
-                    normals: mesh.normals,
-                    corner_normals: Vec::new(),
-                    triangle_groups: Vec::new(),
-                    texture_assignments: Vec::new(),
-                    channels: mesh.channels,
-                });
+                    mesh.vertices,
+                    mesh.triangles,
+                    mesh.strip_lengths,
+                    mesh.normals,
+                    Vec::new(),
+                    mesh.channels,
+                )
+                .expect("decoded SLDPRT display mesh is a valid tessellation"),
+            );
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
@@ -2902,14 +2834,12 @@ fn build_geometry_ir(
             "displaylist_tessellation",
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(display_id),
-            offset: 0,
-            byte_len: display.payload().len() as u64,
-            sha256: sha256_hex(display.payload()),
-            data: Some(display.payload().to_vec()),
-            links: display_links,
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId::mint(display_id).expect("identity grammar"),
+            0,
+            display.payload().to_vec(),
+            display_links,
+        ));
     }
     let unmatched_feature_sources = feature_appearance_sources
         .difference(&matched_feature_sources)
@@ -2940,22 +2870,21 @@ fn build_geometry_ir(
     }
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
         &mut ir.model,
-        &persistent_face_identities,
+        &face_identities,
         &persistent_face_bindings,
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
     ));
+    let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        let note = annotations.exactness.entry(id).or_default();
-        note.fields.insert("body".into(), Exactness::Derived);
-        note.fields.insert("faces".into(), Exactness::Derived);
+        annotation_builder.derived(&id, "body").derived(id, "faces");
     }
+    let mut annotations = annotation_builder.build();
     for source_block in &scan.blocks {
-        if unknowns
-            .iter()
-            .any(|record| record.id.0 == format!("sldprt:file:block#{}", source_block.offset))
-        {
+        if unknowns.iter().any(|record| {
+            record.id().as_str() == format!("sldprt:file:block#{}", source_block.offset)
+        }) {
             continue;
         }
         let id = format!("sldprt:file:block#{}", source_block.offset);
@@ -2967,17 +2896,15 @@ fn build_geometry_ir(
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", source_block.offset)),
             source_block.offset as u64,
-            source_block.family,
+            source_block.family.label(),
             Exactness::ByteExact,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
-            offset: 0,
-            byte_len: source_block.payload.len() as u64,
-            sha256: sha256_hex(&source_block.payload),
-            data: Some(source_block.payload.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId::mint(id).expect("identity grammar"),
+            0,
+            source_block.payload.clone(),
+            Vec::new(),
+        ));
     }
     for source_stream in &scan.compound_streams {
         let id = format!("sldprt:file:compound-stream#{}", source_stream.directory_id);
@@ -2986,17 +2913,15 @@ fn build_geometry_ir(
             id.clone(),
             source_stream.path.clone(),
             0,
-            container::payload_family(&source_stream.payload),
+            container::payload_family(&source_stream.payload).label(),
             Exactness::ByteExact,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
-            offset: 0,
-            byte_len: source_stream.payload.len() as u64,
-            sha256: sha256_hex(&source_stream.payload),
-            data: Some(source_stream.payload.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(
+            UnknownId::mint(id).expect("identity grammar"),
+            0,
+            source_stream.payload.clone(),
+            Vec::new(),
+        ));
     }
     let mut opaque_links = BTreeMap::<String, Vec<String>>::new();
     for surface in &ir.model.surfaces {
@@ -3005,9 +2930,9 @@ fn build_geometry_ir(
         } = &surface.geometry
         {
             opaque_links
-                .entry(record.0.clone())
+                .entry(record.as_str().to_owned())
                 .or_default()
-                .push(surface.id.0.clone());
+                .push(surface.id.as_str().to_owned());
         }
     }
     for curve in &ir.model.curves {
@@ -3016,17 +2941,17 @@ fn build_geometry_ir(
         } = &curve.geometry
         {
             opaque_links
-                .entry(record.0.clone())
+                .entry(record.as_str().to_owned())
                 .or_default()
-                .push(curve.id.0.clone());
+                .push(curve.id.as_str().to_owned());
         }
     }
     for (record_id, links) in opaque_links {
         let source = unknowns
             .iter_mut()
-            .find(|record| record.id.0 == record_id)
+            .find(|record| record.id().as_str() == record_id)
             .expect("opaque geometry source is retained");
-        source.links.extend(links);
+        source.links_mut().extend(links);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -3052,7 +2977,11 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
     }
 }
 
-fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMeta {
+fn source_meta(
+    scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+    header: Option<&StreamHeader>,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -3089,10 +3018,7 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
-    SourceMeta {
-        format: "sldprt".to_string(),
-        attributes,
-    }
+    SourceMeta::classified(classification.layers().clone(), attributes)
 }
 
 fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
@@ -3101,7 +3027,7 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
     for section in scan.sections() {
         let payload = section.payload();
         match container::payload_family(payload) {
-            "png-preview" => {
+            container::PayloadFamily::PngPreview => {
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;
                 }
@@ -3124,7 +3050,7 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 attributes.insert(format!("{prefix}_interlace"), fields[4].to_string());
                 png_index += 1;
             }
-            "bmp-thumbnail" => {
+            container::PayloadFamily::BmpThumbnail => {
                 let (Some(width), Some(height), Some(image_size)) = (
                     View::i32_le_at(payload, 8),
                     View::i32_le_at(payload, 12),
@@ -3157,73 +3083,30 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
 
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
     let active_configuration_name = container::active_configuration_name(scan);
-    for section in scan.sections() {
-        let payload = section.payload();
-        if container::payload_family(payload) != "xml" {
-            continue;
-        }
-        let Some(text) = container::xml_text(payload) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        let root = document.root_element();
-        if root.tag_name().name() != "swSolidWorks" {
-            continue;
-        }
-        for (source, target) in [
-            ("swVersion", "sw_version"),
-            ("swCreationTime", "sw_creation_time_unix"),
-            ("swPath", "sw_path"),
+    if let Some(envelope) = container::solidworks_envelope(scan) {
+        for (key, value) in [
+            ("sw_creation_time_unix", envelope.creation_time.as_ref()),
+            ("sw_path", envelope.path.as_ref()),
+            ("sw_name", envelope.model_name.as_ref()),
         ] {
-            if let Some(value) = root.attribute(source) {
-                attributes.insert(target.into(), value.into());
-            }
-        }
-        if let Some(model) = root.descendants().find(|node| node.has_tag_name("swModel")) {
-            if let Some(value) = model.attribute("swName") {
-                attributes.insert("sw_name".into(), value.into());
+            if let Some(value) = value {
+                attributes.insert(key.into(), value.clone());
             }
         }
         if let Some(value) = active_configuration_name.as_deref() {
             attributes.insert("sw_configuration_name".into(), value.into());
-        } else if let Some(value) = root
-            .descendants()
-            .find(|node| node.has_tag_name("swModel"))
-            .and_then(|model| model.attribute("swConfigurationName"))
-        {
-            attributes.insert("sw_configuration_name".into(), value.into());
+        } else if let Some(value) = &envelope.configuration_name {
+            attributes.insert("sw_configuration_name".into(), value.clone());
         }
-        for configuration in root
-            .descendants()
-            .filter(|node| node.has_tag_name("swConfiguration"))
-        {
-            let Some(slot) = configuration.attribute("swID") else {
-                continue;
-            };
-            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
-                continue;
-            }
-            for (source, target) in [
-                ("swConfigurationNeedsUpdate", "needs_update"),
-                ("swMostRecentConfiguration", "most_recent"),
-                ("swConfigurationFlags", "flags"),
-                ("swConfigurationAlternateName", "alternate_name"),
-            ] {
-                if let Some(value) = configuration.attribute(source) {
-                    attributes.insert(
-                        format!("sw_configuration_{slot}_{target}"),
-                        value.to_string(),
-                    );
-                }
-            }
-        }
-        break;
+        attributes.extend(envelope.configuration_attributes.clone());
     }
 }
 
-fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
+fn build_geometry_report(
+    scan: &ContainerScan,
+    decoded: &Brep,
+    classification: &crate::dialect::LayerClassification,
+) -> DecodeBody {
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -3295,20 +3178,21 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    DecodeReport {
-        format: "sldprt".to_string(),
-        container_only: false,
+    classification.append_losses(&mut losses);
+    DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
-        notes: container::summarize(scan).notes,
+        notes: container::notes(scan),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+    form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
     (
@@ -3319,7 +3203,7 @@ fn build_metadata_ir(
     ),
     CodecError,
 > {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut histories = crate::history::histories(scan, &mut annotations);
@@ -3353,12 +3237,12 @@ fn build_metadata_ir(
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let name = site.name();
-        let (id, offset) = match site.origin {
-            container::ActiveParasolidOrigin::Block(block) => (
+        let (id, offset) = match site.section {
+            container::Section::Block(block) => (
                 format!("sldprt:file:block#{}", block.offset),
                 block.offset as u64,
             ),
-            container::ActiveParasolidOrigin::Compound(stream) => (
+            container::Section::Compound(stream) => (
                 format!("sldprt:file:compound-stream#{}", stream.directory_id),
                 0,
             ),
@@ -3373,26 +3257,26 @@ fn build_metadata_ir(
             "parasolid_stream",
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id: UnknownId(id),
+        unknowns.push(UnknownRecord::retained(
+            UnknownId::mint(id).expect("identity grammar"),
             offset,
-            byte_len: site.payload.len() as u64,
-            sha256: sha256_hex(site.payload),
-            data: Some(site.payload.to_vec()),
-            links: Vec::new(),
-        });
+            site.payload.to_vec(),
+            Vec::new(),
+        ));
     }
 
-    ir.source = Some(SourceMeta {
-        format: "sldprt".to_string(),
+    ir.source = Some(SourceMeta::classified(
+        classification.layers().clone(),
         attributes,
-    });
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let form_padding = ir.source.as_ref().and_then(|source| {
-        crate::resolved_features::operations::form_code_padding(
-            source.attributes.get("sw_version").map(String::as_str),
-        )
-    });
+    ));
+    project_design_history(
+        &mut ir,
+        &histories,
+        &lanes,
+        &pmi_dimensions,
+        scan,
+        form_padding,
+    );
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -3658,7 +3542,6 @@ fn build_metadata_ir(
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
         pmi_dimensions,
@@ -3688,6 +3571,7 @@ fn project_design_history(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
+    form_padding: Option<usize>,
 ) {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
@@ -3701,7 +3585,7 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    ir.model.features = crate::history::project_features(&semantic_projection);
+    crate::history::project_feature_model(&semantic_projection).install(&mut ir.model);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
@@ -3726,11 +3610,17 @@ fn project_design_history(
         );
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
-    crate::history::project_configuration_design_states(ir, histories, lanes, pmi_dimensions);
+    crate::history::project_configuration_design_states(
+        ir,
+        histories,
+        lanes,
+        pmi_dimensions,
+        form_padding,
+    );
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_local_sha256".into(),
-            crate::history::feature_hash(&ir.model.features),
+            crate::history::feature_hash(&ir.model),
         );
         source.attributes.insert(
             "sldprt_native_history_sha256".into(),
@@ -3855,7 +3745,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         None
     };
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        configuration.active = (selected == Some(position)).into();
+        configuration.active = selected == Some(position);
     }
 }
 
@@ -3865,7 +3755,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active.is_active())
+        .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3902,9 +3792,14 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
             (
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: feature.suppressed.unwrap_or(false),
+                    evaluation: if feature.suppressed.unwrap_or(false) {
+                        cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                    } else {
+                        cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                            outputs: feature.outputs.clone(),
+                        }
+                    },
                     dependencies: feature.dependencies.clone(),
-                    outputs: feature.outputs.clone(),
                     definition: feature.definition.clone(),
                 },
             )
@@ -3915,7 +3810,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     configuration.feature_states = feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
-    let id = configuration.id.0.clone();
+    let id = configuration.id.as_str().to_owned();
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -3929,7 +3824,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active.is_active())
+        .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3945,7 +3840,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Hole {
                 placements,
-                kind,
+                construction,
                 diameter,
                 extent,
                 bottom,
@@ -3958,7 +3853,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
             Some((
                 feature.id.clone(),
                 placements.clone(),
-                *kind,
+                construction.clone(),
                 *diameter,
                 extent.clone(),
                 *bottom,
@@ -3970,7 +3865,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
     for (
         feature,
         resolved_placements,
-        resolved_kind,
+        resolved_construction,
         resolved_diameter,
         resolved_extent,
         resolved_bottom,
@@ -3980,12 +3875,12 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         let Some(state) = configuration.feature_states.get_mut(&feature) else {
             continue;
         };
-        if state.suppressed {
+        if state.evaluation.is_suppressed() {
             continue;
         }
         let cadmpeg_ir::features::FeatureDefinition::Hole {
             placements,
-            kind,
+            construction,
             diameter,
             extent,
             bottom,
@@ -3995,24 +3890,44 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         else {
             continue;
         };
-        if placements.is_empty() && !resolved_placements.is_empty() {
+        if placements.is_none() && resolved_placements.is_some() {
             *placements = resolved_placements;
         }
         let incomplete = diameter.is_none()
             || extent.as_ref().is_none_or(|extent| {
-                matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+                matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
-            || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. });
+            || matches!(
+                construction,
+                cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                    if kind.is_unresolved()
+            );
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
-                !matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+                !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
             && !matches!(
-                resolved_kind,
-                cadmpeg_ir::features::HoleKind::Unresolved { .. }
+                &resolved_construction,
+                cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: cadmpeg_ir::features::HoleKind::Unresolved(_)
+                        | cadmpeg_ir::features::HoleKind::PartialCounterbore { .. }
+                        | cadmpeg_ir::features::HoleKind::PartialCountersink { .. },
+                    ..
+                }
             );
         if incomplete && resolved_complete {
-            *kind = resolved_kind;
+            match (&mut *construction, resolved_construction) {
+                (
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
+                    cadmpeg_ir::features::HoleConstruction::Form {
+                        kind: resolved_kind,
+                        ..
+                    },
+                ) => *kind = resolved_kind,
+                (construction, resolved_construction) => {
+                    *construction = resolved_construction;
+                }
+            }
             *diameter = resolved_diameter;
             *extent = resolved_extent;
             *bottom = resolved_bottom;
@@ -4073,60 +3988,34 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                 reference:
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                        face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
-                        origin,
-                        normal,
-                        u_axis,
-                    }),
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face(
+                        face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                    )),
                 distance,
             } = &feature.definition
             else {
                 return None;
             };
-            (!selected.is_empty()).then_some((
-                feature.id.clone(),
-                face.clone(),
-                *origin,
-                *normal,
-                *u_axis,
-                *distance,
-            ))
+            (!selected.is_empty()).then_some((feature.id.clone(), face.clone(), *distance))
         })
         .collect::<Vec<_>>();
     let configuration = &mut ir.model.configurations[configuration_index];
-    for (
-        feature,
-        resolved_face,
-        resolved_origin,
-        resolved_normal,
-        resolved_u_axis,
-        resolved_distance,
-    ) in resolved
-    {
+    for (feature, resolved_face, resolved_distance) in resolved {
         let Some(state) = configuration.feature_states.get_mut(&feature) else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
             reference:
-                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                    face,
-                    origin,
-                    normal,
-                    u_axis,
-                }),
+                reference @ Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. }),
             distance,
         } = &mut state.definition
         else {
             continue;
         };
-        if *origin == resolved_origin
-            && *normal == resolved_normal
-            && *u_axis == resolved_u_axis
-            && *distance == resolved_distance
-            && matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved)
-        {
-            *face = resolved_face;
+        if *distance == resolved_distance {
+            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(
+                resolved_face,
+            ));
         }
     }
     let resolved = ir
@@ -4154,19 +4043,14 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         else {
             continue;
         };
-        if *seeds == resolved_seeds
-            && matches!(
-                pattern,
-                cadmpeg_ir::features::PatternKind::Unresolved { .. }
-            )
-        {
+        if *seeds == resolved_seeds && pattern.is_unresolved() {
             *pattern = resolved_pattern;
         }
     }
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
-    let hash = crate::history::feature_hash(&ir.model.features);
+    let hash = crate::history::feature_hash(&ir.model);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -4227,18 +4111,18 @@ fn assign_configuration_bodies(
         ir.model
             .configurations
             .push(cadmpeg_ir::features::DesignConfiguration {
-                id: cadmpeg_ir::features::ConfigurationId(format!(
+                id: cadmpeg_ir::features::ConfigurationId::mint(format!(
                     "sldprt:model:configuration#partition:{source_index}"
-                )),
+                ))
+                .expect("identity grammar"),
                 ordinal,
-                active: false.into(),
+                active: false,
                 source_index: Some(source_index),
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
                 parameter_values: std::collections::BTreeMap::new(),
-                suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
@@ -4353,7 +4237,7 @@ fn stamp_local_digests(ir: &mut CadIr) {
         .model
         .attributes
         .iter()
-        .any(|attribute| attribute.id.0.starts_with("sldprt:metadata:"))
+        .any(|attribute| attribute.id.as_str().starts_with("sldprt:metadata:"))
         || ir
             .model
             .appearances
@@ -4411,26 +4295,30 @@ fn stamp_local_digests(ir: &mut CadIr) {
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let partition = cadmpeg_ir::document::Model {
-        bodies: ir.model.bodies.clone(),
-        regions: ir.model.regions.clone(),
-        shells: ir.model.shells.clone(),
-        faces: ir.model.faces.clone(),
-        loops: ir.model.loops.clone(),
-        coedges: ir.model.coedges.clone(),
-        edges: ir.model.edges.clone(),
-        vertices: ir.model.vertices.clone(),
-        points: ir.model.points.clone(),
-        surfaces: ir.model.surfaces.clone(),
-        curves: ir.model.curves.clone(),
-        pcurves: ir.model.pcurves.clone(),
-        procedural_surfaces: ir.model.procedural_surfaces.clone(),
-        procedural_curves: ir.model.procedural_curves.clone(),
-        appearances: ir.model.appearances.clone(),
-        appearance_bindings: ir.model.appearance_bindings.clone(),
-        ..Default::default()
-    };
-    brep_partition_sha256(ir.units.clone(), ir.tolerances, partition).0
+    let mut partition = cadmpeg_ir::document::Model::default();
+    partition.bodies.clone_from(&ir.model.bodies);
+    partition.regions.clone_from(&ir.model.regions);
+    partition.shells.clone_from(&ir.model.shells);
+    partition.faces.clone_from(&ir.model.faces);
+    partition.loops.clone_from(&ir.model.loops);
+    partition.coedges.clone_from(&ir.model.coedges);
+    partition.edges.clone_from(&ir.model.edges);
+    partition.vertices.clone_from(&ir.model.vertices);
+    partition.points.clone_from(&ir.model.points);
+    partition.surfaces.clone_from(&ir.model.surfaces);
+    partition.curves.clone_from(&ir.model.curves);
+    partition.pcurves.clone_from(&ir.model.pcurves);
+    partition
+        .procedural_surfaces
+        .clone_from(&ir.model.procedural_surfaces);
+    partition
+        .procedural_curves
+        .clone_from(&ir.model.procedural_curves);
+    partition.appearances.clone_from(&ir.model.appearances);
+    partition
+        .appearance_bindings
+        .clone_from(&ir.model.appearance_bindings);
+    brep_partition_sha256(ir.tolerances, partition).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -4450,26 +4338,26 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
         .iter()
         .map(|body| (body.name.clone(), body.color))
         .collect::<Vec<_>>();
-    let partition = cadmpeg_ir::document::Model {
-        bodies: take(&mut ir.model.bodies),
-        regions: take(&mut ir.model.regions),
-        shells: take(&mut ir.model.shells),
-        faces: take(&mut ir.model.faces),
-        loops: take(&mut ir.model.loops),
-        coedges: take(&mut ir.model.coedges),
-        edges: take(&mut ir.model.edges),
-        vertices: take(&mut ir.model.vertices),
-        points: take(&mut ir.model.points),
-        surfaces: take(&mut ir.model.surfaces),
-        curves: take(&mut ir.model.curves),
-        pcurves: take(&mut ir.model.pcurves),
-        procedural_surfaces: take(&mut ir.model.procedural_surfaces),
-        procedural_curves: take(&mut ir.model.procedural_curves),
-        appearances: ir.model.appearances.clone(),
-        appearance_bindings: ir.model.appearance_bindings.clone(),
-        ..Default::default()
-    };
-    let (hash, mut partition) = brep_partition_sha256(ir.units.clone(), ir.tolerances, partition);
+    let mut partition = cadmpeg_ir::document::Model::default();
+    partition.bodies = take(&mut ir.model.bodies);
+    partition.regions = take(&mut ir.model.regions);
+    partition.shells = take(&mut ir.model.shells);
+    partition.faces = take(&mut ir.model.faces);
+    partition.loops = take(&mut ir.model.loops);
+    partition.coedges = take(&mut ir.model.coedges);
+    partition.edges = take(&mut ir.model.edges);
+    partition.vertices = take(&mut ir.model.vertices);
+    partition.points = take(&mut ir.model.points);
+    partition.surfaces = take(&mut ir.model.surfaces);
+    partition.curves = take(&mut ir.model.curves);
+    partition.pcurves = take(&mut ir.model.pcurves);
+    partition.procedural_surfaces = take(&mut ir.model.procedural_surfaces);
+    partition.procedural_curves = take(&mut ir.model.procedural_curves);
+    partition.appearances.clone_from(&ir.model.appearances);
+    partition
+        .appearance_bindings
+        .clone_from(&ir.model.appearance_bindings);
+    let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition);
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
@@ -4497,13 +4385,12 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
 /// its arenas back; only `bodies` (display fields stripped), `appearances`,
 /// and `appearance_bindings` (both filtered to face bindings) are mutated.
 fn brep_partition_sha256(
-    units: cadmpeg_ir::units::Units,
     tolerances: cadmpeg_ir::units::Tolerances,
     model: cadmpeg_ir::document::Model,
 ) -> (String, cadmpeg_ir::document::Model) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    let mut normalized = CadIr::empty(units);
+    let mut normalized = CadIr::empty();
     normalized.tolerances = tolerances;
     normalized.model = model;
     normalized.model.bodies.iter_mut().for_each(|body| {
@@ -4553,22 +4440,24 @@ fn preserve_source_image(
         "source_image",
         Exactness::ByteExact,
     );
-    unknowns.push(UnknownRecord {
-        id: UnknownId("sldprt:file:source-image#0".into()),
-        offset: 0,
-        byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(scan.source_image),
-        data: Some(scan.source_image.to_vec()),
-        links: Vec::new(),
-    });
+    unknowns.push(UnknownRecord::retained(
+        UnknownId::mint("sldprt:file:source-image#0").expect("identity grammar"),
+        0,
+        scan.source_image.to_vec(),
+        Vec::new(),
+    ));
 }
 
-fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let summary = container::summarize(scan);
+/// Builds the metadata-only report from the same classification the report
+/// carries, including recoverable layer-identity collisions.
+fn build_container_report(
+    scan: &ContainerScan,
+    classification: &crate::dialect::LayerClassification,
+) -> DecodeBody {
     let parasolid_sources = scan
         .blocks
         .iter()
-        .filter(|b| b.family == "parasolid")
+        .filter(|b| b.family == container::PayloadFamily::Parasolid)
         .count()
         + scan
             .compound_streams
@@ -4603,15 +4492,14 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
+    classification.append_losses(&mut losses);
 
-    DecodeReport {
-        format: "sldprt".to_string(),
-        container_only,
+    DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
-        notes: summary.notes,
+        notes: container::notes(scan),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 

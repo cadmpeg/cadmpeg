@@ -3,6 +3,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::features::{
+    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+    CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection,
+    ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
+    FeatureTreeNodeRole, HoleBottom, HoleKind, Length, LinearTermination, ParameterId,
+    ParameterValue, PathRef, ProfileRef, RevolveExtent, RibConstruction, SplitFaceTool,
+};
+use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::Face;
+use std::collections::HashSet;
 
 fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     Feature {
@@ -11,7 +23,6 @@ fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: source_id.map(str::to_string),
-        parent_source_id: None,
         ordinal,
         name: id.into(),
         kind: "Custom".into(),
@@ -51,16 +62,15 @@ fn design_configuration(
     native_ref: Option<&str>,
 ) -> DesignConfiguration {
     DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
-        active: false.into(),
+        active: false,
         source_index,
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: native_ref.map(str::to_string),

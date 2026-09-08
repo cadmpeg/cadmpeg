@@ -8,51 +8,64 @@ use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::{DecodeReport, TransferLedger};
-use cadmpeg_ir::units::{Tolerances, Units};
+use cadmpeg_ir::report::TransferLedger;
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
-use crate::container::{ContainerPurpose, InventorContainer};
+use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
+use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
+use crate::native::protein::{
+    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
+};
+use crate::native::ufrx::{
+    EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
+    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+};
 use crate::native::{
-    ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
-    EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
-    PresentationRecordIssueRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
-    ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
-    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
-    UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
+    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
-use crate::rse::{DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState};
+use crate::rse::{
+    DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
+};
 
-pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let purpose = if ctx.container_only() {
-        ContainerPurpose::Inspect
-    } else {
-        ContainerPurpose::Decode
-    };
-    let container = InventorContainer::open(ctx, root, purpose)?;
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    let container = InventorContainer::open(ctx, root)?;
+    // One predicate, read once from the parsed declarations: it decides the
+    // admission in `primary` and the dialect-unverified loss below, and neither
+    // recomputes the other.
+    let recovery = DialectRecovery::of(&container);
+    let matched = recovery.classify();
+    let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier);
+    // The kernel layer, classified from the carrier's own header. Non-primary:
+    // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
+    let kernel_match = dialects
+        .iter()
+        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        .cloned();
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let (design_parameters, unresolved_design_parameters) =
         crate::design::project_parameters(&design_inventory);
     ir.model.parameters = design_parameters;
@@ -183,10 +196,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                                     Some(property.raw.location()),
                                 )?;
                                 ir.model.assets.push(Asset {
-                                    id: AssetId(format!(
+                                    id: AssetId::mint(format!(
                                         "inventor:document:asset#preview-{}",
                                         ir.model.assets.len()
-                                    )),
+                                    ))
+                                    .expect("identity grammar"),
                                     name: Some("document preview".into()),
                                     media_type: Some(media_type.into()),
                                     content: AssetContent::Embedded { data },
@@ -201,7 +215,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                             fmtid: hex(&section.fmtid),
                             property_id: property.id,
                             name: property_name,
-                            type_code: property.type_code,
                             value_kind: property_value_kind(&property.value),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
@@ -212,40 +225,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
         }
     }
-    let (protein, protein_entries) = match &container.protein {
-        ProteinState::Absent => (
-            ProteinRecord {
-                id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Absent,
-                directory_id: None,
-                declared_len: None,
-                entry_count: 0,
-                detail: None,
-            },
-            Vec::new(),
-        ),
-        ProteinState::Empty { stream } => (
-            ProteinRecord {
-                id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Empty,
-                directory_id: Some(stream.directory_id()),
-                declared_len: Some(0),
-                entry_count: 0,
-                detail: None,
-            },
-            Vec::new(),
-        ),
-        ProteinState::Malformed { stream, detail } => (
-            ProteinRecord {
-                id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Malformed,
-                directory_id: Some(stream.directory_id()),
-                declared_len: None,
-                entry_count: 0,
-                detail: Some(detail.clone()),
-            },
-            Vec::new(),
-        ),
+    let protein = match &container.protein {
+        ProteinState::Absent => ProteinRecord::Absent {
+            id: "inventor:protein:state#root".into(),
+        },
+        ProteinState::Empty { stream } => ProteinRecord::Empty {
+            id: "inventor:protein:state#root".into(),
+            directory_id: stream.directory_id(),
+        },
+        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
+            id: "inventor:protein:state#root".into(),
+            directory_id: stream.directory_id(),
+            detail: detail.clone(),
+        },
         ProteinState::Package(package) => {
             let entries = package
                 .archive
@@ -262,17 +254,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     uncompressed_size: entry.uncompressed_size,
                 })
                 .collect::<Vec<_>>();
-            (
-                ProteinRecord {
-                    id: "inventor:protein:state#root".into(),
-                    state: ProteinRecordState::Package,
-                    directory_id: Some(package.stream.directory_id()),
-                    declared_len: Some(package.declared_len),
-                    entry_count: entries.len() as u64,
-                    detail: None,
-                },
+            ProteinRecord::Package {
+                id: "inventor:protein:state#root".into(),
+                directory_id: package.stream.directory_id(),
+                declared_len: package.declared_len,
                 entries,
-            )
+            }
         }
     };
     let (protein_instances, protein_semantic_issue) = match &container.protein {
@@ -320,82 +307,30 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let ufrx_projection = match &container.ufrx {
-        UfrxState::Absent => (
-            UfrxRecord {
-                id: "inventor:ufrx:state#root".into(),
-                state: UfrxRecordState::Absent,
-                directory_id: None,
-                schema: None,
-                section_versions: Vec::new(),
-                original_file_name: None,
-                caption: None,
-                representation: None,
-                model_state_count: 0,
-                reference_count: 0,
-                embedded_reference_count: 0,
-                occurrence_count: 0,
-                tail_len: 0,
-                tail_sha256: None,
-                detail: None,
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        UfrxState::Malformed { stream, detail } => (
-            UfrxRecord {
-                id: "inventor:ufrx:state#root".into(),
-                state: UfrxRecordState::Malformed,
-                directory_id: Some(stream.directory_id()),
-                schema: None,
-                section_versions: Vec::new(),
-                original_file_name: None,
-                caption: None,
-                representation: None,
-                model_state_count: 0,
-                reference_count: 0,
-                embedded_reference_count: 0,
-                occurrence_count: 0,
-                tail_len: 0,
-                tail_sha256: None,
-                detail: Some(detail.clone()),
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
+    let ufrx = match &container.ufrx {
+        UfrxState::Absent => UfrxRecord::Absent {
+            id: "inventor:ufrx:state#root".into(),
+        },
+        UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
+            id: "inventor:ufrx:state#root".into(),
+            directory_id: stream.directory_id(),
+            detail: detail.clone(),
+        },
         UfrxState::Unsupported {
             stream,
             schema,
             section_versions,
             source,
             detail,
-        } => (
-            UfrxRecord {
-                id: "inventor:ufrx:state#root".into(),
-                state: UfrxRecordState::Unsupported,
-                directory_id: Some(stream.directory_id()),
-                schema: Some(*schema),
-                section_versions: section_versions.clone(),
-                original_file_name: None,
-                caption: None,
-                representation: None,
-                model_state_count: 0,
-                reference_count: 0,
-                embedded_reference_count: 0,
-                occurrence_count: 0,
-                tail_len: source.window().len() as u64,
-                tail_sha256: Some(sha256_hex(source.window())),
-                detail: Some(detail.clone()),
-            },
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
+        } => UfrxRecord::Unsupported {
+            id: "inventor:ufrx:state#root".into(),
+            directory_id: stream.directory_id(),
+            schema: *schema,
+            section_versions: section_versions.clone(),
+            tail_len: source.window().len() as u64,
+            tail_sha256: sha256_hex(source.window()),
+            detail: detail.clone(),
+        },
         UfrxState::Parsed(document) => {
             let model_states = document
                 .model_states
@@ -484,56 +419,47 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     record_sha256: sha256_hex(occurrence.source.window()),
                 })
                 .collect::<Vec<_>>();
-            (
-                UfrxRecord {
-                    id: "inventor:ufrx:state#root".into(),
-                    state: UfrxRecordState::ParsedPrefix,
-                    directory_id: Some(document.stream.directory_id()),
-                    schema: Some(document.schema),
-                    section_versions: document.section_versions.clone(),
-                    original_file_name: Some(document.original_file_name.clone()),
-                    caption: Some(document.caption.clone()),
-                    representation: document.representation.as_ref().map(|state| {
-                        UfrxRepresentationRecord {
-                            prefix: state.prefix,
-                            active_representation: state.active_representation.clone(),
-                            active_representation_kind: state.active_representation_kind.clone(),
-                            secondary_active_lod_state: state.secondary_active_lod_state,
-                            active_model_state: state.active_model_state.clone(),
-                            active_model_state_state: state.active_model_state_state,
-                        }
-                    }),
-                    model_state_count: model_states.len() as u64,
-                    reference_count: references.len() as u64,
-                    embedded_reference_count: embedded.len() as u64,
-                    occurrence_count: occurrences.len() as u64,
-                    tail_len: document.unparsed_tail.window().len() as u64,
-                    tail_sha256: Some(sha256_hex(document.unparsed_tail.window())),
-                    detail: None,
-                },
+            UfrxRecord::ParsedPrefix {
+                id: "inventor:ufrx:state#root".into(),
+                directory_id: document.stream.directory_id(),
+                schema: document.schema,
+                section_versions: document.section_versions.clone(),
+                original_file_name: document.original_file_name.clone(),
+                caption: document.caption.clone(),
+                representation: document.representation.as_ref().map(|state| {
+                    UfrxRepresentationRecord {
+                        prefix: state.prefix,
+                        active_representation: state.active_representation.clone(),
+                        secondary_active_lod_state: state.secondary_active_lod_state,
+                        active_model_state: state.active_model_state.clone(),
+                        active_model_state_state: state.active_model_state_state,
+                    }
+                }),
                 model_states,
-                embedded,
-                references,
+                external_references: references,
+                embedded_references: embedded,
                 occurrences,
-            )
+                tail_len: document.unparsed_tail.window().len() as u64,
+                tail_sha256: sha256_hex(document.unparsed_tail.window()),
+            }
         }
     };
-    let (ufrx, ufrx_model_states, embedded_references, external_references, ufrx_occurrences) =
-        ufrx_projection;
-    if let DocumentKind::Unknown(_) = document_kind {
+    let ufrx_model_states = ufrx.model_states();
+    let external_references = ufrx.external_references();
+    let embedded_references = ufrx.embedded_references();
+    let ufrx_occurrences = ufrx.occurrences();
+    if matches!(document_kind, DocumentKind::Unknown | DocumentKind::Mixed) {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
         }
     }
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
-    ir.source = Some(SourceMeta {
-        format: "inventor".into(),
-        attributes,
-    });
+    ir.source = Some(SourceMeta::classified(dialects, attributes));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
-            id: ProductDefinitionId("inventor:document:product#root".into()),
+            id: ProductDefinitionId::mint("inventor:document:product#root")
+                .expect("identity grammar"),
             kind: if document_kind == DocumentKind::Assembly {
                 ProductDefinitionKind::LinkGroup
             } else {
@@ -563,7 +489,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .databases
         .iter()
         .filter_map(|descriptor| {
-            let ParsedState::Parsed(database) = &descriptor.state else {
+            let DatabaseState::Parsed(database) = &descriptor.state else {
                 return None;
             };
             Some(DatabaseRecord {
@@ -584,13 +510,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .databases
         .iter()
         .filter_map(|descriptor| {
-            let ParsedState::Unavailable(detail) = &descriptor.state else {
-                return None;
-            };
             Some(DatabaseIssueRecord {
                 id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
                 band: descriptor.band.value(),
-                detail: detail.clone(),
+                detail: descriptor.issue_detail()?,
             })
         })
         .collect::<Vec<_>>();
@@ -624,11 +547,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 flags: entry.flags,
                 kind: entry.kind,
                 payload_form: match entry.payload {
-                    RevisionPayload::None => "none",
-                    RevisionPayload::Short { .. } => "short",
-                    RevisionPayload::Long { .. } => "long",
-                }
-                .into(),
+                    RevisionPayload::None => RevisionPayloadForm::None,
+                    RevisionPayload::Short(..) => RevisionPayloadForm::Short,
+                    RevisionPayload::Long(..) => RevisionPayloadForm::Long,
+                },
             })
             .collect(),
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
@@ -676,7 +598,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             Some(SegmentMetaRecord {
                 id: format!("inventor:rse:segment-meta#{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
-                version: meta.version.value(),
+                version: meta.declared.version,
                 kind: segment.kind.label().into(),
                 display_name: meta.display_name.clone(),
                 segment_id: hex(&meta.segment_id),
@@ -750,13 +672,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .segments
         .iter()
         .filter_map(|segment| {
-            let (status, detail) = match &segment.meta {
+            let detail = match &segment.meta {
                 SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Unsupported { marker, version } => (
-                    "unsupported",
-                    format!("marker {marker:?}, version {version}"),
-                ),
-                SegmentMetaState::Malformed(detail) => ("malformed", detail.clone()),
+                SegmentMetaState::Malformed { detail, .. } => detail.clone(),
             };
             Some(SegmentMetaIssueRecord {
                 id: format!(
@@ -764,7 +682,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     segment.pair.token.as_str()
                 ),
                 token: segment.pair.token.as_str().into(),
-                status: status.into(),
                 detail,
             })
         })
@@ -783,24 +700,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             table
                 .records
                 .iter()
-                .map(|record| RseRecordRecord {
-                    id: format!(
-                        "inventor:rse:record#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    ordinal: record.ordinal,
-                    selector: record.selector,
-                    type_index: record.type_index,
-                    type_id: hex(&record.type_id),
-                    payload_offset: record.payload_offset,
-                    payload_len: record.declared_payload_len as u64,
-                    payload_sha256: sha256_hex(record.payload.window()),
-                    trailing_payload_len: record.trailing_payload_len,
-                    trailer_len: record.trailer.window().len() as u64,
-                    trailer_sha256: sha256_hex(record.trailer.window()),
-                })
+                .map(|record| RseRecordRecord::from_frame(segment.pair.token.as_str(), record))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -812,23 +712,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return None;
             };
-            let (
-                record_state,
-                record_count,
-                stream_trailer_len,
-                stream_trailer_sha256,
-                record_detail,
-            ) = match &bulk.records {
-                RecordFrameState::NotExpanded => ("not_expanded", 0, None, None, None),
-                RecordFrameState::Framed(table) => (
-                    "framed",
-                    table.records.len() as u64,
-                    Some(table.stream_trailer.window().len() as u64),
-                    Some(sha256_hex(table.stream_trailer.window())),
-                    None,
-                ),
+            let records = match &bulk.records {
+                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
+                    record_count: table.records.len() as u64,
+                    stream_trailer_len: table.stream_trailer.window().len() as u64,
+                    stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
+                },
                 RecordFrameState::Unavailable(detail) => {
-                    ("unavailable", 0, None, None, Some(detail.clone()))
+                    crate::native::SegmentBulkFrame::Unavailable {
+                        detail: detail.clone(),
+                    }
                 }
             };
             Some(SegmentBulkRecord {
@@ -838,13 +731,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 form: bulk.form.value(),
                 compressed_len: bulk.compressed.window().len() as u64,
                 compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: bulk.expanded.map(|view| view.window().len() as u64),
-                expanded_sha256: bulk.expanded.map(|view| sha256_hex(view.window())),
-                record_state: record_state.into(),
-                record_count,
-                stream_trailer_len,
-                stream_trailer_sha256,
-                record_detail,
+                expanded_len: bulk.expanded.window().len() as u64,
+                expanded_sha256: sha256_hex(bulk.expanded.window()),
+                records,
             })
         })
         .collect::<Vec<_>>();
@@ -873,7 +762,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .map(|token| UnpairedSegmentRecord {
             id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
             token: token.as_str().into(),
-            missing_member: "bulk".into(),
+            missing_member: UnpairedMember::Bulk,
         })
         .chain(
             container
@@ -883,90 +772,36 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 .map(|token| UnpairedSegmentRecord {
                     id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),
                     token: token.as_str().into(),
-                    missing_member: "metadata".into(),
+                    missing_member: UnpairedMember::Metadata,
                 }),
         )
         .collect::<Vec<_>>();
     let active_carrier = match &container.rse.active_carrier {
-        ActiveCarrierState::NotApplicable => ActiveCarrierRecord {
+        ActiveCarrierState::NotApplicable => ActiveCarrierRecord::NotApplicable {
             id: "inventor:kernel:active-carrier#root".into(),
-            state: ActiveCarrierRecordState::NotApplicable,
-            segment_token: None,
-            record_ordinal: None,
-            segment_version_major: None,
-            family: None,
-            header_state: None,
-            header_kind: None,
-            header_value: None,
-            schema: None,
-            carrier_len: None,
-            carrier_offset: None,
-            carrier_sha256: None,
-            selected_key: None,
-            enabled: None,
-            delta_state: None,
-            history_reference: None,
-            detail: None,
         },
-        ActiveCarrierState::NotExpanded => ActiveCarrierRecord {
+        ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord::Unavailable {
             id: "inventor:kernel:active-carrier#root".into(),
-            state: ActiveCarrierRecordState::NotExpanded,
-            segment_token: None,
-            record_ordinal: None,
-            segment_version_major: None,
-            family: None,
-            header_state: None,
-            header_kind: None,
-            header_value: None,
-            schema: None,
-            carrier_len: None,
-            carrier_offset: None,
-            carrier_sha256: None,
-            selected_key: None,
-            enabled: None,
-            delta_state: None,
-            history_reference: None,
-            detail: None,
+            detail: detail.clone(),
         },
-        ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord {
+        ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord::Selected {
             id: "inventor:kernel:active-carrier#root".into(),
-            state: ActiveCarrierRecordState::Unavailable,
-            segment_token: None,
-            record_ordinal: None,
-            segment_version_major: None,
-            family: None,
-            header_state: None,
-            header_kind: None,
-            header_value: None,
-            schema: None,
-            carrier_len: None,
-            carrier_offset: None,
-            carrier_sha256: None,
-            selected_key: None,
-            enabled: None,
-            delta_state: None,
-            history_reference: None,
-            detail: Some(detail.clone()),
-        },
-        ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord {
-            id: "inventor:kernel:active-carrier#root".into(),
-            state: ActiveCarrierRecordState::Selected,
-            segment_token: Some(carrier.segment_token.clone()),
-            record_ordinal: Some(carrier.record_ordinal),
-            segment_version_major: Some(carrier.segment_version_major),
-            family: Some(carrier.family.label().into()),
-            header_state: Some(carrier.header_state),
-            header_kind: Some(carrier.header_kind),
-            header_value: Some(carrier.header_value),
-            schema: Some(carrier.schema),
-            carrier_len: Some(carrier.bytes.window().len() as u64),
-            carrier_offset: Some(carrier.carrier_offset),
-            carrier_sha256: Some(sha256_hex(carrier.bytes.window())),
-            selected_key: Some(carrier.selected_key),
-            enabled: Some(carrier.enabled),
-            delta_state: Some(carrier.delta_state),
-            history_reference: Some(carrier.history_reference),
-            detail: None,
+            segment_token: carrier.segment_token.clone(),
+            record_ordinal: carrier.record_ordinal,
+            segment_version_major: carrier.segment_version_major,
+            family: carrier.family,
+            header_state: carrier.header_state,
+            header_kind: carrier.header_kind,
+            header_value: carrier.header_value,
+            schema: carrier.schema,
+            carrier_len: std::num::NonZeroU64::new(carrier.bytes.window().len() as u64)
+                .expect("a selected Inventor carrier has a nonempty window"),
+            carrier_offset: carrier.carrier_offset,
+            carrier_sha256: sha256_hex(carrier.bytes.window()),
+            selected_key: carrier.selected_key,
+            enabled: carrier.enabled,
+            delta_state: carrier.delta_state,
+            history_reference: carrier.history_reference,
         },
     };
     let assembly_occurrences = assembly_inventory
@@ -1018,19 +853,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             suffix_sha256: sha256_hex(placement.suffix.window()),
         })
         .collect::<Vec<_>>();
-    let assembly_record_issues = assembly_inventory
-        .issues
-        .iter()
-        .map(|issue| AssemblyRecordIssueRecord {
-            id: format!(
-                "inventor:assembly:record-issue#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            ),
-            segment_token: issue.segment_token.clone(),
-            record_ordinal: issue.record_ordinal,
-            detail: issue.detail.clone(),
-        })
-        .collect::<Vec<_>>();
     let pm_app_default_styles = presentation_inventory
         .default_styles
         .iter()
@@ -1039,10 +861,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             PmAppDefaultStyleRecord {
                 id: format!(
                     "inventor:presentation:default-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -1064,10 +886,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             PmAppRenderingStyleRecord {
                 id: format!(
                     "inventor:presentation:rendering-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -1080,13 +902,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 name: style.name.clone(),
                 comment: style.comment.clone(),
                 long_name: style.long_name.clone(),
-                style_state: style.style_state,
-                style_label: style.style_label.clone(),
-                asset_guid: style.asset_guid.clone(),
-                material_id: style.material_id.clone(),
-                asset_library_id: style.asset_library_id.clone(),
-                style_values: style.style_values,
-                guid: style.guid.clone(),
+                extension: style.extension.clone(),
                 suffix_len,
                 suffix_sha256,
             }
@@ -1098,24 +914,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .map(|face| PmGraphicsFaceRecord {
             id: format!(
                 "inventor:presentation:graphics-face#{}-{}",
-                face.segment_token, face.record_ordinal
+                face.identity.segment_token, face.identity.record_ordinal
             ),
-            segment_token: face.segment_token.clone(),
-            record_ordinal: face.record_ordinal,
+            segment_token: face.identity.segment_token.clone(),
+            record_ordinal: face.identity.record_ordinal,
             segment_version_major: face.segment_version_major,
             header_value: face.header_value,
             header_id: face.header_id,
             flags: face.flags,
-            styles_reference: face.styles_reference,
-            styles_reference_qualified: face.styles_reference_qualified,
-            surface_reference: face.surface_reference,
-            surface_reference_qualified: face.surface_reference_qualified,
-            parent_reference: face.parent_reference,
-            parent_reference_qualified: face.parent_reference_qualified,
+            styles: face.styles,
+            surface: face.surface,
+            parent: face.parent,
             state: face.state,
             edge_references: face.edge_references.clone(),
-            edge_reference_qualifiers: face.edge_reference_qualifiers.clone(),
-            edge_list_metadata: face.edge_list_metadata,
             visibility_state: face.visibility_state,
             bounds: face.bounds,
             key: face.key,
@@ -1128,14 +939,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .map(|collection| PmGraphicsStyleCollectionRecord {
             id: format!(
                 "inventor:presentation:graphics-style-collection#{}-{}",
-                collection.segment_token, collection.record_ordinal
+                collection.identity.segment_token, collection.identity.record_ordinal
             ),
-            segment_token: collection.segment_token.clone(),
-            record_ordinal: collection.record_ordinal,
+            segment_token: collection.identity.segment_token.clone(),
+            record_ordinal: collection.identity.record_ordinal,
             segment_version_major: collection.segment_version_major,
             style_references: collection.style_references.clone(),
-            style_reference_qualifiers: collection.style_reference_qualifiers.clone(),
-            list_metadata: collection.list_metadata,
         })
         .collect::<Vec<_>>();
     let pm_graphics_primary_color_styles = presentation_inventory
@@ -1144,10 +953,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .map(|style| PmGraphicsPrimaryColorStyleRecord {
             id: format!(
                 "inventor:presentation:graphics-primary-color#{}-{}",
-                style.segment_token, style.record_ordinal
+                style.identity.segment_token, style.identity.record_ordinal
             ),
-            segment_token: style.segment_token.clone(),
-            record_ordinal: style.record_ordinal,
+            segment_token: style.identity.segment_token.clone(),
+            record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
             controls: style.controls,
@@ -1159,22 +968,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             terminal_state: style.terminal_state,
         })
         .collect::<Vec<_>>();
-    let presentation_record_issues = presentation_inventory
-        .issues
-        .iter()
-        .map(|issue| PresentationRecordIssueRecord {
-            id: format!(
-                "inventor:presentation:record-issue#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            ),
-            segment_token: issue.segment_token.clone(),
-            record_ordinal: issue.record_ordinal,
-            detail: issue.detail.clone(),
-        })
-        .collect::<Vec<_>>();
     let assembly_projection = crate::assembly::project_occurrences(
-        &ufrx_occurrences,
-        &external_references,
+        ufrx_occurrences,
+        external_references,
         &assembly_occurrences,
         &assembly_placements,
     );
@@ -1200,7 +996,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(properties.len())
             .saturating_add(property_set_issues.len())
             .saturating_add(1)
-            .saturating_add(protein_entries.len())
+            .saturating_add(protein.entries().len())
             .saturating_add(protein_assets.len())
             .saturating_add(protein_rejections.len())
             .saturating_add(1)
@@ -1210,13 +1006,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(external_references.len())
             .saturating_add(assembly_occurrences.len())
             .saturating_add(assembly_placements.len())
-            .saturating_add(assembly_record_issues.len())
+            .saturating_add(assembly_inventory.issues.len())
             .saturating_add(pm_app_default_styles.len())
             .saturating_add(pm_app_rendering_styles.len())
             .saturating_add(pm_graphics_faces.len())
             .saturating_add(pm_graphics_style_collections.len())
             .saturating_add(pm_graphics_primary_color_styles.len())
-            .saturating_add(presentation_record_issues.len())
+            .saturating_add(presentation_inventory.issues.len())
             .saturating_add(design_inventory.parameters.len())
             .saturating_add(design_inventory.expressions.len())
             .saturating_add(design_inventory.units.len())
@@ -1236,7 +1032,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         "retain Inventor native structural records",
     )?;
     let namespace = ir.native.namespace_mut("inventor");
-    namespace.version = INVENTOR_NATIVE_VERSION;
     namespace.set_arena("storage_bands", &storage_bands)?;
     namespace.set_arena("databases", &databases)?;
     namespace.set_arena("database_issues", &database_issues)?;
@@ -1247,18 +1042,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("property_sections", &property_sections)?;
     namespace.set_arena("properties", &properties)?;
     namespace.set_arena("property_set_issues", &property_set_issues)?;
-    namespace.set_arena("protein", std::slice::from_ref(&protein))?;
-    namespace.set_arena("protein_entries", &protein_entries)?;
+    protein.install(namespace)?;
     namespace.set_arena("protein_assets", &protein_assets)?;
     namespace.set_arena("protein_rejections", &protein_rejections)?;
-    namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
-    namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
-    namespace.set_arena("embedded_references", &embedded_references)?;
-    namespace.set_arena("ufrx_occurrences", &ufrx_occurrences)?;
-    namespace.set_arena("external_references", &external_references)?;
+    ufrx.install(namespace)?;
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena("assembly_placements", &assembly_placements)?;
-    namespace.set_arena("assembly_record_issues", &assembly_record_issues)?;
+    namespace.set_arena("assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
     namespace.set_arena("pm_graphics_faces", &pm_graphics_faces)?;
@@ -1270,7 +1060,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         "pm_graphics_primary_color_styles",
         &pm_graphics_primary_color_styles,
     )?;
-    namespace.set_arena("presentation_record_issues", &presentation_record_issues)?;
+    namespace.set_arena("presentation_record_issues", &presentation_inventory.issues)?;
     namespace.set_arena("pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
     namespace.set_arena("pm_dc_units", &design_inventory.units)?;
@@ -1312,8 +1102,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
-        ActiveCarrierState::Selected(carrier) => {
-            match crate::kernel::decode_kernel_carrier(ctx, carrier) {
+        ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
+            Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
                     apply_kernel_header(&mut ir, carrier.family, &decoded.header);
                     Some(decoded.brep)
@@ -1323,23 +1113,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     geometry_failure = Some(error.to_string());
                     None
                 }
+            },
+            Err(detail) => {
+                geometry_failure = Some(detail.clone());
+                None
             }
-        }
+        },
         _ => None,
     };
+    let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
+    let face_keys = kernel_brep
+        .face_native_keys
+        .iter()
+        .filter_map(|record| record.asm_face_key.map(|key| (record.face.clone(), key)))
+        .collect();
     let AsmTransferRemainder {
-        body_keys: _,
-        face_keys,
         unknowns: kernel_unknowns,
         stats: kernel_stats,
         annotation_records: kernel_annotations,
-    } = transfer_into_ir(
-        ctx,
-        &mut ir,
-        "inventor",
-        INVENTOR_NATIVE_VERSION,
-        kernel_brep.unwrap_or_else(AsmBrep::default),
-    )?;
+    } = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -1399,12 +1191,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             face.color = face_colors.get(&face.id).copied();
         }
     }
+    // Read before `geometry_failure` is consumed by the loss message below.
+    let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
-    if ctx.container_only() {
-        losses.push(
-            InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
-        );
-    } else if !matches!(document_kind, DocumentKind::Assembly) && !geometry_transferred {
+    losses.extend(dialect_loss(&matched, &recovery));
+    losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
+    if !ctx.container_only()
+        && !matches!(document_kind, DocumentKind::Assembly)
+        && !geometry_transferred
+    {
         let detail = geometry_failure.unwrap_or_else(|| match &container.rse.active_carrier {
             ActiveCarrierState::Selected(_) => {
                 "The typed active kernel carrier has not been transferred.".into()
@@ -1415,18 +1210,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ActiveCarrierState::NotApplicable => {
                 "Inventor geometry is not available for this document kind.".into()
             }
-            ActiveCarrierState::NotExpanded => {
-                unreachable!("non-container decode expands RSe bulk streams")
-            }
         });
         losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail));
     }
     if !ctx.container_only() {
-        if kernel_stats.unknown_surface_faces != 0 {
+        if kernel_stats.unknown_surface_faces() != 0 {
             losses.push(
                 InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
                     "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces
+                    kernel_stats.unknown_surface_faces()
                 )),
             );
         }
@@ -1448,16 +1240,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 segment_bulk_issues.len()
             )));
         }
-        if !assembly_record_issues.is_empty() {
+        if !assembly_inventory.issues.is_empty() {
             losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
                 "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                assembly_record_issues.len()
+                assembly_inventory.issues.len()
             )));
         }
-        if !presentation_record_issues.is_empty() {
+        if !presentation_inventory.issues.is_empty() {
             losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
                 "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                presentation_record_issues.len()
+                presentation_inventory.issues.len()
             )));
         }
         if !design_inventory.issues.is_empty() {
@@ -1608,38 +1400,34 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         let stream = annotations.stream(format!("inventor:{}", record.stream));
         annotations
             .note(&record.id, stream, record.offset)
-            .tag(record.tag);
+            .tag(record.tag.as_str());
         for field in record.derived_fields {
             annotations.derived(&record.id, field);
         }
     }
     source_fidelity.annotations = annotations.build();
     if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
-        let unsupported_acis = carrier.family == crate::kernel::KernelFamily::Acis
-            && !matches!(
-                cadmpeg_asm::acis_header::parse(carrier.bytes.window())
-                    .and_then(|header| header.save_format_major()),
-                Some(217 | 218)
-            );
-        if unsupported_acis {
+        // Retention is keyed on the outcome, not on a version band: a carrier
+        // this decode read no geometry out of keeps its bytes verbatim, whatever
+        // its save format declared.
+        if carrier_read_no_geometry {
             let data = ctx.copy_retained(
                 carrier.bytes.window(),
-                "retain unsupported Inventor ACIS carrier",
+                "retain Inventor kernel carrier that read no geometry",
                 Some(carrier.bytes.location()),
             )?;
             source_fidelity.retain_unknown_records(
                 &format!("RSeStorage/B{}:expanded", carrier.segment_token),
-                [UnknownRecord {
-                    id: UnknownId(format!(
+                [UnknownRecord::retained(
+                    UnknownId::mint(format!(
                         "inventor:kernel:carrier#{}-{}",
                         carrier.segment_token, carrier.record_ordinal
-                    )),
-                    offset: carrier.carrier_offset,
-                    byte_len: carrier.bytes.window().len() as u64,
-                    sha256: sha256_hex(carrier.bytes.window()),
-                    data: Some(data),
-                    links: vec![active_carrier.id.clone()],
-                }],
+                    ))
+                    .expect("identity grammar"),
+                    carrier.carrier_offset,
+                    data,
+                    vec![active_carrier.id().to_owned()],
+                )],
             );
         }
     }
@@ -1662,149 +1450,213 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
-    Ok(DecodeResult::new(
+    let body = DecodeBody {
+        geometry_transferred,
+        coverage: [
+            (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),
+            (crate::coverage::RSE_DATABASES, databases.len()),
+            (
+                crate::coverage::RSE_REGISTRY_ENTRIES,
+                segment_registry.len(),
+            ),
+            (crate::coverage::RSE_REVISIONS, revisions.len()),
+            (crate::coverage::RSE_SEGMENT_PAIRS, segment_pairs.len()),
+            (crate::coverage::RSE_SEGMENT_META, segment_meta.len()),
+            (crate::coverage::RSE_META_TYPES, meta_types.len()),
+            (
+                crate::coverage::RSE_SEGMENT_META_ISSUES,
+                segment_meta_issues.len(),
+            ),
+            (crate::coverage::RSE_SEGMENT_BULK, segment_bulk.len()),
+            (crate::coverage::RSE_RECORDS, rse_records.len()),
+            (
+                crate::coverage::RSE_SEGMENT_BULK_ISSUES,
+                segment_bulk_issues.len(),
+            ),
+            (crate::coverage::PROPERTY_SETS, property_sets.len()),
+            (crate::coverage::PROPERTIES, properties.len()),
+            (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
+            (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
+            (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
+            (
+                crate::coverage::PROTEIN_REJECTIONS,
+                protein_rejections.len(),
+            ),
+            (
+                crate::coverage::PROTEIN_APPEARANCES,
+                protein_appearance_count,
+            ),
+            (
+                crate::coverage::APPEARANCE_BINDINGS_TRANSFERRED,
+                appearance_binding_count,
+            ),
+            (
+                crate::coverage::PM_APP_DEFAULT_STYLES,
+                pm_app_default_styles.len(),
+            ),
+            (
+                crate::coverage::PM_APP_RENDERING_STYLES,
+                pm_app_rendering_styles.len(),
+            ),
+            (crate::coverage::PM_GRAPHICS_FACES, pm_graphics_faces.len()),
+            (
+                crate::coverage::PM_GRAPHICS_STYLE_COLLECTIONS,
+                pm_graphics_style_collections.len(),
+            ),
+            (
+                crate::coverage::PM_GRAPHICS_PRIMARY_COLOR_STYLES,
+                pm_graphics_primary_color_styles.len(),
+            ),
+            (
+                crate::coverage::FACE_COLOR_APPEARANCES,
+                face_color_appearance_count,
+            ),
+            (
+                crate::coverage::PRESENTATION_RECORD_ISSUES,
+                presentation_inventory.issues.len(),
+            ),
+            (
+                crate::coverage::PM_DC_PARAMETERS,
+                design_inventory.parameters.len(),
+            ),
+            (
+                crate::coverage::PM_DC_EXPRESSIONS,
+                design_inventory.expressions.len(),
+            ),
+            (crate::coverage::PM_DC_UNITS, design_inventory.units.len()),
+            (
+                crate::coverage::DESIGN_PARAMETERS_TRANSFERRED,
+                design_parameter_count,
+            ),
+            (
+                crate::coverage::DESIGN_RECORD_ISSUES,
+                design_inventory.issues.len(),
+            ),
+            (
+                crate::coverage::PM_DC_SKETCHES,
+                sketch_inventory.sketches.len(),
+            ),
+            (
+                crate::coverage::PM_DC_SKETCH_ENTITIES,
+                sketch_inventory.entities.len(),
+            ),
+            (
+                crate::coverage::PM_DC_TRANSFORMS,
+                sketch_inventory.transforms.len(),
+            ),
+            (
+                crate::coverage::PM_DC_DIRECTIONS,
+                sketch_inventory.directions.len(),
+            ),
+            (
+                crate::coverage::PM_DC_SKETCH_CONSTRAINTS,
+                sketch_inventory.constraints.len(),
+            ),
+            (
+                crate::coverage::SKETCH_RECORD_ISSUES,
+                sketch_inventory.issues.len(),
+            ),
+            (
+                crate::coverage::PM_DC_FEATURES,
+                feature_inventory.features.len(),
+            ),
+            (
+                crate::coverage::PM_DC_PATTERN_FEATURES,
+                feature_inventory.pattern_features.len(),
+            ),
+            (
+                crate::coverage::PM_DC_FEATURE_TERMINATORS,
+                feature_inventory.terminators.len(),
+            ),
+            (
+                crate::coverage::PM_DC_FEATURE_PROPERTIES,
+                feature_inventory.properties.len(),
+            ),
+            (
+                crate::coverage::PM_DC_FEATURE_LABELS,
+                feature_inventory.labels.len(),
+            ),
+            (
+                crate::coverage::PM_DC_ENTITY_STYLE_LINKS,
+                feature_inventory.entity_style_links.len(),
+            ),
+            (
+                crate::coverage::FEATURE_RECORD_ISSUES,
+                feature_inventory.issues.len(),
+            ),
+            (
+                crate::coverage::FEATURES_TRANSFERRED,
+                transferred_feature_count,
+            ),
+            (
+                crate::coverage::FEATURE_RESULT_TOPOLOGIES_TRANSFERRED,
+                transferred_feature_result_count,
+            ),
+            (
+                crate::coverage::SKETCHES_TRANSFERRED,
+                transferred_sketch_count,
+            ),
+            (
+                crate::coverage::SKETCH_ENTITIES_TRANSFERRED,
+                transferred_sketch_entity_count,
+            ),
+            (
+                crate::coverage::SKETCH_CONSTRAINTS_TRANSFERRED,
+                transferred_sketch_constraint_count,
+            ),
+            (
+                crate::coverage::EXTERNAL_REFERENCES,
+                external_references.len(),
+            ),
+            (
+                crate::coverage::EMBEDDED_REFERENCES,
+                embedded_references.len(),
+            ),
+            (crate::coverage::UFRX_MODEL_STATES, ufrx_model_states.len()),
+            (crate::coverage::UFRX_OCCURRENCES, ufrx_occurrences.len()),
+            (
+                crate::coverage::ASSEMBLY_OCCURRENCES,
+                assembly_occurrences.len(),
+            ),
+            (
+                crate::coverage::ASSEMBLY_PLACEMENTS,
+                assembly_placements.len(),
+            ),
+            (
+                crate::coverage::ASSEMBLY_OCCURRENCES_TRANSFERRED,
+                transferred_occurrence_count,
+            ),
+            (
+                crate::coverage::ASSEMBLY_RECORD_ISSUES,
+                assembly_inventory.issues.len(),
+            ),
+            (
+                crate::coverage::ACTIVE_KERNEL_CARRIERS,
+                usize::from(matches!(
+                    &container.rse.active_carrier,
+                    ActiveCarrierState::Selected(_)
+                )),
+            ),
+            (
+                crate::coverage::KERNEL_UNKNOWN_RECORDS,
+                kernel_unknown_record_count,
+            ),
+            (
+                crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
+                kernel_stats.unknown_surface_faces(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        losses,
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+    Ok(Decoded {
         ir,
-        DecodeReport {
-            format: "inventor".into(),
-            container_only: ctx.container_only(),
-            geometry_transferred,
-            coverage: BTreeMap::from([
-                ("rse_storage_bands".into(), storage_bands.len()),
-                ("rse_databases".into(), databases.len()),
-                ("rse_registry_entries".into(), segment_registry.len()),
-                ("rse_revisions".into(), revisions.len()),
-                ("rse_segment_pairs".into(), segment_pairs.len()),
-                ("rse_segment_meta".into(), segment_meta.len()),
-                ("rse_meta_types".into(), meta_types.len()),
-                ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
-                ("rse_segment_bulk".into(), segment_bulk.len()),
-                ("rse_records".into(), rse_records.len()),
-                ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
-                ("property_sets".into(), property_sets.len()),
-                ("properties".into(), properties.len()),
-                ("preview_assets".into(), preview_asset_count),
-                ("protein_entries".into(), protein_entries.len()),
-                ("protein_assets".into(), protein_assets.len()),
-                ("protein_rejections".into(), protein_rejections.len()),
-                ("protein_appearances".into(), protein_appearance_count),
-                (
-                    "appearance_bindings_transferred".into(),
-                    appearance_binding_count,
-                ),
-                ("pm_app_default_styles".into(), pm_app_default_styles.len()),
-                (
-                    "pm_app_rendering_styles".into(),
-                    pm_app_rendering_styles.len(),
-                ),
-                ("pm_graphics_faces".into(), pm_graphics_faces.len()),
-                (
-                    "pm_graphics_style_collections".into(),
-                    pm_graphics_style_collections.len(),
-                ),
-                (
-                    "pm_graphics_primary_color_styles".into(),
-                    pm_graphics_primary_color_styles.len(),
-                ),
-                ("face_color_appearances".into(), face_color_appearance_count),
-                (
-                    "presentation_record_issues".into(),
-                    presentation_record_issues.len(),
-                ),
-                ("pm_dc_parameters".into(), design_inventory.parameters.len()),
-                (
-                    "pm_dc_expressions".into(),
-                    design_inventory.expressions.len(),
-                ),
-                ("pm_dc_units".into(), design_inventory.units.len()),
-                (
-                    "design_parameters_transferred".into(),
-                    design_parameter_count,
-                ),
-                ("design_record_issues".into(), design_inventory.issues.len()),
-                ("pm_dc_sketches".into(), sketch_inventory.sketches.len()),
-                (
-                    "pm_dc_sketch_entities".into(),
-                    sketch_inventory.entities.len(),
-                ),
-                ("pm_dc_transforms".into(), sketch_inventory.transforms.len()),
-                ("pm_dc_directions".into(), sketch_inventory.directions.len()),
-                (
-                    "pm_dc_sketch_constraints".into(),
-                    sketch_inventory.constraints.len(),
-                ),
-                ("sketch_record_issues".into(), sketch_inventory.issues.len()),
-                ("pm_dc_features".into(), feature_inventory.features.len()),
-                (
-                    "pm_dc_pattern_features".into(),
-                    feature_inventory.pattern_features.len(),
-                ),
-                (
-                    "pm_dc_feature_terminators".into(),
-                    feature_inventory.terminators.len(),
-                ),
-                (
-                    "pm_dc_feature_properties".into(),
-                    feature_inventory.properties.len(),
-                ),
-                (
-                    "pm_dc_feature_labels".into(),
-                    feature_inventory.labels.len(),
-                ),
-                (
-                    "pm_dc_entity_style_links".into(),
-                    feature_inventory.entity_style_links.len(),
-                ),
-                (
-                    "feature_record_issues".into(),
-                    feature_inventory.issues.len(),
-                ),
-                ("features_transferred".into(), transferred_feature_count),
-                (
-                    "feature_result_topologies_transferred".into(),
-                    transferred_feature_result_count,
-                ),
-                ("sketches_transferred".into(), transferred_sketch_count),
-                (
-                    "sketch_entities_transferred".into(),
-                    transferred_sketch_entity_count,
-                ),
-                (
-                    "sketch_constraints_transferred".into(),
-                    transferred_sketch_constraint_count,
-                ),
-                ("external_references".into(), external_references.len()),
-                ("embedded_references".into(), embedded_references.len()),
-                ("ufrx_model_states".into(), ufrx_model_states.len()),
-                ("ufrx_occurrences".into(), ufrx_occurrences.len()),
-                ("assembly_occurrences".into(), assembly_occurrences.len()),
-                ("assembly_placements".into(), assembly_placements.len()),
-                (
-                    "assembly_occurrences_transferred".into(),
-                    transferred_occurrence_count,
-                ),
-                (
-                    "assembly_record_issues".into(),
-                    assembly_record_issues.len(),
-                ),
-                (
-                    "active_kernel_carriers".into(),
-                    usize::from(matches!(
-                        &container.rse.active_carrier,
-                        ActiveCarrierState::Selected(_)
-                    )),
-                ),
-                ("kernel_unknown_records".into(), kernel_unknown_record_count),
-                (
-                    "kernel_unknown_surface_faces".into(),
-                    kernel_stats.unknown_surface_faces,
-                ),
-            ]),
-            losses,
-            notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
-        },
+        body,
         source_fidelity,
-    ))
+    })
 }
 
 fn version_record(version: VersionTuple) -> VersionTupleRecord {
@@ -1821,10 +1673,9 @@ fn apply_kernel_header(
     family: crate::kernel::KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
 ) {
-    let source = ir
-        .source
-        .as_mut()
-        .expect("Inventor source metadata is established before ASM transfer");
+    let Some(source) = ir.source.as_mut() else {
+        return;
+    };
     if let Some(version) = header.save_format_version {
         source
             .attributes
@@ -2085,23 +1936,53 @@ fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
     }
 }
 
-fn property_value_kind(value: &PropertyValue<'_>) -> String {
+fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     match value {
-        PropertyValue::Empty => "empty".into(),
-        PropertyValue::Signed(_) => "signed".into(),
-        PropertyValue::Unsigned(_) => "unsigned".into(),
-        PropertyValue::Float(_) => "float".into(),
-        PropertyValue::Bool(_) => "bool".into(),
-        PropertyValue::Filetime(_) => "filetime".into(),
-        PropertyValue::String(_) => "string".into(),
-        PropertyValue::Guid(_) => "guid".into(),
-        PropertyValue::Binary(data) => format!("binary:{}", data.window().len()),
-        PropertyValue::Clipboard { format, data } => {
-            format!("clipboard:{format}:{}", data.window().len())
-        }
-        PropertyValue::Vector(values) => format!("vector:{}", values.len()),
-        PropertyValue::Dictionary => "dictionary".into(),
-        PropertyValue::Unknown => "unknown".into(),
+        PropertyValue::Empty { type_code, .. } => PropertyValueKind::Empty {
+            type_code: *type_code,
+        },
+        PropertyValue::Signed { type_code, .. } => PropertyValueKind::Signed {
+            type_code: *type_code,
+        },
+        PropertyValue::Unsigned { type_code, .. } => PropertyValueKind::Unsigned {
+            type_code: *type_code,
+        },
+        PropertyValue::Float { type_code, .. } => PropertyValueKind::Float {
+            type_code: *type_code,
+        },
+        PropertyValue::Bool { type_code, .. } => PropertyValueKind::Bool {
+            type_code: *type_code,
+        },
+        PropertyValue::Filetime { type_code, .. } => PropertyValueKind::Filetime {
+            type_code: *type_code,
+        },
+        PropertyValue::String { type_code, .. } => PropertyValueKind::String {
+            type_code: *type_code,
+        },
+        PropertyValue::Guid { type_code, .. } => PropertyValueKind::Guid {
+            type_code: *type_code,
+        },
+        PropertyValue::Binary { type_code, value } => PropertyValueKind::Binary {
+            type_code: *type_code,
+            len: value.window().len(),
+        },
+        PropertyValue::Clipboard {
+            type_code,
+            format,
+            data,
+        } => PropertyValueKind::Clipboard {
+            type_code: *type_code,
+            format: *format,
+            len: data.window().len(),
+        },
+        PropertyValue::Vector { type_code, values } => PropertyValueKind::Vector {
+            type_code: *type_code,
+            len: values.len(),
+        },
+        PropertyValue::Dictionary => PropertyValueKind::Dictionary,
+        PropertyValue::Unknown { type_code } => PropertyValueKind::Unknown {
+            type_code: *type_code,
+        },
     }
 }
 
@@ -2117,8 +1998,8 @@ fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
 
 fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
     let bytes = match value {
-        PropertyValue::Binary(view) => view.window(),
-        PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
+        PropertyValue::Binary { value: view, .. } => view.window(),
+        PropertyValue::Clipboard { format, data, .. } if *format == u32::MAX => {
             let bytes = data.window();
             let mut header = View::over_retained(bytes);
             let image_kind = header.u32_le()?;

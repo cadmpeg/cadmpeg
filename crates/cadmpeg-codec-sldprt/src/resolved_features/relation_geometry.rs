@@ -111,18 +111,18 @@ fn ensure_spatial_relation_point(
         return None;
     }
     if let [entity] = matches.as_slice() {
-        return Some(entity.id.clone());
+        return Some(entity.id().clone());
     }
     let id = SpatialSketchEntityId(format!("{}:relation-point:{}", sketch.0, marker.offset));
-    entities.push(SpatialSketchEntity {
-        id: id.clone(),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(marker.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position },
-    });
+    entities.push(
+        SpatialSketchEntity::new(
+            id.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Point { position },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(marker.id.clone())),
+    );
     Some(id)
 }
 
@@ -208,23 +208,24 @@ fn spatial_relation_point_line_entities(
                 && (entity.endpoint_refs == endpoint_refs
                     || entity.endpoint_refs == reverse_endpoint_refs)
         })
-        .map(|entity| entity.id.clone());
+        .map(|entity| entity.id().clone());
     let line_id = if let Some(line_id) = existing_line_id {
         line_id
     } else {
         let id = SpatialSketchEntityId(format!("{}:relation-line", relation.id));
-        entities.push(SpatialSketchEntity {
-            id: id.clone(),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: Some(format!("{}:relation-line", relation.id)),
-            endpoint_refs,
-            geometry: SpatialSketchGeometry::Line {
-                start: *start,
-                end: *end,
-            },
-        });
+        entities.push(
+            SpatialSketchEntity::new(
+                id.clone(),
+                sketch.clone(),
+                SpatialSketchGeometry::Line {
+                    start: *start,
+                    end: *end,
+                },
+            )
+            .with_construction(true)
+            .with_geometry_ref(Some(format!("{}:relation-line", relation.id)))
+            .with_endpoint_refs(endpoint_refs),
+        );
         id
     };
     Some((point_id, line_id))
@@ -309,9 +310,11 @@ pub(crate) fn project_spatial_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            native_field: None,
-                            native_role: None,
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                operand_kind_name(operand.kind),
+                            )
+                            .expect("source operand kind is nonempty"),
+                            field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
                         })
@@ -360,9 +363,7 @@ pub(crate) fn project_relation_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -430,7 +431,7 @@ pub(crate) fn project_relation_point_geometry(
         let mut linked = Vec::new();
         for marker in markers_by_id.values().copied() {
             let marker_referenced = referenced.contains(marker.id.as_str());
-            for link in &marker.links {
+            for link in marker.links() {
                 let adjacent = if marker_referenced {
                     Some(link.entity_ref.as_str())
                 } else if referenced.contains(link.entity_ref.as_str()) {
@@ -528,27 +529,32 @@ pub(crate) fn project_relation_point_geometry(
                 .next()
                 .expect("one transformed position");
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                    marker.offset
-                )),
-                sketch: sketch.clone(),
-                construction: true,
-                native_ref: matches!(
-                    marker.kind,
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
+                        marker.offset
+                    )),
+                    sketch.clone(),
+                    SketchGeometry::Point { position },
                 )
-                .then(|| marker.id.clone()),
-                geometry_ref: qualified_point.then(|| marker.id.clone()).filter(|_| {
+                .with_construction(true)
+                .with_native_ref(
                     matches!(
                         marker.kind,
-                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
-                }),
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point { position },
-            });
+                    .then(|| marker.id.clone()),
+                )
+                .with_geometry_ref(
+                    qualified_point.then(|| marker.id.clone()).filter(|_| {
+                        matches!(
+                            marker.kind,
+                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                        )
+                    }),
+                ),
+            );
         }
         let markers_by_id = lane
             .sketch_entities
@@ -565,9 +571,12 @@ pub(crate) fn project_relation_point_geometry(
                 });
             let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
                 && marker.coordinates_m.is_some()
-                && marker.links.iter().any(|link| link.entity_ref == marker.id)
                 && marker
-                    .links
+                    .links()
+                    .iter()
+                    .any(|link| link.entity_ref == marker.id)
+                && marker
+                    .links()
                     .iter()
                     .filter(|link| link.entity_ref != marker.id)
                     .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()))
@@ -575,7 +584,10 @@ pub(crate) fn project_relation_point_geometry(
                     .count()
                     == 1;
             let linked_curve_handle = curve_operands.contains(marker.id.as_str())
-                && !marker.links.iter().any(|link| link.entity_ref == marker.id)
+                && !marker
+                    .links()
+                    .iter()
+                    .any(|link| link.entity_ref == marker.id)
                 && (linked_coordinate_line_endpoints(marker, &markers_by_id).is_some()
                     || coordinate_line_endpoints_with_linked_point(marker, &markers_by_id)
                         .is_some());
@@ -615,7 +627,7 @@ pub(crate) fn project_relation_point_geometry(
                     .into_iter()
                     .chain(
                         marker
-                            .links
+                            .links()
                             .iter()
                             .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
                             .filter(|endpoint| endpoint.id != marker.id)
@@ -686,20 +698,25 @@ pub(crate) fn project_relation_point_geometry(
             if already_present {
                 continue;
             }
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
-                    marker.offset
-                )),
-                sketch: sketch.clone(),
-                construction: true,
-                native_ref: (!matches!(marker.kind, SketchInputKind::Relation(_)))
-                    .then(|| marker.id.clone()),
-                geometry_ref: matches!(marker.kind, SketchInputKind::Relation(_))
-                    .then(|| marker.id.clone()),
-                endpoint_refs: vec![first_marker.id.clone(), second_marker.id.clone()],
-                geometry: SketchGeometry::Line { start, end },
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
+                        marker.offset
+                    )),
+                    sketch.clone(),
+                    SketchGeometry::Line { start, end },
+                )
+                .with_construction(true)
+                .with_native_ref(
+                    (!matches!(marker.kind, SketchInputKind::Relation(_)))
+                        .then(|| marker.id.clone()),
+                )
+                .with_geometry_ref(
+                    matches!(marker.kind, SketchInputKind::Relation(_)).then(|| marker.id.clone()),
+                )
+                .with_endpoint_refs(vec![first_marker.id.clone(), second_marker.id.clone()]),
+            );
         }
     }
 }
@@ -755,9 +772,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -955,14 +970,13 @@ pub(crate) fn project_relation_solved_line_geometry(
                     position.1 as f64 * QUANTUM,
                 ))
             });
-            let candidate = |id: &str, start, end| SketchEntity {
-                id: SketchEntityId(id.into()),
-                sketch: sketch.clone(),
-                construction: true,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line { start, end },
+            let candidate = |id: &str, start, end| {
+                SketchEntity::new(
+                    SketchEntityId(id.into()),
+                    sketch.clone(),
+                    SketchGeometry::Line { start, end },
+                )
+                .with_construction(true)
             };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
@@ -1162,16 +1176,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                             }) {
                                 continue;
                             }
-                            entities.push(SketchEntity {
-                                id: SketchEntityId(format!(
-                                    "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
-                                    operand.entity_index
-                                )),
-                                construction: true,
-                                native_ref: None,
-                                geometry_ref: Some(geometry_ref),
-                                ..line
-                            });
+                            entities.push(
+                                SketchEntity::new(
+                                    SketchEntityId(format!(
+                                        "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
+                                        operand.entity_index
+                                    )),
+                                    line.sketch.clone(),
+                                    line.geometry.clone(),
+                                )
+                                .with_construction(true)
+                                .with_geometry_ref(Some(geometry_ref))
+                                .with_endpoint_refs(line.endpoint_refs.clone()),
+                            );
                         }
                         continue;
                     }
@@ -1191,15 +1208,20 @@ pub(crate) fn project_relation_solved_line_geometry(
                 }) {
                     continue;
                 }
-                entities.push(SketchEntity {
-                    id: SketchEntityId(format!(
-                        "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
-                        operand.entity_index
-                    )),
-                    geometry_ref: Some(geometry_ref),
-                    endpoint_refs: markers.map(|marker| marker.id.clone()).into(),
-                    ..line
-                });
+                entities.push(
+                    SketchEntity::new(
+                        SketchEntityId(format!(
+                            "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
+                            operand.entity_index
+                        )),
+                        line.sketch.clone(),
+                        line.geometry.clone(),
+                    )
+                    .with_construction(line.construction)
+                    .with_native_ref(line.native_ref.clone())
+                    .with_geometry_ref(Some(geometry_ref))
+                    .with_endpoint_refs(markers.map(|marker| marker.id.clone()).into()),
+                );
             }
         }
     }
@@ -1285,9 +1307,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -1399,23 +1419,23 @@ pub(crate) fn project_relation_solved_point_geometry(
                     .filter_map(|(index, position)| position.map(|position| (index, position)))
                 {
                     let geometry_ref = relation_operand_geometry_ref(relation, index);
-                    entities.push(SketchEntity {
-                        id: SketchEntityId(format!(
-                            "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
-                            relation.offset
-                        )),
-                        sketch: sketch.clone(),
-                        construction: true,
-                        native_ref: None,
-                        geometry_ref: Some(geometry_ref),
-                        endpoint_refs: Vec::new(),
-                        geometry: SketchGeometry::Point {
-                            position: Point2::new(
-                                position.0 as f64 * QUANTUM,
-                                position.1 as f64 * QUANTUM,
-                            ),
-                        },
-                    });
+                    entities.push(
+                        SketchEntity::new(
+                            SketchEntityId(format!(
+                                "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
+                                relation.offset
+                            )),
+                            sketch.clone(),
+                            SketchGeometry::Point {
+                                position: Point2::new(
+                                    position.0 as f64 * QUANTUM,
+                                    position.1 as f64 * QUANTUM,
+                                ),
+                            },
+                        )
+                        .with_construction(true)
+                        .with_geometry_ref(Some(geometry_ref)),
+                    );
                 }
                 continue;
             }
@@ -1486,20 +1506,20 @@ pub(crate) fn project_relation_solved_point_geometry(
             {
                 continue;
             }
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
-                    relation.offset
-                )),
-                sketch: sketch.clone(),
-                construction: true,
-                native_ref: None,
-                geometry_ref: Some(geometry_ref),
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
-                    position: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
+                        relation.offset
+                    )),
+                    sketch.clone(),
+                    SketchGeometry::Point {
+                        position: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                    },
+                )
+                .with_construction(true)
+                .with_geometry_ref(Some(geometry_ref)),
+            );
         }
     }
 }
@@ -1527,11 +1547,11 @@ pub(super) fn implicit_circle_marker<'a>(
                 marker.feature_ref.as_deref() == Some(feature)
                     && marker.object_index == Some(relation_index)
                     && marker.kind == SketchInputKind::Relation(SketchRelationKind::Distance)
-                    && matches!(marker.links.as_slice(), [first, second]
+                    && matches!(marker.links(), [first, second]
                         if first.entity_ref == second.entity_ref
                             && first.local_id == second.local_id)
             })?;
-            let center_id = relation.links.first()?.entity_ref.as_str();
+            let center_id = relation.links().first()?.entity_ref.as_str();
             let center = lane
                 .sketch_entities
                 .iter()
@@ -1683,7 +1703,10 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let marker = lane.sketch_entities.iter().find(|marker| {
         marker.id == entity_ref
             && marker.feature_ref.as_deref() == Some(feature)
-            && matches!(marker.kind, SketchInputKind::Native(_))
+            && matches!(
+                marker.kind,
+                SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
+            )
     })?;
     let marker_offset = usize::try_from(marker.offset).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
@@ -2236,9 +2259,7 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -2355,9 +2376,11 @@ pub(crate) fn project_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            native_field: None,
-                            native_role: None,
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                operand_kind_name(operand.kind),
+                            )
+                            .expect("source operand kind is nonempty"),
+                            field: None,
                             object_index: u32::from(operand.entity_index),
                             native_ref: operand.entity_ref.clone(),
                         })
@@ -2376,8 +2399,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: relation
-                    .parameter_scalar_ref
-                    .as_ref()
+                    .parameter_scalar_ref()
                     .map(|_| true)
                     .or_else(|| has_display_scalar.then_some(false)),
                 active,
@@ -2480,7 +2502,7 @@ pub(crate) fn owned_relation_parameters<'a>(
     let mut owned = HashMap::new();
     for lane in &lanes {
         for relation in &lane.relation_instances {
-            let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
+            let Some(scalar) = relation.parameter_scalar_ref() else {
                 continue;
             };
             let parameter = parameters_by_scalar
@@ -2498,11 +2520,11 @@ pub(crate) fn owned_relation_parameters<'a>(
     }
     for lane in &lanes {
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_some() {
+            if relation.parameter_scalar_ref().is_some() {
                 continue;
             }
             let exact_matches = relation
-                .scalar_refs
+                .scalar_refs()
                 .iter()
                 .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied())
                 .collect::<Vec<_>>();
@@ -2538,7 +2560,7 @@ pub(super) fn relation_display_scalar<'a>(
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputScalar> {
-    if let Some(display_id) = relation.display_scalar_ref.as_deref() {
+    if let Some(display_id) = relation.display_scalar_ref() {
         return lane
             .scalars
             .iter()
@@ -2546,7 +2568,7 @@ pub(super) fn relation_display_scalar<'a>(
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display);
     }
     let candidates = relation
-        .scalar_refs
+        .scalar_refs()
         .iter()
         .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
@@ -2563,15 +2585,15 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
 ) -> Option<&'a FeatureInputScalar> {
     relation_display_scalar(relation, lane).or_else(|| {
         if relation.family != FeatureInputRelationFamily::CircleDiameter
-            || relation.parameter_scalar_ref.is_some()
-            || relation.display_scalar_ref.is_some()
-            || relation.scalar_refs.len() < 2
+            || relation.parameter_scalar_ref().is_some()
+            || relation.display_scalar_ref().is_some()
+            || relation.scalar_refs().len() < 2
             || relation.operands.len() != 1
         {
             return None;
         }
         let scalars = relation
-            .scalar_refs
+            .scalar_refs()
             .iter()
             .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
             .collect::<Vec<_>>();
@@ -2608,7 +2630,7 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
             }
             entity_indices.push(operand.entity_index);
         }
-        (scalars.len() == relation.scalar_refs.len()).then_some(first)
+        (scalars.len() == relation.scalar_refs().len()).then_some(first)
     })
 }
 
@@ -2691,10 +2713,9 @@ fn relation_parameter_by_driving_name<'a>(
         .map(|name| (name.id.as_str(), name.value.as_str()))
         .collect::<HashMap<_, _>>();
     let mut driving_names = relation
-        .parameter_scalar_ref
-        .as_deref()
+        .parameter_scalar_ref()
         .into_iter()
-        .chain(relation.scalar_refs.iter().map(String::as_str))
+        .chain(relation.scalar_refs().iter().map(String::as_str))
         .filter_map(|scalar| scalars.get(scalar))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
@@ -2755,11 +2776,10 @@ mod relation_geometry_tests {
 
         let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
         let feature = Feature {
-            id: FeatureId("feature".into()),
+            id: FeatureId::mint("feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -2767,8 +2787,7 @@ mod relation_geometry_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch.clone()),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             },
             native_ref: Some("feature-native".into()),
         };
@@ -2797,7 +2816,7 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value,
                 role: FeatureInputScalarRole::Driving,
-                entity_indices: Vec::new(),
+
                 operands,
             };
         let relation = FeatureInputRelationInstance {
@@ -2808,9 +2827,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
-            scalar_refs: vec!["terminal".into()],
-            parameter_scalar_ref: Some("terminal".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["terminal".into()],
+                Some("terminal".into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(40, 12), operand(52, 13)],
         };
         let lane = FeatureInputLane {
@@ -2849,7 +2871,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId("distance".into()),
+            id: ParameterId::mint("distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -2936,11 +2958,10 @@ mod relation_geometry_tests {
         const LANE: &str = "lane#test";
         let sketch_id = SketchId("sketch".into());
         let feature = Feature {
-            id: FeatureId("feature".into()),
+            id: FeatureId::mint("feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -2948,8 +2969,7 @@ mod relation_geometry_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch_id.clone()),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             },
             native_ref: Some(FEATURE.into()),
         };
@@ -2972,30 +2992,36 @@ mod relation_geometry_tests {
             SketchInputEntity::new("first-line", LANE, 6, 20, SketchInputKind::LineOrCircle);
         first_line.feature_ref = Some(FEATURE.into());
         first_line.object_index = Some(0);
-        first_line.links = vec![
-            crate::records::SketchInputLink {
-                local_id: 0,
-                entity_ref: first_start.id.clone(),
-            },
-            crate::records::SketchInputLink {
-                local_id: 1,
-                entity_ref: first_end.id.clone(),
-            },
-        ];
+        first_line.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                crate::records::SketchInputLink {
+                    local_id: 0,
+                    entity_ref: first_start.id.clone(),
+                },
+                crate::records::SketchInputLink {
+                    local_id: 1,
+                    entity_ref: first_end.id.clone(),
+                },
+            ],
+        );
         let mut second_line =
             SketchInputEntity::new("second-line", LANE, 7, 21, SketchInputKind::LineOrCircle);
         second_line.feature_ref = Some(FEATURE.into());
         second_line.object_index = Some(1);
-        second_line.links = vec![
-            crate::records::SketchInputLink {
-                local_id: 2,
-                entity_ref: second_start.id.clone(),
-            },
-            crate::records::SketchInputLink {
-                local_id: 3,
-                entity_ref: second_end.id.clone(),
-            },
-        ];
+        second_line.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![
+                crate::records::SketchInputLink {
+                    local_id: 2,
+                    entity_ref: second_start.id.clone(),
+                },
+                crate::records::SketchInputLink {
+                    local_id: 3,
+                    entity_ref: second_end.id.clone(),
+                },
+            ],
+        );
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
             parent: LANE.into(),
@@ -3004,9 +3030,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),
-            scalar_refs: vec!["scalar".into()],
-            parameter_scalar_ref: Some("scalar".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["scalar".into()],
+                Some("scalar".into()),
+                None,
+            )
+            .unwrap(),
             operands: [0_u16, 1]
                 .into_iter()
                 .enumerate()
@@ -3035,7 +3064,7 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value: 0.005,
                 role: FeatureInputScalarRole::Driving,
-                entity_indices: vec![0, 1],
+
                 operands: relation.operands.clone(),
             }],
             relation_bindings: Vec::new(),
@@ -3057,7 +3086,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId("distance".into()),
+            id: ParameterId::mint("distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -3076,8 +3105,12 @@ mod relation_geometry_tests {
             .expect("synthetic relation");
         fallback_relation.id = "fallback-relation".into();
         fallback_relation.offset = 31;
-        fallback_relation.scalar_refs = vec!["fallback-scalar".into()];
-        fallback_relation.parameter_scalar_ref = Some("fallback-scalar".into());
+        fallback_relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["fallback-scalar".into()],
+            Some("fallback-scalar".into()),
+            None,
+        )
+        .unwrap();
         for (operand, entity_index) in fallback_relation.operands.iter_mut().zip([1_u16, 2]) {
             operand.entity_index = entity_index;
         }
@@ -3085,41 +3118,47 @@ mod relation_geometry_tests {
         let fallback_scalar = fallback_lane.scalars.first_mut().expect("synthetic scalar");
         fallback_scalar.id = "fallback-scalar".into();
         fallback_scalar.offset = 31;
-        fallback_scalar.entity_indices = vec![1, 2];
+
         fallback_scalar.operands = fallback_operands;
         for marker in &mut fallback_lane.sketch_entities {
             match marker.id.as_str() {
                 "first-line" => {
                     marker.object_index = Some(1);
-                    marker.links = vec![
-                        crate::records::SketchInputLink {
-                            local_id: 4,
-                            entity_ref: "distractor-start".into(),
-                        },
-                        crate::records::SketchInputLink {
-                            local_id: 5,
-                            entity_ref: "distractor-end".into(),
-                        },
-                    ];
+                    marker.links = crate::records::SketchInputLinks::new(
+                        0,
+                        vec![
+                            crate::records::SketchInputLink {
+                                local_id: 4,
+                                entity_ref: "distractor-start".into(),
+                            },
+                            crate::records::SketchInputLink {
+                                local_id: 5,
+                                entity_ref: "distractor-end".into(),
+                            },
+                        ],
+                    );
                 }
                 "second-line" => {
                     marker.object_index = Some(2);
-                    marker.links = vec![
-                        crate::records::SketchInputLink {
-                            local_id: 6,
-                            entity_ref: "distractor-start".into(),
-                        },
-                        crate::records::SketchInputLink {
-                            local_id: 7,
-                            entity_ref: "distractor-end".into(),
-                        },
-                    ];
+                    marker.links = crate::records::SketchInputLinks::new(
+                        0,
+                        vec![
+                            crate::records::SketchInputLink {
+                                local_id: 6,
+                                entity_ref: "distractor-start".into(),
+                            },
+                            crate::records::SketchInputLink {
+                                local_id: 7,
+                                entity_ref: "distractor-end".into(),
+                            },
+                        ],
+                    );
                 }
                 _ => {}
             }
         }
         let fallback_parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId("fallback-distance".into()),
+            id: ParameterId::mint("fallback-distance").expect("identity grammar"),
             native_ref: Some("fallback-scalar".into()),
             ..parameter.clone()
         };
@@ -3190,14 +3229,13 @@ mod relation_geometry_tests {
     #[test]
     fn dynamic_line_pair_fallback_preserves_the_existing_solver_slot() {
         let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
-        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line { start, end },
+        let line = |id: &str, start: Point2, end: Point2| {
+            SketchEntity::new(
+                SketchEntityId(id.into()),
+                sketch.clone(),
+                SketchGeometry::Line { start, end },
+            )
+            .with_construction(true)
         };
         let generated = vec![
             line("roster-4", Point2::new(-13.0, 3.0), Point2::new(0.0, 3.0)),
@@ -3313,7 +3351,7 @@ mod relation_geometry_tests {
             name: "distance".into(),
             value: 0.0065,
             role: FeatureInputScalarRole::Driving,
-            entity_indices: Vec::new(),
+
             operands: Vec::new(),
         };
         let operand = |entity_index| FeatureInputOperand {
@@ -3331,9 +3369,12 @@ mod relation_geometry_tests {
             family: FeatureInputRelationFamily::PointLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),
-            scalar_refs: vec!["scalar".into()],
-            parameter_scalar_ref: Some("scalar".into()),
-            display_scalar_ref: None,
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec!["scalar".into()],
+                Some("scalar".into()),
+                None,
+            )
+            .unwrap(),
             operands: vec![operand(0), operand(1)],
         };
         let lane = FeatureInputLane {
@@ -3361,11 +3402,10 @@ mod relation_geometry_tests {
             native_ref: Some(LANE.into()),
         };
         let feature = Feature {
-            id: FeatureId(FEATURE.into()),
+            id: FeatureId::mint(FEATURE).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -3378,7 +3418,7 @@ mod relation_geometry_tests {
             native_ref: Some(FEATURE.into()),
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId("parameter".into()),
+            id: ParameterId::mint("parameter").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -3413,13 +3453,22 @@ mod relation_geometry_tests {
         else {
             panic!("tagged marker roster has a unique point-line witness");
         };
-        assert_eq!(parameter, &ParameterId("parameter".into()));
-        let point_entity = entities.iter().find(|entity| entity.id == *point).unwrap();
+        assert_eq!(
+            parameter,
+            &ParameterId::mint("parameter").expect("identity grammar")
+        );
+        let point_entity = entities
+            .iter()
+            .find(|entity| entity.id().clone() == *point)
+            .unwrap();
         assert!(matches!(
             point_entity.geometry,
             SpatialSketchGeometry::Point { position } if position == source_position
         ));
-        let line_entity = entities.iter().find(|entity| entity.id == *line).unwrap();
+        let line_entity = entities
+            .iter()
+            .find(|entity| entity.id().clone() == *line)
+            .unwrap();
         let SpatialSketchGeometry::Line { start, end } = line_entity.geometry else {
             panic!("point-line witness is a line");
         };

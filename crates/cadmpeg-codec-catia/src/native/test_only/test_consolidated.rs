@@ -1,4 +1,5 @@
 use super::*;
+use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(super) fn validate_consolidated_class61_records(
     records: &[CatiaConsolidatedClass61Record],
@@ -34,19 +35,12 @@ pub(super) fn validate_consolidated_class5b5c_records(
     records: &[CatiaConsolidatedClass5b5cRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, record) in records.iter().enumerate() {
-        let expected_len = 4u64
-            .checked_add(u64::from(record.width))
-            .and_then(|len| len.checked_add(u64::try_from(record.payload.len()).ok()?));
         let source_order_valid = index == 0
             || (
                 records[index - 1].source_index,
                 records[index - 1].source_offset,
             ) < (record.source_index, record.source_offset);
         if record.id != format!("catia:consolidated:class5b5c-record#{index}")
-            || !matches!(record.width, 1..=3)
-            || !matches!(record.flag, 0x03 | 0x13 | 0x83)
-            || !matches!(record.class, 0x5b | 0x5c)
-            || expected_len != Some(record.byte_len)
             || !source_order_valid
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -157,13 +151,13 @@ pub(super) fn validate_consolidated_circles(
     for (index, circle) in circles.iter().enumerate() {
         let full_circle =
             crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
-        let compact_len = usize::from(circle.layout).checked_sub(5 * size_of::<f64>() + 9);
+        let compact_len =
+            usize::from(u8::from(circle.layout)).checked_sub(5 * size_of::<f64>() + 9);
         let record_id_fits_layout = matches!(
             (compact_len, circle.record_id),
             (Some(1), 0..=63) | (Some(2), 0..=255) | (Some(3), 0..=65_535)
         );
         if circle.id != format!("catia:consolidated:circle#{index}")
-            || !(0x32..=0x34).contains(&circle.layout)
             || !record_id_fits_layout
             || circle
                 .center_pair
@@ -256,25 +250,34 @@ pub(super) fn validate_consolidated_cylinders(
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
         let payload_valid = match &cylinder.payload {
-            CatiaConsolidatedCylinderPayload::Resolved {
+            CatiaConsolidatedCylinderPayload::Layout52 {
                 frame_token,
                 axis,
                 reference_direction,
             } => {
-                let frame_matches_layout = match cylinder.layout {
-                    0x52 => {
-                        *frame_token == 0x1d
-                            && *axis == [1.0, 0.0, 0.0]
-                            && *reference_direction == [0.0, 1.0, 0.0]
-                    }
-                    0x5a => {
-                        matches!(*frame_token, 0x19 | 0x1c)
-                            && axis[2] == 0.0
-                            && *reference_direction == [-axis[1], axis[0], 0.0]
-                    }
-                    _ => false,
-                };
-                frame_matches_layout
+                *frame_token == 0x1d
+                    && *axis == [1.0, 0.0, 0.0]
+                    && *reference_direction == [0.0, 1.0, 0.0]
+                    && axis
+                        .iter()
+                        .chain(reference_direction)
+                        .all(|value| value.is_finite())
+                    && (squared_length(*axis) - 1.0).abs() <= 1.0e-9
+                    && (squared_length(*reference_direction) - 1.0).abs() <= 1.0e-9
+                    && dot(*axis, *reference_direction).abs() <= 1.0e-9
+                    && crate::families::b2::records::circle_range_is_full_turn(
+                        cylinder.radius,
+                        cylinder.u_range,
+                    )
+            }
+            CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            } => {
+                matches!(*frame_token, 0x19 | 0x1c)
+                    && axis[2] == 0.0
+                    && *reference_direction == [-axis[1], axis[0], 0.0]
                     && axis
                         .iter()
                         .chain(reference_direction)
@@ -293,7 +296,7 @@ pub(super) fn validate_consolidated_cylinders(
                 reference_direction,
                 range_origin,
             } => {
-                cylinder.layout == 0x62
+                cylinder.payload.layout() == 0x62
                     && stored_vector
                         .iter()
                         .chain(std::iter::once(range_origin))
@@ -403,11 +406,13 @@ pub(super) fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
-        let payload_valid = point.payload.is_valid_for_layout(point.layout);
-        let frame_overhead = point.byte_len.checked_sub(u64::from(point.layout));
+        let payload_valid = point.payload.is_valid();
+        let frame_overhead = point
+            .byte_len
+            .checked_sub(u64::from(point.payload.layout()));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))
-            || !matches!(point.prefix, 0x05 | 0x09 | 0x0d | 0x11)
+            || !matches!(point.prefix.as_u8(), 0x05 | 0x09 | 0x0d | 0x11)
             || !payload_valid
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
@@ -456,29 +461,27 @@ pub(super) fn validate_consolidated_plane_carriers(
                 6,
                 point.iter().chain(tail).all(|value| value.is_finite()),
             ),
-            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values } => (
-                carrier.selector,
+            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => (
+                carrier.payload.selector(),
                 values.len(),
                 !values.is_empty() && values.iter().all(|value| value.is_finite()),
             ),
         };
-        let header_limit = 1u32.checked_shl(8 * u32::from(carrier.width));
+        let header_limit = 1u32 << (8 * u8::from(carrier.width));
         let scalar_count = u64::try_from(scalar_count).map_err(|_| {
             cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated plane carrier `{}` has too many scalars",
                 carrier.id
             ))
         })?;
-        let expected_len = 4 + u64::from(carrier.width) + 2 + 8 * scalar_count;
+        let expected_len = 4 + u64::from(u8::from(carrier.width)) + 2 + 8 * scalar_count;
         if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
-            || !matches!(carrier.width, 1..=3)
-            || header_limit.is_none_or(|limit| carrier.header_token >= limit)
-            || !matches!(carrier.flag, 0x03 | 0x13 | 0x83)
+            || carrier.header_token >= header_limit
             || matches!(
                 &carrier.payload,
                 CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }
-            ) && matches!(carrier.selector, 0xe4 | 0xc4 | 0xec)
-            || carrier.selector != selector
+            ) && matches!(carrier.payload.selector(), 0xe4 | 0xc4 | 0xec)
+            || carrier.payload.selector() != selector
             || carrier.byte_len != expected_len
             || !payload_valid
             || index > 0 && carriers[index - 1].byte_offset >= carrier.byte_offset
@@ -570,7 +573,6 @@ pub(super) fn validate_consolidated_revolutions(
                 - revolution.direction_x[1] * revolution.direction_y[0],
         ];
         if revolution.id != expected_id
-            || !matches!(revolution.reference_token, 0x08 | 0x0a)
             || revolution.profile_allocation_id == 0
             || revolution
                 .origin

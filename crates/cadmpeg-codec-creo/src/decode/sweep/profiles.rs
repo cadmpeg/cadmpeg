@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch profile connectivity, intersection, and containment.
 
-use super::super::analytic::nurbs_intrinsic_parameter_range;
 use super::super::holes::ExtrusionSpan;
 use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
+use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;
@@ -83,7 +83,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                 .iter()
                 .map(|entity_use| {
                     let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                        entity.sketch == *sketch_id && entity.id == entity_use.entity
+                        entity.sketch == *sketch_id && entity.id() == &entity_use.entity
                     }))
                     .map(|entity| &entity.geometry)?;
                     let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
@@ -200,13 +200,11 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    PcurveGeometry::Nurbs {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    }
+    cadmpeg_ir::geometry::PcurveNurbs::new(2, knots, control_points, Some(weights), false)
+        .map_or_else(
+            |_| line_pcurve(center, center),
+            |nurbs| PcurveGeometry::Nurbs { nurbs },
+        )
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
@@ -346,10 +344,9 @@ pub(in super::super) fn resolved_sketch_profiles(
     for profile in &sketch.profiles {
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let entity =
-                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch_id && entity.id == entity_use.entity
-                }))?;
+            let entity = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                entity.sketch == *sketch_id && entity.id() == &entity_use.entity
+            }))?;
             let (mut start, mut end) = sketch_geometry_endpoints(&entity.geometry)?;
             if entity_use.reversed {
                 std::mem::swap(&mut start, &mut end);
@@ -675,7 +672,7 @@ pub(in super::super) fn nurbs_profile_polyline(
     let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
     let first = [first.x, first.y];
     let mut points = vec![first];
-    for pair in nurbs.knots.windows(2) {
+    for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {
@@ -720,7 +717,7 @@ pub(in super::super) fn nurbs_profile_signed_area_twice(
     let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
     let carrier = CurveGeometry::Nurbs(nurbs.clone());
     let mut area_twice = 0.0;
-    for pair in nurbs.knots.windows(2) {
+    for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {

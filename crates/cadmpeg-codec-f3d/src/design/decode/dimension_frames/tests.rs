@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -9,23 +8,17 @@
 )]
 
 use super::{
-    bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
-    find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
-    following_dimension_companion_record_index, indexed_record_containing,
-    is_grouped_recipe_reference_frame, is_paired_recipe_reference_frame,
-    parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-    parse_dimension_null_locus_pair, parse_dimension_presentation_frame, recipe_record_prefix,
+    contiguous_i32_program, find_dimension_locus_groups, find_dimension_locus_pair,
+    find_dimension_null_locus_pair, indexed_record_containing, parse_dimension_annotation_frame,
+    parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
+    parse_dimension_presentation_frame, recipe_record_prefix,
 };
 use crate::design::decode::parameters::parse_design_parameter;
 use crate::design::dimensions::{
-    bind_dimension_loci, null_locus_dimension_definition, remove_dimension_frame_relations,
+    null_locus_dimension_definition, remove_dimension_frame_relations,
 };
 use crate::design::test_support::{parameter_record, push_genesis_block, push_reference};
-use crate::records::{
-    DesignDimensionLocus, DesignParameterOwner, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint,
-};
-use crate::records::{SketchConstraintKind, SketchRelation};
+use crate::records::{DesignParameterOwner, PersistentSubentityTag, SketchRelation};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
@@ -158,7 +151,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: AttributeTarget::Face(FaceId("face-b".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -166,7 +161,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: AttributeTarget::Face(FaceId("face-a".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![999],
@@ -174,7 +171,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: AttributeTarget::Face(FaceId("face-c".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-c").expect("identity grammar"),
+            ),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -182,7 +181,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+            target: AttributeTarget::Edge(
+                EdgeId::mint("test:model:edge#edge-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -190,7 +191,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: AttributeTarget::Edge(EdgeId("edge-c".into())),
+            target: AttributeTarget::Edge(
+                EdgeId::mint("test:model:edge#edge-c").expect("identity grammar"),
+            ),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -201,14 +204,28 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
         &mut bound, &tags, None,
     );
-    assert_eq!(bound.candidate_faces, [FaceId("face-b".into())]);
-    assert_eq!(bound.candidate_edges, [EdgeId("edge-b".into())]);
-    assert_eq!(bound.alternate_selector_faces, [FaceId("face-c".into())]);
-    assert_eq!(bound.alternate_selector_edges, [EdgeId("edge-c".into())]);
+    assert_eq!(
+        bound.candidate_faces,
+        [FaceId::mint("test:model:face#face-b").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.candidate_edges,
+        [EdgeId::mint("test:model:edge#edge-b").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.alternate_selector_faces,
+        [FaceId::mint("test:model:face#face-c").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.alternate_selector_edges,
+        [EdgeId::mint("test:model:edge#edge-c").expect("identity grammar")]
+    );
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("face-a".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -216,7 +233,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("face-b".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -228,7 +247,10 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         &stream_tags,
         Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
     );
-    assert_eq!(bound.candidate_faces, [FaceId("face-a".into())]);
+    assert_eq!(
+        bound.candidate_faces,
+        [FaceId::mint("test:model:face#face-a").expect("identity grammar")]
+    );
 }
 
 #[test]
@@ -573,11 +595,11 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
     assert_eq!(pair.frame_length, 80);
-    assert_eq!(pair.first_geometry_record_index, 192);
-    assert_eq!(pair.first_role, 0);
-    assert_eq!(pair.second_geometry_record_index, 194);
-    assert_eq!(pair.second_role, 1);
-    assert_eq!(pair.paired_class_tag, "273");
+    assert_eq!(pair.loci[0].geometry_index(), 192);
+    assert_eq!(pair.loci[0].role, 0);
+    assert_eq!(pair.loci[1].geometry_index(), 194);
+    assert_eq!(pair.loci[1].role, 1);
+    assert_eq!(pair.paired_class_tag.as_str(), "273");
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(300),
         "40 mm",
@@ -593,7 +615,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
         byte_offset: pair.paired_byte_offset + 59,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 300,
         scope_record_index: 10,
         local_ordinal: 0,
@@ -669,10 +691,10 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
     assert_eq!(pair.frame_length, 74);
-    assert_eq!(pair.null_role, 10);
-    assert_eq!(pair.geometry_record_index, 1109);
-    assert_eq!(pair.geometry_role, 7);
-    assert_eq!(pair.paired_class_tag, "273");
+    assert_eq!(pair.loci[0].role, 10);
+    assert_eq!(pair.loci[1].geometry_index(), 1109);
+    assert_eq!(pair.loci[1].role, 7);
+    assert_eq!(pair.paired_class_tag.as_str(), "273");
 
     assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
 
@@ -689,21 +711,18 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(nested.paired_byte_offset, 85);
 
     let mut axis_pair = pair.clone();
-    axis_pair.null_role = 14;
-    axis_pair.geometry_role = 3;
-    let entity = SketchEntity {
-        id: SketchEntityId("f3d:model:sketch-entity#line".into()),
-        sketch: SketchId("f3d:model:sketch#axis-angle".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    axis_pair.loci[0].role = 14;
+    axis_pair.loci[1].role = 3;
+    let entity = SketchEntity::new(
+        SketchEntityId("f3d:model:sketch-entity#line".into()),
+        SketchId("f3d:model:sketch#axis-angle".into()),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
-    let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#angle".into());
+    );
+    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
+        .expect("identity grammar");
     assert!(matches!(
         null_locus_dimension_definition(
             &axis_pair,
@@ -717,7 +736,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
-        }) if actual_entity == &entity.id && actual_parameter == &parameter
+        }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
     assert!(null_locus_dimension_definition(
         &axis_pair,
@@ -728,7 +747,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         TEST_LINEAR_TOLERANCE,
     )
     .is_none());
-    axis_pair.null_role = 13;
+    axis_pair.loci[0].role = 13;
     assert!(null_locus_dimension_definition(
         &axis_pair,
         &entity,
@@ -739,18 +758,14 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     )
     .is_none());
 
-    let radial_entity = SketchEntity {
-        id: SketchEntityId("f3d:model:sketch-entity:circle".into()),
-        sketch: SketchId("f3d:model:sketch#radial".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let radial_entity = SketchEntity::new(
+        SketchEntityId("f3d:model:sketch-entity:circle".into()),
+        SketchId("f3d:model:sketch#radial".into()),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),
         },
-    };
+    );
     assert!(matches!(
         null_locus_dimension_definition(
             &pair,
@@ -763,7 +778,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         Some(SketchConstraintDefinition::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
-        }) if actual_entity == &radial_entity.id && actual_parameter == &parameter
+        }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
     assert!(null_locus_dimension_definition(
         &pair,
@@ -820,34 +835,54 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     assert_eq!(group.loci[0].role, 2);
     assert_eq!(group.loci[1].geometry_record_index, 217);
     assert_eq!(group.loci[1].role, 1);
-    assert_eq!(group.return_members, [217, 175]);
-    assert_eq!(group.next_class_tag, "314");
+    assert_eq!(
+        group
+            .loci
+            .iter()
+            .map(|locus| locus.returned.value)
+            .collect::<Vec<_>>(),
+        [217, 175]
+    );
+    assert_eq!(group.next_class_tag.as_str(), "314");
     assert_eq!(group.next_record_index, 250);
 
     let relation_at = |stream: &str, byte_offset| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
         record_index: 249,
-        class_tag: "286".into(),
+        class_tag: crate::records::DesignClassTag::try_from("286".to_owned()).unwrap(),
         byte_offset,
         state_offset: 66,
         owner_reference: 172,
-        owner_entity_id: "0_172".into(),
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_172").unwrap()),
+        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: vec![175, 217],
-        resolved_members: Vec::new(),
-        member_offsets: vec![25, 40],
+        members: ([(175, 25), (217, 40)]
+            .into_iter()
+            .map(
+                |(record_index, offset)| crate::records::SketchRelationMember {
+                    reference: crate::records::SketchRelationReference::Index(record_index),
+                    offset,
+                    relation_ordinal: Some(0),
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 56,
-        state: 0,
-        constraint_kinds: vec![SketchConstraintKind::Coincident],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
+        definition: crate::records::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![217, 175],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: vec![79, 90],
+        return_members: ([(217, 79), (175, 90)]
+            .into_iter()
+            .map(
+                |(record_index, offset)| crate::records::SketchRelationReturnMember {
+                    reference: crate::records::SketchRelationReference::Index(record_index),
+                    offset,
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: bytes[..101].to_vec(),
     };
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
@@ -928,8 +963,15 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.entity_genesis, 0x202);
     assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
     assert_eq!(frame.annotation_bytes, [0xaa, 0xbb, 0xcc]);
-    assert_eq!(frame.operands[0].geometry_record_index, 0);
-    assert_eq!(frame.return_members, [376, 354]);
+    assert_eq!(frame.operands[0].geometry_record_index, None);
+    assert_eq!(
+        frame
+            .return_members
+            .iter()
+            .map(|member| member.value.get())
+            .collect::<Vec<_>>(),
+        [376, 354]
+    );
     assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
     assert_eq!(frame.owner_reference, 201);
 
@@ -981,13 +1023,13 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         &HashSet::from([String::from("281")]),
     )
     .expect("direct dimension presentation frame");
-    assert_eq!(frame.class_tag, "314");
+    assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
     assert_eq!(frame.frame_length, paired_offset as u64);
     assert_eq!(frame.presentation_byte_offset, presentation_offset as u64);
     assert_eq!(frame.presentation_bytes, [0xaa, 0xbb, 0xcc]);
-    assert_eq!(frame.operands[0].geometry_record_index, 306);
-    assert_eq!(frame.operands[1].geometry_record_index, 331);
+    assert_eq!(frame.operands[0].geometry_record_index.get(), 306);
+    assert_eq!(frame.operands[1].geometry_record_index.get(), 331);
     assert_eq!(frame.owner_reference, 270);
 
     assert!(parse_dimension_presentation_frame(

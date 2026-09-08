@@ -8,14 +8,11 @@ use super::{
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
-    FeatureInputName, FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection,
-    SketchInputEntity, SketchInputKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName, FeatureInputScalar,
+    FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, PatternForm, PatternKind, PatternSeed,
-};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -35,7 +32,6 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         xml_tag: xml_tag.into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal,
         name: name.into(),
         kind: name.into(),
@@ -95,7 +91,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         name: name.into(),
         value: 0.001,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     };
     let mut lane = FeatureInputLane {
@@ -137,8 +133,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
 
@@ -171,7 +166,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ordinal: 0,
         offset: 0,
         selector: 0,
-        endpoint_selector: None,
+        kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
         feature_ref: "mirror-native".into(),
         producer_feature_refs: Vec::new(),
@@ -199,11 +194,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         sketch_entities: Vec::new(),
     };
     let mut feature = Feature {
-        id: FeatureId("mirror".into()),
+        id: FeatureId::mint("mirror").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -212,9 +206,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Mirror),
-            },
+            pattern: PatternKind::UnresolvedMirror,
         },
         native_ref: Some("mirror-native".into()),
     };
@@ -230,7 +222,6 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("50".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Mirror".into(),
             kind: "Mirror".into(),
@@ -244,19 +235,23 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         }],
     };
     let face = Face {
-        id: FaceId("face".into()),
-        shell: ShellId("shell".into()),
-        surface: SurfaceId("surface".into()),
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,
     };
-    let mut transform = cadmpeg_ir::transform::Transform::identity();
-    transform.rows[0][3] = 12.0;
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 12.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("affine transform");
     let surface = Surface {
-        id: SurfaceId("surface".into()),
+        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Transformed {
             basis: Box::new(SurfaceGeometry::Plane {
                 origin: Point3::new(1.0, 2.0, 3.0),
@@ -272,7 +267,14 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7)],
+        &[(
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 45,
+                local_id: 7,
+                trailing_fields: Vec::new(),
+            },
+        )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
@@ -297,9 +299,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
 
     feature.definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(PatternForm::Mirror),
-        },
+        pattern: PatternKind::UnresolvedMirror,
     };
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
@@ -307,32 +307,57 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&nonmirror_history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7)],
+        &[(
+            cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+            crate::brep::PersistentFaceIdentity {
+                feature_source_id: 45,
+                local_id: 7,
+                trailing_fields: Vec::new(),
+            },
+        )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
     );
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Unresolved { .. },
+            pattern: PatternKind::UnresolvedMirror,
             ..
         }
     ));
 
     let mut second_face = face.clone();
-    second_face.id = FaceId("other-face".into());
+    second_face.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     bind_mirror_surface_planes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-        &[("face".into(), 45, 7), ("other-face".into(), 45, 7)],
+        &[
+            (
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                crate::brep::PersistentFaceIdentity {
+                    feature_source_id: 45,
+                    local_id: 7,
+                    trailing_fields: Vec::new(),
+                },
+            ),
+            (
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#other-face")
+                    .expect("identity grammar"),
+                crate::brep::PersistentFaceIdentity {
+                    feature_source_id: 45,
+                    local_id: 7,
+                    trailing_fields: Vec::new(),
+                },
+            ),
+        ],
         &[face, second_face],
         std::slice::from_ref(&surface),
     );
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Unresolved { .. },
+            pattern: PatternKind::UnresolvedMirror,
             ..
         }
     ));
@@ -352,7 +377,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some("228".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "CirPattern1".into(),
         kind: "CirPattern".into(),
@@ -370,7 +394,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some("224".into()),
-        parent_source_id: None,
         ordinal: 0,
         name: "HoleWizard1".into(),
         kind: "HoleWizard".into(),
@@ -435,11 +458,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     };
     let mut features = vec![
         Feature {
-            id: FeatureId("pattern".into()),
+            id: FeatureId::mint("pattern").expect("identity grammar"),
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -448,18 +470,15 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::Unresolved {
-                    form: Some(PatternForm::Circular),
-                },
+                pattern: PatternKind::UnresolvedCircular,
             },
             native_ref: Some("pattern-native".into()),
         },
         Feature {
-            id: FeatureId("seed".into()),
+            id: FeatureId::mint("seed").expect("identity grammar"),
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -468,7 +487,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::Unresolved { form: None },
+                pattern: PatternKind::Unresolved,
             },
             native_ref: Some("seed-native".into()),
         },
@@ -480,11 +499,14 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         std::slice::from_mut(&mut lane),
     );
 
-    assert_eq!(features[0].dependencies, vec![FeatureId("seed".into())]);
+    assert_eq!(
+        features[0].dependencies,
+        vec![FeatureId::mint("seed").expect("identity grammar")]
+    );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Pattern { seeds, pattern: PatternKind::Unresolved { form: Some(PatternForm::Circular) } }
-            if seeds == &[PatternSeed::Feature(FeatureId("seed".into()))]
+        FeatureDefinition::Pattern { seeds, pattern: PatternKind::UnresolvedCircular }
+            if seeds == &[PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))]
     ));
 }
 
@@ -526,7 +548,6 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some("228".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "CirPattern1".into(),
         kind: "CirPattern".into(),
@@ -573,22 +594,21 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         sketch_entities: Vec::new(),
     };
     let mut features = vec![Feature {
-        id: FeatureId("pattern".into()),
+        id: FeatureId::mint("pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        parent: None,
-        dependencies: vec![FeatureId("seed".into())],
+        dependencies: vec![FeatureId::mint("seed").expect("identity grammar")],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(FeatureId("seed".into()))],
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Circular),
-            },
+            seeds: vec![PatternSeed::Feature(
+                FeatureId::mint("seed").expect("identity grammar"),
+            )],
+            pattern: PatternKind::UnresolvedCircular,
         },
         native_ref: Some("pattern-native".into()),
     }];
@@ -643,8 +663,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -716,8 +735,7 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         kind,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -765,7 +783,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("7".into()),
-        parent_source_id: None,
         ordinal: 0,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -788,7 +805,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         ordinal: 0,
         offset,
         name: name.into(),
-        role: FeatureInputClassRole::Native,
     };
     let name = |index, value: &str| FeatureInputName {
         id: format!("name-{index}"),
@@ -808,7 +824,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         name: format!("name-{index}"),
         value,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     };
     let entity = |id: &str, offset| SketchInputEntity {
@@ -822,8 +838,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),

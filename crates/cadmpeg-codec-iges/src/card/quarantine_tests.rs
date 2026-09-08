@@ -5,8 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;
@@ -100,7 +99,7 @@ fn a_line_carrying_two_cards_divides_into_cards_with_one_framing_loss() {
 
     assert_eq!(decoded_position(&result), COORDINATES);
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["cards"].len(),
         7
     );
     assert_eq!(framing_losses(result.report()), 1);
@@ -127,7 +126,10 @@ fn a_misnumbered_section_charges_one_framing_loss_and_keeps_positional_identity(
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["entities"][0].id(), "iges:entity:directory#1");
+    assert_eq!(
+        native.arenas()["entities"][0].id(),
+        "iges:entity:directory#1"
+    );
     assert_eq!(decoded_position(&result), COORDINATES);
     assert_eq!(framing_losses(result.report()), 2);
     assert_eq!(result.report().losses.len(), 2);
@@ -155,9 +157,9 @@ fn strict_decode_refuses_recovered_framing_that_salvage_admits() {
             .decode(&mut Cursor::new(bytes.clone()), &strict_options())
             .unwrap_err();
         match error {
-            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-                loss_code,
-                IgesLossCode::CardFramingRecovered.kind().as_str()
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+                rejection.loss().code.to_string(),
+                IgesLossCode::CardFramingRecovered.kind().to_string()
             ),
             other => panic!("expected a strict refusal, got {other:?}"),
         }

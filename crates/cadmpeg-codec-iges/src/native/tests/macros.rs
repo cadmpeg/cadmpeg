@@ -49,7 +49,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let native = result.ir().native.namespace("iges").unwrap();
-        let definitions = &native.arenas["macro_definitions"];
+        let definitions = &native.arenas()["macro_definitions"];
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].fields()["defined_entity_type"], 621);
         assert_eq!(
@@ -62,7 +62,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         );
         assert_eq!(definitions[0].fields()["end_statement"], json!(b"ENDM"));
 
-        let instances = &native.arenas["macro_instances"];
+        let instances = &native.arenas()["macro_instances"];
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].fields()["entity_type"], 621);
         assert_eq!(
@@ -77,7 +77,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
                 .len(),
             2
         );
-        assert!(!result.ir().native.namespace("iges").unwrap().arenas["entities"].is_empty());
+        assert!(!result.ir().native.namespace("iges").unwrap().arenas()["entities"].is_empty());
         assert!(!result
             .report()
             .losses
@@ -107,8 +107,8 @@ fn malformed_macro_definition_is_quarantined_without_outside_envelope_loss() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    assert!(!native.arenas.contains_key("macro_definitions"));
-    assert_eq!(native.arenas["quarantined_parameter_records"].len(), 1);
+    assert!(!native.arenas().contains_key("macro_definitions"));
+    assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::ParameterDataQuarantined.kind()
             && loss.message.contains("no ENDM statement")
@@ -149,7 +149,7 @@ fn macro_instance_retains_a_type416_library_reference() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let instances = &result.ir().native.namespace("iges").unwrap().arenas["macro_instances"];
+    let instances = &result.ir().native.namespace("iges").unwrap().arenas()["macro_instances"];
     assert_eq!(instances.len(), 1);
     assert!(instances[0].fields()["macro_definition"].is_null());
     assert_eq!(

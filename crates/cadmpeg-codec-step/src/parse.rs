@@ -8,12 +8,16 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem::size_of;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+
+use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
+
+pub(crate) mod implementation_level;
 
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 use crate::parse::schema_identifier::{
@@ -24,7 +28,6 @@ pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 #[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
 pub enum Value {
     /// Reference to a DATA entity instance.
@@ -66,13 +69,57 @@ pub struct PartialRecord {
     pub parameters: Vec<Value>,
 }
 
+/// The nonempty partial population of one entity instance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordPartials(Vec<PartialRecord>);
+
+impl RecordPartials {
+    pub fn single(first: PartialRecord) -> Self {
+        Self(vec![first])
+    }
+
+    pub fn first(&self) -> &PartialRecord {
+        &self.0[0]
+    }
+}
+
+impl std::ops::Deref for RecordPartials {
+    type Target = [PartialRecord];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RecordPartials {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a RecordPartials {
+    type Item = &'a PartialRecord;
+    type IntoIter = std::slice::Iter<'a, PartialRecord>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut RecordPartials {
+    type Item = &'a mut PartialRecord;
+    type IntoIter = std::slice::IterMut<'a, PartialRecord>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 /// One DATA entity instance with its exact source extent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawRecord {
-    /// Numeric entity-instance name without `#`.
-    pub id: u64,
     /// One leaf for a simple instance or all leaves for a complex instance.
-    pub partials: Vec<PartialRecord>,
+    pub partials: RecordPartials,
     /// Half-open byte range from instance name through semicolon.
     pub span: Range<usize>,
 }
@@ -99,7 +146,6 @@ pub struct DataSection {
 
 /// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorEntry {
     /// Local resource name.
     pub name: String,
@@ -111,7 +157,6 @@ pub struct AnchorEntry {
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorTag {
     /// Tag name, preserving source case.
     pub name: String,
@@ -128,45 +173,6 @@ pub struct ReferenceEntry {
     pub uri: String,
 }
 
-/// One Part 21 edition-3 detached CMS signature section.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignatureSection {
-    /// Complete `SIGNATURE;...ENDSEC;` byte range.
-    pub span: Range<usize>,
-    /// Base64 payload byte range between the section delimiters.
-    pub payload: Range<usize>,
-    /// Exchange byte range authenticated by this signature before alphabet
-    /// filtering. The range starts at `ISO-10303-21;` and ends at the `S` in
-    /// this section's `SIGNATURE;` token.
-    pub signed: Range<usize>,
-    /// Structurally admitted, decoded CMS `SignedData` payload.
-    ///
-    /// This is not a cryptographic verification result. A downstream verifier
-    /// must apply the CMS content, key, and caller-supplied trust checks.
-    pub cms: Vec<u8>,
-}
-
-impl SignatureSection {
-    /// Returns the Part 21 alphabet bytes covered by this signature.
-    ///
-    /// The source range is retained separately because the signature input is
-    /// defined by the alphabet projection, not by transport controls such as
-    /// line endings. A CMS verifier supplies these bytes as the detached
-    /// content. `None` means that the supplied source does not contain the
-    /// recorded range.
-    #[allow(dead_code)] // Alphabet projection for signature verification; not on the decode path.
-    pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
-        Some(
-            input
-                .get(self.signed.clone())?
-                .iter()
-                .copied()
-                .filter(|byte| !byte.is_ascii_control())
-                .collect(),
-        )
-    }
-}
-
 /// Parsed exchange structure and global DATA record graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
@@ -180,11 +186,10 @@ pub struct Exchange {
     pub data: Vec<DataSection>,
     /// Complete SIGNATURE section byte ranges in source order.
     pub signatures: Vec<Range<usize>>,
-    /// Parsed signature payload ranges and detached signed-content ranges in
-    /// source order.
-    pub signature_sections: Vec<SignatureSection>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
+    schema_identifiers: Vec<AdmittedSchemaIdentifier>,
+    implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
 }
 
@@ -231,6 +236,33 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
+    /// Header-admitted `FILE_SCHEMA` identifiers in source order.
+    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
+        self.schema_identifiers
+            .iter()
+            .map(|identifier| identifier.text().to_owned())
+            .collect()
+    }
+
+    /// Numeric object-identifier components for the primary schema identifier.
+    pub(crate) fn primary_schema_object_identifier(&self) -> Option<Vec<u64>> {
+        self.schema_identifiers
+            .first()
+            .and_then(AdmittedSchemaIdentifier::numeric_object_identifier)
+    }
+
+    /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
+    pub(crate) fn implementation_level(&self) -> &str {
+        self.implementation_level.text()
+    }
+
+    pub(crate) fn decode_string(
+        &self,
+        bytes: &[u8],
+    ) -> Result<String, crate::strings::StringError> {
+        crate::strings::decode_with_level(bytes, self.implementation_level.level())
+    }
+
     /// Release semantic source structures before retained opaque bytes are copied.
     pub(crate) fn release_source_graph(&mut self) {
         self.header.clear();
@@ -238,8 +270,8 @@ impl Exchange {
         self.references.clear();
         self.data.clear();
         self.signatures.clear();
-        self.signature_sections.clear();
         self.records.clear();
+        self.schema_identifiers.clear();
         self.entity_ids = EntityIndex::default();
     }
 
@@ -359,7 +391,6 @@ pub enum ParseError {
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ParseDiagnosticKind {
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
@@ -368,6 +399,9 @@ pub enum ParseDiagnosticKind {
     /// A `FILE_SCHEMA` object identifier has a component outside the range
     /// that its position permits.
     SchemaObjectIdentifierOutOfRange,
+    /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
+    /// not implemented; parsing continued with the edition-3 class-3 grammar.
+    ImplementationLevelUnverified,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -405,8 +439,7 @@ fn parse_inner(
         last_end: 0,
         depth: 0,
         diagnostics: Vec::new(),
-        omitted_entity_name_count: 0,
-        first_omitted_entity_name_offset: None,
+        omitted_entity_names: None,
         budget,
     };
     parser.current = parser.lex_next()?;
@@ -428,35 +461,13 @@ struct Parser<'input, 'ctx, 'arena> {
     last_end: usize,
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
-    omitted_entity_name_count: usize,
-    first_omitted_entity_name_offset: Option<usize>,
+    omitted_entity_names: Option<(usize, NonZeroUsize)>,
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImplementationLevel {
-    LegacyEdition1,
-    LegacyEdition2,
-    Edition3Class1,
-    Edition3Class2,
-    Edition3Class3,
-}
-
-impl ImplementationLevel {
-    fn is_edition3(self) -> bool {
-        matches!(
-            self,
-            Self::Edition3Class1 | Self::Edition3Class2 | Self::Edition3Class3
-        )
-    }
-
-    fn allows_edition3_sections(self) -> bool {
-        matches!(self, Self::Edition3Class2 | Self::Edition3Class3)
-    }
-
-    fn allows_class3_occurrences(self) -> bool {
-        matches!(self, Self::Edition3Class3)
-    }
+struct HeaderAdmission {
+    implementation_level: DeclaredImplementationLevel,
+    schema_identifiers: Vec<AdmittedSchemaIdentifier>,
 }
 
 /// Return whether a simple geometry, topology, or representation carrier
@@ -591,7 +602,6 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
 
 impl Parser<'_, '_, '_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-        let exchange_start = self.current_offset();
         self.name("ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
@@ -612,33 +622,29 @@ impl Parser<'_, '_, '_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (implementation_level, admitted_schema_identifiers) = match validate_header(&header) {
+        let (header_admission, header_diagnostic) = match validate_header(&header) {
             Ok(admitted) => admitted,
             Err(message) => return self.err(message),
         };
+        let implementation_level = header_admission.implementation_level.level();
+        self.diagnostics.extend(header_diagnostic);
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
-                &admitted_schema_identifiers,
+                &header_admission.schema_identifiers,
                 header[2].offset,
             ));
-        let schema_identifiers = schema_identifiers(&admitted_schema_identifiers);
+        let schema_names_for_matching =
+            schema_names_for_matching(&header_admission.schema_identifiers);
         if let Err(message) =
-            validate_header_sections(implementation_level, &header, &schema_identifiers)
+            validate_header_sections(implementation_level, &header, &schema_names_for_matching)
         {
             return self.err(message);
         }
         let mut anchors = Vec::new();
-        if !implementation_level.allows_edition3_sections()
-            && (self.peek_name("ANCHOR") || self.peek_name("REFERENCE"))
-        {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 => "2;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::LegacyEdition2 => "3;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::Edition3Class1 => "4;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
-                    unreachable!()
-                }
-            });
+        if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
+            if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
+                return self.err(&format!("{level} forbids ANCHOR and REFERENCE sections"));
+            }
         }
         if self.peek_name("ANCHOR") {
             self.lexer.set_allow_print_controls(false);
@@ -749,7 +755,7 @@ impl Parser<'_, '_, '_> {
                 self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
                 if let Err(message) = valid_data_parameters(
                     &parameters,
-                    &schema_identifiers,
+                    &schema_names_for_matching,
                     implementation_level,
                     &mut data_section_names,
                 ) {
@@ -765,8 +771,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
-                let record = self.record()?;
-                let id = record.id;
+                let (id, record) = self.record()?;
                 self.charge_retained(
                     btree_node_storage::<u64, RawRecord>(),
                     "step_parse_record_table_storage",
@@ -791,7 +796,7 @@ impl Parser<'_, '_, '_> {
         if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
-            && schema_identifiers.len() != 1
+            && schema_names_for_matching.len() != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -802,16 +807,10 @@ impl Parser<'_, '_, '_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
-        let mut signature_sections = Vec::new();
-        if !implementation_level.allows_edition3_sections() && self.peek_name("SIGNATURE") {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
-                ImplementationLevel::LegacyEdition2 => "3;1 forbids SIGNATURE sections",
-                ImplementationLevel::Edition3Class1 => "4;1 forbids SIGNATURE sections",
-                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
-                    unreachable!()
-                }
-            });
+        if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
+            if self.peek_name("SIGNATURE") {
+                return self.err(&format!("{level} forbids SIGNATURE sections"));
+            }
         }
         while self.peek_name("SIGNATURE") {
             let start = self.current_offset();
@@ -829,15 +828,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            let mut cms = decode_signature_payload(self.lexer.input(), &payload)?;
-            cms.shrink_to_fit();
-            self.charge_vec_storage(&cms, "step_parse_signature_storage")?;
-            signature_sections.push(SignatureSection {
-                span: span.clone(),
-                payload,
-                signed: exchange_start..start,
-                cms,
-            });
+            crate::signature::decode_payload(self.lexer.input(), &payload)?;
             signatures.push(span);
         }
         if self.current.is_some() {
@@ -890,23 +881,26 @@ impl Parser<'_, '_, '_> {
         }
         // Validate the source occurrence class before local REFERENCES can
         // replace a forbidden token with an ordinary value.
-        let contains_forbidden_class3_occurrence =
-            !implementation_level.allows_class3_occurrences()
-                && (header
-                    .iter()
-                    .any(|record| record.parameters.iter().any(contains_class3_occurrence))
-                    || anchors.iter().any(|anchor| {
-                        contains_class3_occurrence(&anchor.value)
-                            || anchor
-                                .tags
-                                .iter()
-                                .any(|tag| contains_class3_occurrence(&tag.value))
-                    })
-                    || records.values().any(|record| {
-                        record.partials.iter().any(|partial| {
-                            partial.parameters.iter().any(contains_class3_occurrence)
+        let class3_restriction =
+            implementation_level
+                .class3_occurrence_restriction()
+                .filter(|_| {
+                    header
+                        .iter()
+                        .any(|record| record.parameters.iter().any(contains_class3_occurrence))
+                        || anchors.iter().any(|anchor| {
+                            contains_class3_occurrence(&anchor.value)
+                                || anchor
+                                    .tags
+                                    .iter()
+                                    .any(|tag| contains_class3_occurrence(&tag.value))
                         })
-                    }));
+                        || records.values().any(|record| {
+                            record.partials.iter().any(|partial| {
+                                partial.parameters.iter().any(contains_class3_occurrence)
+                            })
+                        })
+                });
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
@@ -924,9 +918,12 @@ impl Parser<'_, '_, '_> {
                     allocation_bytes(added_capacity, size_of::<Value>()),
                     "step_omitted_name_recovery_storage",
                 )?;
-                self.omitted_entity_name_count += 1;
-                self.first_omitted_entity_name_offset
-                    .get_or_insert(record.span.start);
+                match &mut self.omitted_entity_names {
+                    Some((_, count)) => *count = count.saturating_add(1),
+                    None => {
+                        self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN));
+                    }
+                }
             }
         }
         let mut refs = Vec::new();
@@ -986,16 +983,8 @@ impl Parser<'_, '_, '_> {
                 return Self::err_at(record.span.start, "unresolved value instance reference");
             }
         }
-        if contains_forbidden_class3_occurrence {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
-                    "historical implementation levels forbid edition-3 occurrence names"
-                }
-                ImplementationLevel::Edition3Class1 | ImplementationLevel::Edition3Class2 => {
-                    "this implementation level forbids value instances and EXPRESS constants"
-                }
-                ImplementationLevel::Edition3Class3 => unreachable!(),
-            });
+        if let Some(message) = class3_restriction {
+            return self.err(message);
         }
         let has_resource_value = header
             .iter()
@@ -1009,13 +998,12 @@ impl Parser<'_, '_, '_> {
         if has_resource_value {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
-        if let Some(offset) = self.first_omitted_entity_name_offset {
+        if let Some((offset, count)) = self.omitted_entity_names {
             self.diagnostics.push(ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::OmittedEntityName,
                 message: format!(
-                    "recovered {} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name",
-                    self.omitted_entity_name_count
+                    "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
                 ),
             });
         }
@@ -1025,7 +1013,6 @@ impl Parser<'_, '_, '_> {
             compact_vec(&mut reference_entries),
             compact_vec(&mut data),
             compact_vec(&mut signatures),
-            compact_vec(&mut signature_sections),
         ] {
             self.charge_retained(capacity, "step_parse_exchange_storage")?;
         }
@@ -1036,15 +1023,16 @@ impl Parser<'_, '_, '_> {
                 references: reference_entries,
                 data,
                 signatures,
-                signature_sections,
                 records,
+                schema_identifiers: header_admission.schema_identifiers,
+                implementation_level: header_admission.implementation_level,
                 entity_ids: EntityIndex::default(),
             },
             self.diagnostics,
         ))
     }
 
-    fn record(&mut self) -> Result<RawRecord, ParseError> {
+    fn record(&mut self) -> Result<(u64, RawRecord), ParseError> {
         let start = self.current_offset();
         let TokenKind::Instance(id) = self.next_kind()? else {
             return self.err("expected instance name");
@@ -1053,7 +1041,7 @@ impl Parser<'_, '_, '_> {
         self.charge_entities(1, "step_parse_record")?;
         let partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = Vec::new();
+            let mut parts = vec![self.partial()?];
             while !self.peek(&TokenKind::RParen) {
                 parts.push(self.partial()?);
             }
@@ -1088,17 +1076,19 @@ impl Parser<'_, '_, '_> {
                     ),
                 });
             }
-            parts
+            RecordPartials(parts)
         } else {
-            vec![self.partial()?]
+            RecordPartials::single(self.partial()?)
         };
-        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
+        self.charge_vec_storage(&partials.0, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
-        Ok(RawRecord {
+        Ok((
             id,
-            partials,
-            span: start..self.previous_end(),
-        })
+            RawRecord {
+                partials,
+                span: start..self.previous_end(),
+            },
+        ))
     }
 
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {
@@ -1173,10 +1163,7 @@ impl Parser<'_, '_, '_> {
                     value.shrink_to_fit();
                     Value::String(value)
                 }
-                TokenKind::Binary(mut value) => {
-                    value.data.shrink_to_fit();
-                    Value::Binary(value)
-                }
+                TokenKind::Binary(value) => Value::Binary(value),
                 TokenKind::Resource(mut value) => {
                     value.shrink_to_fit();
                     Value::Resource(value)
@@ -1353,7 +1340,7 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Enumeration(value)
         | Value::Resource(value) => value.capacity(),
         Value::String(value) => value.capacity(),
-        Value::Binary(value) => value.data.len(),
+        Value::Binary(value) => value.data().len(),
         Value::List(values) => values.capacity().saturating_mul(size_of::<Value>()),
         Value::Typed(name, _) => name.capacity().saturating_add(size_of::<Value>()),
         Value::Reference(_)
@@ -1383,7 +1370,7 @@ fn value_storage_bytes(value: &Value) -> u64 {
 /// identifier list.
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<(ImplementationLevel, Vec<AdmittedSchemaIdentifier>), &'static str> {
+) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1407,22 +1394,24 @@ fn validate_header(
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let implementation_level = match description.get(1) {
+    let declaration = match description.get(1) {
         Some(Value::String(value)) => {
-            let Ok(level) = crate::strings::decode(value) else {
+            let Ok(text) = crate::strings::decode(value) else {
                 return Err("FILE_DESCRIPTION has an unsupported implementation level");
             };
-            match level.as_str() {
-                "1" | "2" | "2;1" | "2;2" => ImplementationLevel::LegacyEdition1,
-                "3;1" | "3;2" => ImplementationLevel::LegacyEdition2,
-                "4;1" => ImplementationLevel::Edition3Class1,
-                "4;2" => ImplementationLevel::Edition3Class2,
-                "4;3" => ImplementationLevel::Edition3Class3,
-                _ => return Err("FILE_DESCRIPTION has an unsupported implementation level"),
-            }
+            DeclaredImplementationLevel::new(text)
         }
         _ => return Err("FILE_DESCRIPTION has invalid parameters"),
     };
+    let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
+        offset: header[0].offset,
+        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+        message: format!(
+            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+            declaration.text()
+        ),
+    });
+    let implementation_level = declaration.level();
     if !is_decodable_string_list(description.first(), implementation_level)
         || !is_decodable_string(
             description.get(1).expect("FILE_DESCRIPTION has two values"),
@@ -1527,7 +1516,7 @@ fn validate_header(
         let Value::String(bytes) = value else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        let Ok(identifier) = decode_string(bytes, implementation_level) else {
+        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
@@ -1538,7 +1527,13 @@ fn validate_header(
         };
         admitted.push(identifier);
     }
-    Ok((implementation_level, admitted))
+    Ok((
+        HeaderAdmission {
+            implementation_level: declaration,
+            schema_identifiers: admitted,
+        },
+        implementation_diagnostic,
+    ))
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
@@ -1579,18 +1574,14 @@ fn validate_header_sections(
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
         return Err("2;1 forbids SECTION_CONTEXT in HEADER");
     }
-    if matches!(
-        implementation_level,
-        ImplementationLevel::LegacyEdition2 | ImplementationLevel::Edition3Class1
-    ) && has("SCHEMA_POPULATION")
-    {
-        return Err(match implementation_level {
-            ImplementationLevel::LegacyEdition2 => "3;1 forbids SCHEMA_POPULATION in HEADER",
-            ImplementationLevel::Edition3Class1 => "4;1 forbids SCHEMA_POPULATION in HEADER",
-            ImplementationLevel::LegacyEdition1
-            | ImplementationLevel::Edition3Class2
-            | ImplementationLevel::Edition3Class3 => unreachable!(),
-        });
+    match implementation_level {
+        ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
+            return Err("3;1 forbids SCHEMA_POPULATION in HEADER");
+        }
+        ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION") => {
+            return Err("4;1 forbids SCHEMA_POPULATION in HEADER");
+        }
+        _ => {}
     }
 
     let mut user_defined = false;
@@ -1937,49 +1928,6 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
     quantum_len == 0
 }
 
-fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let mut compact = Vec::with_capacity(payload.len());
-    let mut at = payload.start;
-    while at < payload.end {
-        if input[at].is_ascii_control() || input[at] == b' ' {
-            at += 1;
-            continue;
-        }
-        if let Some(end) = crate::lex::print_control_end(input, at) {
-            if end <= payload.end {
-                at = end;
-                continue;
-            }
-        }
-        if input.get(at..at + 2) == Some(b"/*") {
-            let body = at + 2;
-            if let Some(end) = input[body..payload.end]
-                .windows(2)
-                .position(|window| window == b"*/")
-            {
-                at = body + end + 2;
-                continue;
-            }
-        }
-        compact.push(input[at]);
-        at += 1;
-    }
-    let cms = STANDARD
-        .decode(compact)
-        .map_err(|error| ParseError::Syntax {
-            offset: payload.start,
-            message: format!("invalid SIGNATURE Base64 payload: {error}"),
-        })?;
-    // SG-04: this is a structural detached-CMS gate. It does not compute the
-    // Part 21 alphabet digest, verify a signer key, or apply caller policy;
-    // the codec retains an admitted signature as opaque source data.
-    crate::signature::validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
-        offset: payload.start,
-        message: format!("invalid detached CMS SIGNATURE payload: {message}"),
-    })?;
-    Ok(cms)
-}
-
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
     let Value::String(bytes) = value else {
         return None;
@@ -1988,7 +1936,7 @@ fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> O
 }
 
 fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Option<String> {
-    decode_string(bytes, implementation_level).ok()
+    crate::strings::decode_with_level(bytes, implementation_level).ok()
 }
 
 fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
@@ -2067,12 +2015,12 @@ fn valid_data_parameters(
     let [Value::String(schema_name)] = schema.as_slice() else {
         return Err("DATA section parameters must contain a name and one schema");
     };
-    let section_name = decode_string(section_name, implementation_level)
+    let section_name = crate::strings::decode_with_level(section_name, implementation_level)
         .map_err(|_| "DATA section parameters contain an invalid string")?;
     if !section_names.insert(section_name) {
         return Err("DATA section names must be unique");
     }
-    let schema_name = decode_string(schema_name, implementation_level)
+    let schema_name = crate::strings::decode_with_level(schema_name, implementation_level)
         .map_err(|_| "DATA section parameters contain an invalid string")?;
     if !valid_schema_identifier(&schema_name)
         || !schema_identifier_matches(schema_identifiers, &schema_name)
@@ -2083,25 +2031,11 @@ fn valid_data_parameters(
 }
 
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
-fn schema_identifiers(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
+fn schema_names_for_matching(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
     admitted
         .iter()
         .map(|identifier| identifier.text().to_ascii_uppercase())
         .collect()
-}
-
-fn decode_string(
-    bytes: &[u8],
-    implementation_level: ImplementationLevel,
-) -> Result<String, crate::strings::StringError> {
-    match implementation_level {
-        ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
-            crate::strings::decode(bytes)
-        }
-        ImplementationLevel::Edition3Class1
-        | ImplementationLevel::Edition3Class2
-        | ImplementationLevel::Edition3Class3 => crate::strings::decode_utf8(bytes),
-    }
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {

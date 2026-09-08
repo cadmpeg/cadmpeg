@@ -69,7 +69,7 @@ pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -
         && left.subtype == right.subtype
         && left.value.to_bits() == right.value.to_bits()
         && left.precision == right.precision
-        && left.display_text == right.display_text
+        && left.display_text() == right.display_text()
         && left.basic == right.basic
         && left.inspection == right.inspection
         && left.reference_only == right.reference_only
@@ -216,15 +216,15 @@ pub(crate) fn patch_payload(
         if record.item_count != 1 {
             continue;
         }
-        let mut parameters = ir.model.parameters.iter().filter(|parameter| {
-            parameter.pmi.as_ref().is_some_and(|pmi| {
-                pmi.native_ref == record.id
-                    || records_by_id
-                        .get(pmi.native_ref.as_str())
-                        .is_some_and(|bound| equivalent_dimensions(record, bound))
-            })
+        let mut parameters = ir.model.parameters.iter().filter_map(|parameter| {
+            let semantic = parameter.pmi.as_ref()?;
+            (semantic.native_ref == record.id
+                || records_by_id
+                    .get(semantic.native_ref.as_str())
+                    .is_some_and(|bound| equivalent_dimensions(record, bound)))
+            .then_some((parameter, semantic))
         });
-        let Some(parameter) = parameters.next() else {
+        let Some((parameter, semantic)) = parameters.next() else {
             continue;
         };
         if parameters.next().is_some() {
@@ -233,7 +233,6 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
-        let semantic = parameter.pmi.as_ref().expect("filtered above");
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
@@ -287,11 +286,10 @@ pub(crate) fn patch_payload(
                 &record.id,
             )?;
         }
-        if semantic.display_text != record.display_text {
-            let (Some(offset), Some(text), Some(previous)) = (
-                record.display_text_offset,
+        if semantic.display_text.as_deref() != record.display_text() {
+            let (Some((previous, offset)), Some(text)) = (
+                record.display_text.as_ref(),
                 semantic.display_text.as_deref(),
-                record.display_text.as_deref(),
             ) else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes optional display text",
@@ -304,7 +302,7 @@ pub(crate) fn patch_payload(
                     record.id
                 )));
             }
-            patch_bytes(payload, offset, text.as_bytes(), &record.id)?;
+            patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
         }
     }
     Ok(())
@@ -413,7 +411,7 @@ pub(crate) fn apply_to_parameters(
         let semantic = ParameterPmi {
             subtype,
             precision: record.precision,
-            display_text: record.display_text.clone(),
+            display_text: record.display_text().map(str::to_owned),
             basic: record.basic,
             inspection: record.inspection,
             reference_only: record.reference_only,
@@ -433,7 +431,8 @@ pub(crate) fn apply_to_parameters(
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
         parameters.push(DesignParameter {
-            id: ParameterId(format!("sldprt:model:parameter#pmi:{}", record.guid)),
+            id: ParameterId::mint(format!("sldprt:model:parameter#pmi:{}", record.guid))
+                .expect("identity grammar"),
             owner: Some(owner.id.clone()),
             ordinal,
             name: name.to_string(),
@@ -454,9 +453,6 @@ struct SpannedValue {
     kind: ValueKind,
     /// Absolute offset of this value's marker byte.
     start: usize,
-    /// Exclusive end offset of this value (byte-range contract for visitors).
-    #[allow(dead_code)]
-    end: usize,
     /// Absolute offset of the writable scalar payload (kind-dependent).
     data_offset: usize,
 }
@@ -469,9 +465,6 @@ enum ValueKind {
     String(String),
     Array(Vec<SpannedValue>),
     Map(BTreeMap<String, SpannedValue>),
-    Nil,
-    /// Invalid-UTF-8 strings, `bin` / `ext`, and out-of-range integers: cursor
-    /// advanced, content opaque.
     Opaque,
 }
 
@@ -542,38 +535,17 @@ fn collect_dimensions(
         if !seen.insert(guid.clone()) {
             continue;
         }
-        match extract_dimension(payload, offset, &guid) {
-            Ok(Some(partial)) => {
-                let id = format!("sldprt:pmi:dimension#{guid}");
+        match extract_dimension(payload, offset, &guid, parent) {
+            Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    id.clone(),
+                    record.id.clone(),
                     section,
                     offset as u64,
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
                 );
-                records.push(PmiDimension {
-                    id,
-                    parent: parent.to_string(),
-                    offset: offset as u64,
-                    guid,
-                    cad_text: partial.cad_text,
-                    item_count: partial.item_count,
-                    subtype: partial.subtype,
-                    value: partial.value,
-                    value_offset: partial.value_offset,
-                    precision: partial.precision,
-                    precision_offset: partial.precision_offset,
-                    display_text: partial.display_text,
-                    display_text_offset: partial.display_text_offset,
-                    basic: partial.basic,
-                    basic_offset: partial.basic_offset,
-                    inspection: partial.inspection,
-                    inspection_offset: partial.inspection_offset,
-                    reference_only: partial.reference_only,
-                    reference_only_offset: partial.reference_only_offset,
-                });
+                records.push(record);
             }
             Ok(None) => {}
             Err(message) => {
@@ -585,31 +557,13 @@ fn collect_dimensions(
     }
 }
 
-struct PartialDimension {
-    cad_text: String,
-    item_count: u32,
-    subtype: String,
-    value: f64,
-    value_offset: u64,
-    precision: i64,
-    precision_offset: u64,
-    display_text: Option<String>,
-    display_text_offset: Option<u64>,
-    basic: bool,
-    basic_offset: u64,
-    inspection: bool,
-    inspection_offset: u64,
-    reference_only: bool,
-    reference_only_offset: u64,
-}
-
 /// `Ok(None)` — not a PMI dimension map. `Err` — PMI candidate that failed.
 fn extract_dimension(
     payload: &[u8],
     offset: usize,
     guid: &str,
-) -> Result<Option<PartialDimension>, String> {
-    let _ = guid;
+    parent: &str,
+) -> Result<Option<PmiDimension>, String> {
     let mut cursor = offset;
     let Some(outer_value) = parse_value(payload, &mut cursor, 0) else {
         // Only attribute a loss when the window still names the PMI keys; a
@@ -671,7 +625,11 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
-    Ok(Some(PartialDimension {
+    Ok(Some(PmiDimension {
+        id: format!("sldprt:pmi:dimension#{guid}"),
+        parent: parent.to_owned(),
+        offset: offset as u64,
+        guid: guid.to_owned(),
         cad_text: cad_text.to_string(),
         item_count,
         subtype: string_field(item, "dimSubType")
@@ -681,8 +639,10 @@ fn extract_dimension(
         value_offset: value_field.data_offset as u64,
         precision: int_from(precision_field).unwrap_or_default(),
         precision_offset: precision_field.data_offset as u64,
-        display_text: string_field(&outer, "dimText").map(str::to_string),
-        display_text_offset: outer.get("dimText").map(|field| field.data_offset as u64),
+        display_text: outer.get("dimText").and_then(|field| match &field.kind {
+            ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
+            _ => None,
+        }),
         basic: bool_from(basic_field).unwrap_or(false),
         basic_offset: basic_field.data_offset as u64,
         inspection: bool_from(inspection_field).unwrap_or(false),
@@ -756,75 +716,65 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
         Marker::FixPos(value) => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(value)),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::FixNeg(value) => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(value)),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
         Marker::FixArray(len) => parse_array(bytes, cursor, usize::from(len), depth, start),
         Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
-        Marker::Null => Some(SpannedValue {
-            kind: ValueKind::Nil,
-            start,
-            end: *cursor,
-            data_offset: start,
-        }),
+        Marker::Null => Some(opaque(start)),
         Marker::False => Some(SpannedValue {
             kind: ValueKind::Bool(false),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::True => Some(SpannedValue {
             kind: ValueKind::Bool(true),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::Bin8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Bin16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Bin32 => {
             let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext32 => {
             let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::F32 => {
             let bits = take_u32(bytes, cursor)?;
             Some(SpannedValue {
                 kind: ValueKind::Float(f64::from(f32::from_bits(bits))),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
@@ -833,26 +783,22 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             Some(SpannedValue {
                 kind: ValueKind::Float(f64::from_bits(bits)),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
         Marker::U8 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U16 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U32 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U64 => {
@@ -860,58 +806,53 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             Some(SpannedValue {
                 kind: i64::try_from(value).map_or(ValueKind::Opaque, ValueKind::Int),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
         Marker::I8 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)? as i8)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I16 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)? as i16)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I32 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)? as i32)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I64 => Some(SpannedValue {
             kind: ValueKind::Int(take_u64(bytes, cursor)? as i64),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::FixExt1 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 1)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt2 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 2)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt4 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 4)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt8 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 8)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt16 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 16)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Str8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
@@ -945,11 +886,10 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
     }
 }
 
-fn opaque(start: usize, end: usize) -> SpannedValue {
+fn opaque(start: usize) -> SpannedValue {
     SpannedValue {
         kind: ValueKind::Opaque,
         start,
-        end,
         data_offset: start,
     }
 }
@@ -975,7 +915,6 @@ fn parse_map(
     Some(SpannedValue {
         kind: ValueKind::Map(values),
         start,
-        end: *cursor,
         data_offset: start,
     })
 }
@@ -998,7 +937,6 @@ fn parse_array(
     Some(SpannedValue {
         kind: ValueKind::Array(values),
         start,
-        end: *cursor,
         data_offset: start,
     })
 }
@@ -1019,7 +957,6 @@ fn parse_string(
     Some(SpannedValue {
         kind,
         start,
-        end: *cursor,
         data_offset,
     })
 }

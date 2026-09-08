@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -240,63 +240,60 @@
     },
     "native": {
       "catia": {
-        "arenas": {
-          "alias_rows": [],
-          "catalog_entries": [],
-          "catalogs": [],
-          "consolidated_circles": [],
-          "consolidated_class5b5c_records": [],
-          "consolidated_class61_records": [],
-          "consolidated_cone_faces": [],
-          "consolidated_cones": [],
-          "consolidated_cylinders": [],
-          "consolidated_edge_nodes": [],
-          "consolidated_edge_runs": [],
-          "consolidated_embedded_cylinders": [],
-          "consolidated_groups": [],
-          "consolidated_line_profiles": [],
-          "consolidated_owner_packets": [],
-          "consolidated_parameter_points": [],
-          "consolidated_pcurves": [],
-          "consolidated_plane_carriers": [],
-          "consolidated_reference_lists": [],
-          "consolidated_revolutions": [],
-          "consolidated_spheres": [],
-          "consolidated_tori": [],
-          "consolidated_vertex_identities": [],
-          "design_objects": [],
-          "entity_records": [],
-          "external_references": [],
-          "finjpl_segments": [],
-          "legacy_entity_runs": [],
-          "object_graph_records": [],
-          "object_graphs": [],
-          "preview_images": [],
-          "reference_signature_cohorts": [],
-          "schema_configuration_row_chains": [],
-          "unknowns": [
-            {
-              "id": "catia:payload:unknown#brep-stream",
-              "links": [
-                "catia:standard:surf#0",
-                "catia:standard:surf#1",
-                "catia:standard:circle#0",
-                "catia:guide:curve#1"
-              ]
-            }
-          ],
-          "value_blocks": [],
-          "value_schema_selections": [],
-          "zero_entity_edge_strides": [],
-          "zero_entity_endpoint_locus_candidates": [],
-          "zero_entity_endpoint_pair_candidates": [],
-          "zero_entity_oriented_use_pairs": [],
-          "zero_entity_ownership_roots": [],
-          "zero_entity_records": [],
-          "zero_entity_support_runs": [],
-          "zero_entity_vertex_incidences": []
-        },
-        "version": 288
+        "alias_rows": [],
+        "catalog_entries": [],
+        "catalogs": [],
+        "consolidated_circles": [],
+        "consolidated_class5b5c_records": [],
+        "consolidated_class61_records": [],
+        "consolidated_cone_faces": [],
+        "consolidated_cones": [],
+        "consolidated_cylinders": [],
+        "consolidated_edge_nodes": [],
+        "consolidated_edge_runs": [],
+        "consolidated_embedded_cylinders": [],
+        "consolidated_groups": [],
+        "consolidated_line_profiles": [],
+        "consolidated_owner_packets": [],
+        "consolidated_parameter_points": [],
+        "consolidated_pcurves": [],
+        "consolidated_plane_carriers": [],
+        "consolidated_reference_lists": [],
+        "consolidated_revolutions": [],
+        "consolidated_spheres": [],
+        "consolidated_tori": [],
+        "consolidated_vertex_identities": [],
+        "design_objects": [],
+        "entity_records": [],
+        "external_references": [],
+        "finjpl_segments": [],
+        "legacy_entity_runs": [],
+        "object_graph_records": [],
+        "object_graphs": [],
+        "preview_images": [],
+        "reference_signature_cohorts": [],
+        "schema_configuration_row_chains": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#brep-stream",
+            "links": [
+              "catia:standard:surf#0",
+              "catia:standard:surf#1",
+              "catia:standard:circle#0",
+              "catia:guide:curve#1"
+            ]
+          }
+        ],
+        "value_blocks": [],
+        "value_schema_selections": [],
+        "zero_entity_edge_strides": [],
+        "zero_entity_endpoint_locus_candidates": [],
+        "zero_entity_endpoint_pair_candidates": [],
+        "zero_entity_oriented_use_pairs": [],
+        "zero_entity_ownership_roots": [],
+        "zero_entity_records": [],
+        "zero_entity_support_runs": [],
+        "zero_entity_vertex_incidences": []
       }
     },
     "source": {
@@ -312,8 +309,15 @@
         "outer_dir_offset": "951",
         "preview_count": "0",
         "stream_count": "2",
-        "variant": "standard_nested",
         "vertex_records": "3"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:standard-nested",
+          "format": "catia"
+        }
       },
       "format": "catia"
     },
@@ -714,6 +718,14 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "dialect": "catia:standard-nested",
+        "format": "catia"
+      }
+    },
     "format": "catia",
     "geometry_transferred": true,
     "losses": [
@@ -758,7 +770,7 @@
       "outer V5_CFV2 container: directory offset 951 + length 0 = 951 (file size 951); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
       "nested V5_CFV2 at file offset 380 with a CATIA_V5 CB0001 directory of 2 stream(s)",
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
-      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+      "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ]
   },
   "source_fidelity": {
@@ -816,7 +828,7 @@
         "catia:payload:unknown#brep-stream": {
           "offset": 0,
           "stream": 0,
-          "tag": "standard_nested"
+          "tag": "catia:standard-nested"
         },
         "catia:standard:body#unbound-points": {
           "offset": 0,
@@ -893,7 +905,6 @@
         "sha256": "7cc50f0a65a1b74cbab53eea06f88440daacdbf5ed50a4cd98ba1f994dda158e",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

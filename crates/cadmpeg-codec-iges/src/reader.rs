@@ -2,21 +2,26 @@
 //! Physical graph to CADIR native preservation and loss reporting.
 
 use crate::loss::IgesLossCode;
-use crate::{card, directory, entities, global, graph, loss, native, parameter};
+use crate::representation::Representation;
+use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
-use cadmpeg_ir::hash::{
-    document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
-};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
-use cadmpeg_ir::units::Units;
+use cadmpeg_core::CodecError;
+#[cfg(test)]
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceMeta {
+fn source_meta(
+    global: &global::ResolvedGlobal,
+    representation: Representation,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("representation".into(), representation.into());
+    attributes.insert("representation".into(), representation.as_str().into());
     attributes.insert(
         "parameter_delimiter".into(),
         char::from(global.parameter_delimiter).to_string(),
@@ -24,11 +29,6 @@ fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceM
     attributes.insert(
         "record_delimiter".into(),
         char::from(global.record_delimiter).to_string(),
-    );
-    attributes.insert("iges_version".into(), global.version().into());
-    attributes.insert(
-        "iges_version_flag".into(),
-        global.declared_version_flag().to_string(),
     );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
@@ -39,10 +39,10 @@ fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceM
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
     }
-    SourceMeta {
-        format: "iges".into(),
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
-    }
+    )
 }
 
 fn occurrence_loss(
@@ -91,7 +91,7 @@ pub(crate) enum ParseMode {
 fn parameter_tokens(records: &[parameter::ParameterRecord]) -> u64 {
     records
         .iter()
-        .map(|record| record.tokens.len() as u64)
+        .map(|record| record.tokens().len() as u64)
         .sum()
 }
 
@@ -106,13 +106,13 @@ pub(crate) struct PhysicalParse<'a, 'ctx> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
-    _scan_storage: Option<ScopedReservation<'ctx>>,
+    _scan_storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
     fn run(
         bytes: &'a [u8],
-        ctx: Option<&'ctx DecodeContext<'_>>,
+        ctx: &'ctx DecodeContext<'_>,
         mode: ParseMode,
     ) -> Result<Self, CodecError> {
         let (card_scan, card_storage, directory_entries, parameter_parse) = match mode {
@@ -130,19 +130,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ),
         };
         charge_work(ctx, bytes.len() as u64, card_scan)?;
-        let scan_storage = ctx
-            .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, card_storage, None))
-            .transpose()?;
-        let scan = card::scan_with_context(bytes, ctx)?;
+        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage, None)?;
+        let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan)?;
-        let (directory, quarantined_directory) = directory::parse(&scan, global.dialect());
+        let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
         charge_entities(
             ctx,
             (directory.len() + quarantined_directory.len()) as u64,
             directory_entries,
         )?;
         if mode == ParseMode::Decode {
-            entities::geometry::enforce_transform_depth(&directory, ctx)?;
+            entities::geometry::enforce_transform_depth(&directory, Some(ctx))?;
         }
         let parameter::ParameterAssembly {
             records: parameters,
@@ -154,7 +152,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &directory,
             &quarantined_directory,
             &global,
-            ctx,
+            Some(ctx),
         )?;
         global_losses.extend(
             global
@@ -181,9 +179,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 
     fn admission_losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        losses.extend(self.global.dialect_loss());
+        losses.extend(crate::dialect::dialect_loss(&self.global));
         losses.extend(self.global_losses.iter().cloned());
-        if matches!(self.global.dialect(), global::Dialect::V4_0) {
+        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
                 losses.push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
@@ -213,13 +211,14 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
     window: &[u8],
-    representation: &str,
+    representation: Representation,
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
-    let parse = PhysicalParse::run(window, Some(ctx), ParseMode::Inspect)?;
+    let parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
+    let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
-    let mut summary = card::summarize(&parse.scan);
+    let mut summary = card::summarize(&parse.scan, primary);
     summary.notes.extend(parse.global.summary_notes());
     summary
         .notes
@@ -230,9 +229,10 @@ pub(crate) fn inspect(
     summary
         .notes
         .extend(graph::summary_notes(&parse.references));
-    summary.notes.extend(loss::census(&losses));
-    if representation != "fixed-ascii" {
-        summary.container_kind = representation.into();
+    summary.losses = losses;
+    if representation != Representation::FixedAscii {
+        summary.container_kind = cadmpeg_ir::ContainerKind::parse(representation.as_str())
+            .expect("iges representation is a closed container kind");
         if let Some(note) = summary
             .notes
             .iter_mut()
@@ -240,9 +240,10 @@ pub(crate) fn inspect(
         {
             *note = format!("source_bytes={source_size}");
         }
-        summary
-            .notes
-            .push(format!("normalized_representation={representation}"));
+        summary.notes.push(format!(
+            "normalized_representation={}",
+            representation.as_str()
+        ));
     }
     Ok(summary)
 }
@@ -250,10 +251,9 @@ pub(crate) fn inspect(
 pub(crate) fn decode(
     parse_bytes: &[u8],
     source_bytes: &[u8],
-    representation: &str,
-    options: DecodeOptions,
+    representation: Representation,
     ctx: &DecodeContext<'_>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     let output = usize::try_from(ctx.policy().limits.max_collection_items)
         .ok()
         .map_or(native::MAX_PRODUCT_OCCURRENCES, |policy| {
@@ -268,22 +268,20 @@ pub(crate) fn decode(
         parse_bytes,
         source_bytes,
         representation,
-        options,
         output,
         depth,
-        Some(ctx),
+        ctx,
     )
 }
 
 fn decode_with_occurrence_limits(
     parse_bytes: &[u8],
     source_bytes: &[u8],
-    representation: &str,
-    options: DecodeOptions,
+    representation: Representation,
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<DecodeResult, CodecError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
     let quarantined_parameter_sequences = parse
@@ -302,24 +300,22 @@ fn decode_with_occurrence_limits(
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
-    source_fidelity.retained_records.push(RetainedSourceRecord {
-        id: crate::SOURCE_IMAGE_ID.into(),
-        stream: "iges".into(),
-        offset: 0,
-        byte_len: source_bytes.len() as u64,
-        sha256: sha256_hex(source_bytes),
-        data: Some(match ctx {
-            Some(ctx) => ctx.copy_retained(source_bytes, "iges_source_image", None)?,
-            None => source_bytes.to_vec(),
-        }),
-    });
+    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image", None)?;
+    source_fidelity
+        .retained_records
+        .push(RetainedSourceRecord::retained(
+            crate::SOURCE_IMAGE_ID,
+            "iges",
+            0,
+            retained_source,
+        ));
 
-    let mut ir = CadIr::empty(Units::default());
+    let primary = crate::dialect::classify(representation, &parse.global);
+    let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
     if let Some(context) = &length_context {
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
-    ir.source = Some(source_meta(&parse.global, representation));
-    let projection = match length_context.filter(|_| !options.container_only) {
+    let projection = match length_context.filter(|_| !ctx.container_only()) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
             entities::geometry::project_geometry(
@@ -328,12 +324,12 @@ fn decode_with_occurrence_limits(
                 &parse.parameters,
                 &parse.trailing_pointer_analysis,
                 &context,
-                ctx,
+                Some(ctx),
             )?
         }
         None => entities::geometry::Projection::default(),
     };
-    let semantic_structure_admitted = (!options.container_only).then_some(&projection.decoded);
+    let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
@@ -357,24 +353,12 @@ fn decode_with_occurrence_limits(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
         ),
-        ctx,
+        Some(ctx),
     )?;
+    // The transfer ledger is verified before DecodeResult construction, so its
+    // identity checks require the same canonical arena order as the result.
     ir.finalize();
-    let document_digest = match ctx {
-        Some(ctx) => {
-            document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
-                ctx.charge_work(bytes, "iges_document_digest")
-            })?
-        }
-        None => crate::document_digest(&ir),
-    };
-    if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
-    }
     source_fidelity.finalize();
-
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
     losses.extend(projection.losses);
@@ -418,25 +402,25 @@ fn decode_with_occurrence_limits(
     }
     for native::AmbiguousParameterBoundary {
         sequence: source_sequence,
-        candidate_count,
-        equally_valid,
+        ambiguity,
     } in ambiguous_parameter_boundaries
     {
+        let (candidate_count, kind) = match ambiguity {
+            native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
+            native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
+        };
         losses.push(occurrence_loss(
             IgesLossCode::ParameterBoundaryAmbiguous,
             format!(
-                "IGES Parameter Data has {candidate_count} {} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed",
-                if equally_valid {
-                    "equally valid"
-                } else {
-                    "structural"
-                }
+                "IGES Parameter Data has {candidate_count} {kind} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed"
             ),
             source_sequence,
             &parse.directory,
         ));
     }
-    for (source_sequence, native::OverdeclaredCount { declared, present }) in overdeclared_counts {
+    for (source_sequence, crate::parameter::OverdeclaredCount { declared, present }) in
+        overdeclared_counts
+    {
         losses.push(occurrence_loss(
             IgesLossCode::ParameterCountOverdeclared,
             format!(
@@ -446,15 +430,15 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
-    let dialect = parse.global.dialect();
-    if !options.container_only {
+    let global_table = parse.global.global_table();
+    if !ctx.container_only() {
         let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = parse
             .directory
             .iter()
             .filter(|entry| entry.entity_type != 0)
             .filter(|entry| {
-                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
+                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
                     return true;
                 }
                 !projection.decoded.contains(&entry.sequence)
@@ -462,7 +446,7 @@ fn decode_with_occurrence_limits(
                     && !attributed_before_generic.contains(&entry.sequence)
             })
             .map(|entry| {
-                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
                 {
                     IgesLossCode::EntityRetainedUnprojected.note(format!(
                         "IGES entity type {} form {} retained without neutral projection",
@@ -485,7 +469,7 @@ fn decode_with_occurrence_limits(
         )?;
         reject_invalid_semantic_ir(&ir)?;
     }
-    let attributed = if options.container_only {
+    let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
         attributed_sequences(&losses)
@@ -497,9 +481,9 @@ fn decode_with_occurrence_limits(
         .filter(|entry| entry.entity_type != 0)
     {
         let attributed_loss = attributed.contains(&entry.sequence);
-        let note = if options.container_only {
+        let note = if ctx.container_only() {
             "native record retained; semantic projection was not requested"
-        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
+        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
         } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
             "native record retained; semantic projection emitted with an attributed loss"
@@ -517,28 +501,31 @@ fn decode_with_occurrence_limits(
         };
         transfer_ledger.record(
             format!("D{}", entry.sequence),
-            Some(format!("iges:entity:directory#{}", entry.sequence)),
-            TransferDisposition::Retained,
-            Some(note.into()),
+            TransferOutcome::Retained {
+                target: format!("iges:entity:directory#{}", entry.sequence),
+                note: Some(note.into()),
+            },
         );
     }
     for record in &parse.quarantined_directory {
         transfer_ledger.record(
             format!("D{}", record.sequence),
-            Some(record.identity()),
-            TransferDisposition::Retained,
-            Some(
-                "quarantined directory record retained; typed Directory fields were not recovered"
-                    .into(),
-            ),
+            TransferOutcome::Retained {
+                target: record.identity(),
+                note: Some(
+                    "quarantined directory record retained; typed Directory fields were not recovered"
+                        .into(),
+                ),
+            },
         );
     }
     for record in &parse.quarantined_parameters {
         transfer_ledger.record(
             format!("D{}:parameter", record.sequence),
-            Some(record.identity()),
-            TransferDisposition::Retained,
-            Some("quarantined parameter data retained; tokens were not recovered".into()),
+            TransferOutcome::Retained {
+                target: record.identity(),
+                note: Some("quarantined parameter data retained; tokens were not recovered".into()),
+            },
         );
     }
     transfer_ledger
@@ -551,19 +538,24 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    Ok(DecodeResult::new(
+    let document_digest =
+        document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
+            ctx.charge_work(bytes, "iges_document_digest")
+        })?;
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
+    }
+    let mut body = DecodeBody::new(geometry_transferred);
+    body.losses = losses;
+    body.notes = notes;
+    body.transfer_ledger = transfer_ledger;
+    Ok(Decoded {
         ir,
-        DecodeReport {
-            format: "iges".into(),
-            container_only: options.container_only,
-            geometry_transferred,
-            coverage: std::collections::BTreeMap::new(),
-            transfer_ledger,
-            losses,
-            notes,
-        },
+        body,
         source_fidelity,
-    ))
+    })
 }
 
 /// Fail the decode when the projected IR has any error-severity finding.
@@ -596,32 +588,69 @@ pub(crate) fn decode_with_test_occurrence_limits(
     options: DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
-) -> Result<DecodeResult, CodecError> {
-    decode_with_occurrence_limits(
-        bytes,
-        bytes,
-        "fixed-ascii",
-        options,
-        output_limit,
-        depth_limit,
-        None,
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, FormatId};
+
+    struct OccurrenceLimitCodec {
+        output_limit: usize,
+        depth_limit: usize,
+    }
+
+    impl CodecBackend for OccurrenceLimitCodec {
+        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+
+        fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
+            Confidence::High
+        }
+
+        fn inspect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<cadmpeg_ir::ContainerSummary, CodecError> {
+            unreachable!("test backend is decode-only")
+        }
+
+        fn decode_impl(
+            &self,
+            ctx: &DecodeContext<'_>,
+            root: cadmpeg_core::decode::View<'_>,
+        ) -> Result<Decoded, CodecError> {
+            decode_with_occurrence_limits(
+                root.window(),
+                root.window(),
+                Representation::FixedAscii,
+                self.output_limit,
+                self.depth_limit,
+                ctx,
+            )
+        }
+    }
+
+    Codec::decode(
+        &OccurrenceLimitCodec {
+            output_limit,
+            depth_limit,
+        },
+        &mut std::io::Cursor::new(bytes),
+        &options,
     )
 }
 
 fn charge_entities(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     count: u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
+    ctx.charge_entities(count, operation)
 }
 
 fn charge_work(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     units: u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+    ctx.charge_work(units, operation)
 }
 
 #[cfg(test)]

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 use super::{
     body_recipe_operand_end, body_recipe_prologue_end, parse_sketch_profile_region_selection,
@@ -86,7 +84,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     let header = DesignRecordHeader {
         id: "stream:record-100".into(),
         record_index: RECORD_INDEX,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let early = ConstructionRecipe {
@@ -94,9 +92,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         byte_offset: EARLY_RECIPE_AT as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: None,
-        design_id_offset: None,
-        design_selector: None,
+        design: None,
         recipe_index: 0,
         record_index: 0,
     };
@@ -126,8 +122,8 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
     assert_eq!(selection.byte_offset, selection_at as u64);
-    assert_eq!(selection.class_tag, "327");
-    assert_eq!(selection.companion_class_tag, "261");
+    assert_eq!(selection.class_tag.as_str(), "327");
+    assert_eq!(selection.companion_class_tag.as_str(), "261");
     assert_eq!(
         selection
             .regions
@@ -136,7 +132,7 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
                 region
                     .members
                     .iter()
-                    .map(|member| member.curve_primary_id)
+                    .map(|member| member.curve_primary_id.get())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -167,7 +163,7 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
 
     assert_eq!(
-        selection.regions[0].members[0].curve_primary_id,
+        u64::from(selection.regions[0].members[0].curve_primary_id.get()),
         u64::from(u32::from_le_bytes(*b"123X"))
     );
 }

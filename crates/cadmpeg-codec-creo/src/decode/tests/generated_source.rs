@@ -4,7 +4,7 @@
 use super::{
     class_911_surface_row, simple_drilled_recipe_surface_rows, simple_drilled_recipe_table,
 };
-use crate::decode::analytic::rowless_round_face_orientations;
+use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::coverage::{
     constraint_kind_breakdown, curve_transfer_coverage, design_constraint_transfer_coverage,
     surface_transfer_coverage,
@@ -26,23 +26,24 @@ use crate::decode::holes::{
     simple_drilled_hole_recipe, stepped_hole_form, ExtrusionSpan, SimpleDrilledDimensionFamily,
 };
 use crate::decode::sketch::approximately_equal;
-use crate::decode::sketch_transfer::{
-    normalize_section_incidence_curve_family_evidence, sketch_constraint_loci_compatible,
-    SectionEntityIncidenceFamily,
+use crate::decode::sketch_transfer::profiles::{
+    normalize_section_incidence_curve_family_evidence, SectionEntityIncidenceFamily,
 };
+use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
     extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
     oriented_full_turn_angles, point_on_profile_arc, profile_arc, resolved_sketch_profiles,
 };
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, Termination,
+    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, LinearTermination,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -50,52 +51,46 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(17),
+        feature_id: 17,
         table_class_id: 80,
-        entry_ids: vec![42, 41, 43],
         entries: vec![
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 42,
                 class_id: 200,
-                source_entity_id: Some(10),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(10), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
+                is_surface: false,
             },
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 41,
                 class_id: 200,
-                source_entity_id: Some(8),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(8), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
+                is_surface: false,
             },
             crate::feature::FeatureEntityTableEntry {
                 entity_id: 43,
                 class_id: 200,
-                source_entity_id: Some(9),
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(200, Some(9), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
+                is_surface: false,
             },
         ],
-        surface_ids: vec![41, 42, 43],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
-    };
+    }
+    .with_surface_ids([41, 42, 43]);
     let order = crate::feature::FeatureOrderTable {
         declared_count: 2,
         has_prototype: false,
@@ -118,11 +113,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     };
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -187,18 +181,16 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     let mut first_table = table.clone();
-    first_table.entry_ids = vec![41];
     first_table.entries = vec![table.entries[1].clone()];
-    first_table.surface_ids = vec![41];
+    first_table.entries[0].is_surface = true;
     let mut second_table = table.clone();
-    second_table.entry_ids = vec![43];
     second_table.entries = vec![table.entries[2].clone()];
-    second_table.surface_ids = vec![43];
+    second_table.entries[0].is_surface = true;
     assert_eq!(
         generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
         Some(43)
     );
-    first_table.entries[0].source_entity_id = Some(9);
+    first_table.entries[0].payload = crate::feature::EntryPayload::Source { entity: Some(9) };
     assert_eq!(
         generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
         None
@@ -254,14 +246,17 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         &rows,
     ));
     let mut extrusion_rows = rows.clone();
-    extrusion_rows[2] = row(43, crate::surface::SurfaceKind::Extrusion);
+    extrusion_rows[2] = row(
+        43,
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+    );
     assert!(section_entity_is_generated_profile(
         true,
         Some(17),
         9,
         &[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
@@ -280,7 +275,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         9,
         &[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
@@ -298,14 +293,14 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
 #[test]
 fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -325,21 +320,18 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(35, 200, Some(7)),
     ];
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(9),
+        feature_id: 9,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![11, 12, 13, 15, 16],
-        non_surface_entity_ids: vec![21, 22, 23, 24, 14, 31, 32, 33, 34, 35],
         offset: 0,
-    };
+    }
+    .with_surface_ids([11, 12, 13, 15, 16]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -370,14 +362,14 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
 #[test]
 fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
         entity_id,
         class_id,
-        source_entity_id,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![
         entry(21, 204, None),
@@ -396,21 +388,18 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(33, 200, Some(7)),
     ];
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(9),
+        feature_id: 9,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![15, 16, 30, 31, 33],
-        non_surface_entity_ids: vec![11, 12, 13, 14, 21, 22, 23, 24, 32],
         offset: 0,
-    };
+    }
+    .with_surface_ids([15, 16, 30, 31, 33]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -435,12 +424,6 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
     missing_plane_companion
         .entries
         .retain(|entry| entry.entity_id != 32);
-    missing_plane_companion
-        .entry_ids
-        .retain(|entity_id| *entity_id != 32);
-    missing_plane_companion
-        .non_surface_entity_ids
-        .retain(|entity_id| *entity_id != 32);
     assert_eq!(
         stepped_hole_form(9, std::slice::from_ref(&missing_plane_companion), &rows),
         None
@@ -467,14 +450,11 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
+    extra.is_surface = false;
     extra.entity_id = 26;
-    extra.source_entity_id = Some(5);
-    extended.entry_ids.insert(7, extra.entity_id);
-    extended.non_surface_entity_ids.push(extra.entity_id);
+    extra.payload = crate::feature::EntryPayload::Source { entity: Some(5) };
     extended.entries.insert(7, extra.clone());
     extra.entity_id = 27;
-    extended.entry_ids.insert(14, extra.entity_id);
-    extended.non_surface_entity_ids.push(extra.entity_id);
     extended.entries.insert(14, extra);
     assert_eq!(
         simple_drilled_hole_recipe(9, std::slice::from_ref(&extended), &rows)
@@ -484,26 +464,18 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut unknown_family = extended;
     let mut extra = unknown_family.entries[7].clone();
     extra.entity_id = 28;
-    extra.source_entity_id = Some(6);
-    unknown_family.entry_ids.insert(8, extra.entity_id);
-    unknown_family.non_surface_entity_ids.push(extra.entity_id);
+    extra.payload = crate::feature::EntryPayload::Source { entity: Some(6) };
     unknown_family.entries.insert(8, extra.clone());
     extra.entity_id = 29;
-    unknown_family.entry_ids.insert(16, extra.entity_id);
-    unknown_family.non_surface_entity_ids.push(extra.entity_id);
     unknown_family.entries.insert(16, extra);
     assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&unknown_family), &rows).is_none());
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
-    bottom.source_entity_id = Some(0);
-    table.entry_ids.insert(2, bottom.entity_id);
-    table.non_surface_entity_ids.push(bottom.entity_id);
+    bottom.payload = crate::feature::EntryPayload::Source { entity: Some(0) };
     table.entries.insert(2, bottom.clone());
     assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
     bottom.entity_id = 25;
-    table.entry_ids.insert(3, bottom.entity_id);
-    table.non_surface_entity_ids.push(bottom.entity_id);
     table.entries.insert(3, bottom);
     assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_none());
 
@@ -517,28 +489,22 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     let table = |radius: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
         declared_count: 3,
         entity_ref: Some(88),
-        rows: [
-            (2, radius, 0, crate::feature::DimensionUnit::Millimeters),
-            (10, angle, 1, crate::feature::DimensionUnit::Radians),
-            (2, depth, 2, crate::feature::DimensionUnit::Millimeters),
-        ]
-        .into_iter()
-        .map(
-            |(dimension_type, value, external_id, value_unit)| crate::feature::FeatureDimension {
-                dimension_type,
-                value: Some(value),
-                value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit,
-                direction_byte: 0,
-                auxiliary_value: Some(0.0),
-                auxiliary_body: Vec::new(),
-                external_id,
-                references: None,
-                offset: 0,
-            },
-        )
-        .collect(),
+        rows: [(2, radius, 0), (10, angle, 1), (2, depth, 2)]
+            .into_iter()
+            .map(
+                |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                    dimension_type,
+                    value: crate::feature::definitions::DimensionValue::Resolved(value),
+                    value_body: Vec::new(),
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
+                    external_id,
+                    references: None,
+                    offset: 0,
+                },
+            )
+            .collect(),
         offset: 0,
     };
     let angle = 118.0_f64.to_radians();
@@ -773,25 +739,24 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .extend(simple_drilled_recipe_surface_rows(9));
     let drill_point_angle = 118.0_f64.to_radians();
-    let dimension =
-        |dimension_type, external_id, value, value_unit| crate::feature::FeatureDimension {
-            dimension_type,
-            value: Some(value),
-            value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit,
-            direction_byte: 0,
-            auxiliary_value: Some(0.0),
-            auxiliary_body: Vec::new(),
-            external_id,
-            references: None,
-            offset: 0,
-        };
+    let dimension = |dimension_type, external_id, value| crate::feature::FeatureDimension {
+        dimension_type,
+        value: crate::feature::definitions::DimensionValue::Resolved(value),
+        value_body: Vec::new(),
+        direction_byte: 0,
+        auxiliary_value: Some(0.0),
+        auxiliary_body: Vec::new(),
+        external_id,
+        references: None,
+        offset: 0,
+    };
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 911,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(911),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -805,14 +770,9 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
                 declared_count: 3,
                 entity_ref: Some(88),
                 rows: vec![
-                    dimension(2, 0, 4.2, crate::feature::DimensionUnit::Millimeters),
-                    dimension(
-                        10,
-                        1,
-                        drill_point_angle,
-                        crate::feature::DimensionUnit::Radians,
-                    ),
-                    dimension(2, 2, -25.0, crate::feature::DimensionUnit::Millimeters),
+                    dimension(2, 0, 4.2),
+                    dimension(10, 1, drill_point_angle),
+                    dimension(2, 2, -25.0),
                 ],
                 offset: 0,
             }),
@@ -824,17 +784,20 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
     assert!(matches!(
         schema_feature_definition(
             &scan,
-            &CadIr::empty(Units::default()),
+            &CadIr::empty(),
             9,
-            911,
+            Some(SchemaClass::Hole),
             "Hole"
         ),
         IrFeatureDefinition::Hole {
-            kind: HoleKind::SimpleDrilled {
-                drill_point_angle: Angle(angle),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(angle),
+                },
+                ..
             },
             diameter: Some(Length(8.4)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(25.0),
             }),
             bottom: None,
@@ -844,40 +807,41 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+            payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+
             entity_id,
             class_id,
-            source_entity_id,
-            related_entity_id: None,
-            related_entity_state: None,
             prefixed: false,
             offset: 0,
             end_offset: 0,
+            is_surface: false,
         };
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(9),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 9,
             table_class_id: 29,
-            entry_ids: vec![21, 22, 23, 24],
             entries: vec![
                 compact_entry(21, 204, None),
                 compact_entry(22, 203, None),
                 compact_entry(23, 200, Some(0)),
                 compact_entry(24, 200, None),
             ],
-            surface_ids: vec![24],
-            non_surface_entity_ids: Vec::new(),
             offset: 0,
-        });
+        }
+        .with_surface_ids([24]),
+    );
     scan.surfaces.rows.push(class_911_surface_row(
         9,
         24,
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 9, 911, "Hole"),
+        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole"),
         IrFeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: None,
             ..
@@ -890,56 +854,49 @@ fn counterbore_sources_require_materialized_table_membership() {
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id: 200,
-        source_entity_id: Some(source_entity_id),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let entries = vec![entry(11, 4), entry(12, 4), entry(15, 7), entry(16, 7)];
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(9),
+        feature_id: 9,
         table_class_id: 29,
-        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
-        surface_ids: vec![11, 15, 16],
-        non_surface_entity_ids: vec![12],
         offset: 0,
-    };
+    }
+    .with_surface_ids([11, 15, 16]);
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
-    scan.features
-        .entity_tables
-        .push(crate::feature::FeatureEntityTable {
-            feature_id: Some(9),
+    scan.features.entity_tables.push(
+        crate::feature::FeatureEntityTable {
+            feature_id: 9,
             table_class_id: 29,
-            entry_ids: vec![99],
             entries: vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 99,
                 class_id: 0,
-                source_entity_id: None,
-                related_entity_id: None,
-                related_entity_state: None,
+                payload: crate::feature::entry_payload(0, None, None, None),
                 prefixed: true,
                 offset: 1,
                 end_offset: 2,
+                is_surface: false,
             }],
-            surface_ids: Vec::new(),
-            non_surface_entity_ids: vec![99],
             offset: 1,
-        });
+        }
+        .with_surface_ids([]),
+    );
     scan.surfaces
         .rows
         .extend([row(11), row(12), row(15), row(16)]);
@@ -967,10 +924,8 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
         .map(
             |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),
@@ -1006,30 +961,18 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         declared_count: 5,
         entity_ref: Some(88),
         rows: [
-            (
-                0,
-                1,
-                counterbore_depth,
-                crate::feature::DimensionUnit::Millimeters,
-            ),
-            (1, 2, 20.0, crate::feature::DimensionUnit::Millimeters),
-            (
-                2,
-                10,
-                118.0_f64.to_radians(),
-                crate::feature::DimensionUnit::Radians,
-            ),
-            (3, 2, 60.0, crate::feature::DimensionUnit::Millimeters),
-            (4, 2, -295.661, crate::feature::DimensionUnit::Millimeters),
+            (0, 1, counterbore_depth),
+            (1, 2, 20.0),
+            (2, 10, 118.0_f64.to_radians()),
+            (3, 2, 60.0),
+            (4, 2, -295.661),
         ]
         .into_iter()
         .map(
-            |(external_id, dimension_type, value, value_unit)| crate::feature::FeatureDimension {
+            |(external_id, dimension_type, value)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),
@@ -1128,7 +1071,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         .iter_mut()
         .find(|row| row.external_id == 2)
         .expect("the five-row test table has a drill-angle row")
-        .value = Some(std::f64::consts::PI);
+        .value = crate::feature::definitions::DimensionValue::Resolved(std::f64::consts::PI);
     assert!(counterbore_envelope_dimension_values(
         std::iter::once(&invalid_drill_angle),
         &[Some(bore_spans), Some(counterbore_spans)],
@@ -1217,14 +1160,16 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 #[test]
 fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(9),
+        feature_id: 9,
         table_class_id: 29,
-        entry_ids: Vec::new(),
-        entries: Vec::new(),
-        surface_ids: vec![11, 13, 15],
-        non_surface_entity_ids: Vec::new(),
+        entries: vec![
+            crate::feature::dummy_table_entry(11, true),
+            crate::feature::dummy_table_entry(13, true),
+            crate::feature::dummy_table_entry(15, true),
+        ],
         offset: 0,
-    };
+    }
+    .with_surface_ids([11, 13, 15]);
     let rows = [
         class_911_surface_row(9, 11, crate::surface::SurfaceKind::Cylinder),
         class_911_surface_row(9, 13, crate::surface::SurfaceKind::Plane),
@@ -1233,10 +1178,8 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     let frame = crate::surface::PlaneLocalSystem {
         surface_id: 13,
         body: Vec::new(),
-        slots: vec![Some(0.0); 12],
-        origin: Some([2.0, 3.0, 4.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, -2.0, 0.0]),
+        slots: [0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, -2.0, 0.0, 2.0, 3.0, 4.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: crate::surface::LocalSystemClassification::Simple,
         row_offset: 0,
         offset: 0,
@@ -1254,7 +1197,7 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
             .is_none()
     );
     let mut incomplete = frame.clone();
-    incomplete.normal = None;
+    incomplete.slots[6] = None;
     assert!(counterbore_support_axis_placement(
         9,
         &table,
@@ -1314,7 +1257,7 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             65,
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(1.0),
             },
         ))
@@ -1347,7 +1290,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
     let expected = Some((
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(57.0),
         },
     ));
@@ -1378,7 +1321,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Some((
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(40.0),
             },
         ))
@@ -1403,33 +1346,37 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
 }
 
 #[test]
+// These checked constructors must accept the explicit test fixtures.
+#[allow(clippy::unwrap_used)]
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
     let rows = vec![
         row(41, crate::surface::SurfaceKind::Plane),
         row(42, crate::surface::SurfaceKind::Cylinder),
-        row(44, crate::surface::SurfaceKind::Extrusion),
+        row(
+            44,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(43, crate::surface::SurfaceKind::Cone),
         row(43, crate::surface::SurfaceKind::Cone),
     ];
     let plane = |id: &str, native_id: u32| Surface {
-        id: SurfaceId(id.to_string()),
+        id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
         source_object: Some(SourceObjectAssociation {
-            format: "creo".to_string(),
+            format: cadmpeg_ir::CodecFormat::Creo,
             object_id: format!("VisibGeom:{native_id}"),
             name: None,
             color: None,
@@ -1438,34 +1385,50 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             instance_path: Vec::new(),
         }),
     };
-    let surfaces = vec![
+    let mut surfaces = vec![
         plane("derived-id-independent-of-native-id", 41),
         plane("wrong-family", 42),
         plane("extrusion-carrier", 44),
     ];
-    let procedural_surfaces = vec![ProceduralSurface {
-        id: ProceduralSurfaceId("extrusion-construction".to_string()),
-        surface: SurfaceId("extrusion-carrier".to_string()),
-        definition: ProceduralSurfaceDefinition::Extrusion {
-            directrix: CurveId("directrix".to_string()),
+    let cache = surfaces[2].geometry.clone();
+    surfaces[2].geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId::mint(
+            "test:model:entity#extrusion-construction".to_string(),
+        )
+        .expect("identity grammar"),
+        cache: Some(SolvedSurfaceGeometry::new(cache).unwrap()),
+    };
+    let procedural_surfaces = vec![ProceduralSurface::new(
+        ProceduralSurfaceId::mint("test:model:entity#extrusion-construction".to_string())
+            .expect("identity grammar"),
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix: CurveId::mint("test:model:entity#directrix".to_string())
+                .expect("identity grammar"),
             parameter_interval: None,
             direction: Vector3::new(0.0, 0.0, 1.0),
             native_position: None,
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    }];
+        None,
+    )];
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 
     assert_eq!(coverage.unique_rows, 3);
     assert_eq!(coverage.transferred_rows, 2);
     assert_eq!(coverage.ambiguous_rows, 2);
-    assert_eq!(coverage.by_family["plane"], (1, 1));
-    assert_eq!(coverage.by_family["cylinder"], (1, 0));
-    assert_eq!(coverage.by_family["cone"], (0, 0));
-    assert_eq!(coverage.by_family["extrusion"], (1, 1));
+    assert_eq!(coverage.family(crate::surface::SurfaceKind::Plane), (1, 1));
+    assert_eq!(
+        coverage.family(crate::surface::SurfaceKind::Cylinder),
+        (1, 0)
+    );
+    assert_eq!(coverage.family(crate::surface::SurfaceKind::Cone), (0, 0));
+    assert_eq!(
+        coverage.family(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::Linear
+        )),
+        (1, 1)
+    );
 }
 
 #[test]
@@ -1475,13 +1438,13 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         type_byte,
         feature_id: 17,
         directions: [0x01, 0xf6],
-        faces: [1, 2],
+        faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
         next_edges: [id, id],
         offset: 0,
     };
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
-        format: "creo".to_string(),
+        format: cadmpeg_ir::CodecFormat::Creo,
         object_id: format!("VisibGeom:{native_id}"),
         name: None,
         color: None,
@@ -1491,7 +1454,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
-            id: CurveId("typed".to_string()),
+            id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1499,7 +1462,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
-            id: CurveId("opaque".to_string()),
+            id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: Some(source(42)),
         },
@@ -1572,24 +1535,24 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     assert_eq!(coverage.active_typed(), 1);
     assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
     assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
+    let mut report_coverage = cadmpeg_ir::Coverage::default();
+    report_coverage.record_indexed(
+        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        1,
+        2,
+    );
+    report_coverage.record_indexed(
+        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        9,
+        1,
+    );
+    report_coverage.record_indexed(
+        crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        9,
+        4,
+    );
     assert_eq!(
-        constraint_kind_breakdown(
-            &BTreeMap::from([
-                (
-                    "active_native_feature_relation_type_1_constraint_count".to_string(),
-                    2,
-                ),
-                (
-                    "active_native_feature_relation_type_9_constraint_count".to_string(),
-                    1,
-                ),
-                (
-                    "transferred_native_feature_relation_type_9_constraint_count".to_string(),
-                    4,
-                ),
-            ]),
-            "active_native_feature_relation_type_",
-        ),
+        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",),
         "type 1=2, type 9=1"
     );
 }
@@ -1691,11 +1654,10 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
 fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 23,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1705,14 +1667,17 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
     let table = crate::feature::FeatureEntityTable {
-        feature_id: Some(23),
+        feature_id: 23,
         table_class_id: 80,
-        entry_ids: vec![10, 11, 12, 13],
-        entries: Vec::new(),
-        surface_ids: vec![10, 11, 13],
-        non_surface_entity_ids: vec![12],
+        entries: vec![
+            crate::feature::dummy_table_entry(10, true),
+            crate::feature::dummy_table_entry(11, true),
+            crate::feature::dummy_table_entry(12, false),
+            crate::feature::dummy_table_entry(13, true),
+        ],
         offset: 47,
-    };
+    }
+    .with_surface_ids([10, 11, 13]);
     assert_eq!(
         rowless_round_cylinder_pairs(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows,),
         vec![(12, 13, 47)]
@@ -1748,26 +1713,27 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let directrix = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let directrix = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(4.0, 5.0, 6.0),
             Point3::new(7.0, 8.0, 9.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid directrix");
     let surface =
         extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0]).expect("valid extrusion surface");
 
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert_eq!((surface.u_count, surface.v_count), (3, 2));
-    assert_eq!(surface.u_knots, directrix.knots);
-    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
+    assert_eq!(surface.u_knots(), directrix.knots());
+    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        surface.control_points,
+        surface.control_points(),
         [
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 7.0),
@@ -1777,7 +1743,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
             Point3::new(7.0, 8.0, 13.0),
         ]
     );
-    assert_eq!(surface.weights, Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]));
+    assert_eq!(surface.weights(), Some(&[1.0, 1.0, 0.5, 0.5, 1.0, 1.0][..]));
 }
 
 #[test]
@@ -1887,7 +1853,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         radius: Length(3.0),
     };
     let seam = [4.0, -2.0];
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -1900,15 +1866,11 @@ fn circle_remains_a_closed_extrusion_profile() {
         }]],
         native_ref: None,
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: circle.clone(),
-    });
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        circle.clone(),
+    ));
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
     assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);

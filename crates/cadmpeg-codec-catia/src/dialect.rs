@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: Apache-2.0
+//! CATIA V5 dialect identity: which registry row a `.CATPart` is, and how it
+//! was admitted.
+//!
+//! The `*LossCode` template: the enum is internal to the crate, generated
+//! [`DialectId`] constants are the boundary, [`classify`] is the one
+//! construction path, and the vocabulary is closed. The enum is [`Variant`]
+//! itself, so this module does not add a second enum that could drift from it.
+//!
+//! # Identity is structural here, and there is no declaration to disagree with
+//!
+//! CATIA's storage families carry no version number: they are recognized from
+//! container shape, a reconstructed B-rep stream, spine markers, table
+//! delimiters, and a record-family census — all read by
+//! [`crate::container::scan_bytes`] before any parse strategy is chosen.
+//! So unlike IGES, identity is not a declaration that can be wrong; the file
+//! either exhibits a family's invariants or it does not.
+//!
+//! The one declaration the codec reads, the `LastSaveVersion` release tuple, is
+//! provenance: it is not an argument to `identify_variant` and appears in no
+//! conditional in the crate. It is recorded in
+//! [`DialectMatch::declared`] as evidence and branched on nowhere.
+//!
+//! [`Variant::Unknown`] uses the metadata-IR fallback. Its
+//! [`Admission::Residual`] value names no substituted grammar; no recognized
+//! family grammar is applied.
+
+use crate::container::ContainerScan;
+use crate::loss::CatiaLossCode;
+use crate::variant::Variant;
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+use cadmpeg_ir::report::LossNote;
+use std::collections::BTreeMap;
+
+include!("dialect/registry_ids.rs");
+
+/// Key of the `LastSaveVersion` generation number in [`DialectMatch::declared`].
+const DECLARED_VERSION: &str = "last_save_version";
+/// Key of the `LastSaveVersion` release number in [`DialectMatch::declared`].
+const DECLARED_RELEASE: &str = "last_save_release";
+/// Key of the `LastSaveVersion` service-pack number in [`DialectMatch::declared`].
+const DECLARED_SERVICE_PACK: &str = "last_save_service_pack";
+/// Key of the `LastSaveVersion` hot-fix number in [`DialectMatch::declared`].
+const DECLARED_HOT_FIX: &str = "last_save_hot_fix";
+/// Key of the `LastSaveVersion` build-date string in [`DialectMatch::declared`].
+const DECLARED_BUILD_DATE: &str = "last_save_build_date";
+
+impl Variant {
+    /// Every dialect identity this enum can name.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 7] = [
+        Self::StandardNested,
+        Self::FbbOnly,
+        Self::ZeroEntity,
+        Self::FloatPackedInnerNoFbb,
+        Self::E5Stream,
+        Self::InnerNoDirectory,
+        Self::Unknown,
+    ];
+
+    /// The registry-generated id for this variant.
+    ///
+    /// This is the sole serialized spelling of the storage family. Human
+    /// descriptions remain prose; source metadata and annotations do not carry
+    /// a second bare variant token.
+    pub(crate) const fn id(self) -> DialectId {
+        match self {
+            Self::StandardNested => CATIA_STANDARD_NESTED,
+            Self::FbbOnly => CATIA_FBB_ONLY,
+            Self::ZeroEntity => CATIA_ZERO_ENTITY,
+            Self::FloatPackedInnerNoFbb => CATIA_FLOAT_PACKED_INNER_NO_FBB,
+            Self::E5Stream => CATIA_E5_STREAM,
+            Self::InnerNoDirectory => CATIA_INNER_NO_DIRECTORY,
+            Self::Unknown => CATIA_UNKNOWN,
+        }
+    }
+}
+
+/// How this codec admitted a document identified as `variant`.
+///
+/// The one admission predicate in this crate. Both [`classify`] and
+/// [`dialect_loss`] read it, so a report's `admission` and its charged loss
+/// cannot disagree.
+///
+/// Each of the six decoding families has at least one applicable route in
+/// [`crate::families::ROUTES`], and that route is the strategy the registry
+/// declares for its row: [`Admission::Admitted`]. Whether the route then yields
+/// a transferable model is content-conditioned. A route returning `None` is a
+/// loss within an admitted dialect, and the existing geometry and topology
+/// losses already say so.
+///
+/// [`Variant::Unknown`] matches no route at all, so no declared strategy was
+/// applied to it: [`Admission::Residual`].
+pub(crate) fn matched(variant: Variant) -> DialectMatch {
+    let id = variant.id();
+    match variant {
+        Variant::StandardNested
+        | Variant::FbbOnly
+        | Variant::ZeroEntity
+        | Variant::FloatPackedInnerNoFbb
+        | Variant::E5Stream
+        | Variant::InnerNoDirectory => DialectMatch::admitted(id),
+        Variant::Unknown => DialectMatch::residual(id),
+    }
+}
+
+/// The dialect-unverified loss, charged exactly on [`Admission::Residual`].
+///
+/// `None` exactly when the classified match is [`Admission::Admitted`]. The
+/// loss reads the admission already built by [`classify`] and does not
+/// recompute it from the variant.
+///
+/// This is a *dialect* loss and is disjoint from
+/// [`CatiaLossCode::GeometryBrepNotTransferred`] and
+/// [`CatiaLossCode::TopologyGraphNotBuilt`], which state what was not
+/// transferred out of an identified layout. This one states that the layout was
+/// never identified.
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+    if !matches!(matched.admission(), Admission::Residual) {
+        return None;
+    }
+    Some(CatiaLossCode::SourceDialectUnverified.note(format!(
+        "This container matched no CATIA V5 storage family's structural invariants, so it \
+         is `{}`. No decode route declares a grammar for that row, and no declared \
+         dialect grammar was substituted; the file was admitted under the metadata-IR \
+         fallback, which enumerates the container and retains the source bytes without applying \
+         any family's record grammar.",
+        matched.dialect()
+    )))
+}
+
+/// The `LastSaveVersion` tuple the summary-information record declared.
+///
+/// Recorded verbatim in the sense the source allows: `<Version>`, `<Release>`,
+/// `<ServicePack>`, and `<HotFix>` are decimal ASCII that
+/// `container::parse_last_save_version` resolves to integers — the whole tuple
+/// is absent unless all four read — and `<BuildDate>` is carried through as the
+/// string it is. Nothing here branches on the tuple; it is provenance recorded
+/// as evidence.
+fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
+    let mut declared = BTreeMap::new();
+    if let Some(version) = &scan.last_save_version {
+        declared.insert(DECLARED_VERSION.into(), version.version.to_string());
+        declared.insert(DECLARED_RELEASE.into(), version.release.to_string());
+        declared.insert(
+            DECLARED_SERVICE_PACK.into(),
+            version.service_pack.to_string(),
+        );
+        declared.insert(DECLARED_HOT_FIX.into(), version.hot_fix.to_string());
+        declared.insert(DECLARED_BUILD_DATE.into(), version.build_date.clone());
+    }
+    declared
+}
+
+/// Classifies one scanned container. The single construction path for a
+/// [`DialectMatch`] in this codec, so a classification bug and the report can
+/// never disagree.
+///
+/// Identity and admission both come from [`ContainerScan::variant`], the
+/// structural family the scan resolved, through [`matched`].
+pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
+    matched(scan.variant).with_declared(declared(scan))
+}
+
+#[cfg(test)]
+mod tests;

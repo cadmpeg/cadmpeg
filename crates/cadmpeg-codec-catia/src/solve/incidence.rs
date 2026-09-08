@@ -11,11 +11,11 @@ use crate::families::standard::topology::{
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
     mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, CoordinateRootClosure, MeshCoordinateRootDomains,
-    MeshEndpointCandidates, MeshEndpointPair, MeshEndpointSolutionFilter,
-    MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
+    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState, MeshSolve,
+    MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -501,9 +501,10 @@ pub(crate) fn order_incidence_components_by_branch_width(
 pub(crate) fn order_incidence_components_by_constraints(
     components: &mut Vec<Vec<usize>>,
     choices: &[Vec<[usize; 2]>],
-    assignment_predecessors: Option<&[Option<usize>]>,
-    assignment_dependencies: Option<&[Vec<usize>]>,
+    assignment_order: Option<AssignmentOrder<'_>>,
 ) -> Option<()> {
+    let assignment_predecessors = assignment_order.and_then(AssignmentOrder::predecessors);
+    let assignment_dependencies = assignment_order.and_then(AssignmentOrder::dependencies);
     if components
         .iter()
         .flatten()
@@ -525,7 +526,7 @@ pub(crate) fn order_incidence_components_by_constraints(
     {
         return None;
     }
-    if assignment_predecessors.is_none() && assignment_dependencies.is_none() {
+    if assignment_order.is_none() {
         return order_incidence_components_by_branch_width(components, choices);
     }
 
@@ -639,16 +640,22 @@ pub(crate) fn order_incidence_components_by_constraints(
     Some(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IncidenceSearchState {
+    Open,
+    Exhausted,
+    Stopped,
+}
+
 pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
-    pub(crate) explicit_point_supports: Option<Vec<HashMap<usize, Vec<[usize; 2]>>>>,
-    pub(crate) point_support_edges: Option<Vec<HashMap<usize, Vec<usize>>>>,
+    pub(crate) explicit_point_supports: Vec<HashMap<usize, Vec<[usize; 2]>>>,
+    pub(crate) point_support_edges: Vec<HashMap<usize, Vec<usize>>>,
     pub(crate) degree_support_witnesses: DegreeSupportWitnesses,
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     pub(crate) face_configuration_domains: Option<PreparedFaceFactors>,
-    pub(crate) mesh_quotient: Option<&'a MeshQuotient>,
     pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
     pub(crate) active: Vec<bool>,
     pub(crate) edges: &'a [usize],
@@ -664,8 +671,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) degree_support_budget: &'a WorkBudget<'a>,
     pub(crate) coordinate_propagation_budget: &'a WorkBudget<'a>,
     pub(crate) boundary_propagation_budget: &'a WorkBudget<'a>,
-    pub(crate) exhausted: bool,
-    pub(crate) stopped: bool,
+    pub(crate) state: IncidenceSearchState,
 }
 
 enum IncidenceBranch {
@@ -1792,13 +1798,7 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         IncidenceCandidatePairs::Options(
             required_point
-                .and_then(|point| {
-                    self.explicit_point_supports
-                        .as_ref()?
-                        .get(edge)?
-                        .get(&point)
-                        .cloned()
-                })
+                .and_then(|point| self.explicit_point_supports.get(edge)?.get(&point).cloned())
                 .unwrap_or_else(|| {
                     self.choices[edge]
                         .iter()
@@ -1866,7 +1866,8 @@ impl IncidenceComponentSearch<'_, '_> {
     fn branch_edge_ready(&self, edge: usize) -> bool {
         let predecessor_ready = self
             .partial_solution_filter
-            .and_then(|constraint| constraint.assignment_predecessors)
+            .and_then(|constraint| constraint.assignment_order)
+            .and_then(AssignmentOrder::predecessors)
             .and_then(|predecessors| predecessors.get(edge).copied().flatten())
             .is_none_or(|predecessor| {
                 self.assignment
@@ -1875,7 +1876,8 @@ impl IncidenceComponentSearch<'_, '_> {
             });
         let dependencies_ready = self
             .partial_solution_filter
-            .and_then(|constraint| constraint.assignment_dependencies)
+            .and_then(|constraint| constraint.assignment_order)
+            .and_then(AssignmentOrder::dependencies)
             .and_then(|dependencies| dependencies.get(edge))
             .is_none_or(|dependencies| {
                 dependencies.iter().all(|&predecessor| {
@@ -1964,8 +1966,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
                 let indexed_edges = self
                     .point_support_edges
-                    .as_ref()
-                    .and_then(|by_face| by_face.get(face))
+                    .get(face)
                     .and_then(|by_point| by_point.get(&point));
                 let supporting_edges =
                     indexed_edges.map_or(self.face_edges[face].as_slice(), Vec::as_slice);
@@ -2481,7 +2482,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 CompactBoundaryAdvanceOutcome::Complete(states) => Some(states),
                 CompactBoundaryAdvanceOutcome::Rejected => None,
                 CompactBoundaryAdvanceOutcome::Exhausted => {
-                    self.exhausted = true;
+                    self.state = IncidenceSearchState::Exhausted;
                     None
                 }
             }
@@ -2493,10 +2494,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         faces: impl IntoIterator<Item = usize>,
     ) -> bool {
-        let states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
-            vec![(quotient.clone(), HashSet::new())]
-        });
-        self.advance_ordered_faces(faces, states).is_some()
+        self.advance_ordered_faces(faces, Vec::new()).is_some()
     }
 
     fn component_faces(&self) -> Vec<usize> {
@@ -2695,7 +2693,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     factors.restore(applied.factor_checkpoint);
                 }
             }
-            if self.exhausted || self.stopped {
+            if self.state != IncidenceSearchState::Open {
                 return;
             }
         }
@@ -2745,7 +2743,7 @@ impl IncidenceComponentSearch<'_, '_> {
             next_coordinate_domains.as_deref(),
         ) {
             if self.budget.exhausted() {
-                self.exhausted = true;
+                self.state = IncidenceSearchState::Exhausted;
             }
             self.rollback_face_configuration(assigned);
             return None;
@@ -2804,7 +2802,7 @@ impl IncidenceComponentSearch<'_, '_> {
             domains = applied.coordinate_domains;
             let face_options = self.face_configuration_options_for(component_faces);
             if self.budget.exhausted() {
-                self.exhausted = true;
+                self.state = IncidenceSearchState::Exhausted;
                 break;
             }
             match face_options {
@@ -2829,7 +2827,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     break;
                 }
             }
-            if self.exhausted || self.stopped {
+            if self.state != IncidenceSearchState::Open {
                 break;
             }
         }
@@ -2840,9 +2838,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     pub(crate) fn search(&mut self) {
-        let quotient_states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
-            vec![(quotient.clone(), HashSet::new())]
-        });
+        let quotient_states = Vec::new();
         let component_faces = self.component_faces();
         let coordinate_domains = self
             .coordinate_domains
@@ -2852,7 +2848,9 @@ impl IncidenceComponentSearch<'_, '_> {
             coordinate_domains.as_ref(),
             &component_faces,
         );
-        self.exhausted |= self.budget.exhausted();
+        if self.budget.exhausted() {
+            self.state = IncidenceSearchState::Exhausted;
+        }
     }
 
     fn search_with_quotient(
@@ -2861,11 +2859,11 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
-        if self.exhausted || self.stopped {
+        if self.state != IncidenceSearchState::Open {
             return;
         }
         if !self.budget.charge() {
-            self.exhausted = true;
+            self.state = IncidenceSearchState::Exhausted;
             return;
         }
         let state = self
@@ -2878,7 +2876,7 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces);
-        if !self.exhausted && self.solutions.len() == solutions_before {
+        if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
     }
@@ -2890,16 +2888,16 @@ impl IncidenceComponentSearch<'_, '_> {
         component_faces: &[usize],
     ) {
         const MAX_SOLUTIONS: usize = 256;
-        if self.exhausted || self.stopped {
+        if self.state != IncidenceSearchState::Open {
             return;
         }
         if self.solution_visitor.is_none() && self.solutions.len() >= MAX_SOLUTIONS {
-            self.exhausted = true;
+            self.state = IncidenceSearchState::Exhausted;
             return;
         }
         let face_options = self.face_configuration_options_for(component_faces);
         if self.budget.exhausted() {
-            self.exhausted = true;
+            self.state = IncidenceSearchState::Exhausted;
             return;
         }
         if let Some(options) = face_options {
@@ -2924,7 +2922,7 @@ impl IncidenceComponentSearch<'_, '_> {
     ) {
         let branch = self.branch(coordinate_domains.map(Arc::as_ref));
         if self.budget.exhausted() {
-            self.exhausted = true;
+            self.state = IncidenceSearchState::Exhausted;
             return;
         }
         let Some(mut options) = branch else {
@@ -2956,7 +2954,7 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             if let Some(visitor) = self.solution_visitor.as_deref_mut() {
                 if (visitor)(&solution).is_break() {
-                    self.stopped = true;
+                    self.state = IncidenceSearchState::Stopped;
                 }
             } else {
                 self.solutions.push(solution);
@@ -2965,7 +2963,7 @@ impl IncidenceComponentSearch<'_, '_> {
         };
         for (edge, pair) in std::iter::once(first_option).chain(options) {
             if !self.budget.charge() {
-                self.exhausted = true;
+                self.state = IncidenceSearchState::Exhausted;
                 return;
             }
             if self.assignment[edge].is_some() {
@@ -2973,7 +2971,7 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref)) {
                 if self.budget.exhausted() {
-                    self.exhausted = true;
+                    self.state = IncidenceSearchState::Exhausted;
                     return;
                 }
                 continue;
@@ -3021,7 +3019,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if let Some(factors) = &mut self.face_configuration_domains {
                 factors.restore(factor_checkpoint);
             }
-            if self.exhausted || self.stopped {
+            if self.state != IncidenceSearchState::Open {
                 return;
             }
         }
@@ -3727,14 +3725,13 @@ where
         let degree_support_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
             choices,
-            explicit_point_supports: Some(explicit_point_supports),
-            point_support_edges: Some(point_support_edges),
+            explicit_point_supports,
+            point_support_edges,
             degree_support_witnesses: RefCell::new(HashMap::new()),
             edge_faces,
             face_edges,
             mesh_assignments,
             face_configuration_domains,
-            mesh_quotient: None,
             coordinate_domains,
             active,
             edges: component,
@@ -3750,11 +3747,10 @@ where
             degree_support_budget: &degree_support_budget,
             coordinate_propagation_budget,
             boundary_propagation_budget,
-            exhausted: false,
-            stopped: false,
+            state: IncidenceSearchState::Open,
         };
         search.search();
-        search.exhausted
+        search.state == IncidenceSearchState::Exhausted
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3830,15 +3826,17 @@ where
                     Some(&closure_budget),
                 );
                 match outcome {
-                    CoordinateRootClosure::Solved(_) => {}
-                    CoordinateRootClosure::Ambiguous
+                    MeshSolve::Solved(_) => {}
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
                         if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
-                    CoordinateRootClosure::Ambiguous => {
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                         *ambiguous = true;
                         return Ok(ControlFlow::Continue(()));
                     }
-                    CoordinateRootClosure::Exhausted => return Err(()),
-                    CoordinateRootClosure::Rejected => return Ok(ControlFlow::Continue(())),
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => return Err(()),
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
+                        return Ok(ControlFlow::Continue(()))
+                    }
                 }
             }
             *visited = visited.checked_add(1).ok_or(())?;
@@ -3979,7 +3977,8 @@ where
             constraint.active_edges.len() != choices.len()
                 || constraint.coupled_edges.len() != choices.len()
                 || constraint
-                    .assignment_predecessors
+                    .assignment_order
+                    .and_then(AssignmentOrder::predecessors)
                     .is_some_and(|predecessors| predecessors.len() != choices.len())
         }) {
             return None;
@@ -4071,8 +4070,7 @@ where
         order_incidence_components_by_constraints(
             &mut components,
             choices,
-            partial_solution_valid.and_then(|constraint| constraint.assignment_predecessors),
-            partial_solution_valid.and_then(|constraint| constraint.assignment_dependencies),
+            partial_solution_valid.and_then(|constraint| constraint.assignment_order),
         )?;
         let mut face_edges =
             alloc_filled(face_count, Vec::new(), "catia incidence face edges").ok()?;
@@ -4142,18 +4140,18 @@ where
                     Some(&budget),
                 );
                 match outcome {
-                    CoordinateRootClosure::Solved(_) => {}
-                    CoordinateRootClosure::Ambiguous
+                    MeshSolve::Solved(_) => {}
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
                         if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
-                    CoordinateRootClosure::Ambiguous => {
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                         ambiguous = true;
                         return Some(());
                     }
-                    CoordinateRootClosure::Exhausted => {
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
                         exhausted = true;
                         return None;
                     }
-                    CoordinateRootClosure::Rejected => return None,
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => return None,
                 }
             }
             visited = 1;

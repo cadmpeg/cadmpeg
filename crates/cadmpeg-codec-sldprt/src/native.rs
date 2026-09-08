@@ -2,12 +2,10 @@
 //! SOLIDWORKS native feature-history records.
 #![deny(clippy::disallowed_methods)]
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -15,19 +13,6 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
-
-/// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 13;
-pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
-
-const SLDPRT_VERSION_CONTRACT: VersionContract = VersionContract {
-    minimum: SLDPRT_MIN_NATIVE_VERSION,
-    maximum: SLDPRT_NATIVE_VERSION,
-};
-
-pub(crate) fn native_version_supported(version: u32) -> bool {
-    SLDPRT_VERSION_CONTRACT.check_version(version).is_ok()
-}
 
 pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
@@ -63,10 +48,8 @@ macro_rules! lane_family {
     ($arena:literal, $field:ident) => {
         SldprtFamilyRow {
             arena: $arena,
-            tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
-            note: None,
             emit: |model, row, namespace| {
                 emit_owned(
                     model
@@ -93,10 +76,8 @@ macro_rules! lane_family {
 const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     SldprtFamilyRow {
         arena: "feature_histories",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -118,20 +99,16 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "pmi_dimensions",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| emit_owned(model.pmi_dimensions.clone(), row, namespace),
         len: |model| model.pmi_dimensions.len(),
         counts_toward_emptiness: true,
     },
     SldprtFamilyRow {
         arena: "configurations",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -154,10 +131,8 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "features",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -180,10 +155,8 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
     },
     SldprtFamilyRow {
         arena: "feature_input_lanes",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -229,43 +202,25 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
 ];
 
 const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(SLDPRT_FAMILIES, SLDPRT_VERSION_CONTRACT);
+    Catalogue::new(SLDPRT_FAMILIES);
 
 /// SOLIDWORKS records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SldprtNative {
-    /// Schema version this namespace was written under; see [`SLDPRT_NATIVE_VERSION`].
-    pub version: u32,
     /// Parametric construction-history timelines decoded from the source part.
-    #[serde(default)]
     pub feature_histories: Vec<FeatureHistory>,
     /// Native feature-input byte streams retained for parametric replay and rewrite.
-    #[serde(default)]
     pub feature_input_lanes: Vec<FeatureInputLane>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
-    #[serde(default)]
     pub pmi_dimensions: Vec<PmiDimension>,
-}
-
-impl Default for SldprtNative {
-    fn default() -> Self {
-        Self {
-            version: SLDPRT_NATIVE_VERSION,
-            feature_histories: Vec::new(),
-            feature_input_lanes: Vec::new(),
-            pmi_dimensions: Vec::new(),
-        }
-    }
 }
 
 impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        SLDPRT_CATALOGUE.check_version(namespace.version)?;
         let mut native = Self {
-            version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
             pmi_dimensions: namespace.arena_as("pmi_dimensions")?,
@@ -273,46 +228,17 @@ impl SldprtNative {
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
-        let mut entities: Vec<crate::records::SketchInputEntity> =
+        let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
-        let body_selections: Vec<FeatureInputBodySelection> = if namespace.version == 1
-            && !namespace
-                .arenas
-                .contains_key("feature_input_body_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_body_selections")?
-        };
-        let edge_selections: Vec<FeatureInputEdgeSelection> = if namespace.version <= 2
-            && !namespace
-                .arenas
-                .contains_key("feature_input_edge_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_edge_selections")?
-        };
-        let surface_selections: Vec<FeatureInputSurfaceSelection> = if namespace.version <= 3
-            && !namespace
-                .arenas
-                .contains_key("feature_input_surface_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_surface_selections")?
-        };
+        let body_selections: Vec<FeatureInputBodySelection> =
+            namespace.arena_as("feature_input_body_selections")?;
+        let edge_selections: Vec<FeatureInputEdgeSelection> =
+            namespace.arena_as("feature_input_edge_selections")?;
+        let surface_selections: Vec<FeatureInputSurfaceSelection> =
+            namespace.arena_as("feature_input_surface_selections")?;
         let generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity> =
-            if namespace.version <= 12
-                && !namespace
-                    .arenas
-                    .contains_key("feature_input_generated_surface_identities")
-            {
-                Vec::new()
-            } else {
-                namespace.arena_as("feature_input_generated_surface_identities")?
-            };
+            namespace.arena_as("feature_input_generated_surface_identities")?;
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;
@@ -496,18 +422,16 @@ impl SldprtNative {
         if let Some(record) = surface_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || (namespace.version >= 8 && record.components.is_empty())
-                || (namespace.version >= 9
-                    && record
-                        .producer_feature_refs
-                        .iter()
-                        .any(|producer| !feature_ids.contains(producer.as_str())))
-                || (namespace.version >= 10
-                    && record
-                        .terminal_feature_ref
-                        .as_deref()
-                        .is_some_and(|feature| !feature_ids.contains(feature)))
-                || record.endpoint_selector.is_some_and(|selector| {
+                || record.components.is_empty()
+                || record
+                    .producer_feature_refs
+                    .iter()
+                    .any(|producer| !feature_ids.contains(producer.as_str()))
+                || record
+                    .terminal_feature_ref
+                    .as_deref()
+                    .is_some_and(|feature| !feature_ids.contains(feature))
+                || record.endpoint_selector().is_some_and(|selector| {
                     usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| offset.checked_sub(4))
@@ -561,14 +485,14 @@ impl SldprtNative {
         if let Some(record) = relation_instances.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || record.scalar_refs.is_empty()
-                || (record.scalar_refs.len() > 3
+                || record.scalar_refs().is_empty()
+                || (record.scalar_refs().len() > 3
                     && !repeated_circle_display_shape_valid(record, &scalars, &names))
                 || record
-                    .scalar_refs
+                    .scalar_refs()
                     .iter()
                     .enumerate()
-                    .any(|(index, scalar)| record.scalar_refs[..index].contains(scalar))
+                    .any(|(index, scalar)| record.scalar_refs()[..index].contains(scalar))
                 || classes
                     .iter()
                     .find(|class| class.id == record.class_ref)
@@ -580,18 +504,10 @@ impl SldprtNative {
                         )
                     })
                 || record
-                    .scalar_refs
+                    .scalar_refs()
                     .iter()
                     .any(|scalar| !scalar_ids.contains(scalar.as_str()))
-                || record
-                    .parameter_scalar_ref
-                    .as_deref()
-                    .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
-                || record
-                    .display_scalar_ref
-                    .as_deref()
-                    .is_some_and(|scalar| !record.scalar_refs.iter().any(|value| value == scalar))
-                || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
+                || record.parameter_scalar_ref().is_some_and(|id| {
                     scalars
                         .iter()
                         .find(|scalar| scalar.id == id)
@@ -599,7 +515,7 @@ impl SldprtNative {
                             scalar.role != crate::records::FeatureInputScalarRole::Driving
                         })
                 })
-                || record.display_scalar_ref.as_deref().is_some_and(|id| {
+                || record.display_scalar_ref().is_some_and(|id| {
                     scalars
                         .iter()
                         .find(|scalar| scalar.id == id)
@@ -647,28 +563,6 @@ impl SldprtNative {
             history.features.sort_by_key(|record| record.ordinal);
         }
         for lane in &mut native.feature_input_lanes {
-            if namespace.version <= 4 {
-                for entity in entities
-                    .iter_mut()
-                    .filter(|record| record.parent == lane.id)
-                {
-                    entity.object_index = usize::try_from(entity.offset).ok().and_then(|offset| {
-                        crate::resolved_features::markers::marker_object_index(
-                            &lane.native_payload,
-                            offset,
-                        )
-                    });
-                }
-            } else if namespace.version <= 6 {
-                for entity in entities
-                    .iter_mut()
-                    .filter(|record| record.parent == lane.id)
-                {
-                    if entity.object_index == Some(u32::MAX) {
-                        entity.object_index = None;
-                    }
-                }
-            }
             lane.classes = classes
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -711,31 +605,11 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 5 {
-                let modes = lane
-                    .body_selections
-                    .iter()
-                    .map(|selection| {
-                        crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-                            lane, selection,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                for (selection, mode) in lane.body_selections.iter_mut().zip(modes) {
-                    selection.mode = mode;
-                }
-            }
-            if let Some(record) = lane.body_selections.iter().find(|record| {
-                usize::try_from(record.offset).ok().and_then(|offset| {
-                    crate::resolved_features::selections::compact_body_selection_at(
-                        &lane.native_payload,
-                        offset,
-                    )
-                }) != Some(record.local_body_ids.clone())
-                    || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-                        lane, record,
-                    ) != record.mode
-            }) {
+            if let Some(record) = lane
+                .body_selections
+                .iter()
+                .find(|record| body_selection_disagrees_with_payload(lane, record))
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} disagrees with its payload",
                     record.id
@@ -747,73 +621,13 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 11 {
-                for record in &mut lane.edge_selections {
-                    if let Some(local_edge_ids) =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_selection_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                    {
-                        record.local_edge_ids = local_edge_ids;
-                    }
-                    record.components = usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_component_path_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                        .unwrap_or_default();
-                    record.producer_feature_refs = usize::try_from(record.offset)
-                        .ok()
-                        .map(|offset| {
-                            crate::resolved_features::selections::compact_edge_producer_features_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &features,
-                                &record.feature_ref,
-                            )
-                        })
-                        .unwrap_or_default();
-                    record.terminal_feature_ref =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_owner_feature_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &features,
-                                &record.feature_ref,
-                            )
-                        });
-                }
-            }
             let mut edge_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut edge_features,
                 std::slice::from_ref(lane),
             );
             if let Some(record) = lane.edge_selections.iter().find(|record| {
-                usize::try_from(record.offset).ok().and_then(|offset| {
-                    crate::resolved_features::selections::compact_edge_selection_at(
-                        &lane.native_payload,
-                        offset,
-                    )
-                }) != Some(record.local_edge_ids.clone())
-                    || usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_component_path_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                        .unwrap_or_default()
-                        != record.components
+                edge_selection_disagrees_with_payload(lane, record, &edge_features)
                     || usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| {
@@ -830,28 +644,6 @@ impl SldprtNative {
                         })
                         .unwrap_or_default()
                         != record.references
-                    || usize::try_from(record.offset)
-                        .ok()
-                        .map(|offset| {
-                            crate::resolved_features::selections::compact_edge_producer_features_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &edge_features,
-                                &record.feature_ref,
-                            )
-                        })
-                        .unwrap_or_default()
-                        != record.producer_feature_refs
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::compact_edge_owner_feature_at(
-                            &lane.native_payload,
-                            offset,
-                            &record.components,
-                            &edge_features,
-                            &record.feature_ref,
-                        )
-                    }) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input edge selection {} disagrees with its payload",
@@ -869,73 +661,21 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 9 {
-                for record in &mut lane.surface_selections {
-                    if namespace.version <= 7 {
-                        record.components = usize::try_from(record.offset)
-                            .ok()
-                            .and_then(|offset| {
-                                crate::resolved_features::selections::compact_surface_reference_at(
-                                    &lane.native_payload,
-                                    offset,
-                                )
-                            })
-                            .unwrap_or_default();
-                    }
-                    record.terminal_feature_ref =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &surface_features,
-                            )
-                        });
-                    record.producer_feature_refs =
-                        crate::resolved_features::component_paths::surface_selection_producer_features(
-                            &record.components,
-                            record.terminal_feature_ref.as_deref(),
-                            &surface_features,
-                        );
-                }
-            }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
-                !usize::try_from(record.offset).ok().is_some_and(|offset| {
-                    crate::resolved_features::selections::surface_reference_matches_at(
-                        &lane.native_payload,
-                        offset,
-                        &record.components,
-                    )
-                }) || crate::resolved_features::component_paths::surface_selection_producer_features(
-                    &record.components,
-                    record.terminal_feature_ref.as_deref(),
-                    &surface_features,
-                ) != record.producer_feature_refs
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                            &lane.native_payload,
-                            offset,
-                            &record.components,
-                            &surface_features,
-                        )
-                    }) != record.terminal_feature_ref
+                surface_selection_disagrees_with_payload(lane, record, &surface_features)
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} disagrees with its payload",
                     record.id
                 )));
             }
-            lane.generated_surface_identities = if namespace.version <= 12 {
-                crate::resolved_features::selections::generated_surface_identities(lane)
-            } else {
-                let mut records = generated_surface_identities
-                    .iter()
-                    .filter(|record| record.parent == lane.id)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                records.sort_by_key(|record| record.ordinal);
-                records
-            };
+            let mut records = generated_surface_identities
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            records.sort_by_key(|record| record.ordinal);
+            lane.generated_surface_identities = records;
             if lane.generated_surface_identities
                 != crate::resolved_features::selections::generated_surface_identities(lane)
             {
@@ -1034,17 +774,10 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_body_ids.is_empty()
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::compact_body_selection_at(
-                            &lane.native_payload,
-                            offset,
-                        )
-                    }) != Some(record.local_body_ids.clone())
-                    || crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
-                        != record.body_state_ids
-                    || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
+                    || crate::resolved_features::selections::compact_body_state_ids_for_selection(
                         lane, record,
-                    ) != record.mode
+                    ) != record.body_state_ids
+                    || body_selection_disagrees_with_payload(lane, record)
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} has inconsistent ownership",
@@ -1061,44 +794,7 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_edge_ids.is_empty()
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::compact_edge_selection_at(
-                            &lane.native_payload,
-                            offset,
-                        )
-                    }) != Some(record.local_edge_ids.clone())
-                    || usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_component_path_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                        .unwrap_or_default()
-                        != record.components
-                    || usize::try_from(record.offset)
-                        .ok()
-                        .map(|offset| {
-                            crate::resolved_features::selections::compact_edge_producer_features_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &edge_features,
-                                &record.feature_ref,
-                            )
-                        })
-                        .unwrap_or_default()
-                        != record.producer_feature_refs
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::compact_edge_owner_feature_at(
-                            &lane.native_payload,
-                            offset,
-                            &record.components,
-                            &edge_features,
-                            &record.feature_ref,
-                        )
-                    }) != record.terminal_feature_ref
+                    || edge_selection_disagrees_with_payload(lane, record, &edge_features)
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input edge selection {} has inconsistent ownership",
@@ -1115,26 +811,7 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty()
-                    || crate::resolved_features::component_paths::surface_selection_producer_features(
-                        &record.components,
-                        record.terminal_feature_ref.as_deref(),
-                        &surface_features,
-                    ) != record.producer_feature_refs
-                    || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                            &lane.native_payload,
-                            offset,
-                            &record.components,
-                            &surface_features,
-                        )
-                    }) != record.terminal_feature_ref
-                    || !usize::try_from(record.offset).ok().is_some_and(|offset| {
-                        crate::resolved_features::selections::surface_reference_matches_at(
-                            &lane.native_payload,
-                            offset,
-                            &record.components,
-                        )
-                    })
+                    || surface_selection_disagrees_with_payload(lane, record, &surface_features)
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} has inconsistent ownership",
@@ -1183,19 +860,10 @@ impl SldprtNative {
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || !relation_instance_shape_valid(record, lane)
                     || record
-                        .scalar_refs
+                        .scalar_refs()
                         .iter()
                         .any(|scalar| !scalar_ids.contains(scalar.as_str()))
-                    || record
-                        .parameter_scalar_ref
-                        .as_deref()
-                        .is_some_and(|scalar| {
-                            !record.scalar_refs.iter().any(|value| value == scalar)
-                        })
-                    || record.display_scalar_ref.as_deref().is_some_and(|scalar| {
-                        !record.scalar_refs.iter().any(|value| value == scalar)
-                    })
-                    || record.parameter_scalar_ref.as_deref().is_some_and(|id| {
+                    || record.parameter_scalar_ref().is_some_and(|id| {
                         lane.scalars
                             .iter()
                             .find(|scalar| scalar.id == id)
@@ -1203,7 +871,7 @@ impl SldprtNative {
                                 scalar.role != crate::records::FeatureInputScalarRole::Driving
                             })
                     })
-                    || record.display_scalar_ref.as_deref().is_some_and(|id| {
+                    || record.display_scalar_ref().is_some_and(|id| {
                         lane.scalars
                             .iter()
                             .find(|scalar| scalar.id == id)
@@ -1307,13 +975,7 @@ impl SldprtNative {
                 )));
             }
             for record in &lane.sketch_entities {
-                if record.links.is_empty() != record.link_selector.is_none() {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "sketch input entity {} has inconsistent local-link selector",
-                        record.id
-                    )));
-                }
-                for link in &record.links {
+                for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                             "sketch input entity {} references missing local-link target {}",
@@ -1353,20 +1015,112 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
-        namespace.version = SLDPRT_NATIVE_VERSION;
         SLDPRT_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(SLDPRT_ARENA_NAMES
             .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
+            .all(|name| namespace.arenas().contains_key(*name)));
         Ok(())
     }
+}
+
+/// `true` when a body selection disagrees with the compact selection in its lane payload.
+fn body_selection_disagrees_with_payload(
+    lane: &FeatureInputLane,
+    record: &FeatureInputBodySelection,
+) -> bool {
+    usize::try_from(record.offset).ok().and_then(|offset| {
+        crate::resolved_features::selections::compact_body_selection_at(
+            &lane.native_payload,
+            offset,
+        )
+    }) != Some(record.local_body_ids.clone())
+        || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
+            lane, record,
+        ) != record.mode
+}
+
+/// `true` when an edge selection disagrees with the compact selection in its lane payload.
+///
+/// `edge_features` are the history features enriched with this lane's object sources.
+fn edge_selection_disagrees_with_payload(
+    lane: &FeatureInputLane,
+    record: &FeatureInputEdgeSelection,
+    edge_features: &[crate::records::Feature],
+) -> bool {
+    usize::try_from(record.offset).ok().and_then(|offset| {
+        crate::resolved_features::selections::compact_edge_selection_at(
+            &lane.native_payload,
+            offset,
+        )
+    }) != Some(record.local_edge_ids.clone())
+        || usize::try_from(record.offset)
+            .ok()
+            .and_then(|offset| {
+                crate::resolved_features::selections::compact_edge_component_path_at(
+                    &lane.native_payload,
+                    offset,
+                )
+            })
+            .unwrap_or_default()
+            != record.components
+        || usize::try_from(record.offset)
+            .ok()
+            .map(|offset| {
+                crate::resolved_features::selections::compact_edge_producer_features_at(
+                    &lane.native_payload,
+                    offset,
+                    &record.components,
+                    edge_features,
+                    &record.feature_ref,
+                )
+            })
+            .unwrap_or_default()
+            != record.producer_feature_refs
+        || usize::try_from(record.offset).ok().and_then(|offset| {
+            crate::resolved_features::selections::compact_edge_owner_feature_at(
+                &lane.native_payload,
+                offset,
+                &record.components,
+                edge_features,
+                &record.feature_ref,
+            )
+        }) != record.terminal_feature_ref
+}
+
+/// `true` when a surface selection disagrees with the compact reference in its lane payload.
+///
+/// `surface_features` are the history features enriched with this lane's object sources.
+fn surface_selection_disagrees_with_payload(
+    lane: &FeatureInputLane,
+    record: &FeatureInputSurfaceSelection,
+    surface_features: &[crate::records::Feature],
+) -> bool {
+    !usize::try_from(record.offset).ok().is_some_and(|offset| {
+        crate::resolved_features::selections::surface_reference_matches_at(
+            &lane.native_payload,
+            offset,
+            &record.components,
+        )
+    }) || crate::resolved_features::component_paths::surface_selection_producer_features(
+        &record.components,
+        record.terminal_feature_ref.as_deref(),
+        surface_features,
+    ) != record.producer_feature_refs
+        || usize::try_from(record.offset).ok().and_then(|offset| {
+            crate::resolved_features::selections::surface_selection_terminal_feature_at(
+                &lane.native_payload,
+                offset,
+                &record.components,
+                surface_features,
+            )
+        }) != record.terminal_feature_ref
 }
 
 fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
 ) -> bool {
-    if record.scalar_refs.is_empty() {
+    if record.scalar_refs().is_empty() {
         return false;
     }
     let Some(class) = lane
@@ -1384,7 +1138,7 @@ fn relation_instance_shape_valid(
         return false;
     }
     let mut positions = Vec::new();
-    for scalar_ref in &record.scalar_refs {
+    for scalar_ref in record.scalar_refs() {
         let Some((position, scalar)) = lane
             .scalars
             .iter()
@@ -1400,7 +1154,7 @@ fn relation_instance_shape_valid(
     }
     let repeated_circle_display =
         repeated_circle_display_shape_valid(record, &lane.scalars, &lane.names);
-    if record.scalar_refs.len() > 3 && !repeated_circle_display {
+    if record.scalar_refs().len() > 3 && !repeated_circle_display {
         return false;
     }
     let scalar_operands_match = |scalar: &crate::records::FeatureInputScalar| {
@@ -1446,7 +1200,7 @@ fn relation_instance_shape_valid(
     match detached.as_slice() {
         [] => true,
         [(position, scalar)] => {
-            record.parameter_scalar_ref.as_deref() == Some(scalar.id.as_str())
+            record.parameter_scalar_ref() == Some(scalar.id.as_str())
                 && *position > operand_scalars.last().expect("nonempty operand scalars").0
         }
         _ => false,
@@ -1459,19 +1213,19 @@ fn repeated_circle_display_shape_valid(
     names: &[FeatureInputName],
 ) -> bool {
     if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
-        || record.parameter_scalar_ref.is_some()
-        || record.display_scalar_ref.is_some()
-        || record.scalar_refs.len() < 2
+        || record.parameter_scalar_ref().is_some()
+        || record.display_scalar_ref().is_some()
+        || record.scalar_refs().len() < 2
         || record.operands.len() != 1
     {
         return false;
     }
     let records = record
-        .scalar_refs
+        .scalar_refs()
         .iter()
         .filter_map(|scalar_id| scalars.iter().find(|scalar| scalar.id == *scalar_id))
         .collect::<Vec<_>>();
-    if records.len() != record.scalar_refs.len() {
+    if records.len() != record.scalar_refs().len() {
         return false;
     }
     if records

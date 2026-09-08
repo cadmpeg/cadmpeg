@@ -38,7 +38,7 @@ struct DimensionedArcNative {
     center: [f64; 2],
     start: [f64; 2],
     end: [f64; 2],
-    endpoint_refs: Vec<String>,
+    endpoints: Option<[String; 2]>,
 }
 
 #[derive(Debug, Clone)]
@@ -201,12 +201,12 @@ fn dimensioned_arc_native_geometry(
     let inline = usize::try_from(marker.offset)
         .ok()
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset));
-    let ([center, start, end], endpoint_refs) = if let Some(coordinates) = inline {
-        let endpoint_refs = match endpoints.as_slice() {
-            [first, second] => vec![first.id.clone(), second.id.clone()],
-            _ => Vec::new(),
+    let ([center, start, end], endpoint_pair) = if let Some(coordinates) = inline {
+        let endpoint_pair = match endpoints.as_slice() {
+            [first, second] => Some([first.id.clone(), second.id.clone()]),
+            _ => None,
         };
-        (coordinates, endpoint_refs)
+        (coordinates, endpoint_pair)
     } else if let [first, second] = endpoints.as_slice() {
         (
             [
@@ -214,7 +214,7 @@ fn dimensioned_arc_native_geometry(
                 first.coordinates_m?,
                 second.coordinates_m?,
             ],
-            vec![first.id.clone(), second.id.clone()],
+            Some([first.id.clone(), second.id.clone()]),
         )
     } else {
         return unique_native_radial_witness(lane, marker, expected_radius).then_some(
@@ -239,7 +239,7 @@ fn dimensioned_arc_native_geometry(
         center,
         start,
         end,
-        endpoint_refs,
+        endpoints: endpoint_pair,
     }))
 }
 
@@ -273,7 +273,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
                 && handle.kind == SketchInputKind::LineOrCircle
         })
         .filter_map(|handle| {
-            let [first, second] = handle.links.as_slice() else {
+            let [first, second] = handle.links() else {
                 return None;
             };
             if first.entity_ref != second.entity_ref || first.local_id != second.local_id {
@@ -539,14 +539,14 @@ fn transformed_dimensioned_arc(
     let mut end = transform_point(arc.end)?;
     let radius = (start.u - center.u).hypot(start.v - center.v);
     let end_radius = (end.u - center.u).hypot(end.v - center.v);
-    let mut endpoint_refs = arc.endpoint_refs.clone();
+    let mut endpoints = arc.endpoints.clone();
     let start_angle = (start.v - center.v).atan2(start.u - center.u);
     let end_angle = (end.v - center.v).atan2(end.u - center.u);
     let (start_angle, end_angle, reversed) = minor_arc_angles(start_angle, end_angle);
     if reversed {
         std::mem::swap(&mut start, &mut end);
-        if endpoint_refs.len() == 2 {
-            endpoint_refs.swap(0, 1);
+        if let Some(pair) = &mut endpoints {
+            pair.swap(0, 1);
         }
     }
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
@@ -562,7 +562,7 @@ fn transformed_dimensioned_arc(
                 start_angle: Angle(start_angle),
                 end_angle: Angle(end_angle),
             },
-            endpoint_refs,
+            endpoints.map_or_else(Vec::new, Vec::from),
         ))
 }
 
@@ -582,9 +582,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -785,18 +783,20 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         Vec::new(),
                     )
                 };
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
-                    relation.offset
-                )),
-                sketch: sketch.clone(),
-                construction,
-                native_ref: Some(carrier.marker.id.clone()),
-                geometry_ref: Some(relation.id.clone()),
-                endpoint_refs,
-                geometry,
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
+                        relation.offset
+                    )),
+                    sketch.clone(),
+                    geometry,
+                )
+                .with_construction(construction)
+                .with_native_ref(Some(carrier.marker.id.clone()))
+                .with_geometry_ref(Some(relation.id.clone()))
+                .with_endpoint_refs(endpoint_refs),
+            );
         }
     }
 }
@@ -819,9 +819,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } = &feature.definition
             else {
                 return None;
@@ -941,21 +939,22 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }) {
                 continue;
             }
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
-                    relation.offset
-                )),
-                sketch: (*sketch).clone(),
-                construction,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: Some(relation.id.clone()),
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Circle {
-                    center,
-                    radius: Length(radius),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
+                        relation.offset
+                    )),
+                    (*sketch).clone(),
+                    SketchGeometry::Circle {
+                        center,
+                        radius: Length(radius),
+                    },
+                )
+                .with_construction(construction)
+                .with_native_ref(Some(marker.id.clone()))
+                .with_geometry_ref(Some(relation.id.clone())),
+            );
         }
     }
 }
@@ -1182,7 +1181,7 @@ fn reconcile_direct_circle_dimension_carriers(
             let [typed_entity] = typed_entities.as_slice() else {
                 return None;
             };
-            Some((marker.id.clone(), typed_entity.id.clone()))
+            Some((marker.id.clone(), typed_entity.id().clone()))
         })
         .collect::<HashMap<_, _>>();
     if replacements.is_empty() {
@@ -1201,13 +1200,13 @@ fn reconcile_direct_circle_dimension_carriers(
         })
         .filter_map(|entity| {
             let native_ref = entity.native_ref.as_deref()?;
-            Some((entity.id.clone(), replacements.get(native_ref)?.clone()))
+            Some((entity.id().clone(), replacements.get(native_ref)?.clone()))
         })
         .collect::<HashMap<_, _>>();
     if removed.is_empty() {
         return;
     }
-    entities.retain(|entity| !removed.contains_key(&entity.id));
+    entities.retain(|entity| !removed.contains_key(entity.id()));
     if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
         for profile in &mut sketch.profiles {
             let usages = std::mem::take(profile);
@@ -1261,9 +1260,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         let (
             Some(native_ref),
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch_id),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             },
         ) = (feature.native_ref.as_deref(), &feature.definition)
         else {
@@ -1318,7 +1315,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     native_radial_record_for_marker(lanes, native_ref, reference).map(
                         |(radial_index, construction)| {
                             (
-                                carrier.id.clone(),
+                                carrier.id().clone(),
                                 reference.clone(),
                                 radial_index,
                                 construction,
@@ -1396,7 +1393,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 if let [center] = centers.into_iter().collect::<Vec<_>>().as_slice() {
                     let center = Point2::new(center.0 as f64 * QUANTUM, center.1 as f64 * QUANTUM);
                     let removed = carrier_id;
-                    entities.retain(|entity| entity.id != removed);
+                    entities.retain(|entity| entity.id() != &removed);
                     let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
                     else {
                         continue;
@@ -1407,31 +1404,37 @@ pub(crate) fn project_marker_dimensioned_circles(
                     sketch.profiles.retain(|profile| !profile.is_empty());
                     let feature_key = feature
                         .id
-                        .0
+                        .as_str()
                         .rsplit_once('#')
-                        .map_or(feature.id.0.as_str(), |(_, key)| key);
+                        .map_or(feature.id.as_str(), |(_, key)| key);
                     for (index, ((parameter, _), radius)) in
                         radial_dimensions.iter().copied().zip(radii).enumerate()
                     {
                         let entity_id = SketchEntityId(format!(
                             "sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"
                         ));
-                        entities.push(SketchEntity {
-                            id: entity_id.clone(),
-                            sketch: sketch_id.clone(),
-                            construction: carrier_construction
-                                && carrier_radius
-                                    .is_some_and(|carrier| same_dimension_length(carrier, radius)),
-                            native_ref: carrier_radius
-                                .is_some_and(|carrier| same_dimension_length(carrier, radius))
-                                .then(|| carrier_ref.clone()),
-                            geometry_ref: parameter.native_ref.clone(),
-                            endpoint_refs: Vec::new(),
-                            geometry: SketchGeometry::Circle {
-                                center,
-                                radius: Length(radius),
-                            },
-                        });
+                        entities.push(
+                            SketchEntity::new(
+                                entity_id.clone(),
+                                sketch_id.clone(),
+                                SketchGeometry::Circle {
+                                    center,
+                                    radius: Length(radius),
+                                },
+                            )
+                            .with_construction(
+                                carrier_construction
+                                    && carrier_radius.is_some_and(|carrier| {
+                                        same_dimension_length(carrier, radius)
+                                    }),
+                            )
+                            .with_native_ref(
+                                carrier_radius
+                                    .is_some_and(|carrier| same_dimension_length(carrier, radius))
+                                    .then(|| carrier_ref.clone()),
+                            )
+                            .with_geometry_ref(parameter.native_ref.clone()),
+                        );
                         sketch.profiles.push(vec![SketchEntityUse {
                             entity: entity_id,
                             reversed: false,
@@ -1556,9 +1559,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 consumed_carrier_refs.contains(native_ref)
                             })
                     })
-                    .map(|entity| entity.id.clone())
+                    .map(|entity| entity.id().clone())
                     .collect::<HashSet<_>>();
-                entities.retain(|entity| !removed.contains(&entity.id));
+                entities.retain(|entity| !removed.contains(entity.id()));
                 let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
                 else {
                     continue;
@@ -1571,18 +1574,18 @@ pub(crate) fn project_marker_dimensioned_circles(
                     let entity_id = SketchEntityId(format!(
                         "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
                     ));
-                    entities.push(SketchEntity {
-                        id: entity_id.clone(),
-                        sketch: sketch_id.clone(),
-                        construction: false,
-                        native_ref: (index == pairs.len() - 1).then(|| carrier_ref.clone()),
-                        geometry_ref: parameter.native_ref.clone(),
-                        endpoint_refs: Vec::new(),
-                        geometry: SketchGeometry::Circle {
-                            center,
-                            radius: Length(*radius),
-                        },
-                    });
+                    entities.push(
+                        SketchEntity::new(
+                            entity_id.clone(),
+                            sketch_id.clone(),
+                            SketchGeometry::Circle {
+                                center,
+                                radius: Length(*radius),
+                            },
+                        )
+                        .with_native_ref((index == pairs.len() - 1).then(|| carrier_ref.clone()))
+                        .with_geometry_ref(parameter.native_ref.clone()),
+                    );
                     sketch.profiles.push(vec![SketchEntityUse {
                         entity: entity_id,
                         reversed: false,
@@ -1701,9 +1704,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                                             ))
                                 })
                         })
-                        .map(|entity| entity.id.clone())
+                        .map(|entity| entity.id().clone())
                         .collect::<HashSet<_>>();
-                    entities.retain(|entity| !removed.contains(&entity.id));
+                    entities.retain(|entity| !removed.contains(entity.id()));
                     let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
                     else {
                         continue;
@@ -1722,21 +1725,22 @@ pub(crate) fn project_marker_dimensioned_circles(
                             "sldprt:model:sketch-entity#radial-circle:{lane_key}:{}",
                             record.1
                         ));
-                        entities.push(SketchEntity {
-                            id: entity_id.clone(),
-                            sketch: sketch_id.clone(),
-                            construction: record.2,
-                            native_ref: Some(format!(
+                        entities.push(
+                            SketchEntity::new(
+                                entity_id.clone(),
+                                sketch_id.clone(),
+                                SketchGeometry::Circle {
+                                    center,
+                                    radius: Length(record.6),
+                                },
+                            )
+                            .with_construction(record.2)
+                            .with_native_ref(Some(format!(
                                 "sldprt:feature-input:sketch-entity#{lane_key}:{}",
                                 record.1
-                            )),
-                            geometry_ref: record.5.native_ref.clone(),
-                            endpoint_refs: Vec::new(),
-                            geometry: SketchGeometry::Circle {
-                                center,
-                                radius: Length(record.6),
-                            },
-                        });
+                            )))
+                            .with_geometry_ref(record.5.native_ref.clone()),
+                        );
                         if !record.2 {
                             sketch.profiles.push(vec![SketchEntityUse {
                                 entity: entity_id,
@@ -1833,25 +1837,25 @@ pub(crate) fn project_marker_dimensioned_circles(
             }
             let feature_key = feature
                 .id
-                .0
+                .as_str()
                 .rsplit_once('#')
-                .map_or(feature.id.0.as_str(), |(_, key)| key);
+                .map_or(feature.id.as_str(), |(_, key)| key);
             let entity_id = SketchEntityId(format!(
                 "sldprt:model:sketch-entity#marker-circle:{}:{}",
                 feature_key, parameter.ordinal
             ));
-            entities.push(SketchEntity {
-                id: entity_id.clone(),
-                sketch: sketch_id.clone(),
-                construction,
-                native_ref: None,
-                geometry_ref: parameter.native_ref.clone(),
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Circle {
-                    center,
-                    radius: Length(radius),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    entity_id.clone(),
+                    sketch_id.clone(),
+                    SketchGeometry::Circle {
+                        center,
+                        radius: Length(radius),
+                    },
+                )
+                .with_construction(construction)
+                .with_geometry_ref(parameter.native_ref.clone()),
+            );
             sketch.profiles.push(vec![SketchEntityUse {
                 entity: entity_id,
                 reversed: false,

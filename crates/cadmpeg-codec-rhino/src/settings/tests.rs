@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::objects::ClassUserdata;
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
@@ -59,9 +60,9 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(&data, &record).expect("required invariant");
-    assert_eq!(units.millimeters_per_unit, Some(25.4));
+    assert_eq!(units.millimeters_per_unit(), Some(25.4));
     assert_eq!(units.absolute_tolerance, 0.5);
-    assert_eq!(units.absolute_tolerance_millimeters, Some(12.7));
+    assert_eq!(units.absolute_tolerance_millimeters(), Some(12.7));
     assert_eq!(units.angular_tolerance, 0.01);
     assert_eq!(units.relative_tolerance, 0.001);
 
@@ -92,10 +93,15 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
     body.extend([0xde, 0xad]);
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(&data, &record).expect("future units version");
-    assert_eq!(units.version, 103);
-    assert_eq!(units.unit, settings::UnitSystem::Standard(8));
-    assert_eq!(units.distance_display_precision, Some(6));
-    assert_eq!(units.millimeters_per_unit, Some(25.4));
+    assert_eq!(
+        units.unit,
+        settings::UnitSystem::Standard(settings::StandardUnit::Inches)
+    );
+    assert_eq!(
+        units.distance_display.map(|display| display.precision),
+        Some(6)
+    );
+    assert_eq!(units.millimeters_per_unit(), Some(25.4));
 }
 
 #[test]
@@ -178,26 +184,7 @@ fn parses_plugin_list_entries_and_bounded_future_minors() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8135, body);
-    let list = settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
-    assert_eq!(list.version, (1, 15));
-    assert_eq!(list.plugins.len(), 2);
-    let plugin = &list.plugins[0];
-    assert_eq!(plugin.version, (1, 15));
-    assert_eq!(
-        plugin.plugin_id,
-        Uuid::from_wire((1_u8..=16).collect::<Vec<_>>().try_into().expect("UUID"))
-    );
-    assert_eq!(plugin.plugin_type, 7);
-    assert_eq!(plugin.name, "WitnessPlugin");
-    assert_eq!(plugin.version_string, "4.5.6");
-    assert_eq!(plugin.filename, "witness-plugin.rhp");
-    assert_eq!(plugin.developer_email.as_deref(), Some("dev@example.test"));
-    assert_eq!(plugin.platform, Some(2));
-    assert_eq!(plugin.sdk_version, Some(202_400));
-    assert_eq!(plugin.sdk_service_release, Some(3));
-    assert_eq!(list.plugins[1].version, (1, 0));
-    assert!(list.plugins[1].developer_email.is_none());
-    assert!(list.plugins[1].platform.is_none());
+    settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
 }
 
 #[test]
@@ -273,44 +260,7 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8134, body);
-    let attributes =
-        settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
-    assert_eq!(attributes.version, (1, 15));
-    assert_eq!(attributes.linetype_display_scale, 2.5);
-    assert_eq!(attributes.current_plot_color, [10, 20, 30, 40]);
-    assert_eq!(attributes.current_line_pattern_index, -1);
-    assert_eq!(
-        attributes
-            .page_units
-            .as_ref()
-            .and_then(|value| value.distance_display_precision),
-        Some(6)
-    );
-    assert_eq!(
-        attributes.model_basepoint,
-        Some(settings::Point3([1.0, 2.0, 3.0]))
-    );
-    let earth = attributes.earth_anchor.expect("earth anchor");
-    assert_eq!(earth.version, (1, 2));
-    assert_eq!(earth.name.as_deref(), Some("Earth"));
-    assert_eq!(earth.coordinate_system, Some(2));
-    assert_eq!(
-        attributes
-            .io_settings
-            .as_ref()
-            .map(|value| value.idef_link_update),
-        Some(1)
-    );
-    let mesh = attributes.custom_render_mesh.expect("custom mesh");
-    assert_eq!(mesh.version, (1, 5));
-    assert_eq!(mesh.face_type, 2);
-    assert_eq!(mesh.subd.as_ref().map(|value| value.version), Some(3));
-    assert_eq!(
-        attributes.current_hatch_pattern_id,
-        Some(Uuid::from_wire(
-            (6_u8..=21).collect::<Vec<_>>().try_into().expect("UUID"),
-        ))
-    );
+    settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
 }
 
 #[test]
@@ -351,21 +301,6 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
         archive,
     )
     .expect("analysis mesh settings");
-    assert_eq!(
-        settings_value
-            .render_mesh_settings
-            .as_ref()
-            .map(|value| value.version),
-        Some((1, 15))
-    );
-    assert_eq!(
-        settings_value
-            .analysis_mesh_settings
-            .as_ref()
-            .and_then(|value| value.subd.as_ref())
-            .map(|value| value.version),
-        Some(3)
-    );
 }
 
 #[test]
@@ -566,7 +501,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let mut wrapper_warnings = Vec::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
         &data,
-        record.body.clone(),
+        record.body(),
         archive,
         &mut wrapper_warnings,
     )
@@ -610,7 +545,12 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
             .map(|value| value.version),
         Some((1, 1))
     );
-    assert!(warnings.is_empty());
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
 
     let mut future_payload = payload.clone();
     future_payload.pop();
@@ -642,7 +582,31 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert!(future.opaque_records.is_empty());
 }
 
+/// Marker of the diagnostic raised for an unstamped layer record.
+const LAYER_PARENT_DIALECT: &str = "layer parent link and expanded state were not read";
+
 fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata {
+    let (metadata, warnings) = layer_metadata(extension, None);
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
+    metadata
+}
+
+/// Parses one layer record, with the writer-version stamp under test control.
+///
+/// A `Some` stamp is delivered the way an archive delivers it: a short
+/// writer-version record in a properties table ahead of the layer table. The
+/// payload follows the stamp: a stamped archive carries the parent link and the
+/// expanded flag that the stamped reading consumes, an unstamped one does not,
+/// so each arm parses a record its own reading admits.
+fn layer_metadata(
+    extension: &[u8],
+    writer_version: Option<i64>,
+) -> (settings::DocumentMetadata, Vec<String>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -662,6 +626,10 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
     payload.extend(0.0_f64.to_le_bytes());
     payload.push(0);
     payload.extend([0; 16]);
+    if writer_version.is_some() {
+        payload.extend([0x44; 16]);
+        payload.push(1);
+    }
     payload.extend(crc_chunk(
         archive,
         0x4000_8000,
@@ -695,10 +663,72 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
+    let mut tables = Vec::new();
+    if let Some(value) = writer_version {
+        tables.push(crate::container::Table {
+            typecode: 0x1000_0014,
+            range: 0..0,
+            body: 0..0,
+            records: vec![crate::container::Record::short(0xa000_0026, 0..0, value)],
+            record_count: 1,
+            object_typecodes: std::collections::BTreeMap::new(),
+        });
+    }
+    tables.push(table);
     let mut warnings = Vec::new();
-    let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    metadata
+    let metadata = settings::parse_metadata(&data, archive, &tables, &mut warnings);
+    (metadata, warnings)
+}
+
+/// The layer parent link rests on the stamp, so the loss follows the stamp.
+#[test]
+fn unstamped_layer_charges_the_parent_link_stamp_loss() {
+    // A single zero closes the extension-item chain, so both arms read a whole
+    // record and the difference between them is only the stamp.
+    let (unstamped_metadata, unstamped) = layer_metadata(&[0], None);
+    assert_eq!(unstamped_metadata.layers.len(), 1, "{unstamped:?}");
+    assert_eq!(
+        unstamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.parent_id),
+        None
+    );
+    assert_eq!(
+        unstamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.expanded),
+        None
+    );
+    assert!(
+        unstamped_metadata
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(LAYER_PARENT_DIALECT)),
+        "{:?}",
+        unstamped_metadata.losses
+    );
+
+    // The stamped arm must read a layer, or its silence proves nothing.
+    let (stamped_metadata, stamped) = layer_metadata(&[0], Some(200_912_010));
+    assert_eq!(stamped_metadata.layers.len(), 1, "{stamped:?}");
+    assert_eq!(
+        stamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.parent_id),
+        Some(Uuid::from_canonical([0x44; 16]))
+    );
+    assert_eq!(
+        stamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.expanded),
+        Some(true)
+    );
+    assert!(
+        !stamped
+            .iter()
+            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{stamped:?}"
+    );
 }
 
 fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
@@ -784,7 +814,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     outer_body.extend(entries);
     outer_body.extend([0xbe, 0xef]);
     let payload = anonymous_chunk(archive, 0, &outer_body);
-    let descriptor = crate::objects::UserdataDescriptor {
+    let descriptor = ClassUserdata {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,
@@ -792,11 +822,8 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
         copy_count: 1,
         transform_range: 0..0,
         application_uuid: None,
-        last_saved_as_goo: None,
-        archive_version: None,
-        writer_version: None,
+        save_context: None,
         payload_range: 0..payload.len(),
-        unknown_version: false,
     };
     let values = settings::parse_layer_extensions(
         &payload,
@@ -807,17 +834,25 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     .expect("layer extensions payload");
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].viewport_id, first_viewport);
-    assert_eq!(values[0].settings_mask, 3);
+    assert_eq!(values[0].settings_mask(), 3);
     assert_eq!(values[0].color, Some([90, 100, 110, 120]));
     assert_eq!(values[1].viewport_id, second_viewport);
-    assert_eq!(values[1].settings_mask, 63);
+    assert_eq!(values[1].settings_mask(), 63);
     assert_eq!(values[1].plot_weight_mm, Some(1.25));
-    assert_eq!(values[1].visible, Some(2));
-    assert_eq!(values[1].persistent_visibility, Some(2));
+    assert_eq!(
+        values[1].visible.map(settings::LayerVisibility::as_u8),
+        Some(2)
+    );
+    assert_eq!(
+        values[1]
+            .persistent_visibility
+            .map(settings::LayerVisibility::as_u8),
+        Some(2)
+    );
 
     let root_values = settings::parse_layer_extensions(&payload, &descriptor, archive, None)
         .expect("root layer extensions payload");
-    assert_eq!(root_values[1].settings_mask, 31);
+    assert_eq!(root_values[1].settings_mask(), 31);
     assert_eq!(root_values[1].persistent_visibility, None);
 }
 
@@ -825,7 +860,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
 fn layer_extensions_reject_negative_count() {
     let archive = ArchiveVersion::V8;
     let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
-    let descriptor = crate::objects::UserdataDescriptor {
+    let descriptor = ClassUserdata {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,
@@ -833,11 +868,8 @@ fn layer_extensions_reject_negative_count() {
         copy_count: 1,
         transform_range: 0..0,
         application_uuid: None,
-        last_saved_as_goo: None,
-        archive_version: None,
-        writer_version: None,
+        save_context: None,
         payload_range: 0..payload.len(),
-        unknown_version: false,
     };
     assert!(settings::parse_layer_extensions(&payload, &descriptor, archive, None).is_err());
 }
@@ -1009,13 +1041,8 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let mut material_data = 42_i32.to_le_bytes().to_vec();
     material_data.extend(3_i32.to_le_bytes());
     material_data.extend([0xaa, 0xbb]);
-    let material_record = crate::container::Record {
-        typecode: 0x2000_8039,
-        range: 0..material_data.len(),
-        body: 0..material_data.len(),
-        short: false,
-        value: material_data.len() as i64,
-    };
+    let material_record =
+        crate::container::Record::long(0x2000_8039, 0..material_data.len(), 0..material_data.len());
     settings::parse_setting(
         &material_data,
         &material_record,
@@ -1023,19 +1050,24 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         ArchiveVersion::V8,
     )
     .expect("required invariant");
-    assert_eq!(settings_value.current_material, Some(42));
-    assert_eq!(settings_value.current_material_source, Some(3));
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.value),
+        Some(42)
+    );
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.source),
+        Some(3)
+    );
 
     let mut color_data = vec![1, 2, 3, 4];
     color_data.extend(2_i32.to_le_bytes());
     color_data.extend([0xcc, 0xdd]);
-    let color_record = crate::container::Record {
-        typecode: 0x2000_803a,
-        range: 0..color_data.len(),
-        body: 0..color_data.len(),
-        short: false,
-        value: color_data.len() as i64,
-    };
+    let color_record =
+        crate::container::Record::long(0x2000_803a, 0..color_data.len(), 0..color_data.len());
     settings::parse_setting(
         &color_data,
         &color_record,
@@ -1043,8 +1075,18 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         ArchiveVersion::V8,
     )
     .expect("required invariant");
-    assert_eq!(settings_value.current_color, Some([1, 2, 3, 4]));
-    assert_eq!(settings_value.current_color_source, Some(2));
+    assert_eq!(
+        settings_value
+            .current_color
+            .map(|selection| selection.value),
+        Some([1, 2, 3, 4])
+    );
+    assert_eq!(
+        settings_value
+            .current_color
+            .map(|selection| selection.source),
+        Some(2)
+    );
 
     for (typecode, value) in [
         (0xa000_0038, 3),
@@ -1052,13 +1094,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         (0xa000_0132, 7),
         (0xa000_0133, 9),
     ] {
-        let record = crate::container::Record {
-            typecode,
-            range: 0..0,
-            body: 0..0,
-            short: true,
-            value,
-        };
+        let record = crate::container::Record::short(typecode, 0..0, value);
         settings::parse_setting(&[], &record, &mut settings_value, ArchiveVersion::V8)
             .expect("required invariant");
     }
@@ -1072,20 +1108,24 @@ fn parses_selector_widths_and_skips_direct_suffix() {
 fn current_material_accepts_the_source_reader_i32_range() {
     let mut data = (-2_i32).to_le_bytes().to_vec();
     data.extend(3_i32.to_le_bytes());
-    let record = crate::container::Record {
-        typecode: 0x2000_8039,
-        range: 0..data.len(),
-        body: 0..data.len(),
-        short: false,
-        value: data.len() as i64,
-    };
+    let record = crate::container::Record::long(0x2000_8039, 0..data.len(), 0..data.len());
     let mut settings_value = settings::DocumentSettings::default();
 
     settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
         .expect("source reader accepts every signed i32 material index");
 
-    assert_eq!(settings_value.current_material, Some(-2));
-    assert_eq!(settings_value.current_material_source, Some(3));
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.value),
+        Some(-2)
+    );
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.source),
+        Some(3)
+    );
 }
 
 #[test]
@@ -1095,20 +1135,8 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         range: 0..0,
         body: 0..0,
         records: vec![
-            crate::container::Record {
-                typecode: 0xa000_0038,
-                range: 0..0,
-                body: 0..0,
-                short: true,
-                value: 3,
-            },
-            crate::container::Record {
-                typecode: 0xa000_0038,
-                range: 0..0,
-                body: 0..0,
-                short: true,
-                value: 7,
-            },
+            crate::container::Record::short(0xa000_0038, 0..0, 3),
+            crate::container::Record::short(0xa000_0038, 0..0, 7),
         ],
         record_count: 2,
         object_typecodes: std::collections::BTreeMap::new(),
@@ -1126,8 +1154,6 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
 fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() {
     let layer = |index| settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },
-        version: (1, 15),
-        obsolete_mode: 0,
         index,
         iges_level: 0,
         render_material_index: -1,
@@ -1137,11 +1163,9 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         visible: true,
         locked: false,
         id: None,
-        parent_id: None,
-        expanded: None,
+        hierarchy: None,
         linetype_index: None,
-        plot_color: None,
-        plot_weight: None,
+        plot: None,
         display_material_id: None,
         no_clipping_planes: None,
         visible_in_new_details: None,

@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
+use cadmpeg_ir::products::NonEmptyString;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
@@ -11,7 +12,7 @@ use crate::chunks::{
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{OpaqueRecord, Record};
-use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
 
@@ -87,6 +88,36 @@ pub(crate) struct FileReference {
     pub(crate) embedded_file_id: Option<Uuid>,
 }
 
+/// Source of an instance-definition external link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LinkSource {
+    /// No linked path or structured file reference.
+    None,
+    /// Legacy full path without a relative-path alternative.
+    LegacyFull(NonEmptyString),
+    /// Preferred legacy relative path, with an optional full-path alternative.
+    LegacyRelative {
+        relative_path: NonEmptyString,
+        full_path: Option<NonEmptyString>,
+    },
+    /// Structured `ON_FileReference` payload.
+    Structured(FileReference),
+}
+
+impl LinkSource {
+    fn from_legacy(full_path: String, relative_path: String) -> Self {
+        let full_path = NonEmptyString::new(full_path);
+        if let Some(relative_path) = NonEmptyString::new(relative_path) {
+            Self::LegacyRelative {
+                relative_path,
+                full_path,
+            }
+        } else {
+            full_path.map_or(Self::None, Self::LegacyFull)
+        }
+    }
+}
+
 /// Complete parsed instance-definition table record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceDefinition {
@@ -110,24 +141,44 @@ pub(crate) struct InstanceDefinition {
     pub(crate) kind: DefinitionKind,
     /// Definition units.
     pub(crate) units: UnitDetail,
-    /// V5 linked full path.
-    pub(crate) legacy_linked_path: String,
-    /// V5 linked relative path.
-    pub(crate) legacy_relative_linked_path: String,
-    /// Exact serialized V5 linked-file checksum range.
-    pub(crate) legacy_checksum_range: Option<Range<usize>>,
-    /// Legacy relative-path selector.
-    pub(crate) legacy_relative_path: bool,
     /// Nested linked-definition depth.
     pub(crate) linked_depth: i32,
     /// Linked-component appearance selector.
     pub(crate) linked_appearance: u32,
-    /// Complete structured linked-file-reference chunk.
-    pub(crate) file_reference_range: Option<Range<usize>>,
-    /// Structured linked-file reference.
-    pub(crate) file_reference: Option<FileReference>,
-    /// Referenced-component settings retained as a complete bounded chunk.
-    pub(crate) reference_settings_range: Option<Range<usize>>,
+    /// Exclusive linked-file source.
+    pub(crate) link: LinkSource,
+}
+
+#[cfg(test)]
+impl InstanceDefinition {
+    pub(crate) fn file_reference(&self) -> Option<&FileReference> {
+        match &self.link {
+            LinkSource::Structured(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn legacy_linked_path(&self) -> &str {
+        match &self.link {
+            LinkSource::LegacyFull(path) => path.as_str(),
+            LinkSource::LegacyRelative {
+                full_path: Some(path),
+                ..
+            } => path.as_str(),
+            _ => "",
+        }
+    }
+
+    pub(crate) fn legacy_relative_linked_path(&self) -> &str {
+        match &self.link {
+            LinkSource::LegacyRelative { relative_path, .. } => relative_path.as_str(),
+            _ => "",
+        }
+    }
+
+    pub(crate) fn legacy_relative_path(&self) -> bool {
+        matches!(self.link, LinkSource::LegacyRelative { .. })
+    }
 }
 
 /// Parsed and validated instance-reference payload.
@@ -206,7 +257,7 @@ fn checksum_warning_excluding(
     label: &str,
     warnings: &mut Vec<String>,
 ) -> Result<(), FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    let direct = direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -259,7 +310,7 @@ fn anonymous_versioned<'a>(
     warnings: &mut Vec<String>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             format!("{label} is not anonymous"),
@@ -268,9 +319,9 @@ fn anonymous_versioned<'a>(
     if verify_container_crc {
         checksum_warning(data, &chunk, label, warnings)?;
     }
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok((chunk, payload, version))
 }
 
@@ -324,14 +375,14 @@ fn model_component(
     warnings: &mut Vec<String>,
 ) -> Result<(Option<i32>, Uuid, String), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
+    if chunk.typecode != MODEL_ATTRIBUTES || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "missing model-component attributes",
         ));
     }
     checksum_warning(data, &chunk, "model-component attributes", warnings)?;
-    let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
     if major != 1 || minor < 0 {
@@ -348,7 +399,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid model serial status",
-            ))
+            ));
         }
     }
     let id = match payload.u8()? {
@@ -358,7 +409,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid model UUID status",
-            ))
+            ));
         }
     };
     match payload.u8()? {
@@ -368,7 +419,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component type status",
-            ))
+            ));
         }
     }
     let index = match payload.u8()? {
@@ -378,7 +429,7 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component index status",
-            ))
+            ));
         }
     };
     let name = match payload.u8()? {
@@ -388,11 +439,11 @@ fn model_component(
             return Err(FramingError::structural(
                 payload.position(),
                 "invalid component name status",
-            ))
+            ));
         }
     };
     finish(&mut payload, "model-component attributes")?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok((index, id, name))
 }
 
@@ -413,13 +464,13 @@ pub(crate) fn file_reference<'a>(
     let full_path = utf16(&mut payload)?;
     let relative_path = utf16(&mut payload)?;
     let hash = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-    if hash.typecode != ANONYMOUS || hash.short {
+    if hash.typecode != ANONYMOUS || hash.short() {
         return Err(FramingError::structural(
             payload.position(),
             "missing content-hash chunk",
         ));
     }
-    let mut hash_payload = BoundedReader::new(data, hash.body.start, hash.body.end)?;
+    let mut hash_payload = BoundedReader::new(data, hash.body().start, hash.body().end)?;
     let hash_major = hash_payload.i32()?;
     let hash_minor = hash_payload.i32()?;
     if hash_major != 1 || hash_minor < 0 {
@@ -434,14 +485,14 @@ pub(crate) fn file_reference<'a>(
     let mut digest_ranges = Vec::with_capacity(2);
     let mut read_sha1 = |payload: &mut BoundedReader<'a>| -> Result<[u8; 20], FramingError> {
         let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if digest.typecode != ANONYMOUS || digest.short {
+        if digest.typecode != ANONYMOUS || digest.short() {
             return Err(FramingError::structural(
                 payload.position(),
                 "missing SHA-1 chunk",
             ));
         }
         checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
-        let mut bytes = BoundedReader::new(data, digest.body.start, digest.body.end)?;
+        let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
         let digest_major = bytes.i32()?;
         let digest_minor = bytes.i32()?;
         if digest_major != 1 || digest_minor < 0 {
@@ -453,7 +504,7 @@ pub(crate) fn file_reference<'a>(
         let value = bytes.array()?;
         bytes.skip_remaining()?;
         digest_ranges.push(digest.range());
-        payload.skip(digest.next_offset - payload.position())?;
+        payload.skip(digest.next_offset() - payload.position())?;
         Ok(value)
     };
     let content_hash = ContentHash {
@@ -465,7 +516,7 @@ pub(crate) fn file_reference<'a>(
     };
     finish(&mut hash_payload, "content hash")?;
     checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
-    payload.skip(hash.next_offset - payload.position())?;
+    payload.skip(hash.next_offset() - payload.position())?;
     let path_status = payload.u32()?;
     let embedded_file_id = if version.1 >= 1 {
         Some(uuid(&mut payload)?)
@@ -513,14 +564,14 @@ fn skip_object_array(
     let mut ranges = Vec::with_capacity(count);
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.short {
+        if chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "object array item is short-framed",
             ));
         }
         ranges.push(chunk.range());
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
     }
     Ok(ranges)
 }
@@ -570,14 +621,15 @@ fn reference_settings<'a>(
                 archive,
                 false,
             )?;
-            if parent.short {
+            if parent.short() {
                 return Err(FramingError::structural(
                     implementation_payload.position(),
                     "reference parent layer is short-framed",
                 ));
             }
             children.push(parent.range());
-            implementation_payload.skip(parent.next_offset - implementation_payload.position())?;
+            implementation_payload
+                .skip(parent.next_offset() - implementation_payload.position())?;
         }
         finish(
             &mut implementation_payload,
@@ -644,7 +696,7 @@ fn parse_v5(
     ) {
         legacy_linked_path.clear();
     }
-    let legacy_checksum_range = Some(legacy_checksum(&mut reader)?);
+    let _ = legacy_checksum(&mut reader)?;
     let unit = i32::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?;
     let meters_per_unit = reader.f64()?;
@@ -688,17 +740,12 @@ fn parse_v5(
         url_tag,
         kind,
         units,
-        legacy_linked_path,
-        legacy_relative_linked_path,
-        legacy_checksum_range,
-        legacy_relative_path,
         linked_depth,
         linked_appearance,
-        file_reference_range: file_reference
-            .as_ref()
-            .map(|value| value.source_range.clone()),
-        file_reference,
-        reference_settings_range: None,
+        link: match file_reference {
+            Some(value) => LinkSource::Structured(value),
+            None => LinkSource::from_legacy(legacy_linked_path, legacy_relative_linked_path),
+        },
     })
 }
 
@@ -750,9 +797,7 @@ fn parse_v6(
     };
     let mut linked_depth = 0;
     let mut linked_appearance = 0;
-    let mut linked_file = None;
-    let mut reference_settings_range = None;
-    if reader.bool()? {
+    let linked_file = if reader.bool()? {
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
         if linked_version.0 != 1 || linked_version.1 < 0 {
@@ -761,23 +806,12 @@ fn parse_v6(
                 "unsupported linked-type version",
             ));
         }
-        linked_file = Some(file_reference(data, &mut linked, archive, warnings)?);
-        let mut linked_children = vec![linked_file
-            .as_ref()
-            .expect("file reference assigned")
-            .source_range
-            .clone()];
+        let reference = file_reference(data, &mut linked, archive, warnings)?;
+        let mut linked_children = vec![reference.source_range.clone()];
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
-            reference_settings_range =
-                Some(reference_settings(data, &mut linked, archive, warnings)?);
-            linked_children.push(
-                reference_settings_range
-                    .as_ref()
-                    .expect("reference settings assigned")
-                    .clone(),
-            );
+            linked_children.push(reference_settings(data, &mut linked, archive, warnings)?);
         }
         finish(&mut linked, "linked type")?;
         checksum_warning_excluding(
@@ -788,7 +822,10 @@ fn parse_v6(
             warnings,
         )?;
         outer_children.push(linked_chunk.range());
-    }
+        Some(reference)
+    } else {
+        None
+    };
     finish(&mut reader, "instance definition")?;
     checksum_warning_excluding(
         data,
@@ -808,15 +845,9 @@ fn parse_v6(
         url_tag,
         kind,
         units,
-        legacy_linked_path: String::new(),
-        legacy_relative_linked_path: String::new(),
-        legacy_checksum_range: None,
-        legacy_relative_path: false,
         linked_depth,
         linked_appearance,
-        file_reference_range: linked_file.as_ref().map(|value| value.source_range.clone()),
-        file_reference: linked_file,
-        reference_settings_range,
+        link: linked_file.map_or(LinkSource::None, LinkSource::Structured),
     })
 }
 
@@ -869,7 +900,7 @@ fn extract_member_ids(
 
 fn parse_idef_alternative_path(
     data: &[u8],
-    userdata: &UserdataDescriptor,
+    userdata: &ClassUserdata,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<(String, bool), FramingError> {
@@ -914,12 +945,16 @@ fn apply_idef_alternative_path(
     }
 
     let mut degraded = false;
-    for item in userdata.iter().filter(|item| {
-        item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
-            && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
-            && (item.application_uuid.is_none()
-                || item.application_uuid == Some(OPENNURBS5_APPLICATION))
-    }) {
+    for item in userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .filter(|item| {
+            item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+                && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+                && (item.application_uuid.is_none()
+                    || item.application_uuid == Some(OPENNURBS5_APPLICATION))
+        })
+    {
         let (path, relative) = match parse_idef_alternative_path(data, item, archive, warnings) {
             Ok(value) => value,
             Err(error) => {
@@ -931,25 +966,42 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let path = path.trim();
-        if path.is_empty() {
+        let Some(path) = NonEmptyString::new(path.trim()) else {
             continue;
-        }
-        if let Some(reference) = definition.file_reference.as_mut() {
-            if relative {
-                if reference.relative_path.is_empty() {
-                    path.clone_into(&mut reference.relative_path);
+        };
+        match &mut definition.link {
+            LinkSource::Structured(reference) => {
+                if relative {
+                    if reference.relative_path.is_empty() {
+                        path.as_str().clone_into(&mut reference.relative_path);
+                    }
+                } else if reference.full_path.is_empty() {
+                    path.as_str().clone_into(&mut reference.full_path);
                 }
-            } else if reference.full_path.is_empty() {
-                path.clone_into(&mut reference.full_path);
             }
-        } else if relative {
-            if definition.legacy_relative_linked_path.is_empty() {
-                path.clone_into(&mut definition.legacy_relative_linked_path);
-                definition.legacy_relative_path = true;
+            LinkSource::LegacyFull(full_path) => {
+                if relative {
+                    definition.link = LinkSource::LegacyRelative {
+                        relative_path: path,
+                        full_path: Some(full_path.clone()),
+                    };
+                }
             }
-        } else if definition.legacy_linked_path.is_empty() {
-            path.clone_into(&mut definition.legacy_linked_path);
+            LinkSource::LegacyRelative { full_path, .. } => {
+                if !relative && full_path.is_none() {
+                    *full_path = Some(path);
+                }
+            }
+            LinkSource::None => {
+                definition.link = if relative {
+                    LinkSource::LegacyRelative {
+                        relative_path: path,
+                        full_path: None,
+                    }
+                } else {
+                    LinkSource::LegacyFull(path)
+                };
+            }
         }
     }
     degraded
@@ -967,12 +1019,8 @@ pub(crate) fn parse_definitions(
     for record in records {
         let parsed = (|| {
             let mut warnings = Vec::new();
-            let (class, userdata) = parse_class_wrapper_with_userdata(
-                data,
-                record.body.clone(),
-                archive,
-                &mut warnings,
-            )?;
+            let (class, userdata) =
+                parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -1122,16 +1170,17 @@ pub(crate) fn parse_reference(
     }
     Ok(InstanceReference {
         definition_id,
-        transform: Transform { rows },
+        transform: Transform::from_rows(rows).expect("affine transform"),
     })
 }
 
 /// Converts source-unit translation coefficients to canonical millimeters.
-pub(crate) fn scale_translation(mut transform: Transform, scale: f64) -> Option<Transform> {
-    for row in transform.rows.iter_mut().take(3) {
+pub(crate) fn scale_translation(transform: Transform, scale: f64) -> Option<Transform> {
+    let mut rows = transform.rows();
+    for row in rows.iter_mut().take(3) {
         row[3] = crate::wire::scaled_coordinate(row[3], scale)?;
     }
-    Some(transform)
+    Transform::from_rows(rows)
 }
 
 /// Returns whether a class UUID denotes an instance reference.

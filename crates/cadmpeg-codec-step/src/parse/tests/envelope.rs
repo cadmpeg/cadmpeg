@@ -8,9 +8,31 @@ use std::io::Cursor;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::{InspectOptions, View};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::StepCodec;
+
+fn assert_unsupported_dialect(
+    error: impl Into<cadmpeg_ir::DecodeFailure>,
+    expected_id: &str,
+    expected_message: &str,
+) {
+    let error = error.into();
+    let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::UnsupportedDialect {
+        dialects,
+        message,
+        ..
+    }) = error
+    else {
+        panic!("expected a typed STEP dialect refusal, found {error:?}");
+    };
+    assert_eq!(dialects.primary().dialect().as_str(), expected_id);
+    assert_eq!(
+        dialects.primary().admission(),
+        &cadmpeg_core::dialect::Admission::Refused
+    );
+    assert_eq!(message, expected_message);
+}
 
 #[test]
 fn parser_enforces_the_part21_header_contract() {
@@ -200,7 +222,7 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
     );
     assert_eq!(exchange.header[2].name, "FILE_SCHEMA");
     assert_eq!(
-        crate::reader::schema_identifiers(&exchange),
+        exchange.schema_identifiers(),
         ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
     );
 }
@@ -366,10 +388,6 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
             "3;1 forbids SIGNATURE sections",
         ),
-        (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "FILE_DESCRIPTION has an unsupported implementation level",
-        ),
     ];
 
     for (source, message) in cases {
@@ -379,6 +397,33 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "expected {message:?}, got {error}"
         );
     }
+}
+
+#[test]
+fn parser_recovers_an_unknown_implementation_level_with_a_diagnostic() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (_, diagnostics) = crate::parse::parse(source).expect("the declaration is framed");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
+    );
+    assert!(diagnostics[0].message.contains("1;1"));
+    assert!(diagnostics[0].message.contains("4;3 grammar"));
+}
+
+#[test]
+fn unknown_implementation_level_uses_the_retained_substitution_for_later_sections() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<item>=#1;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("the substituted 4;3 grammar admits ANCHOR");
+    assert_eq!(exchange.implementation_level(), "1;1");
+    assert_eq!(exchange.anchors.len(), 1);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
+    );
 }
 
 #[test]
@@ -525,31 +570,31 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
 }
 
 #[test]
-fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
+fn codec_uses_the_first_schema_identifier_for_dialect_selection() {
     let cases = [
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }','AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'",
-            "edition 1",
+            "dialect step:ap242-e1",
         ),
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 14 1 4 }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { iso standard 10303 part(442) version(3) }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'OTHER_SCHEMA { 1 0 10303 442 4 1 4 }'",
-            "edition unspecified",
+            "dialect step:unknown",
         ),
         (
             "'ap242_managed_model_based_3d_engineering_mim_lf { 1 0 10303 442 4 1 4 }'",
-            "edition 3",
+            "dialect step:ap242-e3",
         ),
     ];
 
-    for (identifiers, expected_edition) in cases {
+    for (identifiers, expected_dialect) in cases {
         let first_identifier = identifiers.split(',').next().expect("first schema");
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA('section',({first_identifier}));#1=ITEM();ENDSEC;END-ISO-10303-21;"
@@ -564,8 +609,8 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
             summary
                 .notes
                 .iter()
-                .any(|note| note.ends_with(expected_edition)),
-            "expected {expected_edition} in {:?}",
+                .any(|note| note.ends_with(expected_dialect)),
+            "expected {expected_dialect} in {:?}",
             summary.notes
         );
     }
@@ -636,11 +681,10 @@ fn part28_configuration_witnesses_are_refused_before_schema_admission() {
             schema_matches_ap238
         );
         assert_eq!(codec.detect(bytes), Confidence::Medium);
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "STEP Part 28 XML encoding"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect_err("Part 28 refusal");
+        assert_unsupported_dialect(error, "step:part28-xml", "STEP Part 28 XML encoding");
     }
 }
 
@@ -761,50 +805,53 @@ fn part28_schema_mapping_witnesses_stop_at_the_caller_boundary() {
         include_bytes!("data/ce04_part28_ap238_unbound_schema.xml").as_slice(),
     ] {
         assert_eq!(codec.detect(bytes), Confidence::Medium);
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "STEP Part 28 XML encoding"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect_err("Part 28 refusal");
+        assert_unsupported_dialect(error, "step:part28-xml", "STEP Part 28 XML encoding");
     }
 }
 
 #[test]
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
-    let cases: &[(&[u8], &str)] = &[
+    let cases: &[(&[u8], &str, &str)] = &[
         (
             b"\x89HDF\r\n\x1a\ncontent",
+            "step:part26-hdf5",
             "STEP Part 26 binary/HDF5 encoding",
         ),
         (
             b"<?xml version='1.0'?><iso_10303_28/>",
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_ap242.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_ap238_step_tools.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/ce03_part28_configured_uos.xml").as_slice(),
+            "step:part28-xml",
             "STEP Part 28 XML encoding",
         ),
         (
             include_bytes!("data/bm01_ap242_bo_model_ed2.stpx").as_slice(),
+            "step:ap242-bo-model-xml",
             "AP242 BO-Model XML sidecar",
         ),
     ];
-    for &(bytes, reason) in cases {
+    for &(bytes, dialect, reason) in cases {
         let error = codec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message == reason)
-        );
+        assert_unsupported_dialect(error, dialect, reason);
     }
     assert_eq!(
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
@@ -817,14 +864,14 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     let mut hdf5_user_block = vec![0u8; 512];
     hdf5_user_block.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
     assert_eq!(codec.detect(&hdf5_user_block), Confidence::Medium);
-    assert!(matches!(
-        codec.decode(
-            &mut Cursor::new(hdf5_user_block),
-            &DecodeOptions::default()
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message == "STEP Part 26 binary/HDF5 encoding"
-    ));
+    let error = codec
+        .decode(&mut Cursor::new(hdf5_user_block), &DecodeOptions::default())
+        .expect_err("Part 26 refusal");
+    assert_unsupported_dialect(
+        error,
+        "step:part26-hdf5",
+        "STEP Part 26 binary/HDF5 encoding",
+    );
     let mut invalid_hdf5_offset = vec![0u8; 256];
     invalid_hdf5_offset.extend_from_slice(b"\x89HDF\r\n\x1a\nGeometry_encoding");
     assert_eq!(codec.detect(&invalid_hdf5_offset), Confidence::No);
@@ -833,7 +880,9 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             &mut Cursor::new(invalid_hdf5_offset),
             &DecodeOptions::default()
         ),
-        Err(cadmpeg_core::CodecError::WrongFormat(message))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::WrongFormat(message)
+        ))
             if message == "missing ISO-10303-21 magic"
     ));
     assert_eq!(
@@ -855,7 +904,9 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
     assert_eq!(codec.detect(lookalike), Confidence::No);
     assert!(matches!(
         codec.decode(&mut Cursor::new(lookalike), &DecodeOptions::default()),
-        Err(cadmpeg_core::CodecError::WrongFormat(_))
+        Err(cadmpeg_ir::DecodeFailure::Codec(
+            cadmpeg_core::CodecError::WrongFormat(_)
+        ))
     ));
 }
 
@@ -877,7 +928,9 @@ fn bo_model_detection_requires_root_namespace_binding() {
         assert_eq!(codec.detect(xml), Confidence::No);
         assert!(matches!(
             codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::WrongFormat(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::WrongFormat(_)
+            ))
         ));
     }
 }
@@ -915,11 +968,14 @@ fn codec_refuses_schema_marked_part26_hdf5_population() {
 
     let codec = StepCodec::default();
     assert_eq!(codec.detect(&bytes), Confidence::Medium);
-    assert!(matches!(
-        codec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message == "STEP Part 26 binary/HDF5 encoding"
-    ));
+    let error = codec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect_err("Part 26 refusal");
+    assert_unsupported_dialect(
+        error,
+        "step:part26-hdf5",
+        "STEP Part 26 binary/HDF5 encoding",
+    );
 }
 
 #[test]
@@ -1086,10 +1142,13 @@ fn bo_model_does_not_compose_with_explicit_part21_file_reference() {
         assert!(xml
             .windows(value.len())
             .any(|window| window == value.as_bytes()));
-        assert!(matches!(
-            codec.decode(&mut Cursor::new(xml), &DecodeOptions::default()),
-            Err(cadmpeg_core::CodecError::NotImplemented(message))
-                if message == "AP242 BO-Model XML sidecar"
-        ));
+        let error = codec
+            .decode(&mut Cursor::new(xml), &DecodeOptions::default())
+            .expect_err("BO-Model refusal");
+        assert_unsupported_dialect(
+            error,
+            "step:ap242-bo-model-xml",
+            "AP242 BO-Model XML sidecar",
+        );
     }
 }

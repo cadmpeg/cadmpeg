@@ -3,10 +3,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
+use crate::native::joint::{
+    empty_link_target, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
+};
+use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointId, JointKind, JointLimits, JointOperand, Occurrence,
+    AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -37,8 +40,8 @@ pub(crate) fn transfer(
         }
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
-                && property.links.len() == 1
-                && property.links[0].subelements.iter().all(String::is_empty);
+                && property.links().len() == 1
+                && property.links()[0].subelements.iter().all(String::is_empty);
             if !matches!(
                 property.type_name.as_str(),
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
@@ -58,42 +61,43 @@ pub(crate) fn transfer(
                 )));
             }
         }
-        let grounded = grounded_property.is_some();
         let joint_type = joint_type_property.map(enumeration_value).transpose()?;
-        if !grounded && joint_type.is_none() {
-            continue;
-        }
-        let (references, placements, offsets) = if grounded {
-            let placement = placement(&owned, "Placement")?;
-            (
-                links(&owned, "ObjectToGround"),
-                placement.into_iter().collect(),
-                Vec::new(),
-            )
+        let body = if grounded_property.is_some() {
+            let placement =
+                placement(&owned, "Placement")?.unwrap_or_else(crate::product::identity);
+            let reference = links(&owned, "ObjectToGround")
+                .into_iter()
+                .next()
+                .unwrap_or_else(empty_link_target);
+            JointBody::Grounded {
+                reference,
+                placement,
+            }
+        } else if let Some(joint_type) = joint_type {
+            let connector_record = |owned: &[&PropertyRecord],
+                                    reference_name: &str,
+                                    placement_name: &str,
+                                    offset_name: &str|
+             -> Result<JointConnectorRecord, CodecError> {
+                Ok(JointConnectorRecord {
+                    reference: connector(owned, reference_name)?
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(empty_link_target),
+                    placement: placement(owned, placement_name)?
+                        .unwrap_or_else(crate::product::identity),
+                    offset: placement(owned, offset_name)?.unwrap_or_else(crate::product::identity),
+                })
+            };
+            JointBody::Pair {
+                kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
+                connectors: [
+                    connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
+                    connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
+                ],
+            }
         } else {
-            let placement1 = placement(&owned, "Placement1")?;
-            let offset1 = placement(&owned, "Offset1")?;
-            let placement2 = placement(&owned, "Placement2")?;
-            let offset2 = placement(&owned, "Offset2")?;
-            let reference1 = connector(&owned, "Reference1")?;
-            let reference2 = connector(&owned, "Reference2")?;
-            let slots = [
-                (reference1, placement1, offset1),
-                (reference2, placement2, offset2),
-            ];
-            let references = slots
-                .iter()
-                .flat_map(|(references, _, _)| references.iter().cloned())
-                .collect();
-            let placements = slots
-                .iter()
-                .map(|(_, placement, _)| placement.unwrap_or_else(crate::product::identity))
-                .collect();
-            let offsets = slots
-                .iter()
-                .map(|(_, _, offset)| offset.unwrap_or_else(crate::product::identity))
-                .collect();
-            (references, placements, offsets)
+            continue;
         };
         let parameters = owned
             .iter()
@@ -127,14 +131,7 @@ pub(crate) fn transfer(
         output.push(JointRecord {
             id: crate::native::native_id("joint", &object.name),
             object: object.id.clone(),
-            kind: if grounded {
-                "grounded".into()
-            } else {
-                joint_type.unwrap_or_else(|| "unknown".into())
-            },
-            references,
-            placements,
-            offsets,
+            body,
             parameters,
         });
     }
@@ -154,7 +151,7 @@ pub(crate) fn transfer_neutral(
         .collect::<HashMap<_, _>>();
     records
         .iter()
-        .map(|record| {
+        .filter_map(|record| {
             let bool_value = |name: &str| {
                 record
                     .parameters
@@ -179,99 +176,169 @@ pub(crate) fn transfer_neutral(
                         .then(|| scalar(maximum))
                         .flatten()
                         .map(|value: f64| value * scale);
-                    (minimum.is_some() || maximum.is_some())
-                        .then_some(JointLimits { minimum, maximum })
+                    JointLimits::new(minimum, maximum)
                 };
-            AssemblyJoint {
-                id: JointId(crate::native::model_id(
-                    "joint",
-                    &record.object,
-                    "constraint",
-                )),
-                kind: joint_kind(&record.kind),
-                operands: record
-                    .references
+            let operand = |reference: &LinkTarget| {
+                let object = reference.object()?.to_owned();
+                let subelements = reference
+                    .subelements
                     .iter()
-                    .map(|reference| JointOperand {
-                        occurrence: reference
-                            .object
-                            .as_deref()
-                            .and_then(|object| occurrence_by_native.get(object).copied())
-                            .cloned(),
-                        external_document: reference.document.as_deref().map(|document| {
-                            crate::product::external_document_reference(
-                                document,
-                                reference.document_attribute.as_deref(),
-                            )
-                        }),
-                        object: reference.object.clone(),
-                        subelements: reference
-                            .subelements
-                            .iter()
-                            .filter(|subelement| !subelement.is_empty())
-                            .cloned()
-                            .collect(),
-                    })
-                    .collect(),
-                frames: record
-                    .placements
-                    .iter()
-                    .copied()
-                    .map(|rows| Transform { rows })
-                    .collect(),
-                offset_frames: record
-                    .offsets
-                    .iter()
-                    .copied()
-                    .map(|rows| Transform { rows })
-                    .collect(),
-                suppressed: bool_value("Suppressed").unwrap_or(false),
-                detached: [
-                    bool_value("Detach1").unwrap_or(false),
-                    bool_value("Detach2").unwrap_or(false),
-                ],
-                angle: scalar("Angle").map(f64::to_radians),
-                translation_offset: None,
-                distance: scalar("Distance"),
-                distance2: scalar("Distance2"),
-                angular_limits: enabled_limits(
-                    "AngleMin",
-                    "AngleMax",
-                    "EnableAngleMin",
-                    "EnableAngleMax",
-                    std::f64::consts::PI / 180.0,
+                    .filter(|name| !name.is_empty())
+                    .cloned()
+                    .collect();
+                if let Some(document) = reference.document.as_ref() {
+                    return Some(JointOperand::external(
+                        crate::product::external_document_reference(
+                            document.as_str(),
+                            document.attribute(),
+                        ),
+                        object,
+                        subelements,
+                    ));
+                }
+                Some(
+                    match occurrence_by_native.get(object.as_str()).copied().cloned() {
+                        Some(occurrence) => {
+                            JointOperand::occurrence(occurrence, object, subelements)
+                        }
+                        None => JointOperand::root(object, subelements),
+                    },
+                )
+            };
+            let id = JointId::mint(crate::native::model_id(
+                "joint",
+                &record.object,
+                "constraint",
+            ))
+            .expect("identity grammar");
+            let angle = scalar("Angle").map(f64::to_radians);
+            let distance = scalar("Distance");
+            let distance2 = scalar("Distance2");
+            let angular_limits = enabled_limits(
+                "AngleMin",
+                "AngleMax",
+                "EnableAngleMin",
+                "EnableAngleMax",
+                std::f64::consts::PI / 180.0,
+            );
+            let linear_limits = enabled_limits(
+                "LengthMin",
+                "LengthMax",
+                "EnableLengthMin",
+                "EnableLengthMax",
+                1.0,
+            );
+            let mut joint = match &record.body {
+                JointBody::Grounded {
+                    reference,
+                    placement,
+                } => AssemblyJoint::grounded(
+                    id,
+                    JointConnector {
+                        operand: operand(reference)?,
+                        frame: Transform::from_rows(*placement)?,
+                        detached: bool_value("Detach1").unwrap_or(false),
+                    },
+                    None,
                 ),
-                linear_limits: enabled_limits(
-                    "LengthMin",
-                    "LengthMax",
-                    "EnableLengthMin",
-                    "EnableLengthMax",
-                    1.0,
-                ),
-                properties: record.parameters.clone(),
-                native_ref: Some(record.id.clone()),
-            }
+                JointBody::Pair {
+                    kind,
+                    connectors: [first, second],
+                } => {
+                    let kind = joint_kind(
+                        kind,
+                        angle,
+                        distance,
+                        distance2,
+                        angular_limits,
+                        linear_limits,
+                    );
+                    AssemblyJoint::paired(
+                        id,
+                        kind,
+                        [
+                            JointConnector {
+                                operand: operand(&first.reference)?,
+                                frame: Transform::from_rows(first.placement)?,
+                                detached: bool_value("Detach1").unwrap_or(false),
+                            },
+                            JointConnector {
+                                operand: operand(&second.reference)?,
+                                frame: Transform::from_rows(second.placement)?,
+                                detached: bool_value("Detach2").unwrap_or(false),
+                            },
+                        ],
+                        Some([
+                            Transform::from_rows(first.offset)?,
+                            Transform::from_rows(second.offset)?,
+                        ]),
+                    )
+                }
+            };
+            joint.suppressed = bool_value("Suppressed").unwrap_or(false);
+            joint.native_ref = Some(record.id.clone());
+            Some(joint)
         })
         .collect()
 }
 
-fn joint_kind(kind: &str) -> JointKind {
-    match kind.to_ascii_lowercase().as_str() {
-        "fixed" => JointKind::Fixed,
-        "revolute" => JointKind::Revolute,
-        "slider" | "prismatic" => JointKind::Slider,
-        "cylindrical" => JointKind::Cylindrical,
-        "ball" | "spherical" => JointKind::Ball,
-        "distance" => JointKind::Distance,
-        "parallel" => JointKind::Parallel,
-        "perpendicular" => JointKind::Perpendicular,
-        "angle" => JointKind::Angle,
-        "rackpinion" | "rack_pinion" => JointKind::RackPinion,
-        "screw" => JointKind::Screw,
-        "gears" => JointKind::Gears,
-        "belt" => JointKind::Belt,
-        "grounded" => JointKind::Grounded,
-        _ => JointKind::Native(kind.to_owned()),
+fn joint_kind(
+    kind: &PairedJointFamily,
+    angle: Option<f64>,
+    distance: Option<f64>,
+    distance2: Option<f64>,
+    angular_limits: Option<JointLimits>,
+    linear_limits: Option<JointLimits>,
+) -> PairedJointKind {
+    match kind.as_str().to_ascii_lowercase().as_str() {
+        "fixed" => PairedJointKind::Fixed {
+            angle,
+            translation_offset: None,
+            angular_limits,
+            linear_limits,
+        },
+        "revolute" => PairedJointKind::Revolute {
+            angle,
+            angular_limits,
+        },
+        "slider" | "prismatic" => PairedJointKind::Slider {
+            distance,
+            translation_offset: None,
+            linear_limits,
+        },
+        "cylindrical" => PairedJointKind::Cylindrical {
+            angle,
+            distance,
+            angular_limits,
+            linear_limits,
+        },
+        "ball" | "spherical" => PairedJointKind::Ball,
+        "distance" => PairedJointKind::Distance { distance },
+        "parallel" => PairedJointKind::Parallel,
+        "perpendicular" => PairedJointKind::Perpendicular,
+        "angle" => PairedJointKind::Angle { angle },
+        "rackpinion" | "rack_pinion" => PairedJointKind::RackPinion {
+            distance,
+            distance2,
+        },
+        "screw" => PairedJointKind::Screw { distance },
+        "gears" => PairedJointKind::Gears {
+            distance,
+            distance2,
+        },
+        "belt" => PairedJointKind::Belt {
+            distance,
+            distance2,
+        },
+        other => PairedJointKind::Native {
+            name: other.to_owned(),
+            angle,
+            translation_offset: None,
+            distance,
+            distance2,
+            angular_limits,
+            linear_limits,
+        },
     }
 }
 
@@ -426,7 +493,7 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
             property.id, property.type_name
         )));
     }
-    let [value] = property.values.as_slice() else {
+    let [value] = property.values() else {
         return Err(malformed(format!(
             "joint parameter property {} requires one {expected_tag} value",
             property.id
@@ -476,15 +543,9 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .find(|property| property.name == name)
         .map(|property| {
             property
-                .links
+                .links()
                 .iter()
-                .filter(|link| {
-                    link.document.is_some()
-                        || link
-                            .object
-                            .as_deref()
-                            .is_some_and(|object| !object.is_empty())
-                })
+                .filter(|link| link.document.is_some() || link.object().is_some())
                 .cloned()
                 .collect()
         })
@@ -508,7 +569,7 @@ fn connector(
         )));
     }
     if property
-        .values
+        .values()
         .first()
         .is_none_or(|value| value.tag != "XLink")
     {
@@ -517,14 +578,14 @@ fn connector(
             property.id
         )));
     }
-    if property.links.len() != 1 {
+    if property.links().len() != 1 {
         return Err(malformed(format!(
             "joint connector {} requires one target, found {}",
             property.id,
-            property.links.len()
+            property.links().len()
         )));
     }
-    Ok(property.links.clone())
+    Ok(property.links().to_vec())
 }
 
 fn placement(
@@ -546,8 +607,11 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::*;
     use crate::FcstdCodec;
+    use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    const EPS_JOINT_SCALAR: f64 = 1.0e-12;
 
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
@@ -565,12 +629,18 @@ pub(crate) mod tests {
             "Screw",
             "Gears",
             "Belt",
-            "grounded",
         ] {
             assert!(
                 !matches!(
-                    joint_kind(family),
-                    cadmpeg_ir::products::JointKind::Native(_)
+                    joint_kind(
+                        &super::PairedJointFamily::new(family.into()).unwrap(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None
+                    ),
+                    PairedJointKind::Native { .. }
                 ),
                 "{family} must not fall through to a native joint family"
             );
@@ -614,63 +684,71 @@ pub(crate) mod tests {
             .native
             .namespace("fcstd")
             .expect("native")
-            .arena_as::<crate::native::JointRecord>("joints")
+            .arena_as::<crate::native::joint::JointRecord>("joints")
             .expect("joints");
         assert_eq!(joints.len(), 1);
-        assert_eq!(joints[0].kind, "Revolute");
-        assert_eq!(joints[0].references.len(), 2);
+        assert_eq!(joints[0].kind(), "Revolute");
+        assert_eq!(joints[0].references().len(), 2);
         assert_eq!(
-            joints[0].references[0].object.as_deref(),
+            joints[0].references()[0].object(),
             Some("fcstd:native:object#Assembly")
         );
-        assert_eq!(joints[0].references[0].subelements, ["A.Face1", "A.Edge2"]);
-        assert_eq!(joints[0].placements[1][0][3], 2.0);
+        assert_eq!(
+            joints[0].references()[0].subelements,
+            ["A.Face1", "A.Edge2"]
+        );
+        assert_eq!(joints[0].placements()[1][0][3], 2.0);
         assert_eq!(
             joints[0].parameters.get("Suppressed").map(String::as_str),
             Some("true")
         );
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
-        assert_eq!(joint.operands.len(), 2);
-        assert!(joint
-            .operands
-            .iter()
-            .all(|operand| operand.occurrence.is_some()));
-        assert_eq!(joint.frames[1].rows[0][3], 2.0);
-        assert_eq!(joint.offset_frames.len(), 2);
-        assert_eq!(joint.offset_frames[0].rows[0][3], 0.5);
-        assert_eq!(joint.offset_frames[1].rows[0][3], 1.5);
+        assert!(matches!(
+            joint.paired_kind(),
+            Some(PairedJointKind::Revolute { .. })
+        ));
+        let connectors = joint.connectors().collect::<Vec<_>>();
+        assert_eq!(connectors.len(), 2);
+        assert!(connectors.iter().all(|connector| matches!(
+            connector.operand.container,
+            cadmpeg_ir::OperandContainer::Occurrence(_)
+        )));
+        assert_eq!(connectors[1].frame.rows()[0][3], 2.0);
+        let offset_frames = joint.offset_frames().collect::<Vec<_>>();
+        assert_eq!(offset_frames.len(), 2);
+        assert_eq!(offset_frames[0].rows()[0][3], 0.5);
+        assert_eq!(offset_frames[1].rows()[0][3], 1.5);
         assert!(joint.suppressed);
-        assert_eq!(joint.detached, [true, false]);
-        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1.0e-12);
-        let limits = joint.angular_limits.as_ref().expect("angular limits");
-        assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1.0e-12);
-        assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1.0e-12);
+        assert_eq!(joint.detached(), [true, false]);
+        assert!((joint.angle().expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
+        let limits = joint.angular_limits().expect("angular limits");
+        assert!(
+            (limits.minimum().expect("minimum") - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR
+        );
+        assert!(
+            (limits.maximum().expect("maximum") - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR
+        );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut corrupted = result.ir().clone();
-        let limits = corrupted.model.assembly_joints[0]
-            .angular_limits
-            .as_mut()
-            .expect("limits");
-        limits.minimum = Some(2.0);
-        limits.maximum = Some(1.0);
+        corrupted.model.assembly_joints[0].set_angular_limits(Some(
+            cadmpeg_ir::JointLimits::Both {
+                minimum: 2.0,
+                maximum: 1.0,
+            },
+        ));
         assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.message.contains("invalid assembly joint")));
-        let mut corrupted = result.ir().clone();
-        corrupted.model.assembly_joints[0].operands[0].external_document =
-            Some(cadmpeg_ir::ExternalDocumentReference {
-                path: Some("external.FCStd".into()),
-                document_id: None,
-                resolution: cadmpeg_ir::ExternalResolution::Unresolved,
-            });
-        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("invalid assembly joint operands")));
+        let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
+            .expect("assembly joint wire");
+        wire["operands"][0]["external_document"] = serde_json::json!({
+            "path": "external.FCStd",
+            "resolution": "unresolved"
+        });
+        assert!(serde_json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err());
     }
 
     #[test]
@@ -695,13 +773,16 @@ pub(crate) mod tests {
             .expect("grounded assembly object");
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
-        assert_eq!(joint.operands.len(), 1);
-        assert!(joint.operands[0].occurrence.is_some());
-        assert_eq!(joint.frames.len(), 1);
-        assert_eq!(joint.frames[0].rows[0][3], 7.0);
-        assert_eq!(joint.frames[0].rows[1][3], 8.0);
-        assert_eq!(joint.frames[0].rows[2][3], 9.0);
+        assert!(joint.is_grounded());
+        let connectors = joint.connectors().collect::<Vec<_>>();
+        assert_eq!(connectors.len(), 1);
+        assert!(matches!(
+            connectors[0].operand.container,
+            cadmpeg_ir::OperandContainer::Occurrence(_)
+        ));
+        assert_eq!(connectors[0].frame.rows()[0][3], 7.0);
+        assert_eq!(connectors[0].frame.rows()[1][3], 8.0);
+        assert_eq!(connectors[0].frame.rows()[2][3], 9.0);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
@@ -723,7 +804,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -751,7 +834,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -784,7 +869,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -812,7 +899,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }
@@ -851,7 +940,9 @@ pub(crate) mod tests {
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
                 ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
             ));
         }
     }

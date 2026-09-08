@@ -2,9 +2,12 @@
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::SldprtCodec;
@@ -51,10 +54,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &base,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&base, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut base_bytes))
         .unwrap();
     let reference = SldprtCodec
@@ -71,13 +71,11 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     for (rows, apply) in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube();
         prepare(&mut moved);
-        moved.model.bodies[0].transform = Some(Transform { rows });
+        moved.model.bodies[0].transform =
+            Some(Transform::from_rows(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         SldprtCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &moved,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut bytes))
             .unwrap();
         let decoded = SldprtCodec
@@ -111,14 +109,14 @@ fn decode_encode_decode_reaches_fixpoint() {
     let first = SldprtCodec
         .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
         .expect("first decode");
-    assert!(first.report().geometry_transferred);
+    assert!(first.report().geometry_transferred());
 
     let mut reencoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: first.ir(),
-            fidelity: Some(first.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(first.ir(), Some(first.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
 
@@ -152,8 +150,8 @@ fn decode_encode_decode_reaches_fixpoint() {
         "coedges diverged at the fixpoint"
     );
     assert_eq!(
-        first.report().geometry_transferred,
-        second.report().geometry_transferred,
+        first.report().geometry_transferred(),
+        second.report().geometry_transferred(),
         "geometry-transferred flag diverged at the fixpoint"
     );
 }
@@ -203,8 +201,7 @@ fn decode_is_equivariant_under_rigid_translation() {
 fn source_less_cube_reaches_encode_decode_fixpoint() {
     let first = encode_decode_result(&source_less_cube());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(first.ir(), first.source_fidelity(), &mut encoded)
+    crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();
     let second = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())

@@ -64,7 +64,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cadmpeg-asm"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -74,29 +74,28 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-catia"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "memchr",
  "serde",
- "sha2",
+ "serde-value",
 ]
 
 [[package]]
 name = "cadmpeg-codec-creo"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "regex",
  "serde",
- "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-f3d"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -111,18 +110,16 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "thiserror",
  "zip",
 ]
 
 [[package]]
 name = "cadmpeg-codec-freecad"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
- "flate2",
  "roxmltree",
  "serde",
  "serde_json",
@@ -132,20 +129,19 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-iges"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "memchr",
  "serde",
  "serde_json",
- "sha2",
  "toml",
 ]
 
 [[package]]
 name = "cadmpeg-codec-inventor"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -154,15 +150,17 @@ dependencies = [
  "cadmpeg-protein",
  "encoding_rs",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "cadmpeg-codec-nx"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
  "flate2",
  "roxmltree",
  "serde",
@@ -172,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -189,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-sat"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-core",
@@ -198,11 +196,12 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-sldprt"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
  "crc32fast",
  "flate2",
  "rmp",
@@ -210,12 +209,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
 ]
 
 [[package]]
 name = "cadmpeg-codec-step"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "base64",
  "cadmpeg-container",
@@ -228,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-container"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "crc32fast",
@@ -239,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-core"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "memchr",
  "serde",
@@ -275,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "base64",
  "cadmpeg-core",
@@ -286,8 +284,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-parasolid"
+version = "0.5.5"
+dependencies = [
+ "cadmpeg-core",
+]
+
+[[package]]
 name = "cadmpeg-protein"
-version = "0.5.3"
+version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
  "flate2",

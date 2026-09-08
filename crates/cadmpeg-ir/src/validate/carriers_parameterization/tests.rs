@@ -28,9 +28,9 @@ fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
 /// surface id. Leaves every loop/coedge/edge of the face intact.
 fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<UnknownId>) -> String {
     let face = &ir.model.faces[0];
-    let surface_id = face.surface.0.clone();
+    let surface_id = face.surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
-        if s.id.0 == surface_id {
+        if s.id.as_str() == surface_id {
             s.geometry = SurfaceGeometry::Unknown { record };
             break;
         }
@@ -42,7 +42,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
 fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube();
     // Preserve a raw record and point the unknown surface at it.
-    let rec = UnknownId("synthetic:cube:unknown#0".into());
+    let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
         "synthetic",
         &[NativeUnknownRecord {
@@ -88,11 +88,16 @@ fn unknown_surface_without_record_is_legal() {
 fn unknown_surface_dangling_record_is_flagged() {
     let mut ir = unit_cube();
     // Link a record id that is not in the unknowns arena.
-    make_first_face_surface_unknown(&mut ir, Some(UnknownId("missing".into())));
+    make_first_face_surface_unknown(
+        &mut ir,
+        Some(UnknownId::mint("test:model:entity#missing").expect("valid identity")),
+    );
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
-            && finding.message.contains("missing unknown record `missing`")
+            && finding
+                .message
+                .contains("missing unknown record `test:model:entity#missing`")
     }));
 }
 
@@ -100,7 +105,7 @@ fn unknown_surface_dangling_record_is_flagged() {
 fn orphan_carrier_is_flagged() {
     let mut ir = unit_cube();
     let mut orphan = ir.model.curves[0].clone();
-    orphan.id = CurveId("zz:orphan".into());
+    orphan.id = CurveId::mint("test:model:entity#zz:orphan").expect("valid identity");
     ir.model.curves.push(orphan);
     assert!(validate_neutral(&ir, Vec::new())
         .findings

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [
         {
@@ -714,21 +714,18 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:presentation_style_assignment#42"
-            },
-            {
-              "id": "step:data:styled_item#43",
-              "links": [
-                "step:data:curve#7",
-                "step:data:presentation_style_assignment#42"
-              ]
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "step:data:presentation_style_assignment#42"
+          },
+          {
+            "id": "step:data:styled_item#43",
+            "links": [
+              "step:data:curve#7",
+              "step:data:presentation_style_assignment#42"
+            ]
+          }
+        ]
       }
     },
     "source": {
@@ -740,6 +737,18 @@
         "data_sections": "1",
         "entity_instances": "52",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap242",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -753,6 +762,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": true,
     "losses": [
@@ -816,7 +837,6 @@
         "sha256": "993aa7fb41284a84bc9e8c65099d76a2763b98d04b38cba7d48c74fa631b82ba",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

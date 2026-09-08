@@ -271,7 +271,6 @@ mod tests {
     use super::*;
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
-    use cadmpeg_ir::units::Units;
 
     fn history_feature(
         id: &str,
@@ -282,11 +281,10 @@ mod tests {
         native: bool,
     ) -> Feature {
         Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            parent: None,
             dependencies,
             source_properties,
             source_tag: native.then(|| "NX_OPERATION".to_string()),
@@ -303,8 +301,8 @@ mod tests {
     }
 
     fn closure_ir(features: Vec<Feature>) -> (CadIr, BodyId) {
-        let body = BodyId("body".into());
-        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
     }
@@ -316,7 +314,7 @@ mod tests {
                 "writer",
                 2,
                 Vec::new(),
-                vec![BodyId("body".into())],
+                vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
                 BTreeMap::new(),
                 false,
             )
@@ -326,24 +324,24 @@ mod tests {
         assert_eq!(
             active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                feature: FeatureId("writer".into())
+                feature: FeatureId::mint("writer").expect("identity grammar")
             })
         );
 
         let mut missing = writer();
-        missing.dependencies = vec![FeatureId("missing".into())];
+        missing.dependencies = vec![FeatureId::mint("missing").expect("identity grammar")];
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::MissingDependency {
-                feature: FeatureId("writer".into()),
-                dependency: FeatureId("missing".into())
+                feature: FeatureId::mint("writer").expect("identity grammar"),
+                dependency: FeatureId::mint("missing").expect("identity grammar")
             })
         );
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies = vec![FeatureId("dependency".into())];
+        out_of_order.dependencies = vec![FeatureId::mint("dependency").expect("identity grammar")];
         let dependency = history_feature(
             "dependency",
             2,
@@ -356,9 +354,9 @@ mod tests {
         assert_eq!(
             active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                feature: FeatureId("writer".into()),
+                feature: FeatureId::mint("writer").expect("identity grammar"),
                 feature_ordinal: 1,
-                dependency: FeatureId("dependency".into()),
+                dependency: FeatureId::mint("dependency").expect("identity grammar"),
                 dependency_ordinal: 2
             })
         );
@@ -370,7 +368,7 @@ mod tests {
         assert_eq!(
             rejection,
             Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-                feature: FeatureId("writer".into())
+                feature: FeatureId::mint("writer").expect("identity grammar")
             })
         );
         assert_eq!(rejection.unwrap_err().code(), "explicitly-suppressed");
@@ -378,9 +376,9 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
-        let body = BodyId("body".into());
-        let first = FeatureId("first".into());
-        let second = FeatureId("second".into());
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        let first = FeatureId::mint("first").expect("identity grammar");
+        let second = FeatureId::mint("second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
 
@@ -403,15 +401,18 @@ mod tests {
 
         dependencies.clear();
         history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
-        assert_eq!(dependencies, [FeatureId("first".into())]);
+        assert_eq!(
+            dependencies,
+            [FeatureId::mint("first").expect("identity grammar")]
+        );
     }
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
-        let provisional = FeatureId("provisional".into());
-        let retained = FeatureId("retained".into());
-        let created = BodyId("created".into());
-        let existing = BodyId("existing".into());
+        let provisional = FeatureId::mint("provisional").expect("identity grammar");
+        let retained = FeatureId::mint("retained").expect("identity grammar");
+        let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
+        let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history.record_writer(
             None,
@@ -452,7 +453,10 @@ mod tests {
             std::slice::from_ref(&created),
             &mut dependencies,
         );
-        assert_eq!(dependencies, [FeatureId("retained".into())]);
+        assert_eq!(
+            dependencies,
+            [FeatureId::mint("retained").expect("identity grammar")]
+        );
 
         history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
 
@@ -462,8 +466,8 @@ mod tests {
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
-        let first = FeatureId("first".into());
-        let second = FeatureId("second".into());
+        let first = FeatureId::mint("first").expect("identity grammar");
+        let second = FeatureId::mint("second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history.record_writer(None, Some("store-a:block#7"), &[], &first);
 
@@ -504,17 +508,16 @@ mod tests {
 
     #[test]
     fn native_primary_body_witness_closes_history_without_neutral_outputs() {
-        let body = BodyId("body".into());
-        let dependency = FeatureId("dependency".into());
-        let writer = FeatureId("writer".into());
-        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        let dependency = FeatureId::mint("dependency").expect("identity grammar");
+        let writer = FeatureId::mint("writer").expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.features = vec![
             Feature {
-                id: FeatureId("base".into()),
+                id: FeatureId::mint("base").expect("identity grammar"),
                 ordinal: 0,
                 name: Some("base".into()),
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -571,26 +574,28 @@ mod tests {
         assert_eq!(
             active_feature_closure(&ir, &[body]),
             Ok(BTreeSet::from([
-                FeatureId("base".into()),
+                FeatureId::mint("base").expect("identity grammar"),
                 dependency,
                 writer
             ]))
         );
         assert_eq!(
-            active_feature_closure(&ir, &[BodyId("other".into())]),
+            active_feature_closure(
+                &ir,
+                &[BodyId::mint("test:model:entity#other").expect("identity grammar")]
+            ),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
     }
 
     #[test]
     fn retained_history_input_alone_is_not_an_active_feature_closure() {
-        let body = BodyId("body".into());
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let (ir, _) = closure_ir(vec![Feature {
-            id: FeatureId("initial".into()),
+            id: FeatureId::mint("initial").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::from([(
                 "segment_body_binding.0".into(),

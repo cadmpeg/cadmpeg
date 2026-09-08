@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked semantic mutations of retained persistence records.
 
+#[cfg(test)]
+use crate::native::EntryRecord;
+use crate::native::{native_id, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
-
-use crate::native::{native_id, EntryRecord, PropertyRecord};
 
 /// Selects the owner of a persisted property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,14 +26,15 @@ pub(crate) fn set_value_attribute(
 ) -> Result<(), CodecError> {
     valid_xml_name(attribute, "attribute")?;
     mutate_property(ir, owner, property_name, |property| {
+        let property_id = property.id.clone();
         let value_record = property
-            .values
-            .iter_mut()
+            .values_mut()
+            .into_iter()
+            .flatten()
             .find(|record| record.order == value_order)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "FCStd property {} has no value at order {value_order}",
-                    property.id
+                    "FCStd property {property_id} has no value at order {value_order}"
                 ))
             })?;
         value_record.attributes.insert(attribute.to_owned(), value);
@@ -41,29 +42,7 @@ pub(crate) fn set_value_attribute(
     })
 }
 
-pub(crate) fn set_value_text(
-    ir: &mut CadIr,
-    owner: FcstdPropertyOwner<'_>,
-    property_name: &str,
-    value_order: usize,
-    text: Option<String>,
-) -> Result<(), CodecError> {
-    mutate_property(ir, owner, property_name, |property| {
-        let value_record = property
-            .values
-            .iter_mut()
-            .find(|record| record.order == value_order)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "FCStd property {} has no value at order {value_order}",
-                    property.id
-                ))
-            })?;
-        value_record.text = text;
-        Ok(())
-    })
-}
-
+#[cfg(test)]
 pub(crate) fn replace_entry(
     ir: &mut CadIr,
     entry_name: &str,
@@ -80,8 +59,6 @@ pub(crate) fn replace_entry(
         .iter_mut()
         .find(|candidate| candidate.name == entry_name)
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
-    entry.byte_len = bytes.len() as u64;
-    entry.sha256 = sha256_hex(&bytes);
     entry.data = bytes;
     namespace.set_arena("entries", &entries)?;
     Ok(())

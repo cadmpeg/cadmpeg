@@ -8,13 +8,14 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 
 const EPS_RATIONAL_RULED: f64 = 1.0e-10;
 const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
@@ -47,13 +48,17 @@ fn type128_surface_with_closure(
 
 #[test]
 fn tabulated_directrix_types_follow_the_declared_dialect() {
-    assert!(tabulated_directrix_type_allowed(102, 0, Dialect::V4_0));
-    assert!(tabulated_directrix_type_allowed(112, 0, Dialect::V4_0));
-    assert!(!tabulated_directrix_type_allowed(112, 1, Dialect::V4_0));
-    assert!(!tabulated_directrix_type_allowed(112, 3, Dialect::V5_0));
-    assert!(!tabulated_directrix_type_allowed(130, 0, Dialect::V4_0));
-    assert!(tabulated_directrix_type_allowed(130, 0, Dialect::V5_0));
-    assert!(tabulated_directrix_type_allowed(142, 0, Dialect::V5_3));
+    assert!(tabulated_directrix_type_allowed(102, 0, GlobalTable::V4_0));
+    assert!(tabulated_directrix_type_allowed(112, 0, GlobalTable::V4_0));
+    assert!(!tabulated_directrix_type_allowed(112, 1, GlobalTable::V4_0));
+    assert!(!tabulated_directrix_type_allowed(112, 3, GlobalTable::V5_0));
+    assert!(!tabulated_directrix_type_allowed(130, 0, GlobalTable::V4_0));
+    assert!(tabulated_directrix_type_allowed(130, 0, GlobalTable::V5_0));
+    assert!(tabulated_directrix_type_allowed(
+        142,
+        0,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
@@ -87,7 +92,7 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             .model
             .surfaces
             .iter()
-            .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+            .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         assert_eq!(result.report().losses.len(), 1);
         assert_eq!(
@@ -114,7 +119,7 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
 
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_surface_poles")
                 && limit.limit == 1_000_000
                 && limit.used == 1_000_000
@@ -141,8 +146,10 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact NURBS ruled cache");
     };
@@ -178,11 +185,13 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
-        .and_then(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(surface) => Some(surface),
-            _ => None,
-        })
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
+        .and_then(
+            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                SurfaceGeometry::Nurbs(surface) => Some(surface),
+                _ => None,
+            },
+        )
         .expect("linear Bezier ruled surface");
     let midpoint = cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
         .expect("linear Bezier ruled midpoint");
@@ -201,13 +210,15 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact rational ruled cache");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (4, 1));
-    assert!(surface.weights.is_some());
+    assert_eq!((surface.u_degree(), surface.v_degree()), (4, 1));
+    assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("entity type 118")
@@ -218,9 +229,13 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id.0 == format!("iges:model:curve#D{sequence}"))
+            .find(|curve| curve.id.as_str() == format!("iges:model:curve#D{sequence}"))
             .expect("rail curve");
-        cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).expect("rail point")
+        cadmpeg_ir::eval::curve_point(
+            curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+            parameter,
+        )
+        .expect("rail point")
     };
     for (u, v) in [(0.2, 0.25), (0.5, 0.5), (0.8, 0.75)] {
         let first = curve_point(1, u);
@@ -241,42 +256,44 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
-    let second = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("relative-parameter rational ruled carrier");
-    assert_eq!((surface.u_degree, surface.v_degree), (3, 1));
-    assert_eq!((surface.u_count, surface.v_count), (4, 2));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree,
-            &first.knots,
-            &first.control_points,
-            first.weights.as_deref(),
+            first.degree(),
+            first.knots(),
+            first.control_points(),
+            first.weights(),
             u,
         )
         .expect("first rail point");
         let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree,
-            &second.knots,
-            &second.control_points,
-            second.weights.as_deref(),
+            second.degree(),
+            second.knots(),
+            second.control_points(),
+            second.weights(),
             2.0 * u,
         )
         .expect("second rail point");
@@ -293,46 +310,45 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
 
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        control_points: vec![
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.5, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
-    let second = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        weights: Some(vec![1.0, 0.5]),
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("partition-aligned rational ruled carrier");
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert_eq!((surface.u_count, surface.v_count), (5, 2));
-    assert_eq!(
-        surface.u_knots,
-        vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
-    );
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]);
     for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree,
-            &first.knots,
-            &first.control_points,
-            first.weights.as_deref(),
+            first.degree(),
+            first.knots(),
+            first.control_points(),
+            first.weights(),
             u,
         )
         .expect("first rail point");
         let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree,
-            &second.knots,
-            &second.control_points,
-            second.weights.as_deref(),
+            second.degree(),
+            second.knots(),
+            second.control_points(),
+            second.weights(),
             u,
         )
         .expect("second rail point");
@@ -355,13 +371,15 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact circular ruled cache");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert!(surface.weights.is_some());
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("entity type 118")
@@ -378,7 +396,7 @@ fn decode_retains_both_ruled_surface_developability_values_in_native_parameters(
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let entity = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == "iges:entity:directory#5")
             .unwrap();
@@ -435,13 +453,15 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.v_degree, 2);
-    assert_eq!(surface.weights.as_ref().unwrap().len(), 6);
+    assert_eq!(surface.v_degree(), 2);
+    assert_eq!(surface.weights().unwrap().len(), 6);
     let point =
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
     let expected = 0.5_f64.sqrt();
@@ -468,8 +488,10 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
         "{:#?}",
         result.report().losses
     );
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact rational ellipse revolution cache");
     };
@@ -499,9 +521,10 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .expect("line revolution surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
     else {
         panic!("expected an exact construction-backed revolution");
     };
@@ -516,11 +539,11 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         directrix,
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected an exact revolution definition");
     };
-    assert_eq!(directrix.0, "iges:model:curve#D3");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D3");
     assert!(matches!(
         result
             .ir()
@@ -604,7 +627,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
 
@@ -613,9 +636,10 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("hyperbola revolution surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
         else {
             panic!("expected a construction-backed revolution surface");
         };
@@ -631,11 +655,11 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             parameter_interval: Some(parameter_interval),
             angular_interval,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact revolution definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D3");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D3");
         assert_eq!(*angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
         let directrix_geometry = &result
             .ir()
@@ -691,7 +715,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
             .model
             .faces
             .iter()
-            .any(|face| face.id.0 == "iges:model:face#D13"),
+            .any(|face| face.id.as_str() == "iges:model:face#D13"),
         "losses={:#?}",
         result.report().losses
     );
@@ -700,15 +724,20 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .expect("trimmed revolution support");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+    assert!(matches!(
+        surface.geometry.solved_cache(),
+        Some(SurfaceGeometry::Nurbs(_))
+    ));
     let procedural = result
         .ir()
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == surface.id)
+        .find(|procedural| {
+            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("trimmed revolution construction");
     assert_eq!(
         procedural.record_bounds,
@@ -717,7 +746,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected bounded trimmed revolution");
     };
@@ -740,23 +769,25 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.control_points[0].x, 11.0);
+    assert_eq!(surface.control_points()[0].x, 11.0);
     let procedural = &result.ir().model.procedural_surfaces[0];
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
         directrix,
         axis_origin,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected a revolution definition");
     };
     assert_eq!(axis_origin.x, 10.0);
-    assert_eq!(directrix.0, "iges:model:curve#D7-placed-generatrix");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D7-placed-generatrix");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -774,8 +805,10 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         .unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected an exact NURBS extrusion cache");
     };
@@ -838,14 +871,21 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.0 == "iges:model:surface#D9")
+        .find(|surface| {
+            result
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("iges:model:surface#D9")
+        })
         .expect("Type 122 neutral carrier");
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("expected an extrusion definition");
     };
-    assert_eq!(directrix.0, "iges:model:curve#D1");
+    assert_eq!(directrix.as_str(), "iges:model:curve#D1");
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -869,7 +909,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result
@@ -877,9 +917,10 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D3")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .expect("hyperbola tabulated surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
         else {
             panic!("expected a construction-backed tabulated surface");
         };
@@ -896,11 +937,11 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D1");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D1");
         assert_eq!(
             *native_position,
             Point3::new(3.086_161_269_630_487, 3.525_603_580_931_404, 2.0)
@@ -964,7 +1005,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result
@@ -972,9 +1013,10 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("placed tabulated surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            surface.geometry.solved_cache().unwrap_or(&surface.geometry)
         else {
             panic!("expected a construction-backed placed tabulated surface");
         };
@@ -991,11 +1033,11 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact placed extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
         assert!(
             native_position.distance(Point3::new(
                 13.086_161_269_630_487,
@@ -1054,7 +1096,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
         let surface = result
@@ -1062,29 +1104,31 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
             .expect("placed NURBS tabulated surface");
         assert!(matches!(
-            surface.geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+            surface.geometry.solved_cache(),
+            Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
         ));
         let procedural = result
             .ir()
             .model
             .procedural_surfaces
             .iter()
-            .find(|procedural| procedural.surface == surface.id)
+            .find(|procedural| {
+                result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            })
             .expect("placed NURBS tabulated construction");
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
             native_position: Some(native_position),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected an exact placed NURBS extrusion definition");
         };
-        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert_eq!(directrix.as_str(), "iges:model:curve#D5-placed-directrix");
         assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0));
         assert_eq!(*native_position, Point3::new(10.0, 20.0, 32.0));
         let directrix_geometry = &result
@@ -1104,7 +1148,11 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             Some(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
-            cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5),
+            cadmpeg_ir::eval::surface_point(
+                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                0.5,
+                0.5
+            ),
             Some(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(
@@ -1131,7 +1179,10 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         origin,
         normal,
         u_axis,
-    } = &result.ir().model.surfaces[0].geometry
+    } = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected a plane carrier");
     };
@@ -1139,7 +1190,14 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(
-        cadmpeg_ir::eval::surface_point(&result.ir().model.surfaces[0].geometry, 1.0, 3.0),
+        cadmpeg_ir::eval::surface_point(
+            result.ir().model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&result.ir().model.surfaces[0].geometry),
+            1.0,
+            3.0
+        ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1193,16 +1251,22 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.0 == "iges:model:surface#D1")
+        .find(|surface| {
+            result
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("iges:model:surface#D1")
+        })
         .expect("Type 128 parameter-domain record");
     assert_eq!(
         procedural.record_bounds,
         Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact {
-        parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
-        ..
-    } = &procedural.definition
+        spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. },
+    } = procedural.definition()
     else {
         panic!("expected exact Type 128 construction")
     };
@@ -1231,19 +1295,23 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D3")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = offset.geometry else {
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = *offset
+            .geometry
+            .solved_cache()
+            .expect("solved offset carrier")
+        else {
             panic!("expected an exact plane offset carrier");
         };
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
-            result.ir().model.procedural_surfaces[0].definition
+            result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected an offset dependency");
         };
-        assert_eq!(distance, expected_z);
+        assert_eq!(*distance, expected_z);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1264,9 +1332,12 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id.0 == "iges:model:surface#D7")
+            .find(|surface| surface.id.as_str() == "iges:model:surface#D7")
             .expect("offset cylinder");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = *surface
+            .geometry
+            .solved_cache()
+            .expect("solved offset cylinder")
         else {
             panic!("expected cylindrical offset carrier")
         };
@@ -1305,7 +1376,7 @@ fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
             .model
             .surfaces
             .iter()
-            .any(|surface| surface.id.0 == "iges:model:surface#D3");
+            .any(|surface| surface.id.as_str() == "iges:model:surface#D3");
         assert_eq!(offset, decoded, "{components:?}");
         if !decoded {
             assert!(result.report().losses.iter().any(|loss| {
@@ -1331,7 +1402,7 @@ fn decode_rejects_a_unit_offset_indicator_that_is_not_the_designated_normal() {
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.0 != "iges:model:surface#D3"));
+        .all(|surface| surface.id.as_str() != "iges:model:surface#D3"));
     assert!(result
         .report()
         .losses
@@ -1348,16 +1419,18 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) =
-        &result.ir().model.surfaces[0].geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
     else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+    assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
     assert_eq!(
-        nurbs.control_points,
-        vec![
+        nurbs.control_points(),
+        [
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -1382,13 +1455,17 @@ fn decode_projects_a_degree_zero_bspline_surface() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
-    assert_eq!((surface.u_count, surface.v_count), (1, 1));
-    assert_eq!(surface.u_knots, vec![0.0, 1.0]);
-    assert_eq!(surface.v_knots, vec![0.0, 1.0]);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
+    assert_eq!((surface.u_count(), surface.v_count()), (1, 1));
+    assert_eq!(surface.u_knots(), [0.0, 1.0]);
+    assert_eq!(surface.v_knots(), [0.0, 1.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(Point3::new(1.0, 2.0, 3.0))
@@ -1407,11 +1484,15 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = result.ir().model.surfaces[0]
+        .geometry
+        .solved_cache()
+        .unwrap_or(&result.ir().model.surfaces[0].geometry)
+    else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
-    assert_eq!((surface.u_count, surface.v_count), (2, 1));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 1));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
         Some(Point3::new(1.0, 2.0, 3.0))
@@ -1473,21 +1554,24 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
 
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        weights: Some(vec![1.0, 1.0]),
-        periodic: false,
-    };
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        Some(vec![1.0, 1.0]),
+        false,
+    )
+    .expect("valid rational boundary");
     let mut scaled = first.clone();
-    scaled.weights = Some(vec![2.0, 2.0]);
+    scaled.edit_weights(|weights| weights.fill(2.0)).unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(true)
     );
 
-    scaled.control_points[1].x = 1.1;
+    scaled
+        .edit_control_points(|points| points[1].x = 1.1)
+        .unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(false)
@@ -1531,12 +1615,12 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
             assert_eq!(result.ir().model.surfaces.len(), usize::from(projected));
             if projected {
                 let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
-                    &result.ir().model.surfaces[0].geometry
+                    result.ir().model.surfaces[0].geometry.solved_cache().unwrap_or(&result.ir().model.surfaces[0].geometry)
                 else {
                     panic!("expected a NURBS surface carrier");
                 };
                 assert_eq!(
-                    surface.weights.as_deref(),
+                    surface.weights(),
                     Some([1.0, 1.0, 0.99, 1.0].as_slice())
                 );
             } else {

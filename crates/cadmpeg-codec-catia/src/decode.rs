@@ -2,7 +2,8 @@
 //! High-level CATPart-to-IR decoding.
 //!
 //! [`decode`] scans the container, selects a decoder from the identified storage
-//! variant, and returns the transferred model with a [`DecodeReport`].
+//! variant, and returns the transferred model with its [`DecodeBody`]; the
+//! sealed wrapper stamps the identity authored in `ir.source` onto the report.
 //!
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
@@ -10,20 +11,23 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::codec::DecodeBody;
+use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
-use crate::assemble::{build_container_report, build_metadata_ir};
+use crate::assemble::{build_container_report, build_metadata_fallback};
 use crate::container::{self, ContainerScan};
 use crate::design_feature;
 use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
 use crate::sketch;
@@ -34,7 +38,7 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
         native
             .schema_configuration_row_chains
             .iter()
-            .map(|chain| chain.links.len())
+            .map(|chain| chain.links().len())
             .sum(),
     )
 }
@@ -48,13 +52,14 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// predicate accepts the scanned variant is tried in table order; the first to
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
+    let matched = crate::dialect::classify(&scan);
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan);
-        let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns);
+        let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+        let report = build_container_report(&scan);
+        return decode_result(&scan, &matched, ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
@@ -63,19 +68,29 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 return finish_decode(
                     ctx,
                     &scan,
+                    &matched,
                     out.ir,
                     out.report,
                     out.annotations,
                     out.unknowns,
-                    out.standard_face_population,
+                    route.standard_face_population,
                 );
             }
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan);
-    let report = build_container_report(&scan, false);
-    finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
+    let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+    let report = build_container_report(&scan);
+    finish_decode(
+        ctx,
+        &scan,
+        &matched,
+        ir,
+        report,
+        annotations,
+        unknowns,
+        false,
+    )
 }
 
 #[derive(Default)]
@@ -113,7 +128,7 @@ fn incoming_entity_incidence_counts<'a>(
                     .iter()
                     .filter_map(|reference| reference.source_entity.as_ref()),
             )
-            .filter(|entity| entity.class_name.is_some())
+            .filter(|entity| entity.class_name().is_some())
             .count();
         counts.zero += usize::from(total == 0);
         counts.one += usize::from(total == 1);
@@ -122,15 +137,18 @@ fn incoming_entity_incidence_counts<'a>(
     counts
 }
 
+// Keep the single classified match explicit beside the independently built decode artifacts.
+#[allow(clippy::too_many_arguments)]
 fn finish_decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    matched: &DialectMatch,
     mut ir: CadIr,
-    mut report: DecodeReport,
+    mut report: DecodeBody,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).
     ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
@@ -224,7 +242,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.storage_record.is_some())
+        .filter(|record| record.storage_record().is_some())
         .count();
     let unresolved_storage_record_count = native
         .object_graphs
@@ -232,9 +250,9 @@ fn finish_decode(
         .flat_map(|graph| &graph.records)
         .filter(|record| {
             record
-                .storage_ref
+                .storage_ref()
                 .is_some_and(|storage_ref| storage_ref != 0)
-                && record.storage_record.is_none()
+                && record.storage_record().is_none()
         })
         .count();
     let object_record_reference_count = native
@@ -248,14 +266,14 @@ fn finish_decode(
         .iter()
         .flat_map(|graph| &graph.records)
         .flat_map(|record| &record.references)
-        .filter(|reference| reference.target.is_some())
+        .filter(|reference| reference.target().is_some())
         .count();
     let null_object_record_reference_count = native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
         .flat_map(|record| &record.references)
-        .filter(|reference| reference.is_null)
+        .filter(|reference| reference.is_null())
         .count();
     let unresolved_object_record_reference_count = object_record_reference_count
         - resolved_object_record_reference_count
@@ -264,7 +282,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_suffix.is_some())
+        .filter(|record| record.repeated_reference_suffix().is_some())
         .count();
     let repeated_reference_schema_selection_count = native
         .object_graphs
@@ -296,50 +314,50 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.rows.len())
+        .map(|table| table.rows().len())
         .sum();
     let design_parallel_reference_column_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.columns.len())
+        .map(|table| table.columns().len())
         .sum();
     let design_parallel_reference_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .map(|row| row.cells.len())
         .sum();
     let design_parallel_reference_resolved_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
-        .filter(|cell| cell.field.is_some())
+        .filter(|cell| cell.field().is_some())
         .count();
     let design_parallel_reference_null_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
-        .filter(|cell| cell.is_null)
+        .filter(|cell| cell.is_null())
         .count();
     let design_parallel_reference_classified_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .flat_map(|row| &row.cells)
-        .filter(|cell| cell.field_class.is_some())
+        .filter(|cell| cell.field_class().is_some())
         .count();
     let design_parallel_reference_classified_column_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.columns)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::columns)
         .filter(|column| column.field_class.is_some())
         .count();
     let design_parallel_reference_unclassified_column_count =
@@ -353,7 +371,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
         .filter(|row| row.matching_design_object.is_some())
         .count();
     let design_parallel_reference_unmatched_row_count =
@@ -598,29 +616,39 @@ fn finish_decode(
     let entity_value_field_count = native
         .entity_records
         .iter()
-        .map(|record| record.value_fields.len())
+        .map(|record| record.value_fields().len())
         .sum();
     let entity_value_schema_selection_count = native
         .entity_records
         .iter()
         .map(|record| record.value_schema_selections.len())
         .sum();
-    let compact_entity_value_packet_count = native
+    let mut compact_entity_value_packet_count = 0;
+    let mut numeric_entity_value_packet_count = 0;
+    let mut layout_entity_value_packet_count = 0;
+    let mut e9_scalar_entity_value_packet_count = 0;
+    for packet in native
         .entity_records
         .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Compact { .. }))
-        .count();
-    let numeric_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Numeric { .. }))
-        .count();
+        .flat_map(CatiaEntityRecord::value_packets)
+    {
+        match packet {
+            entity_table::EntityValuePacket::Compact { .. } => {
+                compact_entity_value_packet_count += 1;
+            }
+            entity_table::EntityValuePacket::Numeric { .. } => {
+                numeric_entity_value_packet_count += 1;
+            }
+            entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::E9Scalar { .. } => {
+                e9_scalar_entity_value_packet_count += 1;
+            }
+        }
+    }
     let numeric_entity_value_pair_count = native
         .entity_records
         .iter()
-        .filter(|record| record.numeric_pair.is_some())
+        .filter(|record| record.numeric_pair().is_some())
         .count();
     let reference_signature_count = native
         .entity_records
@@ -632,7 +660,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .filter(|signature| {
-            signature.production.prefix == entity_table::ReferenceSignaturePrefix::Atom2
+            signature.production.prefix() == entity_table::ReferenceSignaturePrefix::Atom2
         })
         .count();
     let reference_signature_prefix_atom_35_count =
@@ -658,7 +686,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let program = &signature.production.signature_program;
+            let program = signature.production.signature_program();
             let qualifier_count = program
                 .iter()
                 .filter(|instruction| {
@@ -686,10 +714,10 @@ fn finish_decode(
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize),
             |(resolved, null, unresolved, classified), reference| {
-                let classified = classified + usize::from(reference.class_name.is_some());
-                if reference.is_null {
+                let classified = classified + usize::from(reference.class_name().is_some());
+                if reference.is_null() {
                     (resolved, null + 1, unresolved, classified)
-                } else if reference.entity.is_some() {
+                } else if reference.entity().is_some() {
                     (resolved + 1, null, unresolved, classified)
                 } else {
                     (resolved, null, unresolved + 1, classified)
@@ -731,18 +759,6 @@ fn finish_decode(
         .iter()
         .filter(|run| run.endpoint_loci.is_some())
         .count();
-    let layout_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::Layout { .. }))
-        .count();
-    let e9_scalar_entity_value_packet_count = native
-        .entity_records
-        .iter()
-        .flat_map(|record| &record.value_packets)
-        .filter(|packet| matches!(packet, entity_table::EntityValuePacket::E9Scalar { .. }))
-        .count();
     let (
         relation_expression_count,
         placeholder_state_relation_expression_count,
@@ -753,7 +769,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_expression.as_ref())
+        .filter_map(|record| record.relation_expression())
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
@@ -777,14 +793,14 @@ fn finish_decode(
                     parser,
                     boolean,
                     opened,
-                    typed + usize::from(expression.signature.is_some()),
+                    typed + usize::from(expression.signature().is_some()),
                 )
             },
         );
     let parameter_value_count = native
         .entity_records
         .iter()
-        .filter(|record| record.parameter_value.is_some())
+        .filter(|record| record.parameter_value().is_some())
         .count();
     let (
         range_interval_count,
@@ -832,7 +848,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
+        .filter_map(|record| record.constraint_range())
         .fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, dimensions, complex, evaluated, unset), range| {
@@ -857,7 +873,7 @@ fn finish_decode(
     let unresolved_dimension_quantity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
+        .filter_map(|record| record.constraint_range())
         .filter(|range| {
             matches!(
                 range.framing,
@@ -885,7 +901,7 @@ fn finish_decode(
         native
             .entity_records
             .iter()
-            .filter_map(|record| record.constraint_range.as_ref())
+            .filter_map(|record| record.constraint_range())
             .map(|range| {
                 (
                     range.incoming_references.as_slice(),
@@ -916,7 +932,7 @@ fn finish_decode(
     let definition_value_count = native
         .entity_records
         .iter()
-        .filter(|record| record.definition_value.is_some())
+        .filter(|record| record.definition_value().is_some())
         .count();
     let owned_definition_value_count = native
         .design_objects
@@ -938,7 +954,7 @@ fn finish_decode(
     ) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.definition_chain_value.as_ref())
+        .filter_map(|record| record.definition_chain_value())
         .fold(
             (
                 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize,
@@ -1021,32 +1037,32 @@ fn finish_decode(
     let formula_relation_count = native
         .entity_records
         .iter()
-        .filter(|record| record.formula_relation.is_some())
+        .filter(|record| record.formula_relation().is_some())
         .count();
     let relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter(|record| record.relation_program_instance.is_some())
+        .filter(|record| record.relation_program_instance().is_some())
         .count();
     let relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.output_entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.output_entity().is_some())
         .count();
     let resolved_relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.output_entity.as_ref())
-        .filter(|output| output.entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.output_entity())
+        .filter(|output| output.entity().is_some())
         .count();
     let null_relation_program_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.output_entity.as_ref())
-        .filter(|output| output.is_null)
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.output_entity())
+        .filter(|output| output.is_null())
         .count();
     let unresolved_relation_program_output_count = relation_program_output_count
         - resolved_relation_program_output_count
@@ -1054,22 +1070,22 @@ fn finish_decode(
     let relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .map(|instance| instance.reference_incidences.len())
         .sum::<usize>();
     let resolved_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.entity.is_some())
+        .filter(|incidence| incidence.reference.entity().is_some())
         .count();
     let null_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.is_null)
+        .filter(|incidence| incidence.reference.is_null())
         .count();
     let unresolved_relation_program_reference_incidence_count =
         relation_program_reference_incidence_count
@@ -1078,33 +1094,37 @@ fn finish_decode(
     let classified_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.class_name.is_some())
+        .filter(|incidence| incidence.reference.class_name().is_some())
         .count();
     let (lead12_relation_program_instance_count, lead54_relation_program_instance_count) = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .fold((0, 0), |(lead12, lead54), instance| {
             match instance.framing {
-                crate::native::CatiaRelationProgramInstanceFraming::Lead12 => (lead12 + 1, lead54),
-                crate::native::CatiaRelationProgramInstanceFraming::Lead54 => (lead12, lead54 + 1),
+                crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. } => {
+                    (lead12 + 1, lead54)
+                }
+                crate::native::CatiaRelationProgramInstanceFraming::Lead54 { .. } => {
+                    (lead12, lead54 + 1)
+                }
             }
         });
     let resolved_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead54_trailing_entity.as_ref())
-        .filter(|trailing| trailing.entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead54_trailing_entity())
+        .filter(|trailing| trailing.entity().is_some())
         .count();
     let null_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead54_trailing_entity.as_ref())
-        .filter(|trailing| trailing.is_null)
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead54_trailing_entity())
+        .filter(|trailing| trailing.is_null())
         .count();
     let unresolved_lead54_relation_program_trailing_entity_count =
         lead54_relation_program_instance_count
@@ -1113,16 +1133,16 @@ fn finish_decode(
     let resolved_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
-        .filter(|context| context.entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead12_context_entity())
+        .filter(|context| context.entity().is_some())
         .count();
     let null_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
-        .filter(|context| context.is_null)
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead12_context_entity())
+        .filter(|context| context.is_null())
         .count();
     let unresolved_lead12_relation_program_context_entity_count =
         lead12_relation_program_instance_count
@@ -1131,16 +1151,16 @@ fn finish_decode(
     let classified_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
-        .filter(|context| context.class_name.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead12_context_entity())
+        .filter(|context| context.class_name().is_some())
         .count();
     let lead12_relation_program_paramout_context_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
-        .filter(|context| context.class_name.as_deref() == Some("paramout"))
+        .filter_map(|record| record.relation_program_instance())
+        .filter_map(|instance| instance.lead12_context_entity())
+        .filter(|context| context.class_name() == Some("paramout"))
         .count();
     let other_lead12_relation_program_context_class_count =
         classified_lead12_relation_program_context_entity_count
@@ -1151,14 +1171,14 @@ fn finish_decode(
     let resolved_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.program_entity.entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.program_entity.entity().is_some())
         .count();
     let null_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.program_entity.is_null)
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.program_entity.is_null())
         .count();
     let unresolved_relation_program_instance_count = relation_program_instance_count
         - resolved_relation_program_instance_count
@@ -1166,14 +1186,14 @@ fn finish_decode(
     let resolved_relation_program_repeated_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.repeated_entity.entity.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.repeated_entity.entity().is_some())
         .count();
     let null_relation_program_repeated_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.repeated_entity.is_null)
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.repeated_entity.is_null())
         .count();
     let unresolved_relation_program_repeated_reference_count = relation_program_instance_count
         - resolved_relation_program_repeated_reference_count
@@ -1181,19 +1201,19 @@ fn finish_decode(
     let classified_relation_program_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.program_entity.class_name.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.program_entity.class_name().is_some())
         .count();
     let classified_relation_program_repeated_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.repeated_entity.class_name.is_some())
+        .filter_map(|record| record.relation_program_instance())
+        .filter(|instance| instance.repeated_entity.class_name().is_some())
         .count();
     let relation_expression_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.relation_expression.is_some())
         .count();
     let typed_relation_expression_entities = native
@@ -1201,23 +1221,22 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             entity
-                .relation_expression
-                .as_ref()
-                .is_some_and(|expression| expression.signature.is_some())
+                .relation_expression()
+                .is_some_and(|expression| expression.signature().is_some())
         })
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     let typed_relation_program_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .filter(|entity| typed_relation_expression_entities.contains(entity))
         .count();
     let resolved_relation_program_input_instance_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.inputs.is_some())
         .count();
     let unresolved_relation_program_input_instance_count =
@@ -1225,43 +1244,43 @@ fn finish_decode(
     let resolved_relation_program_input_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
     let distinct_relation_program_input_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.inputs.as_ref())
         .flatten()
-        .filter_map(|input| input.entity.entity.as_deref())
+        .filter_map(|input| input.entity.entity())
         .collect::<HashSet<_>>()
         .len();
     let instanced_relation_expression_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .collect::<HashSet<_>>()
         .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .map(|instance| instance.parameter_dependencies.len())
         .sum::<usize>();
     let resolved_relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() == 1)
         .count();
     let ambiguous_relation_program_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .flat_map(|instance| &instance.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() > 1)
         .count();
@@ -1273,19 +1292,19 @@ fn finish_decode(
     let schema_configuration_record_count = native
         .entity_records
         .iter()
-        .filter(|record| record.schema_configuration_record.is_some())
+        .filter(|record| record.schema_configuration_record().is_some())
         .count();
     let resolved_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
-        .filter(|record| record.entity_reference.reference.entity.is_some())
+        .filter_map(|record| record.schema_configuration_record())
+        .filter(|record| record.entity_reference.reference.entity().is_some())
         .count();
     let null_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
-        .filter(|record| record.entity_reference.reference.is_null)
+        .filter_map(|record| record.schema_configuration_record())
+        .filter(|record| record.entity_reference.reference.is_null())
         .count();
     let unresolved_schema_configuration_reference_count = schema_configuration_record_count
         - resolved_schema_configuration_reference_count
@@ -1293,37 +1312,37 @@ fn finish_decode(
     let classified_schema_configuration_entity_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_record.as_ref())
-        .filter(|record| record.entity_reference.reference.class_name.is_some())
+        .filter_map(|record| record.schema_configuration_record())
+        .filter(|record| record.entity_reference.reference.class_name().is_some())
         .count();
     let schema_configuration_row_link_count = native
         .entity_records
         .iter()
-        .filter(|record| record.schema_configuration_row_link.is_some())
+        .filter(|record| record.schema_configuration_row_link().is_some())
         .count();
     let resolved_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
-        .filter(|link| link.class_reference.entity.is_some())
+        .filter_map(|record| record.schema_configuration_row_link())
+        .filter(|link| link.class_reference.entity().is_some())
         .count();
     let null_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
-        .filter(|link| link.class_reference.is_null)
+        .filter_map(|record| record.schema_configuration_row_link())
+        .filter(|link| link.class_reference.is_null())
         .count();
     let resolved_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
-        .filter(|link| link.successor.entity.is_some())
+        .filter_map(|record| record.schema_configuration_row_link())
+        .filter(|link| link.successor.entity().is_some())
         .count();
     let null_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.schema_configuration_row_link.as_ref())
-        .filter(|link| link.successor.is_null)
+        .filter_map(|record| record.schema_configuration_row_link())
+        .filter(|link| link.successor.is_null())
         .count();
     let (
         complete_schema_configuration_row_chain_count,
@@ -1334,14 +1353,12 @@ fn finish_decode(
     let resolved_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.entity.is_some())
+        .filter(|chain| chain.terminal.entity().is_some())
         .count();
     let null_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.is_null)
+        .filter(|chain| chain.terminal.is_null())
         .count();
     let unresolved_schema_configuration_row_chain_terminal_count =
         complete_schema_configuration_row_chain_count
@@ -1350,13 +1367,12 @@ fn finish_decode(
     let classified_schema_configuration_row_chain_terminal_count = native
         .schema_configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.links.last())
-        .filter(|link| link.successor.class_name.is_some())
+        .filter(|chain| chain.terminal.class_name().is_some())
         .count();
     let schema_configuration_row_intervening_entity_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| &chain.links)
+        .flat_map(CatiaSchemaConfigurationRowChain::links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .count();
@@ -1365,7 +1381,7 @@ fn finish_decode(
         .iter()
         .filter(|chain| {
             chain
-                .links
+                .links()
                 .iter()
                 .all(|link| link.intervening_entities.is_some())
         })
@@ -1373,28 +1389,28 @@ fn finish_decode(
     let schema_configuration_entities = native
         .entity_records
         .iter()
-        .filter(|entity| entity.schema_configuration_record.is_some())
+        .filter(|entity| entity.schema_configuration_record().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
-        .flat_map(|chain| &chain.links)
+        .flat_map(CatiaSchemaConfigurationRowChain::links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
-        .filter_map(|reference| reference.entity.as_deref())
+        .filter_map(|reference| reference.entity())
         .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
     let formula_referenced_relation_expressions = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
-        .filter_map(|formula| formula.expression_entity.reference.entity.as_deref())
+        .filter_map(|record| record.formula_relation())
+        .filter_map(|formula| formula.expression_entity.reference.entity())
         .collect::<HashSet<_>>();
     let program_referenced_relation_expressions = native
         .entity_records
         .iter()
-        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|record| record.relation_program_instance())
         .filter_map(|instance| instance.relation_expression.as_deref())
         .collect::<HashSet<_>>();
     let referenced_relation_expressions = formula_referenced_relation_expressions
@@ -1409,7 +1425,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.relation_expression.is_some()
+            record.relation_expression().is_some()
                 && referenced_relation_expressions.contains(record.id.as_str())
         })
         .count();
@@ -1418,61 +1434,61 @@ fn finish_decode(
     let resolved_formula_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.output_entity.reference.entity.is_some())
+        .filter_map(|record| record.formula_relation())
+        .filter(|formula| formula.output_entity.reference.entity().is_some())
         .count();
     let null_formula_output_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.output_entity.reference.is_null)
+        .filter_map(|record| record.formula_relation())
+        .filter(|formula| formula.output_entity.reference.is_null())
         .count();
     let classified_formula_output_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.output_entity.reference.class_name.is_some())
+        .filter_map(|record| record.formula_relation())
+        .filter(|formula| formula.output_entity.reference.class_name().is_some())
         .count();
     let classified_formula_expression_entity_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.expression_entity.reference.class_name.is_some())
+        .filter_map(|record| record.formula_relation())
+        .filter(|formula| formula.expression_entity.reference.class_name().is_some())
         .count();
     let unresolved_formula_output_count =
         formula_relation_count - resolved_formula_output_count - null_formula_output_count;
     let formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .map(|formula| formula.parameter_dependencies.len())
         .sum();
     let formula_parameter_dependency_candidate_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .map(|dependency| dependency.candidates.len())
         .sum();
     let classified_formula_parameter_dependency_candidate_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .flat_map(|dependency| &dependency.candidates)
-        .filter(|candidate| candidate.class_name.is_some())
+        .filter(|candidate| candidate.class_name().is_some())
         .count();
     let resolved_formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() == 1)
         .count();
     let ambiguous_formula_parameter_dependency_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.formula_relation.as_ref())
+        .filter_map(|record| record.formula_relation())
         .flat_map(|formula| &formula.parameter_dependencies)
         .filter(|dependency| dependency.candidates.len() > 1)
         .count();
@@ -1485,7 +1501,7 @@ fn finish_decode(
         paged_atom_state_01_entity_suffix_count,
     ) = native.entity_records.iter().fold(
         (0, 0, 0, 0),
-        |(escaped, token, fixed, paged), record| match record.suffix_framing.as_ref() {
+        |(escaped, token, fixed, paged), record| match record.suffix_framing() {
             Some(crate::native::CatiaEntitySuffixFraming::EscapedWord(_)) => {
                 (escaped + 1, token, fixed, paged)
             }
@@ -1505,7 +1521,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
@@ -1520,7 +1536,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
@@ -1535,7 +1551,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .fold((0, 0), |(e8, e9), record| {
-            match record.suffix_value.as_ref().map(|value| &value.payload) {
+            match record.suffix_value().map(|value| &value.payload) {
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
                 _ => (e8, e9),
@@ -1547,7 +1563,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Separator37
@@ -1559,7 +1575,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Atom { .. }
@@ -1577,7 +1593,7 @@ fn finish_decode(
         (0, 0, 0, 0, 0),
         |(atoms, evaluations, controls, separators, schemas), record| {
             let Some(crate::native::CatiaEntitySuffixPayload::SchemaSelected { value, .. }) =
-                record.suffix_value.as_ref().map(|suffix| &suffix.payload)
+                record.suffix_value().map(|suffix| &suffix.payload)
             else {
                 return (atoms, evaluations, controls, separators, schemas);
             };
@@ -1610,7 +1626,7 @@ fn finish_decode(
         .iter()
         .filter(|record| {
             record
-                .suffix_value
+                .suffix_value()
                 .as_ref()
                 .is_some_and(|value| value.prefix_atom_widths.iter().any(|width| *width > 1))
         })
@@ -1649,7 +1665,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.is_some()
+            record.definition_chain_value().is_some()
                 && object_records_by_id
                     .get(record.object_record.as_str())
                     .is_some_and(|record| record.has_unassigned_owner())
@@ -1659,7 +1675,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.as_ref().is_some_and(|value| {
+            record.definition_chain_value().is_some_and(|value| {
                 matches!(
                     &value.value,
                     crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
@@ -1674,7 +1690,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.definition_chain_value.as_ref().is_some_and(|value| {
+            record.definition_chain_value().is_some_and(|value| {
                 matches!(
                     &value.value,
                     crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
@@ -1729,7 +1745,7 @@ fn finish_decode(
     let value_field_count = native
         .value_blocks
         .iter()
-        .map(|block| block.fields.len())
+        .map(|block| block.fields().len())
         .sum();
     let value_selection_count = native
         .value_blocks
@@ -1743,7 +1759,7 @@ fn finish_decode(
         .filter(|curve| {
             curve
                 .id
-                .0
+                .as_str()
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
         .count();
@@ -1783,35 +1799,35 @@ fn finish_decode(
         .count();
     report.coverage.extend([
         (
-            "decoded_appearance_packet_count".to_string(),
+            crate::coverage::DECODED_APPEARANCE_PACKET_COUNT,
             appearance_transfer.decoded_packets,
         ),
         (
-            "unresolved_appearance_packet_count".to_string(),
+            crate::coverage::UNRESOLVED_APPEARANCE_PACKET_COUNT,
             appearance_transfer.unresolved_packets,
         ),
         (
-            "transferred_appearance_asset_count".to_string(),
+            crate::coverage::TRANSFERRED_APPEARANCE_ASSET_COUNT,
             appearance_transfer.emitted_assets,
         ),
         (
-            "transferred_appearance_binding_count".to_string(),
+            crate::coverage::TRANSFERRED_APPEARANCE_BINDING_COUNT,
             appearance_transfer.emitted_bindings,
         ),
         (
-            "decoded_consolidated_circle_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CIRCLE_COUNT,
             native.consolidated_circles.len(),
         ),
         (
-            "decoded_consolidated_class61_record_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CLASS61_RECORD_COUNT,
             native.consolidated_class61_records.len(),
         ),
         (
-            "decoded_consolidated_cone_face_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT,
             native.consolidated_cone_faces.len(),
         ),
         (
-            "decoded_consolidated_cone_face_parameter_point_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
             native
                 .consolidated_cone_faces
                 .iter()
@@ -1819,100 +1835,100 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_consolidated_cone_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CONE_COUNT,
             native.consolidated_cones.len(),
         ),
         (
-            "decoded_consolidated_cylinder_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_CYLINDER_COUNT,
             native.consolidated_cylinders.len(),
         ),
         (
-            "decoded_consolidated_group_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_GROUP_COUNT,
             native.consolidated_groups.len(),
         ),
         (
-            "decoded_consolidated_line_profile_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,
             native.consolidated_line_profiles.len(),
         ),
         (
-            "transferred_consolidated_line_profile_count".to_string(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT,
             transferred_line_profile_count,
         ),
         (
-            "decoded_consolidated_parameter_point_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT,
             native.consolidated_parameter_points.len(),
         ),
         (
-            "decoded_consolidated_plane_carrier_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT,
             native.consolidated_plane_carriers.len(),
         ),
         (
-            "decoded_consolidated_pcurve_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_PCURVE_COUNT,
             native.consolidated_pcurves.len(),
         ),
         (
-            "decoded_consolidated_edge_run_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT,
             consolidated_edge_run_count,
         ),
         (
-            "decoded_consolidated_edge_run_support_binding_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT,
             consolidated_edge_run_support_binding_count,
         ),
         (
-            "unresolved_consolidated_edge_run_count".to_string(),
+            crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
             unresolved_consolidated_edge_run_count,
         ),
         (
-            "partially_resolved_consolidated_edge_run_count".to_string(),
+            crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
             partially_resolved_consolidated_edge_run_count,
         ),
         (
-            "fully_resolved_consolidated_edge_run_count".to_string(),
+            crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
             fully_resolved_consolidated_edge_run_count,
         ),
         (
-            "decoded_consolidated_edge_run_shared_locus_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT,
             consolidated_edge_run_shared_locus_count,
         ),
         (
-            "decoded_consolidated_edge_run_endpoint_locus_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT,
             consolidated_edge_run_endpoint_locus_count,
         ),
         (
-            "decoded_consolidated_reference_list_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_REFERENCE_LIST_COUNT,
             native.consolidated_reference_lists.len(),
         ),
         (
-            "decoded_consolidated_revolution_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_REVOLUTION_COUNT,
             native.consolidated_revolutions.len(),
         ),
         (
-            "transferred_consolidated_revolution_count".to_string(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
             ir.model
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {
                     surface
                         .id
-                        .0
+                        .as_str()
                         .starts_with("catia:consolidated:surface-revolution#")
                 })
                 .count(),
         ),
         (
-            "decoded_consolidated_sphere_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_SPHERE_COUNT,
             native.consolidated_spheres.len(),
         ),
         (
-            "decoded_consolidated_torus_count".to_string(),
+            crate::coverage::DECODED_CONSOLIDATED_TORUS_COUNT,
             native.consolidated_tori.len(),
         ),
         (
-            "decoded_zero_entity_edge_stride_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT,
             native.zero_entity_edge_strides.len(),
         ),
         (
-            "decoded_zero_entity_edge_stride_allocation_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1920,7 +1936,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_edge_stride_topology_ref_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1928,7 +1944,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_edge_stride_surface_support_ref_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
@@ -1936,7 +1952,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_face_bound_support_run_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1944,7 +1960,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_face_terminal_control_03_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1953,7 +1969,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_face_terminal_control_05_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1962,7 +1978,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_terminal_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1971,7 +1987,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_loop_record_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1980,7 +1996,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_loop_class_41_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -1990,7 +2006,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_class_50_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2000,7 +2016,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_loop_class_c1_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2010,7 +2026,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_forward_loop_member_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2021,7 +2037,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_reversed_loop_member_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2032,7 +2048,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_oriented_loop_member_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2042,7 +2058,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_model_endpoint_pair_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2052,7 +2068,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_bound_support_member_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2062,7 +2078,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_bound_typed_loop_reference_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2072,11 +2088,11 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_use_pair_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT,
             native.zero_entity_oriented_use_pairs.len(),
         ),
         (
-            "decoded_zero_entity_oriented_use_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT,
             native
                 .zero_entity_oriented_use_pairs
                 .iter()
@@ -2084,7 +2100,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_oriented_use_allocation_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT,
             native
                 .zero_entity_oriented_use_pairs
                 .iter()
@@ -2093,23 +2109,23 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_endpoint_pair_candidate_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
             native.zero_entity_endpoint_pair_candidates.len(),
         ),
         (
-            "decoded_zero_entity_endpoint_locus_candidate_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
             native.zero_entity_endpoint_locus_candidates.len(),
         ),
         (
-            "decoded_zero_entity_record_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT,
             native.zero_entity_records.len(),
         ),
         (
-            "decoded_zero_entity_support_run_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT,
             native.zero_entity_support_runs.len(),
         ),
         (
-            "decoded_zero_entity_support_occurrence_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2117,7 +2133,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_support_pcurve_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2126,7 +2142,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_support_model_curve_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2135,7 +2151,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_support_model_construction_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2144,7 +2160,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_uv_endpoint_pair_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2153,7 +2169,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_model_endpoint_pair_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2162,7 +2178,7 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_model_midpoint_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
@@ -2171,11 +2187,11 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_zero_entity_vertex_incidence_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT,
             native.zero_entity_vertex_incidences.len(),
         ),
         (
-            "decoded_zero_entity_vertex_incidence_allocation_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT,
             native
                 .zero_entity_vertex_incidences
                 .iter()
@@ -2183,7 +2199,7 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            "decoded_zero_entity_vertex_owner_binding_count".to_string(),
+            crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT,
             native
                 .zero_entity_vertex_incidences
                 .iter()
@@ -2191,1094 +2207,1078 @@ fn finish_decode(
                 .count(),
         ),
         (
-            "decoded_object_graph_count".to_string(),
+            crate::coverage::DECODED_OBJECT_GRAPH_COUNT,
             native.object_graphs.len(),
         ),
+        (crate::coverage::DECODED_OBJECT_RECORD_COUNT, object_record_count),
         (
-            "decoded_object_record_count".to_string(),
-            object_record_count,
-        ),
-        (
-            "modeling_object_graph_count".to_string(),
+            crate::coverage::MODELING_OBJECT_GRAPH_COUNT,
             modeling_graph_scope
                 .as_ref()
                 .map_or(native.object_graphs.len(), HashSet::len),
         ),
         (
-            "modeling_object_record_count".to_string(),
+            crate::coverage::MODELING_OBJECT_RECORD_COUNT,
             modeling_object_records.len(),
         ),
         (
-            "retained_unscoped_object_graph_count".to_string(),
+            crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT,
             retained_unscoped_object_graph_count,
         ),
         (
-            "retained_unscoped_object_record_count".to_string(),
+            crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT,
             retained_unscoped_object_record_count,
         ),
         (
-            "decoded_storage_record_link_count".to_string(),
+            crate::coverage::DECODED_STORAGE_RECORD_LINK_COUNT,
             resolved_storage_record_count,
         ),
         (
-            "unresolved_storage_record_count".to_string(),
+            crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT,
             unresolved_storage_record_count,
         ),
         (
-            "decoded_object_record_reference_count".to_string(),
+            crate::coverage::DECODED_OBJECT_RECORD_REFERENCE_COUNT,
             object_record_reference_count,
         ),
         (
-            "decoded_resolved_object_record_reference_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_OBJECT_RECORD_REFERENCE_COUNT,
             resolved_object_record_reference_count,
         ),
         (
-            "decoded_null_object_record_reference_count".to_string(),
+            crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT,
             null_object_record_reference_count,
         ),
         (
-            "unresolved_object_record_reference_count".to_string(),
+            crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT,
             unresolved_object_record_reference_count,
         ),
         (
-            "decoded_repeated_reference_suffix_count".to_string(),
+            crate::coverage::DECODED_REPEATED_REFERENCE_SUFFIX_COUNT,
             repeated_reference_suffix_count,
         ),
         (
-            "decoded_repeated_reference_schema_selection_count".to_string(),
+            crate::coverage::DECODED_REPEATED_REFERENCE_SCHEMA_SELECTION_COUNT,
             repeated_reference_schema_selection_count,
         ),
         (
-            "decoded_design_object_count".to_string(),
+            crate::coverage::DECODED_DESIGN_OBJECT_COUNT,
             native.design_objects.len(),
         ),
-        ("decoded_design_field_count".to_string(), design_field_count),
+        (crate::coverage::DECODED_DESIGN_FIELD_COUNT, design_field_count),
         (
-            "classified_design_object_count".to_string(),
+            crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT,
             classified_design_object_count,
         ),
         (
-            "decoded_design_object_relation_count".to_string(),
+            crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT,
             design_object_relation_count,
         ),
         (
-            "decoded_design_parallel_reference_table_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_TABLE_COUNT,
             design_parallel_reference_table_count,
         ),
         (
-            "decoded_design_parallel_reference_row_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT,
             design_parallel_reference_row_count,
         ),
         (
-            "decoded_design_parallel_reference_column_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT,
             design_parallel_reference_column_count,
         ),
         (
-            "unclassified_design_parallel_reference_column_count".to_string(),
+            crate::coverage::UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_COLUMN_COUNT,
             design_parallel_reference_unclassified_column_count,
         ),
         (
-            "decoded_design_parallel_reference_cell_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
             design_parallel_reference_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_resolved_cell_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_RESOLVED_CELL_COUNT,
             design_parallel_reference_resolved_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_null_cell_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_NULL_CELL_COUNT,
             design_parallel_reference_null_cell_count,
         ),
         (
-            "unresolved_design_parallel_reference_cell_count".to_string(),
+            crate::coverage::UNRESOLVED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
             design_parallel_reference_unresolved_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_classified_cell_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_CELL_COUNT,
             design_parallel_reference_classified_cell_count,
         ),
         (
-            "unclassified_design_parallel_reference_cell_count".to_string(),
+            crate::coverage::UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
             design_parallel_reference_unclassified_cell_count,
         ),
         (
-            "decoded_design_parallel_reference_classified_column_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_CLASSIFIED_COLUMN_COUNT,
             design_parallel_reference_classified_column_count,
         ),
         (
-            "decoded_design_parallel_reference_matched_row_count".to_string(),
+            crate::coverage::DECODED_DESIGN_PARALLEL_REFERENCE_MATCHED_ROW_COUNT,
             design_parallel_reference_matched_row_count,
         ),
         (
-            "unmatched_design_parallel_reference_row_count".to_string(),
+            crate::coverage::UNMATCHED_DESIGN_PARALLEL_REFERENCE_ROW_COUNT,
             design_parallel_reference_unmatched_row_count,
         ),
         (
-            "decoded_design_unowned_field_relation_count".to_string(),
+            crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT,
             design_unowned_field_relation_count,
         ),
         (
-            "decoded_design_same_object_relation_count".to_string(),
+            crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT,
             design_same_object_relation_count,
         ),
         (
-            "decoded_design_reflexive_field_relation_count".to_string(),
+            crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT,
             design_reflexive_field_relation_count,
         ),
         (
-            "decoded_design_object_owner_link_count".to_string(),
+            crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT,
             design_object_owner_link_count,
         ),
         (
-            "decoded_legacy_entity_run_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT,
             native.legacy_entity_runs.len(),
         ),
         (
-            "decoded_legacy_entity_identity_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT,
             legacy_entity_identity_count,
         ),
         (
-            "decoded_legacy_schema_program_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SCHEMA_PROGRAM_COUNT,
             legacy_schema_program_count,
         ),
         (
-            "decoded_legacy_vendor_footer_schema_program_count".to_string(),
+            crate::coverage::DECODED_LEGACY_VENDOR_FOOTER_SCHEMA_PROGRAM_COUNT,
             legacy_vendor_footer_schema_program_count,
         ),
         (
-            "decoded_legacy_directory_bound_schema_program_count".to_string(),
+            crate::coverage::DECODED_LEGACY_DIRECTORY_BOUND_SCHEMA_PROGRAM_COUNT,
             legacy_directory_bound_schema_program_count,
         ),
         (
-            "decoded_legacy_schema_identifier_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SCHEMA_IDENTIFIER_COUNT,
             legacy_schema_identifier_count,
         ),
         (
-            "decoded_legacy_evaluated_value_name_count".to_string(),
+            crate::coverage::DECODED_LEGACY_EVALUATED_VALUE_NAME_COUNT,
             legacy_evaluated_value_name_count,
         ),
         (
-            "decoded_legacy_identity_lead_81_count".to_string(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT,
             legacy_identity_lead_81_count,
         ),
         (
-            "decoded_legacy_identity_lead_82_count".to_string(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT,
             legacy_identity_lead_82_count,
         ),
         (
-            "decoded_legacy_identity_lead_e5_count".to_string(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT,
             legacy_identity_lead_e5_count,
         ),
         (
-            "decoded_legacy_identity_lead_fd_count".to_string(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT,
             legacy_identity_lead_fd_count,
         ),
         (
-            "decoded_legacy_text_field_count".to_string(),
+            crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT,
             legacy_text_field_count,
         ),
         (
-            "decoded_legacy_e3_role_tail_text_field_count".to_string(),
+            crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT,
             legacy_e3_role_tail_text_field_count,
         ),
         (
-            "decoded_legacy_role_selector_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT,
             legacy_role_selector_count,
         ),
         (
-            "decoded_legacy_selected_role_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT,
             legacy_selected_role_count,
         ),
         (
-            "decoded_legacy_role_field_binding_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT,
             legacy_role_field_binding_count,
         ),
         (
-            "decoded_legacy_role_text_field_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT,
             legacy_role_text_field_count,
         ),
         (
-            "decoded_legacy_schema_field_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT,
             legacy_schema_field_count,
         ),
         (
-            "decoded_legacy_relation_count".to_string(),
+            crate::coverage::DECODED_LEGACY_RELATION_COUNT,
             legacy_relation_count,
         ),
         (
-            "decoded_legacy_parameter_relation_count".to_string(),
+            crate::coverage::DECODED_LEGACY_PARAMETER_RELATION_COUNT,
             legacy_parameter_relation_count,
         ),
         (
-            "decoded_legacy_synchronous_state_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT,
             legacy_synchronous_state_count,
         ),
         (
-            "decoded_legacy_synchronous_relation_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT,
             legacy_synchronous_relation_count,
         ),
         (
-            "decoded_legacy_asynchronous_relation_count".to_string(),
+            crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT,
             legacy_asynchronous_relation_count,
         ),
         (
-            "decoded_legacy_type_descriptor_count".to_string(),
+            crate::coverage::DECODED_LEGACY_TYPE_DESCRIPTOR_COUNT,
             legacy_type_descriptor_count,
         ),
         (
-            "decoded_legacy_literal_type_descriptor_count".to_string(),
+            crate::coverage::DECODED_LEGACY_LITERAL_TYPE_DESCRIPTOR_COUNT,
             legacy_literal_type_descriptor_count,
         ),
         (
-            "decoded_legacy_scalar_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_SCALAR_VALUE_COUNT,
             legacy_scalar_value_count,
         ),
         (
-            "decoded_legacy_named_scalar_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_NAMED_SCALAR_VALUE_COUNT,
             legacy_named_scalar_value_count,
         ),
         (
-            "decoded_legacy_string_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT,
             legacy_string_value_count,
         ),
         (
-            "decoded_legacy_named_string_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT,
             legacy_named_string_value_count,
         ),
         (
-            "decoded_legacy_integer_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT,
             legacy_integer_value_count,
         ),
         (
-            "decoded_legacy_named_integer_value_count".to_string(),
+            crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT,
             legacy_named_integer_value_count,
         ),
         (
-            "decoded_definition_schema_selection_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_SCHEMA_SELECTION_COUNT,
             definition_schema_selection_count,
         ),
         (
-            "decoded_entity_value_field_count".to_string(),
+            crate::coverage::DECODED_ENTITY_VALUE_FIELD_COUNT,
             entity_value_field_count,
         ),
         (
-            "decoded_entity_value_schema_selection_count".to_string(),
+            crate::coverage::DECODED_ENTITY_VALUE_SCHEMA_SELECTION_COUNT,
             entity_value_schema_selection_count,
         ),
         (
-            "decoded_numeric_entity_value_packet_count".to_string(),
+            crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT,
             numeric_entity_value_packet_count,
         ),
         (
-            "decoded_numeric_entity_value_pair_count".to_string(),
+            crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT,
             numeric_entity_value_pair_count,
         ),
         (
-            "decoded_reference_signature_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT,
             reference_signature_count,
         ),
         (
-            "decoded_reference_signature_prefix_atom_2_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT,
             reference_signature_prefix_atom_2_count,
         ),
         (
-            "decoded_reference_signature_prefix_atom_35_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT,
             reference_signature_prefix_atom_35_count,
         ),
         (
-            "decoded_reference_signature_cohort_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT,
             reference_signature_cohort_count,
         ),
         (
-            "decoded_multi_member_reference_signature_cohort_count".to_string(),
+            crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT,
             multi_member_reference_signature_cohort_count,
         ),
         (
-            "decoded_reference_signature_cohort_member_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT,
             reference_signature_cohort_member_count,
         ),
         (
-            "decoded_schema_selected_reference_signature_cohort_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT,
             schema_selected_reference_signature_cohort_count,
         ),
         (
-            "decoded_reference_signature_instruction_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT,
             reference_signature_instruction_count,
         ),
         (
-            "decoded_reference_signature_token_count".to_string(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT,
             reference_signature_token_count,
         ),
         (
-            "decoded_resolved_reference_signature_entity_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT,
             resolved_reference_signature_entity_count,
         ),
         (
-            "decoded_null_reference_signature_entity_count".to_string(),
+            crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT,
             null_reference_signature_entity_count,
         ),
         (
-            "decoded_unresolved_reference_signature_entity_count".to_string(),
+            crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT,
             unresolved_reference_signature_entity_count,
         ),
         (
-            "decoded_classified_reference_signature_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_REFERENCE_SIGNATURE_ENTITY_COUNT,
             classified_reference_signature_entity_count,
         ),
         (
-            "decoded_compact_entity_value_packet_count".to_string(),
+            crate::coverage::DECODED_COMPACT_ENTITY_VALUE_PACKET_COUNT,
             compact_entity_value_packet_count,
         ),
         (
-            "decoded_layout_entity_value_packet_count".to_string(),
+            crate::coverage::DECODED_LAYOUT_ENTITY_VALUE_PACKET_COUNT,
             layout_entity_value_packet_count,
         ),
         (
-            "decoded_relation_expression_count".to_string(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT,
             relation_expression_count,
         ),
         (
-            "decoded_placeholder_state_relation_expression_count".to_string(),
+            crate::coverage::DECODED_PLACEHOLDER_STATE_RELATION_EXPRESSION_COUNT,
             placeholder_state_relation_expression_count,
         ),
         (
-            "decoded_parser_version_relation_expression_count".to_string(),
+            crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
             parser_version_relation_expression_count,
         ),
         (
-            "decoded_boolean_parser_version_relation_expression_count".to_string(),
+            crate::coverage::DECODED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
             boolean_parser_version_relation_expression_count,
         ),
         (
-            "decoded_opened_boolean_parser_version_relation_expression_count".to_string(),
+            crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
             opened_boolean_parser_version_relation_expression_count,
         ),
         (
-            "decoded_typed_relation_expression_count".to_string(),
+            crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT,
             typed_relation_expression_count,
         ),
         (
-            "decoded_untyped_relation_expression_count".to_string(),
+            crate::coverage::DECODED_UNTYPED_RELATION_EXPRESSION_COUNT,
             relation_expression_count - typed_relation_expression_count,
         ),
         (
-            "decoded_referenced_relation_expression_count".to_string(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT,
             referenced_relation_expression_count,
         ),
         (
-            "decoded_formula_referenced_relation_expression_count".to_string(),
+            crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT,
             formula_referenced_relation_expression_count,
         ),
         (
-            "decoded_program_referenced_relation_expression_count".to_string(),
+            crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT,
             program_referenced_relation_expression_count,
         ),
         (
-            "decoded_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT,
             relation_program_instance_count,
         ),
         (
-            "decoded_relation_program_output_count".to_string(),
+            crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT,
             relation_program_output_count,
         ),
         (
-            "decoded_resolved_relation_program_output_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
             resolved_relation_program_output_count,
         ),
         (
-            "decoded_null_relation_program_output_count".to_string(),
+            crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT,
             null_relation_program_output_count,
         ),
         (
-            "unresolved_relation_program_output_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
             unresolved_relation_program_output_count,
         ),
         (
-            "decoded_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             relation_program_reference_incidence_count,
         ),
         (
-            "decoded_resolved_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             resolved_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_null_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             null_relation_program_reference_incidence_count,
         ),
         (
-            "unresolved_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             unresolved_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_classified_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             classified_relation_program_reference_incidence_count,
         ),
         (
-            "unclassified_relation_program_reference_incidence_count".to_string(),
+            crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
             relation_program_reference_incidence_count
                 - classified_relation_program_reference_incidence_count,
         ),
         (
-            "decoded_lead12_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT,
             lead12_relation_program_instance_count,
         ),
         (
-            "decoded_lead54_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT,
             lead54_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_lead12_relation_program_context_entity_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
             resolved_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_null_lead12_relation_program_context_entity_count".to_string(),
+            crate::coverage::DECODED_NULL_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
             null_lead12_relation_program_context_entity_count,
         ),
         (
-            "unresolved_lead12_relation_program_context_entity_count".to_string(),
+            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
             unresolved_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_lead12_relation_program_paramout_context_entity_count".to_string(),
+            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT,
             lead12_relation_program_paramout_context_entity_count,
         ),
         (
-            "decoded_other_lead12_relation_program_context_class_count".to_string(),
+            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT,
             other_lead12_relation_program_context_class_count,
         ),
         (
-            "unclassified_lead12_relation_program_context_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
             unclassified_lead12_relation_program_context_entity_count,
         ),
         (
-            "decoded_resolved_lead54_relation_program_trailing_entity_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT,
             resolved_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "decoded_null_lead54_relation_program_trailing_entity_count".to_string(),
+            crate::coverage::DECODED_NULL_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT,
             null_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "unresolved_lead54_relation_program_trailing_entity_count".to_string(),
+            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT,
             unresolved_lead54_relation_program_trailing_entity_count,
         ),
         (
-            "decoded_resolved_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
             resolved_relation_program_instance_count,
         ),
         (
-            "decoded_null_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT,
             null_relation_program_instance_count,
         ),
         (
-            "unresolved_relation_program_instance_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
             unresolved_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_repeated_reference_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
             resolved_relation_program_repeated_reference_count,
         ),
         (
-            "decoded_null_relation_program_repeated_reference_count".to_string(),
+            crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
             null_relation_program_repeated_reference_count,
         ),
         (
-            "unresolved_relation_program_repeated_reference_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
             unresolved_relation_program_repeated_reference_count,
         ),
         (
-            "decoded_classified_relation_program_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT,
             classified_relation_program_entity_count,
         ),
         (
-            "unclassified_relation_program_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT,
             relation_program_instance_count - classified_relation_program_entity_count,
         ),
         (
-            "decoded_classified_relation_program_repeated_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT,
             classified_relation_program_repeated_entity_count,
         ),
         (
-            "unclassified_relation_program_repeated_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT,
             relation_program_instance_count - classified_relation_program_repeated_entity_count,
         ),
         (
-            "decoded_relation_expression_program_instance_count".to_string(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT,
             relation_expression_instance_count,
         ),
         (
-            "decoded_other_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT,
             other_relation_program_instance_count,
         ),
         (
-            "decoded_typed_relation_program_instance_count".to_string(),
+            crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT,
             typed_relation_program_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_input_instance_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
             resolved_relation_program_input_instance_count,
         ),
         (
-            "unresolved_relation_program_input_instance_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
             unresolved_relation_program_input_instance_count,
         ),
         (
-            "decoded_resolved_relation_program_input_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT,
             resolved_relation_program_input_count,
         ),
         (
-            "decoded_distinct_relation_program_input_entity_count".to_string(),
+            crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT,
             distinct_relation_program_input_entity_count,
         ),
         (
-            "decoded_relation_program_parameter_dependency_count".to_string(),
+            crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
             relation_program_parameter_dependency_count,
         ),
         (
-            "decoded_resolved_relation_program_parameter_dependency_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
             resolved_relation_program_parameter_dependency_count,
         ),
         (
-            "unresolved_relation_program_parameter_dependency_count".to_string(),
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
             unresolved_relation_program_parameter_dependency_count,
         ),
         (
-            "ambiguous_relation_program_parameter_dependency_count".to_string(),
+            crate::coverage::AMBIGUOUS_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
             ambiguous_relation_program_parameter_dependency_count,
         ),
         (
-            "decoded_schema_configuration_record_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT,
             schema_configuration_record_count,
         ),
         (
-            "decoded_schema_configuration_selector_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT,
             schema_configuration_record_count,
         ),
         (
-            "decoded_resolved_schema_configuration_entity_reference_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
             resolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_null_schema_configuration_entity_reference_count".to_string(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
             null_schema_configuration_reference_count,
         ),
         (
-            "unresolved_schema_configuration_entity_reference_count".to_string(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
             unresolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_classified_schema_configuration_entity_reference_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
             classified_schema_configuration_entity_reference_count,
         ),
         (
-            "unclassified_schema_configuration_entity_reference_count".to_string(),
+            crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
             schema_configuration_record_count
                 - classified_schema_configuration_entity_reference_count,
         ),
         (
-            "decoded_schema_configuration_row_link_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT,
             schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_class_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
             resolved_schema_configuration_row_class_count,
         ),
         (
-            "decoded_null_schema_configuration_row_class_count".to_string(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
             null_schema_configuration_row_class_count,
         ),
         (
-            "unresolved_schema_configuration_row_class_count".to_string(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
             schema_configuration_row_link_count
                 - resolved_schema_configuration_row_class_count
                 - null_schema_configuration_row_class_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_successor_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
             resolved_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_null_schema_configuration_row_successor_count".to_string(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
             null_schema_configuration_row_successor_count,
         ),
         (
-            "unresolved_schema_configuration_row_successor_count".to_string(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
             schema_configuration_row_link_count
                 - resolved_schema_configuration_row_successor_count
                 - null_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_complete_schema_configuration_row_chain_count".to_string(),
+            crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT,
             complete_schema_configuration_row_chain_count,
         ),
         (
-            "decoded_ordered_schema_configuration_row_link_count".to_string(),
+            crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT,
             ordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_schema_configuration_row_chain_terminal_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
             resolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_null_schema_configuration_row_chain_terminal_count".to_string(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
             null_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_schema_configuration_row_chain_terminal_count".to_string(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
             unresolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_classified_schema_configuration_row_chain_terminal_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
             classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unclassified_schema_configuration_row_chain_terminal_count".to_string(),
+            crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
             complete_schema_configuration_row_chain_count
                 - classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_schema_configuration_row_order_count".to_string(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT,
             unordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_schema_configuration_row_intervening_entity_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT,
             schema_configuration_row_intervening_entity_count,
         ),
         (
-            "decoded_schema_configuration_row_source_interval_chain_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_SOURCE_INTERVAL_CHAIN_COUNT,
             schema_configuration_row_source_interval_chain_count,
         ),
         (
-            "decoded_schema_configuration_row_intervening_schema_configuration_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT,
             schema_configuration_row_intervening_schema_configuration_count,
         ),
         (
-            "decoded_instanced_relation_expression_count".to_string(),
+            crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT,
             instanced_relation_expression_count,
         ),
         (
-            "unresolved_unreferenced_relation_expression_count".to_string(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT,
             unreferenced_relation_expression_count,
         ),
         (
-            "decoded_parameter_value_count".to_string(),
+            crate::coverage::DECODED_PARAMETER_VALUE_COUNT,
             parameter_value_count,
         ),
+        (crate::coverage::DECODED_RANGE_INTERVAL_COUNT, range_interval_count),
         (
-            "decoded_range_interval_count".to_string(),
-            range_interval_count,
-        ),
-        (
-            "decoded_range_interval_no_slot_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT,
             range_interval_no_slot_count,
         ),
         (
-            "decoded_range_interval_nominal_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT,
             range_interval_nominal_count,
         ),
         (
-            "decoded_range_interval_finite_slot_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT,
             range_interval_finite_slot_count,
         ),
         (
-            "decoded_range_interval_unset_slot_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT,
             range_interval_unset_slot_count,
         ),
         (
-            "decoded_range_interval_incoming_reference_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT,
             range_interval_incoming_reference_count,
         ),
         (
-            "decoded_range_interval_incoming_payload_reference_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_PAYLOAD_REFERENCE_COUNT,
             range_interval_incoming_payload_reference_count,
         ),
         (
-            "decoded_range_interval_incoming_storage_reference_count".to_string(),
+            crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_STORAGE_REFERENCE_COUNT,
             range_interval_incoming_storage_reference_count,
         ),
         (
-            "decoded_classified_range_interval_source_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT,
             classified_range_interval_source_entity_count,
         ),
         (
-            "unclassified_range_interval_source_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT,
             range_interval_incoming_reference_count - classified_range_interval_source_entity_count,
         ),
         (
-            "unreferenced_range_interval_count".to_string(),
+            crate::coverage::UNREFERENCED_RANGE_INTERVAL_COUNT,
             unreferenced_range_interval_count,
         ),
         (
-            "uniquely_referenced_range_interval_count".to_string(),
+            crate::coverage::UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT,
             uniquely_referenced_range_interval_count,
         ),
         (
-            "multiply_referenced_range_interval_count".to_string(),
+            crate::coverage::MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT,
             multiply_referenced_range_interval_count,
         ),
         (
-            "decoded_constraint_range_count".to_string(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT,
             constraint_range_count,
         ),
         (
-            "decoded_dimension_constraint_range_count".to_string(),
+            crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT,
             dimension_constraint_range_count,
         ),
         (
-            "decoded_complex_constraint_range_count".to_string(),
+            crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT,
             complex_constraint_range_count,
         ),
         (
-            "decoded_evaluated_constraint_range_count".to_string(),
+            crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT,
             evaluated_constraint_range_count,
         ),
         (
-            "decoded_unset_constraint_range_count".to_string(),
+            crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT,
             unset_constraint_range_count,
         ),
         (
-            "decoded_constraint_range_incoming_reference_count".to_string(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT,
             constraint_range_incoming_reference_count,
         ),
         (
-            "decoded_constraint_range_incoming_payload_reference_count".to_string(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT,
             constraint_range_incoming_payload_reference_count,
         ),
         (
-            "decoded_constraint_range_incoming_storage_reference_count".to_string(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT,
             constraint_range_incoming_storage_reference_count,
         ),
         (
-            "decoded_classified_constraint_range_source_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
             classified_constraint_range_source_entity_count,
         ),
         (
-            "unclassified_constraint_range_source_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
             constraint_range_incoming_reference_count
                 - classified_constraint_range_source_entity_count,
         ),
         (
-            "unreferenced_constraint_range_count".to_string(),
+            crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT,
             unreferenced_constraint_range_count,
         ),
         (
-            "uniquely_referenced_constraint_range_count".to_string(),
+            crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT,
             uniquely_referenced_constraint_range_count,
         ),
         (
-            "multiply_referenced_constraint_range_count".to_string(),
+            crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT,
             multiply_referenced_constraint_range_count,
         ),
         (
-            "decoded_definition_value_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_VALUE_COUNT,
             definition_value_count,
         ),
         (
-            "decoded_owned_definition_value_count".to_string(),
+            crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT,
             owned_definition_value_count,
         ),
         (
-            "unresolved_definition_value_owner_count".to_string(),
+            crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT,
             unowned_definition_value_count,
         ),
         (
-            "decoded_definition_chain_value_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT,
             definition_chain_value_count,
         ),
         (
-            "decoded_structurally_owned_definition_chain_value_count".to_string(),
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT,
             structurally_owned_definition_chain_value_count,
         ),
         (
-            "unresolved_definition_chain_value_owner_count".to_string(),
+            crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT,
             unowned_definition_chain_value_count,
         ),
         (
-            "decoded_unassigned_definition_chain_value_count".to_string(),
+            crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT,
             unassigned_definition_chain_value_count,
         ),
         (
-            "decoded_definition_chain_evaluation_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT,
             definition_chain_evaluation_count,
         ),
         (
-            "decoded_evaluated_definition_chain_count".to_string(),
+            crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT,
             evaluated_definition_chain_count,
         ),
         (
-            "decoded_unset_definition_chain_count".to_string(),
+            crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT,
             unset_definition_chain_count,
         ),
         (
-            "decoded_definition_chain_atom_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT,
             definition_chain_atom_count,
         ),
         (
-            "decoded_definition_chain_control_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_CONTROL_COUNT,
             definition_chain_control_count,
         ),
         (
-            "decoded_definition_chain_separator_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_SEPARATOR_COUNT,
             definition_chain_separator_count,
         ),
         (
-            "decoded_definition_chain_schema_selector_count".to_string(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT,
             definition_chain_schema_selector_count,
         ),
         (
-            "decoded_structurally_owned_definition_chain_evaluation_count".to_string(),
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_EVALUATION_COUNT,
             structurally_owned_definition_chain_evaluation_count,
         ),
         (
-            "unresolved_definition_chain_evaluation_owner_count".to_string(),
+            crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT,
             unowned_definition_chain_evaluation_count,
         ),
         (
-            "decoded_unassigned_definition_chain_evaluation_count".to_string(),
+            crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT,
             unassigned_definition_chain_evaluation_count,
         ),
         (
-            "decoded_unassigned_object_owner_slot_count".to_string(),
+            crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT,
             unassigned_owner_slot_count,
         ),
         (
-            "decoded_formula_relation_count".to_string(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT,
             formula_relation_count,
         ),
         (
-            "decoded_resolved_formula_output_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT,
             resolved_formula_output_count,
         ),
         (
-            "decoded_null_formula_output_count".to_string(),
+            crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT,
             null_formula_output_count,
         ),
         (
-            "decoded_classified_formula_output_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
             classified_formula_output_entity_count,
         ),
         (
-            "unclassified_formula_output_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
             formula_relation_count - classified_formula_output_entity_count,
         ),
         (
-            "decoded_classified_formula_expression_entity_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
             classified_formula_expression_entity_count,
         ),
         (
-            "unclassified_formula_expression_entity_count".to_string(),
+            crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
             formula_relation_count - classified_formula_expression_entity_count,
         ),
         (
-            "unresolved_formula_output_count".to_string(),
+            crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT,
             unresolved_formula_output_count,
         ),
         (
-            "decoded_formula_parameter_dependency_count".to_string(),
+            crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT,
             formula_parameter_dependency_count,
         ),
         (
-            "decoded_formula_parameter_dependency_candidate_count".to_string(),
+            crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
             formula_parameter_dependency_candidate_count,
         ),
         (
-            "decoded_classified_formula_parameter_dependency_candidate_count".to_string(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
             classified_formula_parameter_dependency_candidate_count,
         ),
         (
-            "unclassified_formula_parameter_dependency_candidate_count".to_string(),
+            crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
             formula_parameter_dependency_candidate_count
                 - classified_formula_parameter_dependency_candidate_count,
         ),
         (
-            "decoded_resolved_formula_parameter_dependency_count".to_string(),
+            crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT,
             resolved_formula_parameter_dependency_count,
         ),
         (
-            "unresolved_formula_parameter_dependency_count".to_string(),
+            crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT,
             unresolved_formula_parameter_dependency_count,
         ),
         (
-            "ambiguous_formula_parameter_dependency_count".to_string(),
+            crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT,
             ambiguous_formula_parameter_dependency_count,
         ),
         (
-            "decoded_escaped_word_entity_suffix_count".to_string(),
+            crate::coverage::DECODED_ESCAPED_WORD_ENTITY_SUFFIX_COUNT,
             escaped_word_entity_suffix_count,
         ),
         (
-            "decoded_token_8149_entity_suffix_count".to_string(),
+            crate::coverage::DECODED_TOKEN_8149_ENTITY_SUFFIX_COUNT,
             token_8149_entity_suffix_count,
         ),
         (
-            "decoded_fixed_fe_f6_entity_suffix_count".to_string(),
+            crate::coverage::DECODED_FIXED_FE_F6_ENTITY_SUFFIX_COUNT,
             fixed_fe_f6_entity_suffix_count,
         ),
         (
-            "decoded_paged_atom_state_01_entity_suffix_count".to_string(),
+            crate::coverage::DECODED_PAGED_ATOM_STATE_01_ENTITY_SUFFIX_COUNT,
             paged_atom_state_01_entity_suffix_count,
         ),
         (
-            "decoded_scalar_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT,
             scalar_entity_suffix_value_count,
         ),
         (
-            "decoded_unset_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT,
             unset_entity_suffix_value_count,
         ),
         (
-            "decoded_control_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT,
             control_entity_suffix_value_count,
         ),
         (
-            "decoded_control_e8_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT,
             control_e8_entity_suffix_value_count,
         ),
         (
-            "decoded_control_e9_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT,
             control_e9_entity_suffix_value_count,
         ),
         (
-            "decoded_separator_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT,
             separator_entity_suffix_value_count,
         ),
         (
-            "decoded_atom_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT,
             atom_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_atom_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_atom_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_evaluation_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_evaluation_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_control_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_control_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_separator_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_separator_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_schema_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_schema_entity_suffix_value_count,
         ),
         (
-            "decoded_schema_selected_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT,
             schema_selected_entity_suffix_value_count,
         ),
         (
-            "decoded_wide_prefix_entity_suffix_value_count".to_string(),
+            crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT,
             wide_prefix_entity_suffix_value_count,
         ),
         (
-            "unresolved_design_owner_count".to_string(),
+            crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT,
             unresolved_design_owner_count,
         ),
         (
-            "decoded_value_block_count".to_string(),
+            crate::coverage::DECODED_VALUE_BLOCK_COUNT,
             native.value_blocks.len(),
         ),
-        ("decoded_value_field_count".to_string(), value_field_count),
+        (crate::coverage::DECODED_VALUE_FIELD_COUNT, value_field_count),
         (
-            "decoded_value_schema_selection_count".to_string(),
+            crate::coverage::DECODED_VALUE_SCHEMA_SELECTION_COUNT,
             value_selection_count,
         ),
+        (crate::coverage::TRANSFERRED_FEATURE_COUNT, ir.model.features.len()),
         (
-            "transferred_feature_count".to_string(),
-            ir.model.features.len(),
+            crate::coverage::TRANSFERRED_FEATURE_PARENT_COUNT,
+            design_feature_transfer.feature_parent_count(&ir, &native),
         ),
         (
-            "transferred_feature_parent_count".to_string(),
-            ir.model
-                .features
-                .iter()
-                .filter(|feature| feature.parent.is_some())
-                .count(),
-        ),
-        (
-            "transferred_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT,
             ir.model.parameters.len(),
         ),
         (
-            "transferred_relation_program_input_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT,
             formula_transfer.relation_program_parameter_count,
         ),
         (
-            "transferred_legacy_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT,
             formula_transfer.legacy_parameter_count,
         ),
         (
-            "transferred_legacy_selector_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
             formula_transfer.legacy_selector_parameter_count,
         ),
         (
-            "transferred_legacy_formula_count".to_string(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT,
             formula_transfer.legacy_formula_count,
         ),
         (
-            "transferred_formula_design_record_count".to_string(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT,
             transferred_formula_design_records.len(),
         ),
         (
-            "transferred_definition_chain_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT,
             formula_transfer.definition_chain_parameter_count,
         ),
         (
-            "transferred_principal_plane_record_count".to_string(),
+            crate::coverage::TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT,
             transferred_principal_plane_records.len(),
         ),
         (
-            "transferred_native_operation_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_OPERATION_COUNT,
             design_feature_transfer.native_operation_records.len(),
         ),
         (
-            "transferred_native_operation_definition_value_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
             design_feature_transfer.native_operation_definition_value_count,
         ),
         (
-            "transferred_native_operation_definition_chain_value_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
             design_feature_transfer.native_operation_definition_chain_value_count,
         ),
         (
-            "transferred_native_operation_range_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
             design_feature_transfer.native_operation_range_count,
         ),
         (
-            "transferred_native_operation_parameter_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
             transferred_native_operation_parameter_count,
         ),
         (
-            "unresolved_design_record_count".to_string(),
+            crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT,
             unresolved_object_record_count,
         ),
+        (crate::coverage::TRANSFERRED_SKETCH_COUNT, ir.model.sketches.len()),
         (
-            "transferred_sketch_count".to_string(),
-            ir.model.sketches.len(),
-        ),
-        (
-            "transferred_sketch_entity_count".to_string(),
+            crate::coverage::TRANSFERRED_SKETCH_ENTITY_COUNT,
             ir.model.sketch_entities.len(),
         ),
         (
-            "transferred_native_sketch_entity_count".to_string(),
+            crate::coverage::TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
             transferred_native_sketch_entity_count,
         ),
         (
-            "transferred_sketch_constraint_count".to_string(),
+            crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
             ir.model.sketch_constraints.len(),
         ),
         (
-            "transferred_configuration_count".to_string(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_COUNT,
             ir.model.configurations.len(),
         ),
     ]);
     if transferred_pmi_dimension_count != 0 {
-        report.coverage.insert(
-            "transferred_pmi_dimension_count".to_string(),
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_DIMENSION_COUNT,
             transferred_pmi_dimension_count,
         );
     }
@@ -3484,7 +3484,7 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA entities",
     )?;
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 
 fn modeling_graph_scope(
@@ -3506,15 +3506,29 @@ fn modeling_graph_scope(
     }
 }
 
+/// The single site that finishes a decode and charges dialect admission loss.
+///
+/// Identity is authored once from the match classified at the decode entry;
+/// the sealed wrapper stamps it onto the report. This function merges the
+/// container-level notes and charges dialect loss from that same match.
 fn decode_result(
+    scan: &ContainerScan,
+    matched: &DialectMatch,
     mut ir: CadIr,
-    report: DecodeReport,
+    mut body: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
-) -> Result<DecodeResult, CodecError> {
+) -> Result<Decoded, CodecError> {
+    ir.source = Some(crate::assemble::source_meta(scan, matched));
+    body.notes = crate::container::notes(scan);
+    body.losses.extend(crate::dialect::dialect_loss(matched));
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
-    Ok(DecodeResult::new(ir, report, source_fidelity))
+    Ok(Decoded {
+        ir,
+        body,
+        source_fidelity,
+    })
 }
 
 #[cfg(test)]

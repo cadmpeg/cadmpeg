@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+use crate::dialect::FcstdDialect;
 use crate::native::{
     DynamicPropertyMeta, ExtensionRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord,
     ValueRecord,
@@ -30,34 +31,39 @@ pub struct Graph {
     pub properties: Vec<PropertyRecord>,
 }
 
-/// Recover the persistence graph without interpreting geometry.
-pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
-    parse_with_context(bytes, None)
-}
-
 /// Recover the persistence graph, charging retained property XML against the session.
 pub fn parse_with_context(
     bytes: &[u8],
+    document: &crate::native::DocumentFacts,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+    parse_document(
+        text,
+        &xml,
+        FcstdDialect::from_schema_version(&document.schema_version),
+        ctx,
+    )
+}
+
+fn parse_document(
+    text: &str,
+    xml: &roxmltree::Document<'_>,
+    schema: FcstdDialect,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Graph, CodecError> {
     let root = xml.root_element();
-    let schema = crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-        .ok_or_else(|| {
-            CodecError::Malformed("Document element has no SchemaVersion attribute".into())
-        })?;
-    let (declarations_tag, data_tag, record_tag) = match schema.as_str() {
-        "2" => ("Features", "FeatureData", "Feature"),
-        "3" | "4" => ("Objects", "ObjectData", "Object"),
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd SchemaVersion={schema} persistence layout"
-            )));
-        }
-    };
+    // Schema 2 is its own element vocabulary. Every other declared schema, and
+    // every undeclared one, is read with the Objects/ObjectData/Object
+    // vocabulary: the nearest declared strategy is attempted rather than
+    // refused on a discriminant allowlist, and the attempt is self-limiting
+    // because an element vocabulary that does not fit fails below exactly as a
+    // corrupt schema-4 document does. `crate::dialect` charges the
+    // dialect-unverified loss for the undeclared case.
+    let (declarations_tag, data_tag, record_tag) = schema.persistence_tags();
     let objects_node = unique_section(root, declarations_tag)?;
     let data_node = unique_section(root, data_tag)?;
 
@@ -75,13 +81,14 @@ pub fn parse_with_context(
     if declared_count > object_limit {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
-    if schema == "2" && objects_node.attribute("Dependencies").is_some() {
+    if schema == FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some() {
         return Err(CodecError::Malformed(
             "schema 2 Features cannot carry object dependencies".into(),
         ));
     }
 
-    let dependencies_enabled = schema != "2" && objects_node.attribute("Dependencies").is_some();
+    let dependencies_enabled =
+        schema != FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some();
     let mut saw_object_declaration = false;
     for child in objects_node.children().filter(roxmltree::Node::is_element) {
         if child.has_tag_name(record_tag) {
@@ -191,7 +198,6 @@ pub fn parse_with_context(
         let type_name = required_attr(node, "type")?;
         let id = object_id(&name);
         let data_node = data_by_name.get(&name);
-        let raw_xml = data_node.map(|data| text[data.range()].to_owned());
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
@@ -219,9 +225,11 @@ pub fn parse_with_context(
                 .map_or_else(Vec::new, |dependency| dependency.dependencies.clone()),
             dependency_allow_partial: dependency.and_then(|dependency| dependency.allow_partial),
             order,
-            raw_xml,
-            byte_start: data_node.map(|data| data.range().start as u64),
-            byte_end: data_node.map(|data| data.range().end as u64),
+            data: data_node.map(|data| crate::native::ObjectData {
+                raw_xml: text[data.range()].to_owned(),
+                byte_start: data.range().start as u64,
+                byte_end: data.range().end as u64,
+            }),
         });
     }
 
@@ -394,10 +402,13 @@ pub fn parse_with_context(
         }
     }
     for property in &mut properties {
-        for link in &mut property.links {
-            if let Some(target) = &mut link.object {
+        let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
+            continue;
+        };
+        for link in links {
+            if let Some(target) = link.object() {
                 if declared_names.contains(target) {
-                    *target = object_id(target);
+                    link.object = cadmpeg_ir::products::NonEmptyString::new(object_id(target));
                 }
             }
         }
@@ -470,12 +481,8 @@ fn parse_properties(
             status: node
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
-            transient: true,
-            dynamic: None,
+            body: crate::native::PropertyBody::Transient,
             order,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
             raw_xml: text[node.range()].to_owned(),
             byte_start: node.range().start as u64,
             byte_end: node.range().end as u64,
@@ -549,18 +556,19 @@ fn parse_properties(
             status: node
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
-            transient: false,
-            dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
-                group: group.to_owned(),
-                documentation: node.attribute("doc").map(str::to_owned),
-                attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
-                read_only: bool_attr(node.attribute("ro")),
-                hidden: bool_attr(node.attribute("hide")),
-            }),
+            body: crate::native::PropertyBody::Persisted {
+                values,
+                links,
+                side_entries,
+                dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
+                    group: group.to_owned(),
+                    documentation: node.attribute("doc").map(str::to_owned),
+                    attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
+                    read_only: bool_attr(node.attribute("ro")),
+                    hidden: bool_attr(node.attribute("hide")),
+                }),
+            },
             order,
-            values,
-            links,
-            side_entries,
             raw_xml: text[node.range()].to_owned(),
             byte_start: node.range().start as u64,
             byte_end: node.range().end as u64,
@@ -733,8 +741,7 @@ fn local_link(
     }
     Ok(LinkTarget {
         document: None,
-        document_attribute: None,
-        object: Some(required_attr(node, object_attribute)?),
+        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, object_attribute)?),
         subelements: subelements.to_vec(),
     })
 }
@@ -787,9 +794,8 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
         }
     };
     Ok(LinkTarget {
-        document: file.as_ref().filter(|value| !value.is_empty()).cloned(),
-        document_attribute: file.map(|_| "file".into()),
-        object: Some(required_attr(node, "name")?),
+        document: crate::native::ExternalDocument::from_file_attr(file),
+        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, "name")?),
         subelements,
     })
 }

@@ -8,11 +8,10 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::Point3;
 
 use super::edits::{
-    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
-    HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
+    BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
+    PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -30,11 +29,11 @@ pub(crate) fn patch_material_assignments(
         bytes
             .get_mut(suffix_start..suffix_start + 8)
             .ok_or_else(|| CodecError::Malformed("material-assignment suffix is truncated".into()))?
-            .copy_from_slice(&assignment.entity_suffix.to_le_bytes());
+            .copy_from_slice(&assignment.entity_id.suffix().to_le_bytes());
         patch_utf16_if_changed(
             bytes,
             assignment.entity_id_offset,
-            &assignment.entity_id,
+            assignment.entity_id.as_str(),
             "material-assignment entity id",
         )?;
         patch_utf16_if_changed(
@@ -43,17 +42,25 @@ pub(crate) fn patch_material_assignments(
             &assignment.visual_guid,
             "material-assignment visual token",
         )?;
-        if let (Some(offset), Some(value)) = (
-            assignment.physical_token_offset,
-            assignment.physical_token.as_deref(),
-        ) {
-            patch_utf16_if_changed(bytes, offset, value, "material-assignment physical token")?;
+        if let Some(field) = &assignment.physical_token {
+            if let Some(offset) = field.offset {
+                patch_utf16_if_changed(
+                    bytes,
+                    offset,
+                    &field.value,
+                    "material-assignment physical token",
+                )?;
+            }
         }
-        if let (Some(offset), Some(value)) = (
-            assignment.visual_preset_offset,
-            assignment.visual_preset.as_deref(),
-        ) {
-            patch_utf16_if_changed(bytes, offset, value, "material-assignment visual preset")?;
+        if let Some(field) = &assignment.visual_preset {
+            if let Some(offset) = field.offset {
+                patch_utf16_if_changed(
+                    bytes,
+                    offset,
+                    &field.value,
+                    "material-assignment visual preset",
+                )?;
+            }
         }
     }
     Ok(())
@@ -66,13 +73,13 @@ pub(crate) fn patch_lost_edge_references(
     for reference in edits {
         patch_bytes_at(
             bytes,
-            reference.class_tag_offset,
+            reference.class_tag_offset(),
             reference.class_tag.as_bytes(),
             "lost-edge class tag",
         )?;
         patch_u32_at(
             bytes,
-            reference.record_index_offset,
+            reference.record_index_offset(),
             reference.record_index,
             "lost-edge record index",
         )?;
@@ -88,33 +95,34 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         for offset in [
-            entity.table_entity_id_offset,
-            entity.channel_entity_id_offset,
+            entity.table_entity_id_offset(),
+            entity.channel_entity_id_offset(),
         ]
         .into_iter()
         .flatten()
         {
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
-        for (name, guid) in &entity.channels {
+        for guid in entity
+            .channel_group()
+            .into_iter()
+            .flat_map(|group| group.channels.values())
+        {
             let encoded = guid
+                .value
+                .as_str()
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
-            patch_bytes_at(
-                bytes,
-                entity.channel_guid_offsets[name],
-                &encoded,
-                "ACT channel GUID",
-            )?;
+            patch_bytes_at(bytes, guid.offset, &encoded, "ACT channel GUID")?;
         }
     }
     Ok(())
 }
 
-pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[ActGuidEdit]) -> Result<(), CodecError> {
-    for (offset, encoded) in edits {
-        patch_bytes_at(bytes, *offset, encoded, "ACT GUID")?;
+pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
+    for edit in edits {
+        patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
 }
@@ -126,18 +134,18 @@ pub(crate) fn patch_act_roots(
     for root in edits {
         for (offset, value, field) in [
             (
-                root.instance_root_record_offset,
+                root.layout.instance_root_record_offset(),
                 root.instance_root_record,
                 "ACT instance-root reference",
             ),
             (
-                root.components_root_record_offset,
+                root.layout.components_root_record_offset(),
                 root.components_root_record,
                 "ACT components-root reference",
             ),
             (
-                root.registry_flag_offset,
-                root.registry_flag,
+                root.layout.registry_flag_offset(),
+                root.registry_flag.code(),
                 "ACT registry flag",
             ),
         ] {
@@ -145,14 +153,14 @@ pub(crate) fn patch_act_roots(
         }
         patch_utf16_if_changed(
             bytes,
-            root.entity_id_offset,
-            &root.entity_id,
+            root.layout.entity_id_offset(),
+            root.layout.entity_id(),
             "ACT root entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
-            root.display_name_offset,
-            &root.display_name,
+            root.layout.display_name_offset(),
+            root.layout.display_name(),
             "ACT root display name",
         )?;
     }
@@ -170,17 +178,6 @@ fn patch_utf16_if_changed(
         .flat_map(u16::to_le_bytes)
         .collect::<Vec<_>>();
     patch_bytes_at(bytes, offset, &encoded, field)
-}
-
-pub(crate) fn canonical_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
 }
 
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
@@ -228,11 +225,21 @@ pub(crate) fn patch_entity_headers(
     edits: &[EntityHeaderEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        if let Some((offset, value)) = edit.record_reference {
-            patch_u32_at(bytes, offset, value, "entity-header record reference")?;
+        if let Some(reference) = &edit.record_reference {
+            patch_u32_at(
+                bytes,
+                reference.offset,
+                reference.value,
+                "entity-header record reference",
+            )?;
         }
-        for &(offset, value) in &edit.references {
-            patch_u32_at(bytes, offset, value, "entity-header child reference")?;
+        for reference in &edit.references {
+            patch_u32_at(
+                bytes,
+                reference.offset,
+                reference.value,
+                "entity-header child reference",
+            )?;
         }
     }
     Ok(())
@@ -252,7 +259,10 @@ pub(crate) fn patch_body_members(
     bytes: &mut [u8],
     edits: &[BodyMemberEdit],
 ) -> Result<(), CodecError> {
-    for &(offset, entity_suffix, flags) in edits {
+    for edit in edits {
+        let offset = edit.offset;
+        let entity_suffix = edit.entity_suffix;
+        let flags = edit.flags;
         let start = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("design-body-member offset exceeds address space".into())
         })?;
@@ -322,7 +332,7 @@ pub(crate) fn patch_body_native_keys(
                     "F3D body-key record {record_index} is missing"
                 ))
             })?;
-            if record.head != "body" {
+            if record.head() != "body" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D body-key record {record_index} is not a body"
                 )));
@@ -350,7 +360,7 @@ pub(crate) fn patch_transform_hints(
             if !record.name.ends_with("transform") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D transform-hint record {record_index} is {}, not a transform",
-                    record.head
+                    record.head()
                 )));
             }
             for (index, flag) in (5usize..=7).zip(flags) {
@@ -375,10 +385,10 @@ pub(crate) fn patch_tolerant_coedge_parameters(
                     "F3D tolerant-coedge record {record_index} is missing"
                 ))
             })?;
-            if record.head != "tcoedge" {
+            if record.head() != "tcoedge" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-coedge record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             for (index, value) in [(11usize, range[0]), (12, range[1])] {
@@ -402,10 +412,10 @@ pub(crate) fn patch_wire_topologies(
             let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::malformed(format_args!("F3D wire record {record_index} is missing"))
             })?;
-            if record.head != "wire" {
+            if record.head() != "wire" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D wire record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             let is_in = matches!(side, cadmpeg_asm::brep::records::WireSide::In);
@@ -429,10 +439,10 @@ pub(crate) fn patch_edge_ownerships(
                     "F3D edge-ownership record {record_index} is missing"
                 ))
             })?;
-            if !matches!(record.head.as_str(), "edge" | "tedge") {
+            if !matches!(record.head(), "edge" | "tedge") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D edge-ownership record {record_index} is {}",
-                    record.head
+                    record.head()
                 )));
             }
             asm_edits.patch_integer_field(bytes, record, 7, 0x0c, *owner)?;
@@ -446,7 +456,9 @@ pub(crate) fn patch_construction_recipes(
     edits: &[ConstructionRecipeEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        if let Some((offset, record_index)) = edit.record_index {
+        if let Some(record_index) = &edit.record_index {
+            let offset = record_index.offset;
+            let record_index = record_index.value;
             let start = usize::try_from(offset).map_err(|_| {
                 CodecError::Malformed("construction-recipe offset exceeds address space".into())
             })?;
@@ -457,8 +469,10 @@ pub(crate) fn patch_construction_recipes(
                 })?
                 .copy_from_slice(&record_index.to_le_bytes());
         }
-        if let Some((offset, encoded)) = &edit.design_id {
-            let start = usize::try_from(*offset).map_err(|_| {
+        if let Some(design_id) = &edit.design_id {
+            let offset = design_id.offset;
+            let encoded = &design_id.value;
+            let start = usize::try_from(offset).map_err(|_| {
                 CodecError::Malformed(
                     "construction-recipe design-id offset exceeds address space".into(),
                 )
@@ -478,7 +492,10 @@ pub(crate) fn patch_persistent_references(
     bytes: &mut [u8],
     edits: &[PersistentReferenceEdit],
 ) -> Result<(), CodecError> {
-    for &(record_offset, value_offset, value) in edits {
+    for edit in edits {
+        let record_offset = edit.offset;
+        let value_offset = edit.identity_offset;
+        let value = edit.identity;
         let start = usize::try_from(record_offset)
             .ok()
             .and_then(|offset| offset.checked_add(value_offset as usize))
@@ -543,14 +560,14 @@ pub(crate) fn patch_history_states(
             change.byte_offset,
             1,
             0x0c,
-            change.old_ref.unwrap_or(-1),
+            change.old_ref().unwrap_or(-1),
         )?;
         AsmEditSet::patch_tagged_i64(
             bytes,
             change.byte_offset,
             2,
             0x0c,
-            change.new_ref.unwrap_or(-1),
+            change.new_ref().unwrap_or(-1),
         )?;
     }
     Ok(())
@@ -560,10 +577,13 @@ pub(crate) fn patch_sketch_points(
     bytes: &mut [u8],
     edits: &[SketchPointEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, coordinate_offset, coordinates) in edits {
-        let start = usize::try_from(*record_offset)
+    for edit in edits {
+        let record_offset = edit.offset;
+        let coordinate_offset = edit.coordinate_offset;
+        let coordinates = &edit.coordinates;
+        let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(*coordinate_offset as usize))
+            .and_then(|record| record.checked_add(coordinate_offset as usize))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-point offset exceeds address space".into())
             })?;
@@ -580,44 +600,47 @@ pub(crate) fn patch_sketch_curves(
     bytes: &mut [u8],
     edits: &[SketchCurveEdit],
 ) -> Result<(), CodecError> {
-    for (record_offset, geometry_offset, geometry) in edits {
-        let start = usize::try_from(*record_offset)
+    for edit in edits {
+        let record_offset = edit.offset;
+        let geometry_offset = edit.geometry_offset;
+        let geometry = &edit.geometry;
+        let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(*geometry_offset as usize))
+            .and_then(|record| record.checked_add(geometry_offset as usize))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;
-        if let SketchCurveGeometry::Nurbs {
-            fit_tolerance,
-            knots,
-            weights,
-            control_points,
-            ..
-        } = geometry
-        {
-            patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, weights, control_points)?;
-            continue;
-        }
-        let values = match geometry {
+        let (values, scalar_count) = match geometry {
             SketchCurveGeometry::Line {
-                start,
+                start: line_start,
                 end,
                 direction,
                 normal,
-            } => [
-                start.x / LEN_TO_MM,
-                start.y / LEN_TO_MM,
-                start.z / LEN_TO_MM,
-                (end.x - start.x) / LEN_TO_MM,
-                (end.y - start.y) / LEN_TO_MM,
-                (end.z - start.z) / LEN_TO_MM,
-                direction.x,
-                direction.y,
-                direction.z,
-                normal.x,
-                normal.y,
-                normal.z,
-            ],
+            } => {
+                let scalar_count = line_scalar_count(bytes, start)?;
+                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
+                    return Err(CodecError::NotImplemented(
+                        "F3D compact planar-line edits require the implicit +Z normal".into(),
+                    ));
+                }
+                (
+                    [
+                        line_start.x / LEN_TO_MM,
+                        line_start.y / LEN_TO_MM,
+                        line_start.z / LEN_TO_MM,
+                        (end.x - line_start.x) / LEN_TO_MM,
+                        (end.y - line_start.y) / LEN_TO_MM,
+                        (end.z - line_start.z) / LEN_TO_MM,
+                        direction.x,
+                        direction.y,
+                        direction.z,
+                        normal.x,
+                        normal.y,
+                        normal.z,
+                    ],
+                    scalar_count,
+                )
+            }
             SketchCurveGeometry::Arc {
                 center,
                 normal,
@@ -625,34 +648,32 @@ pub(crate) fn patch_sketch_curves(
                 radius,
                 start_angle,
                 end_angle,
-            } => [
-                center.x / LEN_TO_MM,
-                center.y / LEN_TO_MM,
-                center.z / LEN_TO_MM,
-                normal.x,
-                normal.y,
-                normal.z,
-                reference_direction.x,
-                reference_direction.y,
-                reference_direction.z,
-                radius / LEN_TO_MM,
-                *start_angle,
-                *end_angle,
-            ],
-            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
-        };
-        let scalar_count = match geometry {
-            SketchCurveGeometry::Line { normal, .. } => {
-                let scalar_count = line_scalar_count(bytes, start)?;
-                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
-                    return Err(CodecError::NotImplemented(
-                        "F3D compact planar-line edits require the implicit +Z normal".into(),
-                    ));
-                }
-                scalar_count
+            } => (
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                    normal.x,
+                    normal.y,
+                    normal.z,
+                    reference_direction.x,
+                    reference_direction.y,
+                    reference_direction.z,
+                    radius / LEN_TO_MM,
+                    *start_angle,
+                    *end_angle,
+                ],
+                12,
+            ),
+            SketchCurveGeometry::Nurbs {
+                fit_tolerance,
+                knots,
+                poles,
+                ..
+            } => {
+                patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, poles)?;
+                continue;
             }
-            SketchCurveGeometry::Arc { .. } => 12,
-            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
         };
         let payload = bytes
             .get_mut(start..start + scalar_count * 8)
@@ -698,16 +719,15 @@ fn patch_sketch_nurbs(
     start: usize,
     fit_tolerance: f64,
     knots: &[f64],
-    weights: &[f64],
-    control_points: &[Point3],
+    poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     let fit_at = start + 94;
     let knots_at = start + 114;
     let weights_header = knots_at + knots.len() * 8;
     let weights_at = weights_header + 12;
-    let points_header = weights_at + weights.len() * 8;
+    let points_header = weights_at + poles.weights().len() * 8;
     let points_at = points_header + 12;
-    let end = points_at + control_points.len() * 24;
+    let end = points_at + poles.point_count() * 24;
     if end > bytes.len() {
         return Err(CodecError::Malformed(
             "sketch NURBS arrays extend beyond BulkStream".into(),
@@ -718,11 +738,11 @@ fn patch_sketch_nurbs(
         let at = knots_at + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, value) in weights.iter().enumerate() {
+    for (ordinal, value) in poles.weights().enumerate() {
         let at = weights_at + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
-    for (ordinal, point) in control_points.iter().enumerate() {
+    for (ordinal, point) in poles.points().enumerate() {
         let at = points_at + ordinal * 24;
         for (component, value) in [point.x, point.y, point.z].into_iter().enumerate() {
             let component_at = at + component * 8;
@@ -735,11 +755,11 @@ fn patch_sketch_nurbs(
 
 pub(crate) fn patch_sketch_relations(
     bytes: &mut [u8],
-    edits: &[SketchRelationEdit],
+    edits: &[Vec<Edit<Vec<u8>>>],
 ) -> Result<(), CodecError> {
     for edit in edits {
-        for (offset, value) in edit {
-            patch_bytes_at(bytes, *offset, value, "sketch-relation value")?;
+        for member in edit {
+            patch_bytes_at(bytes, member.offset, &member.value, "sketch-relation value")?;
         }
     }
     Ok(())

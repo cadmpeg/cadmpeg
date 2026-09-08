@@ -1,12 +1,12 @@
 use super::super::project_relation_point_dimensioned_circles;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue, SketchSpace,
+    ParameterValue,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
-    let feature_id = FeatureId("feature".into());
+    let feature_id = FeatureId::mint("feature").expect("identity grammar");
     let sketch_id = SketchId("sketch".into());
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
@@ -24,9 +24,12 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
@@ -45,7 +48,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             ordinal: 0,
             offset: 10,
             name: "sgEntHandle".into(),
-            role: FeatureInputClassRole::SketchEntity,
         }],
         names: Vec::new(),
         scalars: Vec::new(),
@@ -76,8 +78,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.001, 0.002]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }],
     };
     let feature = Feature {
@@ -85,7 +86,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -93,13 +93,12 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: Some("feature".into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),
@@ -111,17 +110,15 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         pmi: None,
         native_ref: Some("scalar".into()),
     };
-    let mut entities = vec![SketchEntity {
-        id: SketchEntityId("center".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some("center".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let mut entities = vec![SketchEntity::new(
+        SketchEntityId("center".into()),
+        sketch_id,
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    }];
+    )
+    .with_construction(true)
+    .with_native_ref(Some("center".into()))];
 
     project_relation_point_dimensioned_circles(
         &mut entities,

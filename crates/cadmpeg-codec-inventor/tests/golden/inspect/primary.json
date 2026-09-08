@@ -1,5 +1,30 @@
 {
   "container_kind": "cfb",
+  "dialects": {
+    "extra": [
+      {
+        "admission": "admitted",
+        "declared": {
+          "reference_width": "4",
+          "save_format_major": "7",
+          "save_format_minor": "0"
+        },
+        "dialect": "acis:asm-binaryfile-4",
+        "format": "acis"
+      }
+    ],
+    "primary": {
+      "admission": "admitted",
+      "declared": {
+        "cfb_major_version": "3",
+        "meta_stream_marker": "RSe Meta Stream Version 8",
+        "meta_stream_version": "8",
+        "rse_db_schema": "31"
+      },
+      "dialect": "inventor:cfb3-rse31-meta8",
+      "format": "inventor"
+    }
+  },
   "entries": [
     {
       "attributes": {
@@ -38,6 +63,7 @@
         "allocation": "mini",
         "bulk_form": "0x0104",
         "directory_id": "6",
+        "expanded_size": "138",
         "inner_framing": "zlib",
         "start_sector": "7"
       },
@@ -54,6 +80,7 @@
         "display_name": "PmBRepSegment",
         "expanded_size": "218",
         "inner_framing": "zlib",
+        "meta_marker": "RSe Meta Stream Version 8",
         "meta_stream_version": "8",
         "segment_kind": "pm_brep",
         "start_sector": "10"

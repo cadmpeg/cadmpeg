@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
+mod schema;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
@@ -9,17 +11,21 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{
-    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+    CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
+    ViewPresentation,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
+use crate::loss::FreecadLossCode;
 use crate::native::{
     ElementMapGroup, ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
+
+use schema::Admission as GuiSchemaAdmission;
 
 #[derive(Default)]
 pub(crate) struct Graph {
@@ -27,6 +33,54 @@ pub(crate) struct Graph {
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+}
+
+#[derive(Default)]
+struct AppearancePlan {
+    body_updates: Vec<BodyUpdate>,
+    appearances: Vec<Appearance>,
+    bindings: Vec<AppearanceBinding>,
+    remove_appearances: HashSet<AppearanceId>,
+    presentation_documents: Vec<PresentationDocument>,
+    view_presentations: Vec<ViewPresentation>,
+}
+
+struct BodyUpdate {
+    id: cadmpeg_ir::ids::BodyId,
+    visible: Assignment<Option<bool>>,
+    color: Assignment<Option<Color>>,
+}
+
+enum Assignment<T> {
+    Keep,
+    Set(T),
+}
+
+impl AppearancePlan {
+    fn apply(self, ir: &mut CadIr) {
+        for update in self.body_updates {
+            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
+                if let Assignment::Set(visible) = update.visible {
+                    body.visible = visible;
+                }
+                if let Assignment::Set(color) = update.color {
+                    body.color = color;
+                }
+            }
+        }
+        ir.model
+            .appearance_bindings
+            .retain(|binding| !self.remove_appearances.contains(&binding.appearance));
+        ir.model
+            .appearances
+            .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
+        ir.model.appearances.extend(self.appearances);
+        ir.model.appearance_bindings.extend(self.bindings);
+        ir.model
+            .presentation_documents
+            .extend(self.presentation_documents);
+        ir.model.view_presentations.extend(self.view_presentations);
+    }
 }
 
 struct CameraSettings {
@@ -65,29 +119,78 @@ pub(crate) fn transfer(
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
+    let schema_declaration = crate::container::canonical_attribute(
+        xml.root_element(),
+        "SchemaVersion",
+        "schemaVersion",
+    )?;
+    let admission = schema::classify(schema_declaration.as_deref());
+    let neutral_schema_version = admission.neutral_schema_version();
+    let transferred = transfer_schema_one(
+        ir,
+        text,
+        &xml,
+        schema_declaration.as_deref(),
+        neutral_schema_version,
+        entries,
+        objects,
+        properties,
+        payloads,
+        element_maps,
+        requires_alpha_conversion,
+    );
+    match (admission, transferred) {
+        (GuiSchemaAdmission::Schema1, result) => {
+            let (graph, plan) = result?;
+            plan.apply(ir);
+            Ok(graph)
+        }
+        (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
+            plan.apply(ir);
+            graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+                "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
+            )));
+            Ok(graph)
+        }
+        (
+            GuiSchemaAdmission::Unverified { declaration },
+            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
+        ) => Ok(Graph {
+            losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+                "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
+            ))],
+            ..Graph::default()
+        }),
+        (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transfer_schema_one(
+    ir: &CadIr,
+    text: &str,
+    xml: &roxmltree::Document<'_>,
+    schema_declaration: Option<&str>,
+    neutral_schema_version: Option<u32>,
+    entries: &BTreeMap<String, View<'_>>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+    element_maps: &[ElementMapRecord],
+    requires_alpha_conversion: bool,
+) -> Result<(Graph, AppearancePlan), CodecError> {
     let root = xml.root_element();
-    let schema_version =
-        crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-            .map(|value| {
-                value.parse::<u32>().map_err(|_| {
-                    CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
-                })
-            })
-            .transpose()?;
+    let mut plan = AppearancePlan::default();
     let camera_count = root
         .children()
         .filter(|node| node.has_tag_name("Camera"))
         .count();
-    let camera_error = if schema_version != Some(1) {
-        Some(format!(
-            "GuiDocument.xml supports only schema 1, found {schema_version:?}"
-        ))
-    } else if camera_count != 1 {
+    let camera_error = if camera_count == 1 {
+        None
+    } else {
         Some(format!(
             "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
         ))
-    } else {
-        None
     };
     if let Some(message) = camera_error {
         return Err(CodecError::Malformed(message));
@@ -101,7 +204,7 @@ pub(crate) fn transfer(
         .collect::<Vec<_>>();
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
-        schema_version,
+        schema_version: schema_declaration.map(str::to_owned),
         attributes: root
             .attributes()
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
@@ -205,17 +308,19 @@ pub(crate) fn transfer(
                 ))
             })
             .collect::<HashMap<_, _>>();
-        let property_provenance = |property_name: &str, type_name: &str| SourceProvenance {
-            format: "fcstd".into(),
-            stream: "GuiDocument.xml".into(),
-            offset: property_nodes
-                .iter()
-                .find(|property| {
-                    property.attribute("name") == Some(property_name)
-                        && property.attribute("type") == Some(type_name)
-                })
-                .map_or(0, |property| property.range().start as u64),
-            tag: Some(format!("ViewProvider {name} property {property_name}")),
+        let property_provenance = |property_name: &str, type_name: &str| {
+            SourceProvenance::in_stream(
+                "fcstd",
+                "GuiDocument.xml",
+                property_nodes
+                    .iter()
+                    .find(|property| {
+                        property.attribute("name") == Some(property_name)
+                            && property.attribute("type") == Some(type_name)
+                    })
+                    .map_or(0, |property| property.range().start as u64),
+            )
+            .with_tag(format!("ViewProvider {name} property {property_name}"))
         };
         let visibility = values
             .get("Visibility")
@@ -240,17 +345,20 @@ pub(crate) fn transfer(
                     .bodies
                     .iter()
                     .filter(move |body| {
-                        crate::native::id_key(&body.id.0)
+                        crate::native::id_key(body.id.as_str())
                             .starts_with(&format!("{}:", crate::native::id_key(payload)))
                     })
                     .map(|body| body.id.clone())
             })
             .collect::<Vec<_>>();
         for body_id in &body_ids {
-            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == *body_id) {
-                body.visible = visibility;
-                body.color = packed_color.map(|packed| decode_color(packed, transparency));
-            }
+            plan.body_updates.push(BodyUpdate {
+                id: body_id.clone(),
+                visible: Assignment::Set(visibility),
+                color: Assignment::Set(
+                    packed_color.map(|packed| decode_color(packed, transparency)),
+                ),
+            });
         }
         if let Some(file) = values
             .get("DiffuseColor")
@@ -258,6 +366,7 @@ pub(crate) fn transfer(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -286,7 +395,15 @@ pub(crate) fn transfer(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_edge_appearance(ir, name, object_id, color, width, &payload_prefixes);
+            transfer_edge_appearance(
+                ir,
+                &mut plan,
+                name,
+                object_id,
+                color,
+                width,
+                &payload_prefixes,
+            );
         }
         if let Some(file) = values
             .get("LineColorArray")
@@ -294,6 +411,7 @@ pub(crate) fn transfer(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -317,7 +435,15 @@ pub(crate) fn transfer(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_vertex_appearance(ir, name, object_id, color, size, &payload_prefixes);
+            transfer_vertex_appearance(
+                ir,
+                &mut plan,
+                name,
+                object_id,
+                color,
+                size,
+                &payload_prefixes,
+            );
         }
         if let Some(file) = values
             .get("PointColorArray")
@@ -325,6 +451,7 @@ pub(crate) fn transfer(
         {
             transfer_topology_colors(
                 ir,
+                &mut plan,
                 name,
                 object_id,
                 file,
@@ -341,7 +468,8 @@ pub(crate) fn transfer(
         let Some(packed_color) = packed_color else {
             continue;
         };
-        let appearance_id = AppearanceId(format!("fcstd:appearance:object#{name}"));
+        let appearance_id = AppearanceId::mint(format!("fcstd:appearance:object#{name}"))
+            .expect("identity grammar");
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -356,7 +484,7 @@ pub(crate) fn transfer(
                 }
             }
         }
-        ir.model.appearances.push(Appearance {
+        plan.appearances.push(Appearance {
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -370,8 +498,10 @@ pub(crate) fn transfer(
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
-            ir.model.appearance_bindings.push(AppearanceBinding {
-                id: format!("fcstd:appearance:binding#{name}:{index}"),
+            plan.bindings.push(AppearanceBinding {
+                id: format!("fcstd:appearance:binding#{name}:{index}")
+                    .try_into()
+                    .expect("valid identity"),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -392,6 +522,7 @@ pub(crate) fn transfer(
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ir,
+        &mut plan,
         &graph,
         &material_lists,
         properties,
@@ -400,8 +531,8 @@ pub(crate) fn transfer(
         &mut material_losses,
     )?;
     graph.losses.extend(material_losses);
-    transfer_neutral_presentation(ir, &graph)?;
-    Ok(graph)
+    transfer_neutral_presentation(&mut plan, &graph, neutral_schema_version)?;
+    Ok((graph, plan))
 }
 
 fn presentation_property_type(name: &str) -> Option<&'static str> {
@@ -418,7 +549,11 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
     }
 }
 
-fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), CodecError> {
+fn transfer_neutral_presentation(
+    plan: &mut AppearancePlan,
+    graph: &Graph,
+    neutral_schema_version: Option<u32>,
+) -> Result<(), CodecError> {
     for document in &graph.documents {
         let mut camera_states = document
             .states
@@ -428,16 +563,23 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
             .next()
             .filter(|_| camera_states.next().is_none());
         let camera = camera_state.map(camera_state_value).transpose()?;
-        ir.model.presentation_documents.push(PresentationDocument {
-            id: PresentationId("fcstd:presentation:document#0".into()),
-            schema_version: document.schema_version,
+        plan.presentation_documents.push(PresentationDocument {
+            id: PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
+            schema_version: neutral_schema_version,
             active_view: None,
-            camera,
             states: document
                 .states
                 .iter()
                 .map(|state| PresentationState {
-                    kind: state.kind.clone(),
+                    kind: if state.kind == "Camera" {
+                        PresentationStateKind::Camera(camera.clone().unwrap_or(CameraState {
+                            position: None,
+                            orientation: None,
+                            properties: BTreeMap::new(),
+                        }))
+                    } else {
+                        PresentationStateKind::Native(state.kind.clone())
+                    },
                     order: state.order as u32,
                     attributes: state.attributes.clone(),
                     assets: state
@@ -483,12 +625,13 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
                 provider.name
             )));
         }
-        ir.model.view_presentations.push(ViewPresentation {
-            id: PresentationId(crate::native::model_id(
+        plan.view_presentations.push(ViewPresentation {
+            id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
                 &provider.id,
                 "state",
-            )),
+            ))
+            .expect("identity grammar"),
             object: provider.object.clone(),
             order: provider.order as u32,
             expanded: provider.expanded,
@@ -635,7 +778,8 @@ fn camera_field<const N: usize>(
 }
 
 fn transfer_edge_appearance(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     packed_color: u32,
@@ -649,15 +793,16 @@ fn transfer_edge_appearance(
         .filter(|edge| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&edge.id.0).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
         })
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
     if edges.is_empty() {
         return;
     }
-    let appearance_id = AppearanceId(format!("fcstd:appearance:edge#{provider_name}"));
-    ir.model.appearances.push(Appearance {
+    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:edge#{provider_name}"))
+        .expect("identity grammar");
+    plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} line appearance")),
         asset_guid: None,
@@ -674,8 +819,10 @@ fn transfer_edge_appearance(
             .unwrap_or_default(),
     });
     for (index, edge) in edges.into_iter().enumerate() {
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}"),
+        plan.bindings.push(AppearanceBinding {
+            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Edge(edge),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -687,7 +834,8 @@ fn transfer_edge_appearance(
 }
 
 fn transfer_vertex_appearance(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     packed_color: u32,
@@ -701,15 +849,16 @@ fn transfer_vertex_appearance(
         .filter(|vertex| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&vertex.id.0).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
         })
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     if vertices.is_empty() {
         return;
     }
-    let appearance_id = AppearanceId(format!("fcstd:appearance:vertex#{provider_name}"));
-    ir.model.appearances.push(Appearance {
+    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:vertex#{provider_name}"))
+        .expect("identity grammar");
+    plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} point appearance")),
         asset_guid: None,
@@ -726,8 +875,10 @@ fn transfer_vertex_appearance(
             .unwrap_or_default(),
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}"),
+        plan.bindings.push(AppearanceBinding {
+            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Vertex(vertex),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3305,8 +3456,10 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn transfer_shape_appearances(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     graph: &Graph,
     material_lists: &HashMap<String, Vec<GuiMaterial>>,
     properties: &[PropertyRecord],
@@ -3332,13 +3485,14 @@ fn transfer_shape_appearances(
         let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
         if materials.len() == 1 {
-            let legacy_id = AppearanceId(format!("fcstd:appearance:object#{}", provider.name));
-            ir.model
-                .appearance_bindings
+            let legacy_id =
+                AppearanceId::mint(format!("fcstd:appearance:object#{}", provider.name))
+                    .expect("identity grammar");
+            plan.bindings
                 .retain(|binding| binding.appearance != legacy_id);
-            ir.model
-                .appearances
+            plan.appearances
                 .retain(|appearance| appearance.id != legacy_id);
+            plan.remove_appearances.insert(legacy_id);
         } else {
             let Some(_) = group else {
                 continue;
@@ -3355,23 +3509,26 @@ fn transfer_shape_appearances(
                             materials.len(),
                             mapped_count
                         ))
-                        .with_provenance(SourceProvenance {
-                            format: "fcstd".into(),
-                            stream: "GuiDocument.xml".into(),
-                            offset: property.byte_start,
-                            tag: Some(property.id.clone()),
-                        }),
+                .with_provenance(
+                    SourceProvenance::in_stream(
+                        "fcstd",
+                        "GuiDocument.xml",
+                        property.byte_start,
+                    )
+                    .with_tag(property.id.clone()),
+                ),
                 );
                 continue;
             }
         }
         for (index, material) in materials.iter().enumerate() {
-            let appearance_id = AppearanceId(format!(
+            let appearance_id = AppearanceId::mint(format!(
                 "fcstd:appearance:shape-material#{}:{}",
                 provider.name,
                 index + 1
-            ));
-            ir.model.appearances.push(material_appearance(
+            ))
+            .expect("identity grammar");
+            plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
                 index,
@@ -3379,15 +3536,21 @@ fn transfer_shape_appearances(
             ));
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
-                    if let Some(body) = ir.model.bodies.iter_mut().find(|item| item.id == *body) {
-                        body.color =
-                            Some(decode_color(material.diffuse, Some(material.transparency)));
-                    }
-                    ir.model.appearance_bindings.push(AppearanceBinding {
+                    plan.body_updates.push(BodyUpdate {
+                        id: body.clone(),
+                        visible: Assignment::Keep,
+                        color: Assignment::Set(Some(decode_color(
+                            material.diffuse,
+                            Some(material.transparency),
+                        ))),
+                    });
+                    plan.bindings.push(AppearanceBinding {
                         id: format!(
                             "fcstd:appearance:binding#shape-material:{}:{body_index}",
                             provider.name
-                        ),
+                        )
+                        .try_into()
+                        .expect("valid identity"),
                         target: AppearanceTarget::Body(body.clone()),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
@@ -3397,7 +3560,15 @@ fn transfer_shape_appearances(
                     });
                 }
             } else if let Some(group) = group {
-                bind_material_faces(ir, group, index, &appearance_id, &provider.name, object_id);
+                bind_material_faces(
+                    ir,
+                    plan,
+                    group,
+                    index,
+                    &appearance_id,
+                    &provider.name,
+                    object_id,
+                );
             }
         }
     }
@@ -3417,7 +3588,7 @@ fn displayed_shape_bodies(
             ir.model
                 .bodies
                 .iter()
-                .filter(move |body| crate::native::id_key(&body.id.0).starts_with(&prefix))
+                .filter(move |body| crate::native::id_key(body.id.as_str()).starts_with(&prefix))
                 .map(|body| body.id.clone())
         })
         .collect())
@@ -3526,7 +3697,8 @@ fn material_appearance(
 }
 
 fn bind_material_faces(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     group: &ElementMapGroup,
     material_index: usize,
     appearance_id: &AppearanceId,
@@ -3543,14 +3715,16 @@ fn bind_material_faces(
             .model
             .faces
             .iter()
-            .find(|face| face.id.0 == *topology_id)
+            .find(|face| face.id.as_str() == *topology_id)
             .map(|face| face.id.clone())
         else {
             continue;
         };
-        let binding_index = ir.model.appearance_bindings.len();
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}"),
+        let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
+        plan.bindings.push(AppearanceBinding {
+            id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3596,7 +3770,8 @@ impl TopologyColorKind {
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_topology_colors(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     entry_name: &str,
@@ -3639,10 +3814,11 @@ fn transfer_topology_colors(
     }
     for (index, packed) in colors.into_iter().enumerate() {
         let lower = kind.name().to_ascii_lowercase();
-        let appearance_id = AppearanceId(format!(
+        let appearance_id = AppearanceId::mint(format!(
             "fcstd:appearance:{lower}#{provider_name}:{}",
             index + 1
-        ));
+        ))
+        .expect("identity grammar");
         let uniform_names = (count == 1)
             .then_some(&group.names)
             .into_iter()
@@ -3658,15 +3834,21 @@ fn transfer_topology_colors(
             .flat_map(|name| &name.topology_ids)
             .filter(|id| bound_topology.insert((*id).clone()))
             .filter(|id| match kind {
-                TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
-                TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
-                TopologyColorKind::Vertex => {
-                    ir.model.vertices.iter().any(|vertex| vertex.id.0 == **id)
+                TopologyColorKind::Face => {
+                    ir.model.faces.iter().any(|face| face.id.as_str() == **id)
                 }
+                TopologyColorKind::Edge => {
+                    ir.model.edges.iter().any(|edge| edge.id.as_str() == **id)
+                }
+                TopologyColorKind::Vertex => ir
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.id.as_str() == **id),
             })
         {
             if !emitted_appearance {
-                ir.model.appearances.push(Appearance {
+                plan.appearances.push(Appearance {
                     id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
@@ -3686,22 +3868,24 @@ fn transfer_topology_colors(
                 emitted_appearance = true;
             }
             let target = match kind {
-                TopologyColorKind::Face => {
-                    AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone()))
-                }
-                TopologyColorKind::Edge => {
-                    AppearanceTarget::Edge(cadmpeg_ir::ids::EdgeId(topology_id.clone()))
-                }
-                TopologyColorKind::Vertex => {
-                    AppearanceTarget::Vertex(cadmpeg_ir::ids::VertexId(topology_id.clone()))
-                }
+                TopologyColorKind::Face => AppearanceTarget::Face(
+                    cadmpeg_ir::ids::FaceId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
+                TopologyColorKind::Edge => AppearanceTarget::Edge(
+                    cadmpeg_ir::ids::EdgeId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
+                TopologyColorKind::Vertex => AppearanceTarget::Vertex(
+                    cadmpeg_ir::ids::VertexId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
             };
-            ir.model.appearance_bindings.push(AppearanceBinding {
+            plan.bindings.push(AppearanceBinding {
                 id: format!(
                     "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
                     index + 1,
                     crate::native::id_key(topology_id)
-                ),
+                )
+                .try_into()
+                .expect("valid identity"),
                 target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -3793,7 +3977,7 @@ mod color_tests {
 #[cfg(test)]
 mod shape_association_tests {
     use super::displayed_shape_group;
-    use crate::brep::{ShapePayloadForm, ShapePayloadRecord};
+    use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::{
         ElementMapGroup, ElementMapNode, ElementMapRecord, PropertyFamily, PropertyRecord,
     };
@@ -3806,12 +3990,13 @@ mod shape_association_tests {
             type_name: "Part::PropertyPartShape".into(),
             family: PropertyFamily::Geometry,
             status: None,
-            transient: false,
-            dynamic: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: Vec::new(),
+                dynamic: None,
+            },
             order: 0,
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
             raw_xml: "<Property/>".into(),
             byte_start: 0,
             byte_end: 11,
@@ -3823,9 +4008,7 @@ mod shape_association_tests {
             id: id.into(),
             property: property.into(),
             entry: "Shape.brp".into(),
-            form: ShapePayloadForm::Empty,
-            text: None,
-            binary: None,
+            payload: ShapePayload::Empty,
         }
     }
 

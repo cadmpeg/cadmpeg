@@ -2,14 +2,14 @@
 //! Walk the reachable topology graph, collect wire and shell chains, and
 //! classify edge curve senses.
 
-use super::records::{MeshSurfaceSentinel, WireSide, WireTopology};
+use super::records::{MeshSurfaceSentinel, WireMembers, WireSide, WireTopology};
 use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    CoedgeId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
-    VertexId,
+    CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
+    SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
@@ -19,8 +19,7 @@ use super::geometry::{
     analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface,
     is_analytic_curve, is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
-    reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
-    vertex_point_ref,
+    reverse_procedural_curve_definition, sense_at, vertex_point_ref,
 };
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
@@ -29,11 +28,11 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
     let mut surface_geo: HashMap<i64, (SurfaceGeometry, bool)> = HashMap::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
-        if is_analytic_surface(&r.head) {
+        if is_analytic_surface(r.head()) {
             if let Some(g) = decode_surface(r) {
                 surface_geo.insert(r.index as i64, g);
             }
-        } else if is_analytic_curve(&r.head) {
+        } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(r) {
                 curve_geo.insert(r.index as i64, g);
             }
@@ -81,18 +80,17 @@ pub(crate) fn keep_faces_and_carriers(
         ..
     } = &mut *reach;
     for r in records {
-        if r.head != "face" {
+        if r.head() != "face" {
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
-            out.stats.missing_face_surfaces += 1;
             count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
             continue;
         };
         let Some(surf_rec) = by_index.get(&surf_ref) else {
             // Dangling surface reference: a face without a resolvable surface
             // cannot be emitted (the IR requires one), so it is dropped.
-            out.stats.missing_face_surfaces += 1;
+
             count_kind(
                 &mut out.stats.missing_face_surface_kinds,
                 "dangling-reference",
@@ -101,7 +99,7 @@ pub(crate) fn keep_faces_and_carriers(
         };
         kept_faces.insert(r.index as i64);
         if purpose == DecodePurpose::History {
-            let native_kind = (surf_rec.head == "spline")
+            let native_kind = (surf_rec.head() == "spline")
                 .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
                 .flatten();
             if native_kind
@@ -148,7 +146,8 @@ pub(crate) fn keep_faces_and_carriers(
                     nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
                 {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
-                    if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
+                    if surf_rec.head() == "spline"
+                        && !procedural_surface_defs.contains_key(&surf_ref)
                     {
                         cached_unknown_procedural_surfaces.insert(surf_ref);
                     }
@@ -173,13 +172,18 @@ pub(crate) fn keep_faces_and_carriers(
                         geometry
                     } else if construction_is_exact_carrier {
                         SurfaceGeometry::Procedural {
-                            construction: ProceduralSurfaceId(format!(
+                            construction: ProceduralSurfaceId::mint(format!(
                                 "{format}:brep:procedural_surface#{surf_ref}"
-                            )),
+                            ))
+                            .expect("identity grammar"),
+                            cache: None,
                         }
                     } else {
                         SurfaceGeometry::Unknown {
-                            record: Some(UnknownId(unknown_record_id(surf_rec, format))),
+                            record: Some(
+                                UnknownId::mint(unknown_record_id(surf_rec, format))
+                                    .expect("identity grammar"),
+                            ),
                         }
                     },
                     false,
@@ -194,26 +198,26 @@ pub(crate) fn keep_faces_and_carriers(
         } else {
             unknown_surface_records.insert(surf_ref);
             undecoded_carriers.insert(surf_ref);
-            if surf_rec.head == "mesh_surface" && surf_rec.chunks().next().is_none() {
+            if surf_rec.head() == "mesh_surface" && surf_rec.chunks().next().is_none() {
                 if !out
                     .mesh_surface_sentinels
                     .iter()
                     .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
                 {
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
-                        id: format!("{format}:asm:mesh-surface-sentinel#{}", surf_rec.index),
-                        surface: SurfaceId(id(format, surf_ref)),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
+                        surface: SurfaceId::mint(id(format, surf_ref)).expect("identity grammar"),
                         record_index: surf_rec.index as u32,
                     });
                 }
                 out.stats.mesh_surface_faces += 1;
             } else {
-                out.stats.unknown_surface_faces += 1;
-                let native_kind = if surf_rec.head == "spline" {
+                let native_kind = if surf_rec.head() == "spline" {
                     nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
-                        .unwrap_or_else(|| surf_rec.head.clone())
+                        .unwrap_or_else(|| surf_rec.head().to_owned())
                 } else {
-                    surf_rec.head.clone()
+                    surf_rec.head().to_owned()
                 };
                 count_kind(&mut out.stats.unknown_surface_kinds, &native_kind);
             }
@@ -265,7 +269,7 @@ pub(crate) fn walk_reachable_topology(
                 break;
             }
             let Some(lp) = by_index.get(&li) else { break };
-            if lp.head != "loop" {
+            if lp.head() != "loop" {
                 break;
             }
             kept_loops.insert(li);
@@ -329,7 +333,7 @@ pub(crate) fn walk_reachable_topology(
                                     {
                                         by_index
                                             .get(reference)
-                                            .filter(|record| record.head == "intcurve")
+                                            .filter(|record| record.head() == "intcurve")
                                             .and_then(|intcurve| {
                                                 nurbs::proc_curve::pcurve_for_selector_with_chart(
                                                     &intcurve.tokens,
@@ -338,7 +342,7 @@ pub(crate) fn walk_reachable_topology(
                                                 )
                                                 .map(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
-                                                        reverse_nurbs_pcurve(&mut curve);
+                                                        curve.reverse_parameterization();
                                                     }
                                                     (curve, native_chart)
                                                 })
@@ -355,10 +359,10 @@ pub(crate) fn walk_reachable_topology(
                                             .and_then(|surface| by_index.get(&surface))
                                         {
                                             nurbs::proc_curve::normalize_pcurve_for_surface_record(
-                                                &surface.head,
+                                                surface.head(),
                                                 &surface.tokens,
                                                 &mut decoded,
-                                            );
+                                            )?;
                                         }
                                     }
                                     pcurve_ranges_on_domain(&decoded, edge)
@@ -366,25 +370,14 @@ pub(crate) fn walk_reachable_topology(
                                         .map(|range| (decoded, range))
                                 });
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    pcurve_geo.insert(
-                                        pc,
-                                        PcurveGeometry::Nurbs {
-                                            degree: decoded.degree,
-                                            knots: decoded.knots,
-                                            control_points: decoded.control_points,
-                                            weights: decoded.weights,
-                                            periodic: decoded.periodic,
-                                        },
-                                    );
+                                    pcurve_geo.insert(pc, PcurveGeometry::Nurbs { nurbs: decoded });
                                     pcurve_parameter_ranges.insert(ci, parameter_range);
                                     kept_pcurves.insert(pc);
                                 } else {
-                                    out.stats.undecoded_pcurve_refs += 1;
-                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, &prec.head);
+                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
                                 }
                             }
                         } else {
-                            out.stats.undecoded_pcurve_refs += 1;
                             count_kind(&mut out.stats.undecoded_pcurve_kinds, "dangling-reference");
                         }
                     }
@@ -432,38 +425,25 @@ pub(crate) fn walk_reachable_topology(
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
                                                 if record_reversed(crec) {
-                                                    reverse_nurbs_curve(&mut curve);
+                                                    curve.reverse_parameterization();
                                                 }
                                                 curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
-                                                    (
-                                                        decoded.native_kind,
-                                                        decoded.definition,
-                                                        decoded.vector_offset,
-                                                        decoded.subset,
-                                                        decoded.compound,
-                                                        decoded.embedded_two_sided_offset,
-                                                        decoded.embedded_intersection,
-                                                        decoded.embedded_three_surface_intersection,
-                                                        decoded.embedded_surface_curve,
-                                                        decoded.embedded_silhouette,
-                                                        decoded.embedded_surface_offset,
-                                                        decoded.embedded_spring,
-                                                        decoded.embedded_deformable,
-                                                        decoded.embedded_projection,
-                                                        decoded.embedded_law,
-                                                        decoded.cache_fit_tolerance,
-                                                    ),
+                                                    super::ProceduralCurveTail {
+                                                        construction: decoded.construction,
+                                                        cache_fit_tolerance: decoded.cache_fit_tolerance,
+                                                    },
                                                 );
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
-                                            } else if let Some((native_kind, mut definition)) =
+                                            } else if let Some(definition) =
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                                                     &crec.tokens,
                                                     token_table,
                                                 )
                                             {
+                                                let mut definition = definition.into_definition();
                                                 if record_reversed(crec) {
                                                     reverse_procedural_curve_definition(
                                                         &mut definition,
@@ -472,25 +452,22 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(
                                                     cv,
                                                     CurveGeometry::Procedural {
-                                                        construction: format!(
-                                                            "{format}:brep:procedural_curve#{cv}"
-                                                        )
-                                                        .into(),
+                                                        construction: ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{cv}")).expect("valid owning format and numeric record index"),
+                                                        cache: None,
                                                     },
                                                 );
                                                 cacheless_procedural_curve_defs
-                                                    .insert(cv, (native_kind, definition));
+                                                    .insert(cv, definition);
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
-                                                out.stats.procedural_curve_edges += 1;
+
                                                 count_kind(
                                                     &mut out.stats.procedural_curve_kinds,
-                                                    &crec.head,
+                                                    crec.head(),
                                                 );
                                             }
                                         } else {
-                                            out.stats.procedural_curve_edges += 1;
                                             count_kind(
                                                 &mut out.stats.procedural_curve_kinds,
                                                 "dangling-reference",
@@ -552,7 +529,7 @@ pub(crate) fn collect_wire_topology(
             }
         }
     }
-    for shell in records.iter().filter(|record| record.head == "shell") {
+    for shell in records.iter().filter(|record| record.head() == "shell") {
         let shell_index = shell.index as i64;
         let mut wire_guard = HashSet::new();
         for root in shell_wire_roots(shell, by_index) {
@@ -560,7 +537,7 @@ pub(crate) fn collect_wire_topology(
             while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
                 let Some(wire) = by_index
                     .get(&wire_index)
-                    .filter(|record| record.head == "wire")
+                    .filter(|record| record.head() == "wire")
                 else {
                     break;
                 };
@@ -631,14 +608,23 @@ pub(crate) fn collect_wire_topology(
                 }
                 if let Some(side) = side {
                     out.wire_topologies.push(WireTopology {
-                        id: format!("{format}:asm:wire-topology#{wire_index}"),
-                        shell: ShellId(id(format, shell_index)),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
+                        shell: ShellId::mint(id(format, shell_index)).expect("identity grammar"),
                         record_index: wire.index as u32,
-                        edges: wire_edges
-                            .into_iter()
-                            .map(|edge| EdgeId(id(format, edge)))
-                            .collect(),
-                        free_vertex: free_vertex.map(|vertex| VertexId(id(format, vertex))),
+                        members: match free_vertex {
+                            Some(vertex) => WireMembers::Vertex(
+                                VertexId::mint(id(format, vertex)).expect("identity grammar"),
+                            ),
+                            None => WireMembers::Edges(
+                                wire_edges
+                                    .into_iter()
+                                    .map(|edge| {
+                                        EdgeId::mint(id(format, edge)).expect("identity grammar")
+                                    })
+                                    .collect(),
+                            ),
+                        },
                         side,
                     });
                 }
@@ -709,7 +695,6 @@ fn keep_wire_edge(
         }
         std::collections::hash_map::Entry::Vacant(entry) => {
             let Some(curve_record) = by_index.get(&curve_index) else {
-                out.stats.procedural_curve_edges += 1;
                 count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
                 return;
             };
@@ -724,50 +709,41 @@ fn keep_wire_edge(
             ) {
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
-                    reverse_nurbs_curve(&mut curve);
+                    curve.reverse_parameterization();
                 }
                 entry.insert(CurveGeometry::Nurbs(curve));
                 procedural_curve_defs.insert(
                     curve_index,
-                    (
-                        decoded.native_kind,
-                        decoded.definition,
-                        decoded.vector_offset,
-                        decoded.subset,
-                        decoded.compound,
-                        decoded.embedded_two_sided_offset,
-                        decoded.embedded_intersection,
-                        decoded.embedded_three_surface_intersection,
-                        decoded.embedded_surface_curve,
-                        decoded.embedded_silhouette,
-                        decoded.embedded_surface_offset,
-                        decoded.embedded_spring,
-                        decoded.embedded_deformable,
-                        decoded.embedded_projection,
-                        decoded.embedded_law,
-                        decoded.cache_fit_tolerance,
-                    ),
+                    super::ProceduralCurveTail {
+                        construction: decoded.construction,
+                        cache_fit_tolerance: decoded.cache_fit_tolerance,
+                    },
                 );
                 kept_curves.insert(curve_index);
                 out.stats.nurbs_curves += 1;
-            } else if let Some((native_kind, mut definition)) =
+            } else if let Some(definition) =
                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                     &curve_record.tokens,
                     token_table,
                 )
             {
+                let mut definition = definition.into_definition();
                 if record_reversed(curve_record) {
                     reverse_procedural_curve_definition(&mut definition);
                 }
                 entry.insert(CurveGeometry::Procedural {
-                    construction: format!("{format}:brep:procedural_curve#{curve_index}").into(),
+                    construction: ProceduralCurveId::mint(format!(
+                        "{format}:brep:procedural_curve#{curve_index}"
+                    ))
+                    .expect("valid owning format and numeric record index"),
+                    cache: None,
                 });
-                cacheless_procedural_curve_defs.insert(curve_index, (native_kind, definition));
+                cacheless_procedural_curve_defs.insert(curve_index, definition);
                 kept_curves.insert(curve_index);
             } else {
                 undecoded_carriers.insert(curve_index);
-                out.stats.procedural_curve_edges += 1;
-                count_kind(&mut out.stats.procedural_curve_kinds, &curve_record.head);
+
+                count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
             }
         }
     }
@@ -807,7 +783,8 @@ pub(crate) fn ring_coedges(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<CoedgeId> {
-    let id = |i: i64| CoedgeId(format!("{format}:brep:entity#{i}"));
+    let id =
+        |i: i64| CoedgeId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
         return out;
@@ -834,7 +811,7 @@ pub(crate) fn loop_chain(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<LoopId> {
-    let id = |i: i64| LoopId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| LoopId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -857,7 +834,7 @@ fn face_chain(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<FaceId> {
-    let id = |i: i64| FaceId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| FaceId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
@@ -879,18 +856,18 @@ pub(crate) fn subshell_ancestor_shells(
     by_index: &HashMap<i64, &Record>,
 ) -> HashMap<i64, i64> {
     let mut out = HashMap::new();
-    for record in records.iter().filter(|record| record.head == "subshell") {
+    for record in records.iter().filter(|record| record.head() == "subshell") {
         let mut owner = record.ref_at(3);
         let mut guard = HashSet::new();
         while let Some(index) = owner.filter(|index| guard.insert(*index)) {
             let Some(parent) = by_index.get(&index) else {
                 break;
             };
-            if parent.head == "shell" {
+            if parent.head() == "shell" {
                 out.insert(record.index as i64, index);
                 break;
             }
-            if parent.head != "subshell" {
+            if parent.head() != "subshell" {
                 break;
             }
             owner = parent.ref_at(3);
@@ -911,7 +888,7 @@ pub(crate) fn shell_faces(
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
             .get(&index)
-            .filter(|record| record.head == "subshell")
+            .filter(|record| record.head() == "subshell")
         else {
             break;
         };
@@ -933,7 +910,7 @@ pub(crate) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>)
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
             .get(&index)
-            .filter(|record| record.head == "subshell")
+            .filter(|record| record.head() == "subshell")
         else {
             break;
         };
@@ -960,7 +937,9 @@ fn face_chain_from(
     let mut guard = HashSet::new();
     while let Some(index) = current.filter(|index| guard.insert(*index)) {
         if kept.contains(&index) {
-            out.push(FaceId(format!("{format}:brep:entity#{index}")));
+            out.push(
+                FaceId::mint(format!("{format}:brep:entity#{index}")).expect("identity grammar"),
+            );
         }
         let Some(face) = by_index.get(&index) else {
             break;
@@ -975,7 +954,7 @@ pub(crate) fn shell_chain(
     by_index: &HashMap<i64, &Record>,
     format: IdFormat<'_>,
 ) -> Vec<ShellId> {
-    let id = |i: i64| ShellId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| ShellId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -995,7 +974,8 @@ pub(crate) fn region_chain(
     by_index: &HashMap<i64, &Record>,
     format: IdFormat<'_>,
 ) -> Vec<RegionId> {
-    let id = |i: i64| RegionId(format!("{format}:brep:entity#{i}"));
+    let id =
+        |i: i64| RegionId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();

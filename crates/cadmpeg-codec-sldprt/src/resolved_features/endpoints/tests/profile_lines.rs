@@ -78,8 +78,7 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
     let impostor = entity(
@@ -153,8 +152,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let first = entity("first", 10, Some([0.0, 0.0]), SketchInputKind::Point);
@@ -309,8 +307,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, Some(7), None, SketchInputKind::LineOrCircle);
     let first = entity(
@@ -510,8 +507,7 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([1.0, 2.0]));
@@ -586,8 +582,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let points = (0..10)
         .map(|index| {
@@ -609,8 +604,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let markers = points
         .iter()
@@ -667,8 +661,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None);
     let first = entity("first", 100, SketchInputKind::Point, Some([0.0, 0.0]));
@@ -725,8 +718,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None, None);
     let first = entity(
@@ -790,8 +782,7 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, Some(5), None);
     let relation = entity(
@@ -888,8 +879,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
     let points = [
@@ -1024,8 +1014,7 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1087,8 +1076,7 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1228,8 +1216,7 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
             },
             state_value: Some(1.0),
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         };
     let curve = entity("curve", 0, Some(1), None);
     let first = entity("first", 10, Some(10), Some([0.0, 0.0]));
@@ -1383,8 +1370,7 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", offset as u64, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1474,8 +1460,7 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", offset as u64, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1555,8 +1540,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None);
     let center = entity("center", 10, SketchInputKind::Arc, Some([0.0, 0.0]));
@@ -1641,8 +1625,7 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", offset as u64, None);
     let first = entity("first", 10, Some([0.0, 0.0]));
@@ -1728,8 +1711,7 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
         },
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", offset as u64, None);
     let first = entity("first", 10, Some([0.0, 0.0]));

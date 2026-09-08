@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -52,27 +51,44 @@ fn parameter_scope_parses_named_variable_tail() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "378".into(),
+        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("named variable-tail scope");
-    assert_eq!(scope.kind, "Draft");
-    assert_eq!(scope.feature_ordinal, 1);
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("named variable-tail scope");
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::DesignFeatureKind::Draft
+    );
+    assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, 0);
-    assert_eq!(scope.reference_members, [55]);
+    assert_eq!(scope.previous_history_state_id_offset, None);
+    assert_eq!(
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [55]
+    );
     assert_eq!(scope.frame_length, paired_at as u64);
 
     let mut owner_scope = scope.clone();
-    owner_scope.reference_members = vec![327, 330, 55, 56, 57, 58];
+    owner_scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
     let owners = vec![
         DesignParameterOwner {
             id: "f3d:test:owner#327".into(),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "272".into(),
+            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 327,
             scope_record_index: 12,
             local_ordinal: 0,
@@ -87,7 +103,7 @@ fn parameter_scope_parses_named_variable_tail() {
             id: "f3d:test:owner#330".into(),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "272".into(),
+            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 330,
             scope_record_index: 12,
             local_ordinal: 1,

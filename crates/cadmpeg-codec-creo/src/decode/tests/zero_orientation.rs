@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
+use crate::decode::sweep::pcurves::RevolutionBoundary;
+
 use super::with_decode_ctx;
-use crate::decode::analytic::{
-    ordered_face_loops, ordered_planar_face_loops, point_on_carrier, solve_carriers,
+use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
+use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
-use crate::decode::build::has_transferred_geometry;
+use crate::decode::analytic::planes::{point_on_carrier, solve_carriers};
+use crate::decode::build::report::has_transferred_geometry;
 use crate::decode::feature_history::{
     full_turn_revolution_carrier_axis, named_feature_definition,
     named_or_referenced_feature_definition, resolved_revolution_axis, revolution_axis_for_transfer,
@@ -14,42 +17,43 @@ use crate::decode::feature_history::{
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
-    SectionIntersectionCarrier,
 };
-use crate::decode::sketch_transfer::{
-    materialized_saved_section_external_ids, resolved_profile_chains,
-};
-use crate::decode::surfaces::{
+use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
+use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
-    coaxial_cones_section_candidates, cubic_extrusion_plane_generator_curve,
-    cubic_unit_interval_roots, nurbs_plane_boundary_curve, resolve_curve_candidates,
-    select_unique_curve_candidate, shared_extrusion_generator_curve,
+    coaxial_cones_section_candidates,
+};
+use crate::decode::surfaces::nurbs_boundaries::{
+    cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
+    shared_extrusion_generator_curve,
+};
+use crate::decode::surfaces::{resolve_curve_candidates, select_unique_curve_candidate};
+use crate::decode::sweep::pcurves::{
+    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
 };
 use crate::decode::sweep::{
     bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
-    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
     revolved_nurbs_surface, saved_spline_nurbs, saved_spline_sketch_geometry,
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length, RevolutionAxis,
-    RevolveExtent, Termination,
+    Angle, AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
+    RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc,
+        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
-        point_ids: [1, 2],
         center_id: Some(3),
         arc_orientation: Some(0),
         vertical_horizontal: None,
@@ -78,8 +82,10 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
 #[test]
 fn profile_chain_follows_trim_vertex_incidence() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -97,7 +103,6 @@ fn profile_chain_follows_trim_vertex_incidence() {
                         external_id,
                         mode: None,
                         vertices,
-                        center_vertex: None,
                         kind: crate::feature::TrimEntityKind::Line,
                         offset: external_id as usize,
                     },
@@ -160,12 +165,11 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 4,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
+        rows: ([(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
             .into_iter()
             .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+                kind: crate::feature::FeatureSegmentKind::Line(point_ids),
                 directions: [None; 3],
-                point_ids,
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -175,14 +179,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 body: Vec::new(),
                 offset: external_id as usize,
             })
-            .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 2,
     });
     incomplete_trim_graph
@@ -212,8 +212,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                     external_id,
                     mode: None,
                     vertices,
-                    center_vertex: Some(3),
-                    kind: crate::feature::TrimEntityKind::Arc,
+                    kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
                     offset: external_id as usize,
                 },
             )
@@ -225,12 +224,11 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 2,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [10, 11]
+        rows: ([10, 11]
             .into_iter()
             .map(|external_id| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc,
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: Some(3),
                 arc_orientation: Some(0),
                 vertical_horizontal: None,
@@ -240,14 +238,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 body: Vec::new(),
                 offset: external_id as usize,
             })
-            .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 4,
     });
     let arc_profile = resolved_profile_chains(
@@ -264,7 +258,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 5,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [
+        rows: ([
             (10, [1, 2]),
             (11, [3, 2]),
             (12, [3, 4]),
@@ -273,9 +267,8 @@ fn profile_chain_follows_trim_vertex_incidence() {
         ]
         .into_iter()
         .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
+            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
-            point_ids,
             center_id: None,
             arc_orientation: None,
             vertical_horizontal: None,
@@ -285,14 +278,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
             body: Vec::new(),
             offset: external_id as usize,
         })
+        .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
         .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
         offset: 4,
     });
     let segment_profile = resolved_profile_chains(
@@ -308,11 +297,9 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
 #[test]
 fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
-    let line = |start: [f64; 2], end: [f64; 2]| SectionIntersectionCarrier {
-        geometry: SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        },
+    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),
@@ -335,16 +322,21 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
 #[test]
 fn revolution_axis_uses_the_unique_complete_section_centerline() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 1,
+            },
+            vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -356,16 +348,14 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                     v: Some(3.0),
                 },
             ],
-            offset: 1,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+            rows: (vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: Some(0),
@@ -374,14 +364,10 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 external_id: 1,
                 body: Vec::new(),
                 offset: 2,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 2,
         }),
         trim_entities: None,
@@ -418,19 +404,18 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0,
             kind,
             feature_id: 7,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
     }
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(2.0, 3.0, 0.0),
                 axis: Vector3::new(0.0, -1.0, 0.0),
@@ -440,7 +425,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cone {
                 origin: Point3::new(2.0, -5.0, 0.0),
                 axis: Vector3::new(0.0, 1.0, 0.0),
@@ -452,7 +437,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Sphere {
                 center: Point3::new(2.0, 8.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -463,7 +448,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         },
     ]);
     let full_turn = RevolveExtent::OneSided {
-        termination: Termination::Angle {
+        termination: AngularTermination::Angle {
             angle: Angle(std::f64::consts::TAU),
         },
     };
@@ -473,11 +458,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Some(RevolutionAxis {
             origin: Point3::new(2.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
+            reference: None,
         })
     );
     let carrier_only_definition = crate::feature::FeatureDefinition {
-        id: 7,
-        owner_feature_id: Some(7),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(7),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -513,10 +501,11 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Some(RevolutionAxis {
             origin: Point3::new(2.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
+            reference: None,
         })
     );
     let partial = RevolveExtent::OneSided {
-        termination: Termination::Angle { angle: Angle(1.0) },
+        termination: AngularTermination::Angle { angle: Angle(1.0) },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
     if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {
@@ -536,8 +525,10 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
 #[test]
 fn named_revolve_transfers_profile_axis() {
     let definition = crate::feature::FeatureDefinition {
-        id: 822,
-        owner_feature_id: Some(822),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(822),
+            owner_feature_id: Some(822),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -548,32 +539,32 @@ fn named_revolve_transfers_profile_axis() {
                 .into_iter()
                 .map(
                     |(variable_type, key, value)| crate::feature::FeatureVariableRow {
-                        variable_type,
+                        variable_type: crate::feature::definitions::VariableType::from(
+                            variable_type,
+                        ),
                         key,
-                        value: Some(value),
+                        value: crate::feature::definitions::ScalarLane::Value(value),
                         value_body: Vec::new(),
-                        guess: Some(value),
+                        guess: crate::feature::definitions::ScalarLane::Value(value),
                         guess_body: Vec::new(),
-                        guess_dimension_driven: false,
+
                         known: Some(0),
                         homogeneity: Some(1),
                         uvar_id: None,
-                        dimension_driven: false,
+
                         offset: 0,
                     },
                 )
                 .collect(),
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line,
+            rows: (vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
-                point_ids: [1, 2],
                 center_id: None,
                 arc_orientation: None,
                 vertical_horizontal: None,
@@ -582,14 +573,10 @@ fn named_revolve_transfers_profile_axis() {
                 external_id: 1,
                 body: Vec::new(),
                 offset: 0,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -598,8 +585,7 @@ fn named_revolve_transfers_profile_axis() {
         section_3d: Some(crate::feature::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
-            reference_plane_entity_ids: Vec::new(),
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
             orientation: crate::feature::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -626,12 +612,11 @@ fn named_revolve_transfers_profile_axis() {
         .revolution_extents
         .push(crate::feature::FeatureRevolutionExtent {
             feature_id: 822,
-            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 1,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:revolution#822:body".to_string()),
+        id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -641,17 +626,14 @@ fn named_revolve_transfers_profile_axis() {
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
-        construction:
-            cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(axis),
-                solid: Some(true),
-                ..
-            },
+        construction,
         op: BooleanOp::NewBody,
     }) = named_feature_definition(&scan, &ir, 822, "Revolve")
     else {
         panic!("named revolve axis");
     };
+    assert_eq!(construction.solid(), Some(true));
+    let axis = construction.axis().expect("named revolve axis");
     assert_eq!(axis.origin, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(axis.direction, Vector3::new(0.0, 1.0, 0.0));
 }
@@ -659,9 +641,9 @@ fn named_revolve_transfers_profile_axis() {
 #[test]
 fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -682,9 +664,9 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 #[test]
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -694,7 +676,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Extrude { op, solid, .. } =
-        schema_feature_definition(&scan, &ir, 822, 0, "Extrude 822")
+        schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
     else {
         panic!("schema numbered extrude definition");
     };
@@ -709,17 +691,15 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
-            kind: "Extrude".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Extrude id 822".to_string()),
-            stored_name_bytes: Some(b"Extrude id 822".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
-            recipe: None,
-            recipe_conflict: true,
+            kind: crate::feature::OperationKind::Extrude,
+            name: crate::feature::operations::OperationName::Stored {
+                bytes: b"Extrude id 822".to_vec(),
+                keyword: crate::feature::operations::IdKeyword::Id,
+                prefix: None,
+            },
+            recipe: crate::feature::RecipeResolution::Conflicting,
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         });
@@ -727,13 +707,12 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 822,
-            name: "Revolve 822".to_string(),
             name_bytes: b"Revolve 822".to_vec(),
             own_reference_id: 1,
             reference_type: 0,
             offset: 0,
         });
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
 
     for kind in [
         "Protrusion",
@@ -758,17 +737,11 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
-            kind: "Native Feature".to_string(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
-            recipe: None,
-            recipe_conflict: false,
+            kind: crate::feature::OperationKind::Native,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: true,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         });
@@ -776,13 +749,12 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 822,
-            name: "Thicken 1".to_string(),
             name_bytes: b"Thicken 1".to_vec(),
             own_reference_id: 1,
             reference_type: 0,
             offset: 0,
         });
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
 
     assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
 }
@@ -794,23 +766,27 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         declared_point_count: Some(3),
         interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         interpolation_points_body: Vec::new(),
-        endpoint_tangents: Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-        endpoint_tangents_body: None,
-        parameters: Some(vec![0.0, 1.0, 2.0]),
-        parameters_body: None,
+        endpoint_tangents: Some(crate::feature::definitions::DecodedField {
+            value: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            body: Vec::new(),
+        }),
+        parameters: Some(crate::feature::definitions::DecodedField {
+            value: vec![0.0, 1.0, 2.0],
+            body: Vec::new(),
+        }),
         offset: 10,
     };
     let nurbs = saved_spline_nurbs(&spline).expect("clamped interpolation spline");
     for (parameter, expected) in [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)] {
-        let point = nurbs.control_points.iter().enumerate().fold(
+        let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
                 let basis = bspline_basis(
                     index,
-                    nurbs.degree as usize,
+                    nurbs.degree() as usize,
                     parameter,
-                    &nurbs.knots,
-                    nurbs.control_points.len(),
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
                 );
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -822,15 +798,15 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!(point[1].abs() < 1.0e-12 && point[2].abs() < 1.0e-12);
     }
     for parameter in [0.0, 2.0] {
-        let derivative = nurbs.control_points.iter().enumerate().fold(
+        let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
                 let basis = bspline_basis_derivative(
                     index,
-                    nurbs.degree as usize,
+                    nurbs.degree() as usize,
                     parameter,
-                    &nurbs.knots,
-                    nurbs.control_points.len(),
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
                 );
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
@@ -843,11 +819,13 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     }
     assert!(matches!(
         saved_spline_sketch_geometry(&spline),
-        Some(SketchGeometry::Nurbs { degree: 3, .. })
+        Some(SketchGeometry::Nurbs { curve }) if curve.degree() == 3
     ));
     let definition = crate::feature::FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -856,14 +834,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Vec::new(),
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
+            rows: (vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
                 point_ids: [Some(1), Some(2)],
@@ -875,7 +846,10 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 external_id: 42,
                 body: Vec::new(),
                 offset: 20,
-            }],
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Opaque)
+            .collect(),
             offset: 20,
         }),
         trim_entities: None,
@@ -925,14 +899,19 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .segments
         .as_ref()
         .expect("segments")
-        .opaque_rows[0]
+        .rows
+        .opaque()
+        .cloned()
+        .collect::<Vec<_>>()[0]
         .clone();
     ambiguous_external_id
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(duplicate_opaque);
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            duplicate_opaque,
+        ));
     ambiguous_external_id
         .segments
         .as_mut()
@@ -945,8 +924,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .pop();
+        .rows
+        .edit_opaque(Vec::pop);
     assert_eq!(
         materialized_saved_section_external_ids(&incomplete_segment_table),
         BTreeSet::from([42])
@@ -974,12 +953,12 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     )
     .expect("bicubic tensor-product surface");
 
-    assert_eq!((nurbs.u_count, nurbs.v_count), (4, 4));
-    assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.v_knots, nurbs.u_knots);
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
+    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots(), nurbs.u_knots());
     for u in 0..4 {
         for v in 0..4 {
-            let point = &nurbs.control_points[u * 4 + v];
+            let point = &nurbs.control_points()[u * 4 + v];
             let expected_u = u as f64 / 3.0;
             let expected_v = v as f64 / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
@@ -1000,27 +979,28 @@ fn nonplanar_saved_spline_places_as_model_curve() {
         normal: [0.0, -1.0, 0.0],
         offset: 5,
     };
-    let local = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
+    let local = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .expect("valid local NURBS");
 
-    let placed = placed_section_nurbs(&transform, &local);
+    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
 
-    assert_eq!(placed.control_points[0], Point3::new(11.0, 17.0, 32.0));
-    assert_eq!(placed.control_points[1], Point3::new(14.0, 14.0, 35.0));
+    assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
+    assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
 }
 
 #[test]
 fn transferred_geometry_is_derived_from_ir_arenas() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(!has_transferred_geometry(&ir));
 
     ir.model.points.push(Point {
-        id: PointId("point".to_string()),
+        id: PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -1029,34 +1009,38 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
-    let directrix = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
-        weights: None,
-        periodic: false,
-    };
+    let directrix = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid revolution directrix");
     let surface = revolved_nurbs_surface(
         &directrix,
-        RevolutionAxis {
+        &RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         },
     )
     .expect("revolution surface");
 
-    assert_eq!((surface.u_count, surface.v_count), (2, 9));
-    assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points[1], Point3::new(2.0, 2.0, 0.0));
-    assert_eq!(surface.control_points[2], Point3::new(0.0, 2.0, 0.0));
-    assert_eq!(surface.control_points[8], surface.control_points[0]);
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
+    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(surface.control_points()[1], Point3::new(2.0, 2.0, 0.0));
+    assert_eq!(surface.control_points()[2], Point3::new(0.0, 2.0, 0.0));
+    assert_eq!(surface.control_points()[8], surface.control_points()[0]);
     assert_eq!(
-        surface.weights.as_ref().expect("rational weights")[1],
+        surface.weights().expect("rational weights")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
 
 #[test]
+// These checked constructors must accept the explicit test fixtures.
+#[allow(clippy::unwrap_used)]
 fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense() {
     let transform = crate::placement::FeatureSectionTransform {
         definition_id: 1,
@@ -1070,34 +1054,38 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
+        reference: None,
     };
     let spline = SketchGeometry::Nurbs {
-        degree: 2,
-        knots: vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
-        control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(3.0, 0.75),
-            Point2::new(3.0, 1.25),
-            Point2::new(2.0, 2.0),
-        ],
-        weights: Some(vec![1.0, 0.75, 0.75, 1.0]),
-        periodic: false,
+        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
+            vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(3.0, 0.75),
+                Point2::new(3.0, 1.25),
+                Point2::new(2.0, 2.0),
+            ],
+            Some(vec![1.0, 0.75, 0.75, 1.0]),
+            false,
+        )
+        .unwrap(),
     };
     let segment = (spline.clone(), false, [2.0, 0.0], [2.0, 2.0]);
     let surface =
-        revolved_brep_surface(&transform, &spline, false, axis).expect("revolved spline surface");
+        revolved_brep_surface(&transform, &spline, false, &axis).expect("revolved spline surface");
     let SurfaceGeometry::Nurbs(surface) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
     };
 
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
-    assert_eq!((surface.u_count, surface.v_count), (4, 9));
-    assert_eq!(surface.u_knots, [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
-    assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points[1], Point3::new(2.0, 0.0, -2.0));
-    assert_eq!(surface.control_points[9], Point3::new(3.0, 0.75, 0.0));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 9));
+    assert_eq!(surface.u_knots(), [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
+    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(surface.control_points()[1], Point3::new(2.0, 0.0, -2.0));
+    assert_eq!(surface.control_points()[9], Point3::new(3.0, 0.75, 0.0));
     assert_eq!(
-        surface.weights.as_ref().expect("rational surface weights")[10],
+        surface.weights().expect("rational surface weights")[10],
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 
@@ -1105,18 +1093,18 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         segment.2,
-        true,
+        RevolutionBoundary::Start,
     )
     .expect("start boundary pcurve");
     let end_pcurve = revolution_profile_boundary_pcurve(
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         segment.3,
-        false,
+        RevolutionBoundary::End,
     )
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
@@ -1134,7 +1122,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         1.0,
     )
     .expect("forward face sense");
@@ -1142,29 +1130,29 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         -1.0,
     )
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = revolved_brep_surface(&transform, &spline, true, axis)
+    let reversed = revolved_brep_surface(&transform, &spline, true, &axis)
         .expect("reversed revolved spline surface");
     let SurfaceGeometry::Nurbs(reversed) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
     };
-    assert_eq!(reversed.u_knots, [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
-    assert_eq!(reversed.control_points[0], Point3::new(2.0, 2.0, 0.0));
+    assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
+    assert_eq!(reversed.control_points()[0], Point3::new(2.0, 2.0, 0.0));
 }
 
 #[test]
 fn planar_loop_containment_selects_one_outer_boundary() {
     let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
-        face_id,
+        face_id: std::num::NonZeroU32::new(face_id),
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -1174,7 +1162,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: vertex,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: vertex,
             end_vertex_id: Some(if vertex % 4 == 0 {
@@ -1233,11 +1221,11 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 #[test]
 fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
     let make_loop = |first_curve: u32| crate::topology::Loop {
-        face_id: 9,
+        face_id: std::num::NonZeroU32::new(9),
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -1247,7 +1235,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
         .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
             half_edge: HalfEdgeId {
                 curve_id: vertex,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             start_vertex_id: vertex,
             end_vertex_id: Some(if vertex % 4 == 0 {
@@ -1291,14 +1279,14 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
-    let surface = NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
+    let surface = NurbsSurface::new(
+        3,
+        1,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        4,
+        2,
+        (0..4)
             .flat_map(|u| {
                 [
                     Point3::new(f64::from(u), 0.0, f64::from(u * u)),
@@ -1306,11 +1294,12 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                 ]
             })
             .collect(),
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid extrusion surface");
     let boundary = nurbs_plane_boundary_curve(
         &surface,
         PlaneEquation {
@@ -1322,18 +1311,18 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let CurveGeometry::Nurbs(boundary) = boundary else {
         panic!("extrusion boundary must retain its NURBS parameterization");
     };
-    assert_eq!(boundary.degree, 3);
-    assert_eq!(boundary.knots, surface.u_knots);
+    assert_eq!(boundary.degree(), 3);
+    assert_eq!(boundary.knots(), surface.u_knots());
     assert_eq!(
-        boundary.control_points,
-        vec![
+        boundary.control_points(),
+        [
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 1.0, 1.0),
             Point3::new(2.0, 1.0, 4.0),
             Point3::new(3.0, 1.0, 9.0),
         ]
     );
-    assert_eq!(boundary.weights, Some(vec![1.0, 2.0, 3.0, 4.0]));
+    assert_eq!(boundary.weights(), Some(&[1.0, 2.0, 3.0, 4.0][..]));
 
     let generator = nurbs_plane_boundary_curve(
         &surface,
@@ -1346,13 +1335,13 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let CurveGeometry::Nurbs(generator) = generator else {
         panic!("extrusion generator must retain its NURBS parameterization");
     };
-    assert_eq!(generator.degree, 1);
-    assert_eq!(generator.knots, surface.v_knots);
+    assert_eq!(generator.degree(), 1);
+    assert_eq!(generator.knots(), surface.v_knots());
     assert_eq!(
-        generator.control_points,
-        vec![Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
+        generator.control_points(),
+        [Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
     );
-    assert_eq!(generator.weights, Some(vec![4.0, 4.0]));
+    assert_eq!(generator.weights(), Some(&[4.0, 4.0][..]));
 
     assert!(nurbs_plane_boundary_curve(
         &surface,
@@ -1363,9 +1352,13 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     )
     .is_none());
     let mut coplanar = surface.clone();
-    for point in &mut coplanar.control_points {
-        point.z = 0.0;
-    }
+    coplanar
+        .edit_control_points(|points| {
+            for point in points {
+                point.z = 0.0;
+            }
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
         PlaneEquation {
@@ -1374,108 +1367,119 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         },
     )
     .is_none());
-    coplanar.control_points = surface.control_points;
-    coplanar.weights.as_mut().expect("weights")[0] = 0.0;
-    assert!(nurbs_plane_boundary_curve(
-        &coplanar,
-        PlaneEquation {
-            origin: [0.0, 1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-        },
-    )
-    .is_none());
+    coplanar
+        .edit_control_points(|points| points.copy_from_slice(surface.control_points()))
+        .expect("finite fixture geometry preserves NURBS invariants");
+    assert!(coplanar.edit_weights(|weights| weights[0] = 0.0).is_err());
 }
 
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
-    let first = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let first = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(-1.0, 0.0, 0.0),
             Point3::new(-1.0, 0.0, 1.0),
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 1.0),
         ],
-        weights: Some(vec![2.0, 2.0, 3.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
-    let second = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![4.0, 4.0, 8.0, 8.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+        Some(vec![2.0, 2.0, 3.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid first extrusion surface");
+    let second = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![4.0, 4.0, 8.0, 8.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 1.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.0, 1.0, 1.0),
         ],
-        weights: Some(vec![6.0, 8.0, 8.0, 8.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![6.0, 8.0, 8.0, 8.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid second extrusion surface");
     let shared =
         shared_extrusion_generator_curve(&first, &second).expect("shared generator boundary");
     let CurveGeometry::Nurbs(shared) = shared else {
         panic!("shared extrusion generator must retain its NURBS representation");
     };
-    assert_eq!(shared.degree, 1);
-    assert_eq!(shared.knots, first.v_knots);
+    assert_eq!(shared.degree(), 1);
+    assert_eq!(shared.knots(), first.v_knots());
     assert_eq!(
-        shared.control_points,
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
+        shared.control_points(),
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
     );
-    assert_eq!(shared.weights, Some(vec![3.0, 4.0]));
+    assert_eq!(shared.weights(), Some(&[3.0, 4.0][..]));
 
     let mut reversed = second.clone();
-    reversed.control_points.swap(0, 1);
-    reversed.control_points.swap(2, 3);
-    reversed.weights.as_mut().expect("weights").swap(0, 1);
-    reversed.weights.as_mut().expect("weights").swap(2, 3);
+    reversed
+        .edit_control_points(|points| {
+            points.swap(0, 1);
+            points.swap(2, 3);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
+    reversed
+        .edit_weights(|weights| {
+            weights.swap(0, 1);
+            weights.swap(2, 3);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &reversed).is_some());
 
     let mut same_side = second.clone();
-    same_side.control_points[2] = Point3::new(-2.0, 0.0, 0.0);
-    same_side.control_points[3] = Point3::new(-2.0, 0.0, 1.0);
+    same_side
+        .edit_control_points(|points| {
+            points[2] = Point3::new(-2.0, 0.0, 0.0);
+            points[3] = Point3::new(-2.0, 0.0, 1.0);
+        })
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &same_side).is_none());
 
     let mut periodic_transverse = second.clone();
-    periodic_transverse.u_periodic = true;
+    periodic_transverse.set_u_periodic(true);
     assert!(shared_extrusion_generator_curve(&first, &periodic_transverse).is_none());
 
     let mut different_boundary = second;
-    different_boundary.control_points[1].x = 0.1;
+    different_boundary
+        .edit_control_points(|points| points[1].x = 0.1)
+        .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(&first, &different_boundary).is_none());
 }
 
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
-    let surface = NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: [-1.0, -0.5, 0.5, 1.0]
+    let surface = NurbsSurface::new(
+        3,
+        1,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        4,
+        2,
+        [-1.0, -0.5, 0.5, 1.0]
             .into_iter()
             .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
             .collect(),
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid cubic extrusion surface");
     let generator = with_decode_ctx(|ctx| {
         cubic_extrusion_plane_generator_curve(
             ctx,
@@ -1491,16 +1495,16 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let CurveGeometry::Nurbs(generator) = generator else {
         panic!("plane section generator must retain its NURBS representation");
     };
-    assert_eq!(generator.degree, 1);
-    assert_eq!(generator.knots, surface.v_knots);
-    assert_eq!(generator.control_points.len(), 2);
+    assert_eq!(generator.degree(), 1);
+    assert_eq!(generator.knots(), surface.v_knots());
+    assert_eq!(generator.control_points().len(), 2);
     assert!(generator
-        .control_points
+        .control_points()
         .iter()
         .all(|point| point.x.abs() <= 1.0e-8));
-    assert_eq!(generator.control_points[0].z, 0.0);
-    assert_eq!(generator.control_points[1].z, 2.0);
-    let weights = generator.weights.expect("rational generator");
+    assert_eq!(generator.control_points()[0].z, 0.0);
+    assert_eq!(generator.control_points()[1].z, 2.0);
+    let weights = generator.weights().expect("rational generator");
     assert_eq!(weights.len(), 2);
     assert!((weights[0] - weights[1]).abs() <= 1.0e-12);
 
@@ -1567,14 +1571,17 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
 
 #[test]
 fn coaxial_cone_torus_components_support_edges_and_vertices() {
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     let secant_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
         axis: [0.0, 0.0, 1.0],
@@ -1689,22 +1696,28 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
 
 #[test]
 fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
-    let first = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
-    let second = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let first = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
+    let second = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
     assert!(matches!(
@@ -1722,14 +1735,17 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(vertex[1].abs() < 1.0e-12);
     assert!((vertex[2] - 4.0).abs() < 1.0e-12);
 
-    let reversed = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, -1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let reversed = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     let reversed_candidates = coaxial_cones_section_candidates(first, reversed);
     assert_eq!(reversed_candidates.len(), 2);
     assert!(reversed_candidates.iter().any(|(geometry, _)| matches!(
@@ -1739,25 +1755,44 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 && (radius - 10.0 / 3.0).abs() < 1.0e-12
     )));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());
-    let shifted = CarrierEquation::Cone(ConeEquation {
-        origin: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 4.0,
-        ratio: 1.0,
-        half_angle: 0.5_f64.atan(),
-    });
+    let shifted = CarrierEquation::Cone(
+        ConeEquation::new(
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            4.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .expect("valid test cone"),
+    );
     assert!(coaxial_cones_section_candidates(first, shifted).is_empty());
 
     let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
         unreachable!();
     };
-    elliptical_first_equation.ratio = 0.5;
+    elliptical_first_equation = ConeEquation::new(
+        elliptical_first_equation.origin(),
+        elliptical_first_equation.axis(),
+        elliptical_first_equation.ref_direction(),
+        elliptical_first_equation.radius(),
+        0.5,
+        elliptical_first_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let elliptical_first = CarrierEquation::Cone(elliptical_first_equation);
     let CarrierEquation::Cone(mut elliptical_second_equation) = second else {
         unreachable!();
     };
-    elliptical_second_equation.ratio = 0.5;
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        elliptical_second_equation.ref_direction(),
+        elliptical_second_equation.radius(),
+        0.5,
+        elliptical_second_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let elliptical_second = CarrierEquation::Cone(elliptical_second_equation);
     let candidates = coaxial_cones_section_candidates(elliptical_first, elliptical_second);
     assert_eq!(candidates.len(), 2);
@@ -1784,12 +1819,27 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         assert!(point_on_carrier(point, elliptical_first));
         assert!(point_on_carrier(point, elliptical_second));
     }
-    elliptical_second_equation.ref_direction = [0.0, 1.0, 0.0];
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        [0.0, 1.0, 0.0],
+        elliptical_second_equation.radius(),
+        elliptical_second_equation.ratio(),
+        elliptical_second_equation.half_angle(),
+    )
+    .expect("valid test cone");
     let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
     assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
 
-    elliptical_second_equation.ratio = 2.0;
-    elliptical_second_equation.half_angle = 0.25_f64.atan();
+    elliptical_second_equation = ConeEquation::new(
+        elliptical_second_equation.origin(),
+        elliptical_second_equation.axis(),
+        elliptical_second_equation.ref_direction(),
+        elliptical_second_equation.radius(),
+        2.0,
+        0.25_f64.atan(),
+    )
+    .expect("valid test cone");
     let reciprocal_swapped = CarrierEquation::Cone(elliptical_second_equation);
     let candidates = coaxial_cones_section_candidates(elliptical_first, reciprocal_swapped);
     assert_eq!(candidates.len(), 2);

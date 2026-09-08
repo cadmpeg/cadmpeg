@@ -43,24 +43,25 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir().model.curves.len(), 3);
     assert!(result.ir().model.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
-            source.format == "catia" && source.object_id.starts_with("cgm-surface:")
+            source.format == cadmpeg_ir::CodecFormat::Catia
+                && source.object_id.starts_with("cgm-surface:")
         })
     }));
     assert!(result.ir().model.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
-            source.format == "catia" && source.object_id.starts_with("cgm-edge:")
+            source.format == cadmpeg_ir::CodecFormat::Catia
+                && source.object_id.starts_with("cgm-edge:")
         })
     }));
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
     assert!(result.ir().model.procedural_curves.iter().all(|curve| {
         matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-                ref context,
-                ..
-            } if context.sides[0].surface.is_some()
-                && context.sides[0].pcurve.is_some()
-                && context.sides[1].surface.is_none()
+                ref family,
+            } if family.context().sides[0].surface.is_some()
+                && family.context().sides[0].pcurve.is_some()
+                && family.context().sides[1].surface.is_none()
         )
     }));
     assert_eq!(result.ir().model.vertices.len(), 3);
@@ -118,7 +119,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
+        .all(|pcurve| pcurve.parameter_range() == Some([0.0, 1.0])));
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
@@ -138,9 +139,20 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert_eq!(graph.parameter_incidences.len(), 3);
     assert_eq!(graph.edges.len(), 3);
     assert_eq!(graph.edge_parameter_incidences.len(), 3);
-    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
     assert_eq!(
-        graph.logical_vertex_points,
+        graph
+            .logical_vertices
+            .iter()
+            .map(|vertex| vertex.object_id)
+            .collect::<Vec<_>>(),
+        [600, 601, 602]
+    );
+    assert_eq!(
+        graph
+            .logical_vertices
+            .iter()
+            .map(|vertex| vertex.point)
+            .collect::<Vec<_>>(),
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     );
 
@@ -204,7 +216,7 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
             .model
             .edges
             .iter()
-            .map(|edge| edge.id.0.as_str())
+            .map(|edge| edge.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:edge#10", "catia:b5:edge#11", "catia:b5:edge#9"]
     );

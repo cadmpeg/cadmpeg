@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -9,7 +8,7 @@
 )]
 use super::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::records::DesignParameterScope;
+use crate::records::feature::DesignParameterScope;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -65,10 +64,10 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#800",
-        "SurfaceTrim",
+        crate::records::feature::DesignFeatureKind::SurfaceTrim,
         800,
     );
-    scope.reference_members = vec![801, 804, 808, 811];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![801, 804, 808, 811]);
     (bytes, scope)
 }
 
@@ -94,8 +93,8 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
         vec![(815, "288", 11), (816, "271", 11)]
     );
     assert_eq!(operation.cell_table_record_index, 817);
-    assert_eq!(operation.cell_table_class_tag, "325");
-    assert_eq!(operation.cell_table_paired_class_tag, "257");
+    assert_eq!(operation.cell_table_class_tag.as_str(), "325");
+    assert_eq!(operation.cell_table_paired_class_tag.as_str(), "257");
     assert_eq!(operation.cell_count, 2);
     assert_eq!(
         operation

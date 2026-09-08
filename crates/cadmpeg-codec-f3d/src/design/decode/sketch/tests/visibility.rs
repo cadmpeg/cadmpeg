@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -37,14 +36,14 @@ fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
 fn sketch_visibility_member_decodes_both_boolean_values() {
     let hidden =
         decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
-    assert_eq!(hidden.stream_ordinal, 1);
-    assert_eq!(hidden.stream_ordinal_offset, 30);
-    assert_eq!(hidden.visible_offset, 35);
+    assert_eq!(hidden.stream_ordinal.get(), 1);
+    assert_eq!(hidden.stream_ordinal_offset(), 30);
+    assert_eq!(hidden.visible_offset(), 35);
     assert!(!hidden.visible);
 
     let visible =
         decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
-    assert_eq!(visible.stream_ordinal, 513);
+    assert_eq!(visible.stream_ordinal.get(), 513);
     assert!(visible.visible);
 }
 
@@ -83,15 +82,21 @@ fn sketch_visibility_accepts_settled_container_header() {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(str::to_owned),
-            base_type_guid_offset: base_type_guid.map(|_| 0),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: Some(value.to_owned().try_into().expect("base GUID")),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     };
     let metadata = crate::metastream::MetaStream {

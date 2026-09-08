@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
-use super::super::analytic::{
-    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
-};
 use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
 use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
 };
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::PlaneEquation;
+use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
@@ -166,11 +166,10 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(length),
                 },
                 draft: None,
-                offset: None,
             },
         },
         direction,
@@ -204,7 +203,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -249,7 +249,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                             &scan.surfaces.parameters,
                             row.id,
                         )?;
-                        let frame = parameters.positional_cylinder_frame?;
+                        let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
                         let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
                         let frame_axis = normalized(frame.axis)?;
@@ -337,17 +337,17 @@ pub(in super::super) fn nurbs_translation_candidate(
 ) -> Option<ExtrusionCarrierSpan> {
     let (degree, count, knots, periodic) = if along_v {
         (
-            nurbs.v_degree,
-            nurbs.v_count,
-            nurbs.v_knots.as_slice(),
-            nurbs.v_periodic,
+            nurbs.v_degree(),
+            nurbs.v_count(),
+            nurbs.v_knots(),
+            nurbs.v_periodic(),
         )
     } else {
         (
-            nurbs.u_degree,
-            nurbs.u_count,
-            nurbs.u_knots.as_slice(),
-            nurbs.u_periodic,
+            nurbs.u_degree(),
+            nurbs.u_count(),
+            nurbs.u_knots(),
+            nurbs.u_periodic(),
         )
     };
     let [first, second, third, fourth] = knots else {
@@ -362,14 +362,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         && third == fourth
         && first < third)
         .then_some(())?;
-    let u_count = usize::try_from(nurbs.u_count).ok()?;
-    let v_count = usize::try_from(nurbs.v_count).ok()?;
-    (u_count.checked_mul(v_count)? == nurbs.control_points.len()
-        && nurbs
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
-    .then_some(())?;
+    let u_count = usize::try_from(nurbs.u_count()).ok()?;
+    let v_count = usize::try_from(nurbs.v_count()).ok()?;
     let pair_count = if along_v { u_count } else { v_count };
     let mut starts = Vec::with_capacity(pair_count);
     let mut vector: Option<[f64; 3]> = None;
@@ -379,8 +373,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         } else {
             (index, v_count + index)
         };
-        let start = *nurbs.control_points.get(start_index)?;
-        let end = *nurbs.control_points.get(end_index)?;
+        let start = *nurbs.control_points().get(start_index)?;
+        let end = *nurbs.control_points().get(end_index)?;
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
         start
@@ -388,7 +382,7 @@ pub(in super::super) fn nurbs_translation_candidate(
             .chain(end)
             .all(f64::is_finite)
             .then_some(())?;
-        if let Some(weights) = &nurbs.weights {
+        if let Some(weights) = nurbs.weights() {
             let start_weight = *weights.get(start_index)?;
             let end_weight = *weights.get(end_index)?;
             (start_weight.is_finite()
@@ -446,7 +440,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
         && rows.iter().all(|row| {
             matches!(
                 row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion(_)
             )
         }))
     .then_some(())?;
@@ -456,7 +450,8 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -481,7 +476,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     planes.push((plane.origin, plane.normal));
                 }
             }
-            crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
+            crate::surface::SurfaceKind::Extrusion(_) => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
                     geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -541,10 +536,13 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     let model_equation = match model_planes.as_slice() {
-        [plane] => plane
-            .normal
-            .zip(plane.origin)
-            .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin))),
+        [plane] => {
+            let frame = plane.frame();
+            frame
+                .normal
+                .zip(frame.origin)
+                .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin)))
+        }
         _ => None,
     };
     let outline_planes = if scan
@@ -576,7 +574,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
         return SectionPlaneEvidence::Ambiguous;
     }
     if let [datum] = datums.as_slice() {
-        return normalized_plane(datum.normal, datum.offset).map_or(
+        return normalized_plane(datum.plane.normal(), datum.plane.offset).map_or(
             SectionPlaneEvidence::Ambiguous,
             SectionPlaneEvidence::Resolved,
         );
@@ -688,7 +686,8 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -813,11 +812,10 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(*length),
                 },
                 draft: None,
-                offset: None,
             },
         },
         direction,
@@ -851,7 +849,7 @@ pub(in super::super) fn feature_id_for_section_transform(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<u32> {
-    match (definition.owner_feature_id, transform.feature_id) {
+    match (definition.identity.owner_feature_id(), transform.feature_id) {
         (Some(definition_feature_id), Some(transform_feature_id))
             if definition_feature_id != transform_feature_id =>
         {
@@ -870,7 +868,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
     let ExtrudeExtent::OneSided {
         side:
             ExtrudeSide {
-                termination: Termination::Blind { length },
+                termination: LinearTermination::Blind { length },
                 ..
             },
     } = extent

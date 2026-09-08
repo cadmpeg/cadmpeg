@@ -34,7 +34,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -47,9 +47,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-            },
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
@@ -74,14 +72,11 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(_),
-                extent: None,
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_some()
+            && construction.extent().is_none()
     ));
 }
 
@@ -111,7 +106,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -124,9 +119,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-            },
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
@@ -151,9 +144,12 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            },
             diameter: None,
-            extent: Some(cadmpeg_ir::features::Termination::Blind {
+            extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: cadmpeg_ir::features::Length(5.0),
             }),
             ..
@@ -165,9 +161,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
-            },
+            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
             ..
         }])
     ));
@@ -175,7 +169,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -198,23 +192,18 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     assert!(matches!(
         decoded.ir().model.features[1].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Linear),
-            },
+            pattern: PatternKind::UnresolvedLinear,
             ..
         }
     ));
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(_),
-                extent: None,
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_some()
+            && construction.extent().is_none()
     ));
     assert!(matches!(
         decoded.ir().model.features[6].definition,
@@ -235,9 +224,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
-            },
+            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistanceAngle,
             ..
         }])
     ));

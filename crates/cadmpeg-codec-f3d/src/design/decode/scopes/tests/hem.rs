@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 /// Field values written into a synthetic gap-and-length `Hem` frame.
 struct HemFixture {
@@ -48,7 +46,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (304, "HemLength")],
         )
         .expect("fixed Hem operation");
@@ -56,7 +54,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.settings_record_index, 311);
         assert_eq!(
             operation.parameter_owners,
-            crate::records::DesignHemParameterOwners::GapLength {
+            crate::records::feature::DesignHemParameterOwners::GapLength {
                 gap_owner_record_index: 301,
                 length_owner_record_index: 304,
             }
@@ -65,14 +63,8 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.aggregate_operand_record_index, 243);
         assert_eq!(operation.edge_group_record_index, 251);
         assert_eq!(operation.edge_operand_record_index, 254);
-        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius.get(), 0.25);
         assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
-        // These four values are retained, not interpreted: each holds one value
-        // across every readable hem form and direction state (DR-09A).
-        assert_eq!(operation.form_code, 3);
-        assert_eq!(operation.direction_code, 1);
-        assert_eq!(operation.direction_reversal_byte, 0);
-        assert_eq!(operation.reference_side_code, 4);
     }
 }
 
@@ -99,7 +91,7 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (304, "HemLength")],
         )
         .is_none()
@@ -109,7 +101,7 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")],
         )
         .is_none()
@@ -124,18 +116,18 @@ fn hem_scope_reads_the_rolled_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        &references,
+        references.iter().copied(),
         &[(775, "HemRadius"), (788, "HemAngle")],
     )
     .expect("rolled Hem operation");
     assert_eq!(
         operation.parameter_owners,
-        crate::records::DesignHemParameterOwners::RadiusAngle {
+        crate::records::feature::DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index: 775,
             angle_owner_record_index: 788,
         }
     );
-    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 160);
 }
 
@@ -147,19 +139,19 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
         &frame.bytes,
         0,
         frame.paired_at,
-        &references,
+        references.iter().copied(),
         &[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")],
     )
     .expect("teardrop Hem operation");
     assert_eq!(
         operation.parameter_owners,
-        crate::records::DesignHemParameterOwners::GapLengthRadius {
+        crate::records::feature::DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index: 703,
             length_owner_record_index: 706,
             radius_owner_record_index: 775,
         }
     );
-    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 170);
 }
 
@@ -182,7 +174,7 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
             &frame.bytes,
             0,
             frame.paired_at,
-            &references,
+            references.iter().copied(),
             &[(301, "HemRadius"), (304, "HemAngle")],
         )
         .is_none()

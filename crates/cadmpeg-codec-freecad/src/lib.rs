@@ -2,14 +2,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
-//! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
-//! unedited persistence records and named side entries, while checked mutation
-//! methods update typed values. [`FcstdDocumentBuilder`] creates source-less
-//! schema-4/file-1 application graphs. Other target bands and edits without a
-//! lossless serializer are rejected explicitly.
+//! [`FcstdCodec`] implements [`cadmpeg_ir::codec::Codec`] and
+//! [`cadmpeg_ir::codec::write::Encoder`]. Retained writes preserve
+//! unedited persistence records and named side entries. Other target bands and
+//! edits without a lossless serializer are rejected explicitly.
 //!
-//! Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability fcstd -->
+//! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
+//! <!-- /generated: capability fcstd -->
 
 mod annotation;
 mod application;
@@ -19,6 +19,7 @@ mod brep;
 mod builder;
 mod container;
 mod design;
+mod dialect;
 mod drawing;
 mod element_map;
 mod gui;
@@ -38,18 +39,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::units::Units;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;
@@ -58,39 +55,14 @@ use crate::loss::FreecadLossCode;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FcstdCodec;
 
+#[doc(hidden)]
 pub use builder::{FcstdDocumentBuilder, FcstdPropertyValue};
+#[doc(hidden)]
 pub use mutation::FcstdPropertyOwner;
 
-/// Selects the persistence band emitted by [`FcstdCodec::encode_with_options`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FcstdWriteOptions {
-    /// `Document.xml` schema version.
-    pub schema_version: u32,
-    /// `Document.xml` file version.
-    pub file_version: u32,
-}
-
-impl Default for FcstdWriteOptions {
-    fn default() -> Self {
-        Self {
-            schema_version: 4,
-            file_version: 1,
-        }
-    }
-}
-
 impl FcstdCodec {
-    /// Write a document for an explicitly selected persistence band.
-    pub fn encode_with_options(
-        &self,
-        ir: &CadIr,
-        writer: &mut dyn std::io::Write,
-        options: FcstdWriteOptions,
-    ) -> Result<ExportReport, CodecError> {
-        writer::write(ir, writer, options)
-    }
-
     /// Change one attribute on an ordered native property value.
+    #[doc(hidden)]
     pub fn set_property_value_attribute(
         &self,
         ir: &mut CadIr,
@@ -102,45 +74,12 @@ impl FcstdCodec {
     ) -> Result<(), CodecError> {
         mutation::set_value_attribute(ir, owner, property, value_order, attribute, value.into())
     }
-
-    /// Change the text content of one ordered native property value.
-    pub fn set_property_value_text(
-        &self,
-        ir: &mut CadIr,
-        owner: FcstdPropertyOwner<'_>,
-        property: &str,
-        value_order: usize,
-        text: Option<String>,
-    ) -> Result<(), CodecError> {
-        mutation::set_value_text(ir, owner, property, value_order, text)
-    }
-
-    /// Replace one named side-entry payload while retaining its graph identity.
-    pub fn replace_side_entry(
-        &self,
-        ir: &mut CadIr,
-        entry: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CodecError> {
-        mutation::replace_entry(ir, entry, bytes)
-    }
 }
 
-/// Validate FCStd-native identities, graph links, payloads, and byte ledgers.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Vec::new();
     };
-    if namespace.version != native::VERSION {
-        return vec![finding(
-            Check::Version,
-            format!(
-                "unsupported FCStd native namespace version {}",
-                namespace.version
-            ),
-            None,
-        )];
-    }
     let objects = match namespace.arena_as::<native::ObjectRecord>("objects") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
@@ -194,7 +133,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
-    let joints = match namespace.arena_as::<native::JointRecord>("joints") {
+    let joints = match namespace.arena_as::<native::joint::JointRecord>("joints") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -203,10 +142,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let annotations = match namespace.arena_as::<native::SemanticAnnotationRecord>("annotations") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let applications = match namespace.arena_as::<native::ApplicationRecord>("applications") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -291,9 +226,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
-        let valid_object_bytes = match (&object.raw_xml, object.byte_start, object.byte_end) {
-            (Some(raw), Some(start), Some(end)) => start < end && end - start == raw.len() as u64,
-            _ => false,
+        let valid_object_bytes = match &object.data {
+            Some(data) => {
+                data.byte_start < data.byte_end
+                    && data.byte_end - data.byte_start == data.raw_xml.len() as u64
+            }
+            None => true,
         };
         if !valid_object_bytes {
             findings.push(finding(
@@ -326,141 +264,32 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|object| (object.id.as_str(), object))
         .collect::<HashMap<_, _>>();
-    let property_by_id = properties
-        .iter()
-        .map(|property| (property.id.as_str(), property))
-        .collect::<HashMap<_, _>>();
-    let application_objects = applications
-        .iter()
-        .map(|record| record.object.as_str())
-        .collect::<HashSet<_>>();
-    if applications != application::transfer(&objects, &properties, &entries) {
+    let applications_match =
+        match application::matches_native(namespace, &objects, &properties, &entries) {
+            Ok(matches) => matches,
+            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+        };
+    if !applications_match {
         findings.push(finding(
             Check::PayloadIntegrity,
             "FCStd application preservation records do not match authoritative bytes",
             None,
         ));
     }
-    if application_objects.len() != applications.len()
-        || application_objects.len() != objects.len()
-        || application_objects != object_ids
-    {
-        findings.push(finding(
-            Check::Identity,
-            "FCStd application census does not cover every object exactly once",
-            None,
-        ));
-    }
-    for record in &applications {
-        let Some(object) = object_by_id.get(record.object.as_str()) else {
-            findings.push(finding(
-                Check::ReferentialIntegrity,
-                format!("{} references a missing application object", record.id),
-                Some(record.id.clone()),
-            ));
-            continue;
-        };
-        let expected_domain = object
-            .type_name
-            .split_once("::")
-            .map_or("Unqualified", |(domain, _)| domain);
-        let mut owned = properties
-            .iter()
-            .filter(|property| property.owner == object.id)
-            .collect::<Vec<_>>();
-        owned.sort_by_key(|property| (property.byte_start, property.byte_end));
-        let expected_properties = owned
-            .iter()
-            .map(|property| property.id.as_str())
-            .collect::<Vec<_>>();
-        let expected_side_entries = owned
-            .iter()
-            .flat_map(|property| property.side_entries.iter().map(String::as_str))
-            .collect::<Vec<_>>();
-        let expected_inert_payload = owned.iter().any(|property| {
-            property.family == native::PropertyFamily::PythonObject
-                || property.type_name.contains("PropertyPythonObject")
-        });
-        let invalid_properties = record.properties.iter().any(|property| {
-            property_by_id
-                .get(property.as_str())
-                .is_none_or(|property| property.owner != object.id)
-        });
-        let mut mismatches = Vec::new();
-        if record.type_name != object.type_name {
-            mismatches.push("type");
-        }
-        if record.domain != expected_domain {
-            mismatches.push("domain");
-        }
-        if record.dependencies != object.dependencies {
-            mismatches.push("dependencies");
-        }
-        if record
-            .properties
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            != expected_properties
-        {
-            mismatches.push("properties");
-        }
-        if record
-            .side_entries
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            != expected_side_entries
-        {
-            mismatches.push("side entries");
-        }
-        if record.inert_payload != expected_inert_payload {
-            mismatches.push("inert payload classification");
-        }
-        if invalid_properties {
-            mismatches.push("property ownership");
-        }
-        if record
-            .side_entries
-            .iter()
-            .any(|entry| !entry_names.contains(entry.as_str()))
-        {
-            mismatches.push("side-entry references");
-        }
-        if !mismatches.is_empty() {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!(
-                    "{} does not match its application object graph: {}",
-                    record.id,
-                    mismatches.join(", ")
-                ),
-                Some(record.id.clone()),
-            ));
-        }
-    }
     for attachment in &attachments {
         let missing_support = attachment.supports.iter().any(|support| {
             support.document.is_none()
-                && support.object.as_ref().is_some_and(|object| {
-                    !object.is_empty() && !object_ids.contains(object.as_str())
-                })
+                && support
+                    .object()
+                    .is_some_and(|object| !object_ids.contains(object))
         });
         let non_finite = attachment
             .placement
             .iter()
             .chain(attachment.offset.iter())
-            .chain(std::iter::once(&attachment.effective_frame))
             .flat_map(|matrix| matrix.iter().flatten())
             .any(|value| !value.is_finite());
-        let effective_mismatch =
-            crate::attachment::effective_frame(attachment.placement, attachment.offset)
-                != attachment.effective_frame;
-        if !object_ids.contains(attachment.object.as_str())
-            || missing_support
-            || non_finite
-            || effective_mismatch
-        {
+        if !object_ids.contains(attachment.object.as_str()) || missing_support || non_finite {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -550,24 +379,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
-                .members
+                .members()
                 .iter()
                 .any(|member| !object_ids.contains(member.as_str()))
-            || node.prototype.as_ref().is_some_and(|prototype| {
-                !object_ids.contains(prototype.as_str()) && node.external_document.is_none()
+            || node.prototype().is_some_and(|prototype| {
+                !object_ids.contains(prototype) && node.external_document().is_none()
             })
             || node
-                .placement_property
-                .as_ref()
-                .is_some_and(|property| !property_ids.contains(property.as_str()))
-            || [
-                node.copy_on_change_source.as_ref(),
-                node.copy_on_change_group.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .chain(node.element_objects.iter())
-            .any(|object| !object_ids.contains(object.as_str()))
+                .placement_property()
+                .is_some_and(|property| !property_ids.contains(property))
+            || [node.copy_on_change_source(), node.copy_on_change_group()]
+                .into_iter()
+                .flatten()
+                .chain(node.element_objects().iter().map(String::as_str))
+                .any(|object| !object_ids.contains(object))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -582,23 +407,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let invalid_array_count = node.element_count.is_some_and(|count| {
+        let invalid_array_count = node.element_count().is_some_and(|count| {
             count < 0
                 || [
-                    node.element_transforms.len(),
-                    node.element_scales.len(),
-                    node.element_visibility.len(),
-                    node.element_objects.len(),
+                    node.element_transforms().len(),
+                    node.element_scales().len(),
+                    node.element_objects().len(),
                 ]
                 .into_iter()
                 .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
         });
         let non_finite_array = node
-            .element_transforms
+            .element_transforms()
             .iter()
             .flatten()
             .flatten()
-            .chain(node.element_scales.iter().flatten())
+            .chain(node.element_scales().iter().flatten())
             .any(|value| !value.is_finite());
         if invalid_array_count || non_finite_array {
             findings.push(finding(
@@ -610,22 +434,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
-            || joint.references.iter().any(|reference| {
+            || joint.references().iter().any(|reference| {
                 reference.document.is_none()
-                    && reference.object.as_ref().is_some_and(|object| {
-                        !object.is_empty() && !object_ids.contains(object.as_str())
-                    })
+                    && reference
+                        .object()
+                        .is_some_and(|object| !object_ids.contains(object))
             });
-        let expected_placements = if joint.kind == "grounded" { 1 } else { 2 };
-        let invalid_frames = joint.placements.len() != expected_placements
-            || (!joint.offsets.is_empty() && joint.offsets.len() != expected_placements)
-            || joint
-                .placements
-                .iter()
-                .flatten()
-                .flatten()
-                .chain(joint.offsets.iter().flatten().flatten())
-                .any(|value| !value.is_finite());
+        let invalid_frames = joint
+            .placements()
+            .iter()
+            .flatten()
+            .flatten()
+            .chain(joint.offsets().iter().flatten().flatten())
+            .any(|value| !value.is_finite());
         if missing_link || invalid_frames {
             findings.push(finding(
                 Check::NativeLinks,
@@ -641,9 +462,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let missing_object = !object_ids.contains(drawing.object.as_str())
             || drawing.sources.iter().any(|source| {
                 source.document.is_none()
-                    && source.object.as_ref().is_some_and(|object| {
-                        !object.is_empty() && !object_ids.contains(object.as_str())
-                    })
+                    && source
+                        .object()
+                        .is_some_and(|object| !object_ids.contains(object))
             });
         let missing_entry = drawing
             .side_entries
@@ -651,9 +472,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .any(|entry| !entry_names.contains(entry.as_str()));
         let missing_relationship = drawing.relationships.values().flatten().any(|link| {
             link.document.is_none()
-                && link.object.as_ref().is_some_and(|object| {
-                    !object.is_empty() && !object_ids.contains(object.as_str())
-                })
+                && link
+                    .object()
+                    .is_some_and(|object| !object_ids.contains(object))
         });
         if missing_object || missing_entry || missing_relationship {
             findings.push(finding(
@@ -667,15 +488,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let object = object_by_id.get(annotation.object.as_str());
         let missing_reference = annotation.references.values().flatten().any(|reference| {
             reference.document.is_none()
-                && reference.object.as_ref().is_some_and(|object| {
-                    !object.is_empty() && !object_ids.contains(object.as_str())
-                })
+                && reference
+                    .object()
+                    .is_some_and(|object| !object_ids.contains(object))
         });
         let missing_entry = annotation
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        if object.is_none_or(|object| object.type_name != annotation.kind)
+        if object.is_none_or(|object| object.type_name != annotation.kind.as_str())
             || missing_reference
             || missing_entry
         {
@@ -749,11 +570,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(property.id.clone()),
             ));
         }
-        for target in property
-            .links
-            .iter()
-            .filter_map(|link| link.object.as_deref())
-        {
+        for target in property.links().iter().filter_map(|link| link.object()) {
             if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
@@ -764,7 +581,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for (expected_table_index, table) in string_tables.iter().enumerate() {
-        if table.index != expected_table_index || table.declared_count != table.entries.len() {
+        if table.index != expected_table_index {
             findings.push(finding(
                 Check::NativeLinks,
                 format!("{} has invalid index or entry count", table.id),
@@ -806,12 +623,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .model
         .vertices
         .iter()
-        .map(|entity| entity.id.0.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.0.as_str()))
+        .map(|entity| entity.id.as_str())
+        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
@@ -880,7 +697,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     let mut expected_references = HashMap::<String, Vec<String>>::new();
     for property in &properties {
-        for entry_name in &property.side_entries {
+        for entry_name in property.side_entries() {
             let owners = expected_references.entry(entry_name.clone()).or_default();
             if !owners.contains(&property.id) {
                 owners.push(property.id.clone());
@@ -906,14 +723,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for entry in &entries {
-        entry_lengths.insert(entry.name.as_str(), entry.byte_len);
-        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} failed length or digest validation", entry.id),
-                Some(entry.id.clone()),
-            ));
-        }
+        entry_lengths.insert(entry.name.as_str(), entry.byte_len());
         for owner in &entry.referenced_by {
             if !asset_owner_ids.contains(owner.as_str()) {
                 findings.push(finding(
@@ -962,22 +772,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
         logical_by_entry.entry(&span.entry).or_default().push(span);
-        if !matches!(
-            span.classification.as_str(),
-            "structural" | "typed" | "named_opaque"
-        ) {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} has invalid logical classification", span.id),
-                Some(span.id.clone()),
-            ));
-        }
-        let owner_valid = if span.classification == "structural" {
-            span.owner.is_none()
-        } else {
-            span.owner
-                .as_ref()
-                .is_some_and(|owner| logical_owner_ids.contains(owner.as_str()))
+        let owner_valid = match &span.classification {
+            native::LogicalClassification::Structural => true,
+            native::LogicalClassification::Typed { owner }
+            | native::LogicalClassification::NamedOpaque { owner } => {
+                logical_owner_ids.contains(owner.as_str())
+            }
         };
         if !entry_lengths.contains_key(span.entry.as_str()) || !owner_valid {
             findings.push(finding(
@@ -989,7 +789,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
     for entry in &entries {
-        if entry.byte_len > 0 && !covered_entries.contains(entry.name.as_str()) {
+        if entry.byte_len() > 0 && !covered_entries.contains(entry.name.as_str()) {
             findings.push(finding(
                 Check::PayloadIntegrity,
                 format!("logical ledger omits nonempty entry {}", entry.name),
@@ -1069,11 +869,13 @@ fn validate_logical_chain(
 }
 
 impl CodecBackend for FcstdCodec {
-    fn id(&self) -> &'static str {
-        "fcstd"
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        crate::validate_native(ir)
     }
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(b"PK\x03\x04") {
             return Confidence::No;
         }
@@ -1094,15 +896,7 @@ impl CodecBackend for FcstdCodec {
         container::scan(ctx, root).map(|scan| container::summarize(&scan))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let scan = container::scan(ctx, root)?;
         // Charge document object cardinality before persistence/geometry work.
         ctx.charge_entities(
@@ -1110,26 +904,16 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd document objects",
         )?;
         let mut admitted_entities = 0_u64;
-        if !options.container_only
-            && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd SchemaVersion={} FileVersion={} persistence layout",
-                scan.document.schema_version, scan.document.file_version
-            )));
-        }
         let mut attributes = BTreeMap::new();
-        attributes.insert(
-            "schema_version".into(),
-            scan.document.schema_version.clone(),
-        );
-        attributes.insert("file_version".into(), scan.document.file_version.clone());
         attributes.insert("document_root".into(), scan.document.root_name.clone());
         attributes.insert(
             "object_count".into(),
             scan.document.object_count.to_string(),
         );
-        attributes.insert("document_kind".into(), scan.document.document_kind.clone());
+        attributes.insert(
+            "document_kind".into(),
+            scan.document.document_kind.as_str().to_owned(),
+        );
         attributes.insert(
             "application_domains".into(),
             scan.document.domains.join(","),
@@ -1157,36 +941,33 @@ impl CodecBackend for FcstdCodec {
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
-        let mut ir = CadIr::empty(Units::default());
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        ir.source = Some(SourceMeta {
-            format: "fcstd".into(),
-            attributes,
-        });
+        // One `classify` call feeds the report identity, loss, and notes.
+        let primary = dialect::FcstdDialect::classify(&scan.document);
+        let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
+        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                [UnknownRecord {
-                    id: UnknownId(native::native_id("thumbnail", name)),
-                    offset: 0,
-                    byte_len: bytes.len() as u64,
-                    sha256: sha256_hex(bytes),
-                    data: Some(bytes.to_vec()),
-                    links: vec![native::native_id("document", "0")],
-                }],
+                [UnknownRecord::retained(
+                    UnknownId::mint(native::native_id("thumbnail", name))
+                        .expect("identity grammar"),
+                    0,
+                    bytes.to_vec(),
+                    vec![native::native_id("document", "0")],
+                )],
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.version = native::VERSION;
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
-        if !options.container_only {
+        if !ctx.container_only() {
             let document_bytes = scan
                 .data
                 .get("Document.xml")
@@ -1194,9 +975,9 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, Some(ctx))?;
+            let graph = persistence::parse_with_context(document_bytes, &scan.document, Some(ctx))?;
             for property in &graph.properties {
-                for side_entry in &property.side_entries {
+                for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
                         return Err(CodecError::malformed(format_args!(
                             "property {} references missing side entry {side_entry}",
@@ -1222,24 +1003,28 @@ impl CodecBackend for FcstdCodec {
                     let referenced_by = graph
                         .properties
                         .iter()
-                        .filter(|property| property.side_entries.contains(&entry.name))
+                        .filter(|property| property.side_entries().contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
                     ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
-                        role: entry.role.clone(),
-                        byte_len: bytes.len() as u64,
-                        sha256: sha256_hex(bytes),
+                        role: entry.role,
                         referenced_by,
                         data: bytes.to_vec(),
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
-            let (string_tables, mut element_maps) =
-                element_map::parse(document_bytes, &graph.properties, &entry_records)?;
+            let (string_tables, mut element_maps) = element_map::parse(
+                document_bytes,
+                scan.document.file_version.parse::<usize>().map_err(|_| {
+                    CodecError::Malformed("Document.xml FileVersion is invalid".into())
+                })?,
+                &graph.properties,
+                &entry_records,
+            )?;
             namespace.set_arena("objects", &graph.objects)?;
             namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
@@ -1262,10 +1047,7 @@ impl CodecBackend for FcstdCodec {
                 &drawings,
             )?;
             namespace.set_arena("annotations", &annotations)?;
-            namespace.set_arena(
-                "applications",
-                &application::transfer(&graph.objects, &graph.properties, &entry_records),
-            )?;
+            application::install(namespace, &graph.objects, &graph.properties, &entry_records)?;
             let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
             namespace.set_arena("attachments", &attachments)?;
             let mut curve_transfer = brep::transfer_text_curves(&shape_payloads, &graph.properties);
@@ -1277,11 +1059,17 @@ impl CodecBackend for FcstdCodec {
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves.extend(curve_transfer.curves);
-            ir.model.procedural_curves.extend(curve_transfer.procedural);
+            for (owner, procedural) in curve_transfer.procedural {
+                ir.model
+                    .add_procedural_curve(owner, procedural)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+            }
             ir.model.surfaces.extend(surface_transfer.surfaces);
-            ir.model
-                .procedural_surfaces
-                .extend(surface_transfer.procedural);
+            for (owner, procedural) in surface_transfer.procedural {
+                ir.model
+                    .add_procedural_surface(owner, procedural)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+            }
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             let topology_occurrences =
@@ -1411,50 +1199,46 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
         }
-        let losses = if options.container_only {
+        let mut losses = if ctx.container_only() {
             Vec::new()
         } else {
             semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)
         };
+        // Charged on both decode branches: a schema outside the declared rows
+        // is read with the schema-4 strategy on either path, so the charge is
+        // not conditioned on the branch.
+        losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
         ctx.admit_entities(
             ir.model.entity_count() as u64,
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        Ok(DecodeResult::new(
+        let summary_notes = container::summary_notes(&scan);
+        Ok(Decoded {
             ir,
-            DecodeReport {
-                format: "fcstd".into(),
-                container_only: options.container_only,
+            body: DecodeBody {
                 geometry_transferred,
-                coverage: std::collections::BTreeMap::new(),
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+                coverage: cadmpeg_ir::Coverage::default(),
                 losses,
-                notes: container::summarize(&scan).notes,
+                notes: summary_notes,
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             },
             source_fidelity,
-        ))
+        })
     }
 }
 
-impl Encoder for FcstdCodec {
-    fn id(&self) -> &'static str {
-        "fcstd"
-    }
+impl EncoderBackend for FcstdCodec {
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        let mut bytes = Vec::new();
-        let mut report =
-            self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
-        // `encode_with_options` takes no fidelity sidecar, so the report it
-        // returns states the only resolution it can see. Whether the caller
-        // supplied one is known here, and only here.
-        report.fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
-        Ok(ExportPlan::buffered(report, bytes))
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 
@@ -1499,13 +1283,14 @@ fn semantic_losses(
                 )
             };
             Some(
-                code.note(message)
-                    .with_provenance(cadmpeg_ir::SourceProvenance {
-                        format: "fcstd".into(),
-                        stream: "Document.xml".into(),
-                        offset: 0,
-                        tag: feature.native_ref.clone(),
-                    }),
+                    code.note(message).with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(feature.native_ref.clone()),
+                    ),
             )
         })
         .collect::<Vec<_>>());
@@ -1518,12 +1303,14 @@ fn semantic_losses(
                 .note(format!(
                     "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
                 ))
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: entity.native_ref.clone(),
-                }),
+                    .with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(entity.native_ref.clone()),
+                    ),
         )
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
@@ -1537,12 +1324,14 @@ fn semantic_losses(
                 .note(format!(
                     "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
                 ))
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: constraint.native_ref.clone(),
-                }),
+                    .with_provenance(
+                        cadmpeg_ir::SourceProvenance::in_stream(
+                            "fcstd",
+                            "Document.xml",
+                            0,
+                        )
+                        .with_optional_tag(constraint.native_ref.clone()),
+                    ),
         )
     }));
     losses

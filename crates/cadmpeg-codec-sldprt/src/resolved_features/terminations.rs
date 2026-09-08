@@ -24,13 +24,87 @@ const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
 
 /// Add semantic termination forms carried by compact extrusion end-spec children.
 #[derive(Clone)]
-pub(super) struct TerminationVote {
-    pub(super) condition: String,
-    pub(super) reference: Option<String>,
-    pub(super) second_condition: Option<String>,
-    pub(super) reference_identity: Option<String>,
-    pub(super) canonical_reference: Option<String>,
-    pub(super) depth_m: Option<f64>,
+pub(super) enum TerminationVote {
+    Blind {
+        depth_m: Option<f64>,
+    },
+    /// Blind termination with a through-all second direction.
+    BlindSecondThroughAll,
+    Symmetric,
+    ThroughAllBoth,
+    ThroughAll,
+    ThroughNext,
+    ToVertex {
+        reference: String,
+    },
+    Face {
+        condition: FaceCondition,
+        reference: Option<String>,
+        identity: String,
+        canonical: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum FaceCondition {
+    OffsetFromFace,
+    ToFace,
+}
+
+impl TerminationVote {
+    fn condition(&self) -> &'static str {
+        match self {
+            Self::Blind { .. } | Self::BlindSecondThroughAll => "Blind",
+            Self::Symmetric => "Symmetric",
+            Self::ThroughAllBoth => "ThroughAllBoth",
+            Self::ThroughAll => "ThroughAll",
+            Self::ThroughNext => "ThroughNext",
+            Self::ToVertex { .. } => "ToVertex",
+            Self::Face {
+                condition: FaceCondition::OffsetFromFace,
+                ..
+            } => "OffsetFromFace",
+            Self::Face {
+                condition: FaceCondition::ToFace,
+                ..
+            } => "ToFace",
+        }
+    }
+
+    pub(super) fn reference(&self) -> Option<&str> {
+        match self {
+            Self::ToVertex { reference } => Some(reference),
+            Self::Face { reference, .. } => reference.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn agrees_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Blind { depth_m: a }, Self::Blind { depth_m: b }) => {
+                a.map(f64::to_bits) == b.map(f64::to_bits)
+            }
+            (Self::BlindSecondThroughAll, Self::BlindSecondThroughAll)
+            | (Self::Symmetric, Self::Symmetric)
+            | (Self::ThroughAllBoth, Self::ThroughAllBoth)
+            | (Self::ThroughAll, Self::ThroughAll)
+            | (Self::ThroughNext, Self::ThroughNext) => true,
+            (Self::ToVertex { reference: a }, Self::ToVertex { reference: b }) => a == b,
+            (
+                Self::Face {
+                    condition: a,
+                    identity: a_id,
+                    ..
+                },
+                Self::Face {
+                    condition: b,
+                    identity: b_id,
+                    ..
+                },
+            ) => a == b && a_id == b_id,
+            _ => false,
+        }
+    }
 }
 
 pub(crate) fn enrich_history_extrusion_terminations(
@@ -83,14 +157,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             grouped_blind
                 .entry(owner.id.clone())
                 .or_default()
-                .push(TerminationVote {
-                    condition: "Blind".to_string(),
-                    reference: None,
-                    second_condition: None,
-                    reference_identity: None,
-                    canonical_reference: None,
-                    depth_m: None,
-                });
+                .push(TerminationVote::Blind { depth_m: None });
         }
         let mut objects = histories
             .iter()
@@ -189,24 +256,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             })
                             .min_by_key(|(scalar, _)| scalar.offset)
                             .map(|(scalar, _)| scalar.value);
-                        return Some(TerminationVote {
-                            condition: "Blind".to_string(),
-                            reference: None,
-                            second_condition: None,
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m,
-                        });
+                        return Some(TerminationVote::Blind { depth_m });
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
-                        return Some(TerminationVote {
-                            condition: "Symmetric".to_string(),
-                            reference: None,
-                            second_condition: None,
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m: None,
-                        });
+                        return Some(TerminationVote::Symmetric);
                     }
                     if let Some(reference) = compact_extrusion_offset_from_face_at(
                         &lane.native_payload,
@@ -214,7 +267,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         end_spec_end,
                     ) {
                         return Some(compact_termination_face_vote(
-                            "OffsetFromFace",
+                            FaceCondition::OffsetFromFace,
                             lane,
                             feature_id,
                             lane_key,
@@ -222,14 +275,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         ));
                     }
                     if compact_extrusion_through_all_both_at(&lane.native_payload, offset) {
-                        return Some(TerminationVote {
-                            condition: "ThroughAllBoth".to_string(),
-                            reference: None,
-                            second_condition: None,
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m: None,
-                        });
+                        return Some(TerminationVote::ThroughAllBoth);
                     }
                     if has_depth
                         && compact_extrusion_blind_through_all_second_at(
@@ -237,14 +283,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             offset,
                         )
                     {
-                        return Some(TerminationVote {
-                            condition: "Blind".to_string(),
-                            reference: None,
-                            second_condition: Some("ThroughAll".to_string()),
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m: None,
-                        });
+                        return Some(TerminationVote::BlindSecondThroughAll);
                     }
                     // One-sided through-all/through-next forms may retain a
                     // display dimension even when semantic D1/Depth already
@@ -252,47 +291,30 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     // depth guard, while malformed reference forms remain
                     // unresolved.
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
-                        Some(TerminationVote {
-                            condition: "ThroughAll".to_string(),
-                            reference: None,
-                            second_condition: None,
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m: None,
-                        })
+                        Some(TerminationVote::ThroughAll)
                     } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
-                        Some(TerminationVote {
-                            condition: "ThroughNext".to_string(),
-                            reference: None,
-                            second_condition: None,
-                            reference_identity: None,
-                            canonical_reference: None,
-                            depth_m: None,
-                        })
+                        Some(TerminationVote::ThroughNext)
                     } else if has_depth {
                         None
-                    } else if let Some((reference, kind, _endpoint_selector)) =
+                    } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
                         let prefix = match kind {
                             CompactPointReferenceKind::Point => "point-ref",
-                            CompactPointReferenceKind::EdgeEndpoint => "edge-endpoint-ref",
+                            CompactPointReferenceKind::EdgeEndpoint { .. } => "edge-endpoint-ref",
                         };
                         let reference =
                             format!("sldprt:feature-input:{prefix}:{lane_key}:{reference}");
-                        Some(TerminationVote {
-                            condition: "ToVertex".to_string(),
-                            reference_identity: Some(reference.clone()),
-                            canonical_reference: None,
-                            depth_m: None,
-                            reference: Some(reference),
-                            second_condition: None,
-                        })
+                        Some(TerminationVote::ToVertex { reference })
                     } else {
                         compact_extrusion_to_face_at(&lane.native_payload, offset, end_spec_end)
                             .map(|reference| {
                                 compact_termination_face_vote(
-                                    "ToFace", lane, feature_id, lane_key, reference,
+                                    FaceCondition::ToFace,
+                                    lane,
+                                    feature_id,
+                                    lane_key,
+                                    reference,
                                 )
                             })
                     }
@@ -329,27 +351,36 @@ pub(crate) fn enrich_history_extrusion_terminations(
         };
         feature
             .properties
-            .insert("EndCondition".into(), vote.condition.clone());
-        if let Some(reference) = vote.reference {
-            let key = if vote.condition == "ToVertex" {
-                "Vertex"
-            } else {
-                "Face"
-            };
-            feature.properties.entry(key.into()).or_insert(reference);
-        }
-        if let Some(second) = &vote.second_condition {
-            feature
-                .properties
-                .insert("EndCondition2".into(), second.clone());
-        }
-        if let Some(depth_m) = vote.depth_m {
-            if !feature.parameters.contains_key("D1") && !feature.parameters.contains_key("Depth") {
+            .insert("EndCondition".into(), vote.condition().into());
+        match vote {
+            TerminationVote::ToVertex { reference } => {
+                feature
+                    .properties
+                    .entry("Vertex".into())
+                    .or_insert(reference);
+            }
+            TerminationVote::Face {
+                reference: Some(reference),
+                ..
+            } => {
+                feature.properties.entry("Face".into()).or_insert(reference);
+            }
+            TerminationVote::BlindSecondThroughAll => {
+                feature
+                    .properties
+                    .insert("EndCondition2".into(), "ThroughAll".into());
+            }
+            TerminationVote::Blind {
+                depth_m: Some(depth_m),
+            } if !feature.parameters.contains_key("D1")
+                && !feature.parameters.contains_key("Depth") =>
+            {
                 feature.parameters.insert(
                     "D1".into(),
                     crate::history::format_length_mm(depth_m * 1000.0),
                 );
             }
+            _ => {}
         }
     }
 }
@@ -358,29 +389,32 @@ pub(super) fn consensus_termination_vote(
     votes: &[Option<TerminationVote>],
 ) -> Option<TerminationVote> {
     let first = votes.first()?.as_ref()?;
-    if !votes.iter().all(|vote| {
-        vote.as_ref().is_some_and(|vote| {
-            vote.condition == first.condition
-                && vote.second_condition == first.second_condition
-                && vote.reference_identity == first.reference_identity
-                && vote.depth_m.map(f64::to_bits) == first.depth_m.map(f64::to_bits)
-        })
-    }) {
+    if !votes
+        .iter()
+        .all(|vote| vote.as_ref().is_some_and(|vote| vote.agrees_with(first)))
+    {
         return None;
     }
     let mut consensus = first.clone();
-    if !votes
-        .iter()
-        .filter_map(Option::as_ref)
-        .all(|vote| vote.reference == first.reference)
+    if let TerminationVote::Face {
+        reference,
+        canonical,
+        ..
+    } = &mut consensus
     {
-        consensus.reference.clone_from(&first.canonical_reference);
+        if !votes
+            .iter()
+            .filter_map(Option::as_ref)
+            .all(|vote| vote.reference() == first.reference())
+        {
+            reference.clone_from(canonical);
+        }
     }
     Some(consensus)
 }
 
 fn compact_termination_face_vote(
-    condition: &str,
+    condition: FaceCondition,
     lane: &FeatureInputLane,
     feature_ref: &str,
     lane_key: &str,
@@ -404,14 +438,12 @@ fn compact_termination_face_vote(
                 .unwrap_or_default()
         )
     });
-    let reference_identity = reference_identity.or_else(|| Some(reference.clone()));
-    TerminationVote {
-        condition: condition.to_string(),
+    let identity = reference_identity.unwrap_or_else(|| reference.clone());
+    TerminationVote::Face {
+        condition,
         reference: Some(reference),
-        second_condition: None,
-        reference_identity,
-        canonical_reference,
-        depth_m: None,
+        identity,
+        canonical: canonical_reference,
     }
 }
 
@@ -1196,14 +1228,23 @@ pub(crate) enum CompactPointReferenceKind {
     Point,
     /// Edge endpoint reference; the path selects an edge and the endpoint
     /// selector stays native.
-    EdgeEndpoint,
+    EdgeEndpoint { selector: u32 },
+}
+
+impl CompactPointReferenceKind {
+    pub(crate) fn endpoint_selector(self) -> Option<u32> {
+        match self {
+            Self::Point => None,
+            Self::EdgeEndpoint { selector } => Some(selector),
+        }
+    }
 }
 
 pub(super) fn compact_extrusion_to_vertex_at(
     payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<(usize, CompactPointReferenceKind, Option<u32>)> {
+) -> Option<(usize, CompactPointReferenceKind)> {
     let end = end.min(payload.len());
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 3)
@@ -1221,6 +1262,10 @@ pub(super) fn compact_extrusion_to_vertex_at(
                 .is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
             && payload.get(body + 4..body + 9) == Some(&[2, 0, 0, 0, 0])
     };
+    let candidates = compact_termination_reference_candidates(payload, child, end, true);
+    let [marker] = candidates.as_slice() else {
+        return None;
+    };
     let kind = if (payload.get(child..child + point_declaration.len()) == Some(point_declaration)
         && point_body_at(child + point_declaration.len()))
         || point_body_at(child)
@@ -1236,21 +1281,13 @@ pub(super) fn compact_extrusion_to_vertex_at(
         {
             return None;
         }
-        CompactPointReferenceKind::EdgeEndpoint
+        CompactPointReferenceKind::EdgeEndpoint {
+            selector: View::u32_le_at(payload, marker.checked_sub(4)?)?,
+        }
     } else {
         return None;
     };
-    let candidates = compact_termination_reference_candidates(payload, child, end, true);
-    let [marker] = candidates.as_slice() else {
-        return None;
-    };
-    let endpoint_selector = match kind {
-        CompactPointReferenceKind::Point => None,
-        CompactPointReferenceKind::EdgeEndpoint => {
-            Some(View::u32_le_at(payload, marker.checked_sub(4)?)?)
-        }
-    };
-    Some((*marker, kind, endpoint_selector))
+    Some((*marker, kind))
 }
 
 pub(super) fn compact_extrusion_offset_from_face_at(

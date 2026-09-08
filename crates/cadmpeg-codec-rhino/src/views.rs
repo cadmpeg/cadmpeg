@@ -9,7 +9,7 @@ use crate::chunks::{
     chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
-use crate::container::{OpaqueRecord, Record, Scan};
+use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -57,11 +57,7 @@ struct ViewRecord {
     show_construction_axes: bool,
     show_world_axes: bool,
     legacy_display_mode: Option<i64>,
-    view_type: Option<i32>,
-    page_width_mm: Option<f64>,
-    page_height_mm: Option<f64>,
-    display_mode_uuid: Option<String>,
-    attributes_version: Option<[u8; 2]>,
+    #[serde(flatten, serialize_with = "serialize_view_attributes_field")]
     attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
@@ -69,6 +65,32 @@ struct ViewRecord {
     wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
     parse_warnings: Vec<String>,
+}
+
+fn serialize_view_attributes_field<'a, S: serde::Serializer>(
+    attributes: impl Into<Option<&'a ViewAttributes>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_view_attributes(attributes.into(), serializer)
+}
+
+fn serialize_view_attributes<S: serde::Serializer>(
+    attributes: Option<&ViewAttributes>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(6))?;
+    map.serialize_entry("view_type", &attributes.map(|value| value.view_type))?;
+    map.serialize_entry("page_width_mm", &attributes.map(|value| value.width))?;
+    map.serialize_entry("page_height_mm", &attributes.map(|value| value.height))?;
+    map.serialize_entry(
+        "display_mode_uuid",
+        &attributes.and_then(|value| value.display.as_deref()),
+    )?;
+    map.serialize_entry("attributes_version", &attributes.map(|value| value.version))?;
+    map.serialize_entry("attributes", &attributes)?;
+    map.end()
 }
 
 struct ViewportUserdataScan {
@@ -639,13 +661,13 @@ fn parse_attributes(
     };
     if version[1] >= 2 {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.typecode != 0x4000_8000 || chunk.short {
+        if chunk.typecode != 0x4000_8000 || chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "page-settings wrapper is invalid",
             ));
         }
-        let mut page = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut page = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let page_version = (page.i32()?, page.i32()?);
         if page_version.0 != 1 || page_version.1 < 0 {
             return Err(FramingError::structural(
@@ -670,7 +692,7 @@ fn parse_attributes(
         let printer_name = utf16(&mut page)?;
         page.skip_remaining()?;
         checksum_children.push(chunk.range());
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         result.page_settings = Some(PageSettings {
             page_number,
             width_mm,
@@ -692,13 +714,13 @@ fn parse_attributes(
             })?;
         for _ in 0..count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if chunk.typecode != 0x4000_8000 || chunk.short {
+            if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(FramingError::structural(
                     reader.position(),
                     "clipping-plane wrapper is invalid",
                 ));
             }
-            let mut plane = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+            let mut plane = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
             let (major, minor) = (plane.i32()?, plane.i32()?);
             if major != 1 || minor < 0 {
                 return Err(FramingError::structural(
@@ -747,7 +769,7 @@ fn parse_attributes(
                 depth_enabled,
             });
             checksum_children.push(chunk.range());
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
     }
     if version[1] >= 5 {
@@ -795,7 +817,7 @@ fn direct_view_child_checksum_warning(
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body))
+    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body()))
 }
 
 fn view_child_checksum_warning_excluding(
@@ -803,7 +825,7 @@ fn view_child_checksum_warning_excluding(
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&child.body, nested_children)?;
+    let direct = direct_checksum_ranges(&child.body(), nested_children)?;
     view_child_checksum_warning(data, child, &direct)
 }
 
@@ -825,12 +847,6 @@ fn scan_viewport_userdata(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset <= start {
-            return Err(FramingError::structural(
-                start,
-                "view viewport userdata child did not advance",
-            ));
-        }
         if children.len() >= 1 << 20 {
             return Err(FramingError::InvalidLength {
                 offset: start,
@@ -838,10 +854,10 @@ fn scan_viewport_userdata(
             });
         }
         children.push(child.range());
-        reader.skip(child.next_offset - start)?;
+        reader.skip(child.next_offset() - start)?;
         match child.typecode {
             CLASS_USERDATA => {
-                if child.short {
+                if child.short() {
                     return Err(FramingError::structural(
                         child.header_start,
                         "view viewport userdata item must be a long chunk",
@@ -853,7 +869,7 @@ fn scan_viewport_userdata(
                 has_untyped_content = true;
             }
             TCODE_CLASS_END => {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(FramingError::structural(
                         child.header_start,
                         "view viewport userdata class end must be a short zero chunk",
@@ -884,7 +900,7 @@ fn parse_view(
     list_kind: &'static str,
     list_index: usize,
 ) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
-    let mut offset = record.body.start;
+    let mut offset = record.body().start;
     let mut name = String::new();
     let mut target = None;
     let mut window_position = None;
@@ -892,11 +908,6 @@ fn parse_view(
     let mut show_axes = true;
     let mut show_world_axes = true;
     let mut legacy_display_mode = None;
-    let mut view_type = None;
-    let mut page_width = None;
-    let mut page_height = None;
-    let mut display_mode_uuid = None;
-    let mut attributes_version = None;
     let mut attributes_detail = None;
     let mut construction_plane = None;
     let mut viewport = None;
@@ -907,8 +918,8 @@ fn parse_view(
     let mut checksum_warnings: Vec<LossNote> = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
-    while offset < record.body.end {
-        let child = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let child = chunk_at(data, offset, record.body().end, archive, false)?;
         checksum_children.push(child.range());
         if matches!(
             child.typecode,
@@ -922,22 +933,22 @@ fn parse_view(
             typecode: format!("{:#010x}", child.typecode),
             kind: child_kind(child.typecode),
             source_offset: offset as u64,
-            byte_len: (child.next_offset - offset) as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset]),
+            byte_len: (child.next_offset() - offset) as u64,
+            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset()]),
         });
         match child.typecode {
-            VIEW_CPLANE if !child.short => {
-                construction_plane = Some(parse_cplane(data, child.body.clone(), scale)?);
+            VIEW_CPLANE if !child.short() => {
+                construction_plane = Some(parse_cplane(data, child.body().clone(), scale)?);
             }
-            VIEW_VIEWPORT if !child.short => {
-                match parse_viewport(data, child.body.clone(), scale) {
+            VIEW_VIEWPORT if !child.short() => {
+                match parse_viewport(data, child.body().clone(), scale) {
                     Ok(value) => viewport = Some(value),
                     Err(error) => parse_warnings.push(format!("viewport retained: {error}")),
                 }
             }
-            VIEW_TRACE_IMAGE if !child.short => {
+            VIEW_TRACE_IMAGE if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_trace_image(data, child.body.clone(), archive, scale)?;
+                    parse_trace_image(data, child.body().clone(), archive, scale)?;
                 let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -947,8 +958,8 @@ fn parse_view(
                 }
                 trace_image = Some(value);
             }
-            VIEW_WALLPAPER if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_WALLPAPER if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 let path = utf16(&mut reader)?;
                 reader.skip_remaining()?;
                 wallpaper = Some(Wallpaper {
@@ -958,9 +969,9 @@ fn parse_view(
                     file_reference: None,
                 });
             }
-            VIEW_WALLPAPER_V3 if !child.short => {
+            VIEW_WALLPAPER_V3 if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_wallpaper(data, child.body.clone(), archive)?;
+                    parse_wallpaper(data, child.body().clone(), archive)?;
                 let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -970,13 +981,13 @@ fn parse_view(
                 }
                 wallpaper = Some(value);
             }
-            VIEW_NAME if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_NAME if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 name = utf16(&mut reader)?;
                 reader.skip_remaining()?;
             }
-            VIEW_TARGET if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_TARGET if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
                 for value in &mut point {
                     *value = scaled_coordinate(*value, scale).ok_or_else(|| {
@@ -989,31 +1000,26 @@ fn parse_view(
                 reader.skip_remaining()?;
                 target = Some(point);
             }
-            VIEW_POSITION if !child.short => {
-                window_position = Some(parse_window_position(data, child.body.clone())?);
+            VIEW_POSITION if !child.short() => {
+                window_position = Some(parse_window_position(data, child.body().clone())?);
             }
-            VIEW_SHOW_GRID if child.short => show_grid = child.value != 0,
-            VIEW_SHOW_AXES if child.short => show_axes = child.value != 0,
-            VIEW_SHOW_WORLD_AXES if child.short => show_world_axes = child.value != 0,
-            VIEW_V3_DISPLAY_MODE if child.short => legacy_display_mode = Some(child.value),
-            VIEW_ATTRIBUTES if !child.short => {
+            VIEW_SHOW_GRID if child.short() => show_grid = child.value() != 0,
+            VIEW_SHOW_AXES if child.short() => show_axes = child.value() != 0,
+            VIEW_SHOW_WORLD_AXES if child.short() => show_world_axes = child.value() != 0,
+            VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()),
+            VIEW_ATTRIBUTES if !child.short() => {
                 let (attributes, nested_children) =
-                    parse_attributes(data, child.body.clone(), archive, scale)?;
+                    parse_attributes(data, child.body().clone(), archive, scale)?;
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
                     checksum_warnings
                         .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
-                view_type = Some(attributes.view_type);
-                page_width = Some(attributes.width);
-                page_height = Some(attributes.height);
-                display_mode_uuid.clone_from(&attributes.display);
-                attributes_version = Some(attributes.version);
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
-                if child.short {
+                if child.short() {
                     checksum_warnings.push(
                         crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
                             "viewport userdata at offset {} must be a long chunk",
@@ -1021,7 +1027,7 @@ fn parse_view(
                         )),
                     );
                 } else {
-                    match scan_viewport_userdata(data, child.body.clone(), archive) {
+                    match scan_viewport_userdata(data, child.body().clone(), archive) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
@@ -1056,7 +1062,7 @@ fn parse_view(
                 }
             }
             TCODE_ENDOFTABLE => {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(FramingError::structural(
                         offset,
                         "view end marker is invalid",
@@ -1067,15 +1073,15 @@ fn parse_view(
             }
             _ => {}
         }
-        offset = child.next_offset;
+        offset = child.next_offset();
     }
     if !terminated {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "view is missing its end marker",
         ));
     }
-    let direct = direct_checksum_ranges(&record.body, &checksum_children)?;
+    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
     let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -1099,11 +1105,6 @@ fn parse_view(
             show_construction_axes: show_axes,
             show_world_axes,
             legacy_display_mode,
-            view_type,
-            page_width_mm: page_width,
-            page_height_mm: page_height,
-            display_mode_uuid,
-            attributes_version,
             attributes: attributes_detail,
             construction_plane,
             viewport,
@@ -1124,13 +1125,13 @@ fn parse_list(
     kind: &'static str,
 ) -> (Vec<ViewRecord>, Vec<LossNote>) {
     let mut losses = Vec::new();
-    let mut reader = match BoundedReader::new(data, record.body.start, record.body.end) {
+    let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list at offset {} could not be framed: {error}",
-                    record.body.start
+                    record.body().start
                 )),
             );
             return (Vec::new(), losses);
@@ -1142,7 +1143,7 @@ fn parse_list(
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list at offset {} has no readable count: {error}",
-                    record.body.start
+                    record.body().start
                 )),
             );
             return (Vec::new(), losses);
@@ -1152,7 +1153,7 @@ fn parse_list(
         losses.push(
             crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                 "{kind} view list at offset {} has a negative count {signed_count}",
-                record.body.start
+                record.body().start
             )),
         );
         return (Vec::new(), losses);
@@ -1161,7 +1162,7 @@ fn parse_list(
         losses.push(
             crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
-                record.body.start
+                record.body().start
             )),
         );
         return (Vec::new(), losses);
@@ -1181,7 +1182,7 @@ fn parse_list(
                 break;
             }
         };
-        if view.typecode != VIEW_RECORD || view.short {
+        if view.typecode != VIEW_RECORD || view.short() {
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
@@ -1190,7 +1191,7 @@ fn parse_list(
             );
             break;
         }
-        let next = view.next_offset;
+        let next = view.next_offset();
         match parse_view(data, &view, archive, scale, kind, index) {
             Ok((value, checksum_warnings)) => {
                 losses.extend(checksum_warnings);
@@ -1222,7 +1223,7 @@ fn parse_named_cplanes(
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<Vec<NamedConstructionPlane>, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let count_offset = reader.position();
     let count = usize::try_from(reader.i32()?)
         .ok()
@@ -1233,7 +1234,7 @@ fn parse_named_cplanes(
     let mut values = Vec::new();
     for index in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.typecode != VIEW_CPLANE || chunk.short {
+        if chunk.typecode != VIEW_CPLANE || chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "named construction-plane record is invalid",
@@ -1243,30 +1244,23 @@ fn parse_named_cplanes(
             id: format!("rhino:document:construction_plane#{index:04}"),
             source_offset: chunk.header_start as u64,
             list_index: index,
-            value: parse_cplane(data, chunk.body.clone(), scale)?,
+            value: parse_cplane(data, chunk.body().clone(), scale)?,
         });
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
     Ok(values)
 }
 
 /// Result of installing saved and active view records.
-pub(crate) struct ViewInstall {
-    /// Losses from view records that could not be transferred.
-    pub(crate) losses: Vec<LossNote>,
-    /// Complete settings records whose view payload was not admitted.
-    pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
     let scale = scan
         .metadata
         .settings
         .units
         .as_ref()
-        .and_then(|value| value.millimeters_per_unit)
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
         .unwrap_or(1.0);
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
@@ -1321,14 +1315,13 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
     namespace
         .set_arena("views", &views)
         .expect("Rhino views serialize");
     namespace
         .set_arena("construction_planes", &cplanes)
         .expect("Rhino construction planes serialize");
-    ViewInstall {
+    NativeInstall {
         losses,
         opaque_records,
     }
@@ -1338,8 +1331,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
 mod tests {
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
-        parse_viewport, parse_wallpaper, parse_window_position, Viewport, NAMED_CPLANES,
-        UNSET_POSITIVE_FLOAT,
+        parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, Viewport,
+        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1531,13 +1524,7 @@ mod tests {
         let view = long_chunk(archive, super::VIEW_RECORD, &[0]);
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert!(views.is_empty());
@@ -1554,13 +1541,7 @@ mod tests {
         let child = crc_chunk(archive, NAMED_CPLANES, &[0]);
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(child);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert!(views.is_empty());
@@ -1583,13 +1564,7 @@ mod tests {
         view[crc_offset] ^= 1;
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1619,13 +1594,7 @@ mod tests {
         );
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1652,13 +1621,7 @@ mod tests {
         );
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1790,13 +1753,7 @@ mod tests {
 
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&attributes));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
@@ -1806,13 +1763,11 @@ mod tests {
         corrupted_attributes[crc_offset] ^= 1;
         let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
         corrupted_body.extend(make_view(&corrupted_attributes));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..corrupted_body.len(),
-            body: 0..corrupted_body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(
+            super::NAMED_VIEWS,
+            0..corrupted_body.len(),
+            0..corrupted_body.len(),
+        );
         let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -1873,13 +1828,7 @@ mod tests {
         let parse = |view: Vec<u8>| {
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend(view);
-            let record = Record {
-                typecode: super::NAMED_VIEWS,
-                range: 0..body.len(),
-                body: 0..body.len(),
-                short: false,
-                value: 0,
-            };
+            let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
             parse_list(&body, &record, archive, 1.0, "named")
         };
 
@@ -1953,13 +1902,7 @@ mod tests {
 
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&viewport_userdata));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -1973,13 +1916,11 @@ mod tests {
         corrupted_userdata[crc_offset] ^= 1;
         let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
         corrupted_body.extend(make_view(&corrupted_userdata));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..corrupted_body.len(),
-            body: 0..corrupted_body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(
+            super::NAMED_VIEWS,
+            0..corrupted_body.len(),
+            0..corrupted_body.len(),
+        );
         let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {
@@ -1988,5 +1929,74 @@ mod tests {
         assert!(losses
             .iter()
             .any(|loss| loss.message.contains("0x20008d3b")));
+    }
+
+    struct AttributesField<'a>(Option<&'a ViewAttributes>);
+
+    impl serde::Serialize for AttributesField<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            super::serialize_view_attributes(self.0, serializer)
+        }
+    }
+
+    fn sample_attributes() -> ViewAttributes {
+        ViewAttributes {
+            view_type: 1,
+            width: 210.0,
+            height: 297.0,
+            display: Some("display-uuid".to_string()),
+            version: [1, 2],
+            page_settings: None,
+            projection_locked: false,
+            clipping_planes: Vec::new(),
+            named_view_uuid: None,
+            show_construction_z_axis: false,
+            focal_blur_distance_mm: None,
+            focal_blur_aperture: None,
+            focal_blur_jitter: None,
+            focal_blur_sample_count: None,
+            focal_blur_mode: None,
+            rendering_size_pixels: None,
+            section_behavior: None,
+        }
+    }
+
+    #[test]
+    fn view_attributes_projection_emits_the_documented_keys_in_order() {
+        let attributes = sample_attributes();
+        let json = serde_json::to_string(&AttributesField(Some(&attributes)))
+            .expect("view attributes serialize");
+        let keys = [
+            "\"view_type\":1",
+            "\"page_width_mm\":210.0",
+            "\"page_height_mm\":297.0",
+            "\"display_mode_uuid\":\"display-uuid\"",
+            "\"attributes_version\":[1,2]",
+            "\"attributes\":{",
+        ];
+        let mut cursor = 0;
+        for key in keys {
+            let found = json[cursor..]
+                .find(key)
+                .unwrap_or_else(|| panic!("{key} missing after offset {cursor} in {json}"));
+            cursor += found + key.len();
+        }
+    }
+
+    #[test]
+    fn view_attributes_projection_emits_null_keys_when_absent() {
+        let json =
+            serde_json::to_string(&AttributesField(None)).expect("view attributes serialize");
+        assert_eq!(
+            json,
+            concat!(
+                "{\"view_type\":null,",
+                "\"page_width_mm\":null,",
+                "\"page_height_mm\":null,",
+                "\"display_mode_uuid\":null,",
+                "\"attributes_version\":null,",
+                "\"attributes\":null}"
+            )
+        );
     }
 }

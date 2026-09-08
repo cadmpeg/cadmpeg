@@ -10,18 +10,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLim
 
 const CFB_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
-/// One CFB directory row in a container listing.
-pub struct CfbRow {
-    /// `"storage"` or `"stream"`.
-    pub kind: &'static str,
-    /// Hierarchy path with source spelling preserved.
-    pub path: String,
-    /// Logical stream size; `None` for storages.
-    pub size: Option<u64>,
-    /// `"fat"` or `"mini-fat"`; `None` for storages.
-    pub allocation: Option<&'static str>,
-    /// CFB directory-entry index.
-    pub directory_id: u32,
+fn allocation_label(allocation: CompoundAllocation) -> &'static str {
+    match allocation {
+        CompoundAllocation::Regular => "fat",
+        CompoundAllocation::Mini => "mini-fat",
+    }
 }
 
 /// Container members listed from a ZIP archive or a CFB file.
@@ -29,7 +22,7 @@ pub enum Listing {
     /// ZIP central-directory entries.
     Zip(Vec<EntryRecord>),
     /// CFB directory rows (storages and streams).
-    Cfb(Vec<CfbRow>),
+    Cfb(Vec<CompoundEntry>),
 }
 
 /// Lists ZIP entries or CFB directory members in `bytes`.
@@ -48,30 +41,7 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
         .context("the file does not fit the resource-limit profile")?;
     if bytes.starts_with(&CFB_MAGIC) {
         let snapshot = CompoundSnapshot::new(&ctx, root).context("reading the CFB directory")?;
-        let rows = snapshot
-            .entries()
-            .iter()
-            .map(|entry| match entry {
-                CompoundEntry::Storage(storage) => CfbRow {
-                    kind: "storage",
-                    path: storage.path().to_string(),
-                    size: None,
-                    allocation: None,
-                    directory_id: entry.directory_id(),
-                },
-                CompoundEntry::Stream(stream) => CfbRow {
-                    kind: "stream",
-                    path: stream.path().to_string(),
-                    size: Some(stream.logical_size()),
-                    allocation: Some(match stream.allocation() {
-                        CompoundAllocation::Regular => "fat",
-                        CompoundAllocation::Mini => "mini-fat",
-                    }),
-                    directory_id: entry.directory_id(),
-                },
-            })
-            .collect();
-        Ok(Listing::Cfb(rows))
+        Ok(Listing::Cfb(snapshot.entries().to_vec()))
     } else {
         let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
         Ok(Listing::Zip(snapshot.entries().to_vec()))
@@ -112,7 +82,7 @@ pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u
         .entry(name)
         .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
     let view = snapshot
-        .open(&ctx, entry)
+        .open(&ctx, &entry.name)
         .with_context(|| format!("opening entry {}", shell_quote(name)))?;
     Ok(view.window().to_vec())
 }
@@ -205,7 +175,7 @@ pub fn shell_quote(name: &str) -> String {
     out
 }
 
-/// Formats an entry listing as the versioned JSON envelope.
+/// Formats an entry listing as the JSON command-report envelope.
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.
@@ -232,27 +202,32 @@ pub fn render_json(listing: &Listing) -> String {
         Listing::Cfb(rows) => (
             "cfb",
             rows.iter()
-                .map(|row| {
-                    serde_json::json!({
-                        "kind": row.kind,
-                        "path": row.path,
-                        "size": row.size,
-                        "allocation": row.allocation,
-                        "directory_id": row.directory_id,
-                    })
+                .map(|entry| match entry {
+                    CompoundEntry::Storage(storage) => serde_json::json!({
+                        "kind": "storage",
+                        "path": storage.path(),
+                        "size": null,
+                        "allocation": null,
+                        "directory_id": entry.directory_id(),
+                    }),
+                    CompoundEntry::Stream(stream) => serde_json::json!({
+                        "kind": "stream",
+                        "path": stream.path(),
+                        "size": stream.logical_size(),
+                        "allocation": allocation_label(stream.allocation()),
+                        "directory_id": entry.directory_id(),
+                    }),
                 })
                 .collect(),
         ),
     };
-    let envelope = serde_json::json!({
-        "schema_version": crate::commands::CLI_SCHEMA_VERSION,
-        "command": "inspect container",
-        "status": "ok",
-        "refusal": null,
+    let payload = serde_json::json!({
+        "subcommand": "container",
         "container_kind": container_kind,
         "entries": entries,
     });
-    let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");
+    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)
+        .expect("the command report serializes");
     rendered.push('\n');
     rendered
 }
@@ -289,17 +264,23 @@ pub fn render(listing: &Listing) -> String {
                 "{:>4}  {:>8}  {:>12}  {:>8}  path",
                 "id", "kind", "size", "alloc"
             );
-            for row in rows {
-                let size = row.size.map(|n| n.to_string()).unwrap_or_default();
-                let alloc = row.allocation.unwrap_or("");
+            for entry in rows {
+                let (kind, size, allocation) = match entry {
+                    CompoundEntry::Storage(_) => ("storage", String::new(), ""),
+                    CompoundEntry::Stream(stream) => (
+                        "stream",
+                        stream.logical_size().to_string(),
+                        allocation_label(stream.allocation()),
+                    ),
+                };
                 let _ = writeln!(
                     out,
                     "{:>4}  {:>8}  {:>12}  {:>8}  {}",
-                    row.directory_id,
-                    row.kind,
+                    entry.directory_id(),
+                    kind,
                     size,
-                    alloc,
-                    shell_quote(&row.path)
+                    allocation,
+                    shell_quote(entry.path())
                 );
             }
             out
@@ -357,10 +338,9 @@ mod tests {
         };
         let payload = rows
             .iter()
-            .find(|row| row.path == "Payload")
+            .find(|entry| entry.path() == "Payload")
             .expect("Payload row");
-        assert_eq!(payload.kind, "stream");
-        assert_eq!(payload.size, Some(4096));
+        assert!(matches!(payload, CompoundEntry::Stream(stream) if stream.logical_size() == 4096));
     }
 
     fn compound_fixture() -> Vec<u8> {

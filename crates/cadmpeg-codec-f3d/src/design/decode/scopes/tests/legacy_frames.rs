@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,15 +7,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
-use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
-use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
-use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
-use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
-use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 
 #[test]
 fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
@@ -67,26 +60,31 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     bytes.extend_from_slice(b"265");
     bytes.extend_from_slice(&9_000u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:shell-369#42", "Shell", 42);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:shell-369#42",
+        crate::records::feature::DesignFeatureKind::Shell,
+        42,
+    );
     scope.byte_offset = 0;
-    scope.class_tag = "369".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = shell_369_261::LEN as u64;
-    scope.reference_members = vec![9_000, 200, 201];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]);
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
-        Some(DesignDirectFaceOperation::Shell {
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: false,
             thickness_offset,
             outward_offset: 21,
-        }) if thickness_offset == (scalar_start + 40) as u64
+        })) if thickness_offset == (scalar_start + 40) as u64
     ));
 
     let mut wrong_pair = scope.clone();
-    wrong_pair.paired_class_tag = "258".into();
+    wrong_pair.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
 
     let mut invalid_outward = bytes;
@@ -114,8 +112,12 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     bytes.extend_from_slice(b"261");
     bytes.extend_from_slice(&85u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#322", "WorkPlane", 1);
-    scope.reference_members = vec![85];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#322",
+        crate::records::feature::DesignFeatureKind::WorkPlane,
+        1,
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-322/261 WorkPlane frame");
     assert_eq!(decoded.transform, transform);
@@ -160,8 +162,12 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&76u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
-    scope.reference_members = vec![76];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::feature::DesignFeatureKind::WorkPlane,
+        1,
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![76]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
@@ -193,8 +199,12 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     bytes.extend_from_slice(b"262");
     bytes.extend_from_slice(&72u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
-    scope.reference_members = vec![72];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::feature::DesignFeatureKind::WorkPlane,
+        1,
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-400 WorkPlane frame");
     assert_eq!(decoded.transform, transform);
@@ -239,10 +249,10 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         let mut scope = DesignParameterScope::empty(
             &format!("f3d:test:legacy-move#{record_index}"),
-            "Move",
+            crate::records::feature::DesignFeatureKind::Move,
             1_000 + u32::try_from(ordinal).expect("small test ordinal"),
         );
-        scope.reference_members = vec![record_index];
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
         let decoded = crate::design::decode::scopes::exact_move_operation(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
@@ -252,7 +262,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         assert_eq!(decoded.transform, transform);
         assert_eq!(decoded.transform_record_index, record_index);
-        assert_eq!(decoded.form, form);
+        assert_eq!(u32::from(decoded.form), form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
         assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
 
@@ -329,11 +339,19 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         bytes.extend_from_slice(scope_paired_class.as_bytes());
         bytes.extend_from_slice(&support_record_index.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:work-axis#1", "WorkAxis", 1);
-        scope.class_tag = scope_class.into();
-        scope.paired_class_tag = scope_paired_class.into();
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:work-axis#1",
+            crate::records::feature::DesignFeatureKind::WorkAxis,
+            1,
+        );
+        scope.class_tag = crate::records::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(scope_paired_class.to_owned()).unwrap();
         scope.frame_length = scope_length as u64;
-        scope.reference_members = vec![carrier_record_index, support_record_index];
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            carrier_record_index,
+            support_record_index,
+        ]);
         let construction =
             exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
                 .expect("direct WorkAxis carrier");
@@ -341,12 +359,16 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
             construction.source,
-            crate::records::DesignWorkAxisSource::DirectCarrier {
-                carrier_record_index: 100,
-                support_record_index: 200,
-            }
+            Some(
+                crate::records::feature::DesignWorkAxisSource::DirectCarrier {
+                    carrier_record_index: 100,
+                    support_record_index: 200,
+                }
+            )
         ));
-        scope.work_axis_construction = Some(construction);
+        if let crate::records::feature::DesignScopePayload::WorkAxis(slot) = &mut scope.payload {
+            *slot = Some(construction);
+        }
         let (features, _) = project_parameter_design(
             &[],
             &[],
@@ -425,25 +447,35 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_owner.local_ordinal = 1;
     along_owner.parameter_record_index = 83;
 
-    let mut scope = DesignParameterScope::empty("generated:scope#12", "Extrude", 12);
-    scope.reference_members = vec![80, 82];
-    scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
-        reference: None,
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 28,
-        direction_face_extend_values: [1, 2],
-        side_extent_discriminators: [1, 0],
-        side_extent_discriminator_offsets: [77, 90],
-        first_side_target_ordinal: None,
-        extent: DesignExtrudeExtent::OneSidedDistance,
-        direction_face_extend_offsets: [32, 36],
-        direction_reversed: false,
-        direction_reversed_offset: 40,
-        solid_operation: true,
-        solid_operation_offset: 41,
-        start: DesignExtrudeStart::ProfilePlane,
-        start_offset: 42,
-    });
+    let mut scope = DesignParameterScope::empty(
+        "generated:scope#12",
+        crate::records::feature::DesignFeatureKind::Extrude,
+        12,
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![80, 82]);
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).extrude_prologue =
+            Some(DesignExtrudePrologue::ReferenceAware {
+                reference: None,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 28,
+                direction_face_extend_values: [1, 2],
+                side_extent_discriminators: [1, 0],
+                side_extent_discriminator_offsets: [77, 90],
+                first_side_target_ordinal: None,
+                extent: DesignExtrudeExtent::OneSidedDistance,
+                direction_face_extend_offsets: [32, 36],
+                direction_reversed: false,
+                direction_reversed_offset: 40,
+                solid_operation: true,
+                solid_operation_offset: 41,
+                start: DesignExtrudeStart::ProfilePlane,
+                start_offset: 42,
+            });
+    }
 
     let fixed = exact_fixed_extrude_parameters(
         &bytes,

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,17 +42,14 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:THMB_IMG_MAIN:section#152"
-            },
-            {
-              "id": "creo:VisibGeom:section#79"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "creo:THMB_IMG_MAIN:section#152"
+          },
+          {
+            "id": "creo:VisibGeom:section#79"
+          }
+        ]
       }
     },
     "source": {
@@ -61,7 +58,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "158",
-        "layout": "unknown",
         "section.0.length": "42",
         "section.0.name": "VisibGeom",
         "section.0.offset": "79",
@@ -80,6 +76,17 @@
         "section_count": "3",
         "srf_array_count": "5",
         "version_line": "#UGC:2 P test"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P test"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -456,9 +463,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P test"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -554,7 +581,6 @@
         "sha256": "20b5723688159f5381f1cf6ba1e2ba7d3009ffe61b8408de7dfd81acc0c6373e",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

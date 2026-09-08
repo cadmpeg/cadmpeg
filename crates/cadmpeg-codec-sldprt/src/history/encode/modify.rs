@@ -14,9 +14,9 @@ use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferGroup, ChamferSpec,
-    EdgeSelection, FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec,
-    ScaleCenter, ScaleFactors,
+    AxisAngle, BodyRetentionMode, BodySelection, ChamferGroup, ChamferSpec, EdgeSelection,
+    FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec, ScaleCenter,
+    ScaleFactors,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -65,7 +65,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 && !parameters.contains_key("Radius")
                 && !parameters.keys().any(|name| indexed_name(name, "Radius"));
             match radius {
-                RadiusSpec::Unresolved { .. } => {
+                RadiusSpec::Unresolved
+                | RadiusSpec::UnresolvedConstant
+                | RadiusSpec::UnresolvedChordal
+                | RadiusSpec::UnresolvedAsymmetric
+                | RadiusSpec::UnresolvedVariable => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
@@ -199,7 +203,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .get("D2")
                     .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
             match spec {
-                ChamferSpec::Unresolved { .. } => {
+                ChamferSpec::Unresolved
+                | ChamferSpec::UnresolvedDistance
+                | ChamferSpec::UnresolvedTwoDistances
+                | ChamferSpec::UnresolvedDistanceAngle => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
@@ -332,7 +339,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         target: &BodySelection,
         tools: &BodySelection,
-        op: &BooleanOp,
+        op: &cadmpeg_ir::features::BooleanKind,
         keep_tools: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -341,8 +348,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_some_and(|record| {
                 !feature_family(record, "Combine")
                     && !feature_input_class(record, NativeClassKind::Combine)
-            }) || *op == BooleanOp::NewBody
-                || *keep_tools
+            }) || *keep_tools
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
@@ -350,9 +356,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             if existing.is_none()
-                && (body_selection_value(target).is_none()
-                    || body_selection_value(tools).is_none()
-                    || *op == BooleanOp::Unresolved)
+                && (body_selection_value(target).is_none() || body_selection_value(tools).is_none())
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has unresolved combine semantics",
@@ -366,12 +370,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(tools) = body_selection_value(tools) {
                 properties.insert("Tools".into(), tools);
             }
-            if *op != BooleanOp::Unresolved {
-                properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
-                );
-            }
+            properties.insert(
+                "Operation".into(),
+                resolved_boolean_op((*op).into(), &feature.id)?.into(),
+            );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
                 parameters: existing
@@ -759,8 +761,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
-            {
+            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved(_))) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved flex construction",
                     feature.id
@@ -778,7 +779,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.remove("AxisDirection");
             }
             match mode {
-                FlexMode::Unresolved { .. } => {}
+                FlexMode::Unresolved(_) => {}
                 FlexMode::Bending { angle } => {
                     if !angle.0.is_finite() {
                         return Err(CodecError::malformed(format_args!(
@@ -868,10 +869,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let factors_valid = [factors.uniform, factors.x, factors.y, factors.z]
-                .into_iter()
-                .flatten()
-                .all(|factor| factor.is_finite() && factor != 0.0);
+            let factors_valid = resolved_factors.is_none_or(|factors| {
+                [factors.x, factors.y, factors.z]
+                    .into_iter()
+                    .all(|factor| factor.is_finite() && factor != 0.0)
+            });
             if !factors_valid || !center_valid {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid scale transform",
@@ -881,23 +883,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            if let Some(factor) = factors.uniform {
-                parameters.insert("Factor".into(), factor.to_string());
-            } else {
-                if [factors.x, factors.y, factors.z]
-                    .into_iter()
-                    .all(|factor| factor.is_some())
-                {
+            match factors {
+                ScaleFactors::Unresolved => {}
+                ScaleFactors::Uniform(factor) => {
+                    parameters.insert("Factor".into(), factor.to_string());
+                    parameters.remove("ScaleX");
+                    parameters.remove("ScaleY");
+                    parameters.remove("ScaleZ");
+                }
+                ScaleFactors::PerAxis(factors) => {
                     parameters.remove("Factor");
-                }
-                if let Some(factor) = factors.x {
-                    parameters.insert("ScaleX".into(), factor.to_string());
-                }
-                if let Some(factor) = factors.y {
-                    parameters.insert("ScaleY".into(), factor.to_string());
-                }
-                if let Some(factor) = factors.z {
-                    parameters.insert("ScaleZ".into(), factor.to_string());
+                    parameters.insert("ScaleX".into(), factors.x.to_string());
+                    parameters.insert("ScaleY".into(), factors.y.to_string());
+                    parameters.insert("ScaleZ".into(), factors.z.to_string());
                 }
             }
             let mut properties = feature.source_properties.clone();

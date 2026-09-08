@@ -21,7 +21,6 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-  "schema_version": 6,
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -30,7 +29,7 @@ const CHECK_REPORT: &str = r#"{
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "units", "severity": "warning", "message": "non-canonical unit"}
+      {"check": "bounds", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -47,20 +46,21 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
-  "native": {"fcstd": {"arenas": {"objects": [1, 2, 3]}}}
+  "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const SIDECAR: &str = r#"{
-  "version": "1",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
     "container_only": false,
     "geometry_transferred": true,
     "coverage": {"streams": 7, "segments": 3},
-    "losses": [{"code": "metadata_not_transferred", "severity": "info", "message": "thumbnail"}]
+    "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
+                         "kind": "metadata_not_transferred"},
+                "severity": "info", "message": "thumbnail"}]
   }
 }"#;
 
@@ -85,6 +85,261 @@ fn summary_detects_all_three_artifact_kinds() {
 }
 
 #[test]
+fn summary_exposes_document_and_decode_dialect_identity() {
+    let dir = tempdir().unwrap();
+    let cadir = write(
+        dir.path(),
+        "classified.cadir.json",
+        r#"{
+          "ir_version": "6",
+          "source": {
+            "format": "rhino",
+            "attributes": {},
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "declared": {"archive_version": "80"},
+                "admission": "admitted"
+              },
+              "extra": []
+            }
+          },
+          "model": {},
+          "native": {}
+        }"#,
+    );
+    cadmpeg()
+        .args(["query", "summary", cadir.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("source_format\trhino")
+                .and(predicate::str::contains("source_dialect_layers\t1"))
+                .and(predicate::str::contains("source_dialect\trhino:archive-80"))
+                .and(predicate::str::contains(
+                    "source_dialect_admission\tadmitted",
+                ))
+                .and(predicate::str::contains(
+                    "source_dialect_declared\t{\"archive_version\":\"80\"}",
+                )),
+        );
+
+    let sidecar = write(
+        dir.path(),
+        "classified.fidelity.json",
+        r#"{
+          "ir_sha256": "abc123",
+          "report": {
+            "format": "f3d",
+            "container_only": false,
+            "geometry_transferred": true,
+            "coverage": {},
+            "losses": [],
+            "dialects": {
+              "primary": {
+                "format": "f3d",
+                "dialect": "f3d:archive-2",
+                "declared": {"manifest_version": "2"},
+                "admission": "admitted"
+              },
+              "extra": [{
+                "format": "acis",
+                "dialect": "acis:sab-22300",
+                "admission": {"unverified": {"using": "acis:sab-22200"}},
+                "instance": "member:model.sab"
+              }]
+            }
+          }
+        }"#,
+    );
+    cadmpeg()
+        .args(["query", "summary", sidecar.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("decode_dialect_layers\t2")
+                .and(predicate::str::contains("decode_dialects\t{\"primary\":"))
+                .and(predicate::str::contains("decode_dialect\tf3d:archive-2"))
+                .and(predicate::str::contains(
+                    "decode_dialect_admission\tadmitted",
+                ))
+                .and(predicate::str::contains(
+                    "decode_dialect_declared\t{\"manifest_version\":\"2\"}",
+                )),
+        );
+}
+
+#[test]
+fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers() {
+    let dir = tempdir().unwrap();
+    let report = write(
+        dir.path(),
+        "identity.report.json",
+        r#"{
+          "command": "convert",
+          "status": "refused",
+          "refusal": {
+            "stage": "decode",
+            "code": "unsupported_dialect",
+            "message": "unsupported source",
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:unknown",
+                "declared": {"archive_version": "100"},
+                "admission": "refused"
+              },
+              "extra": []
+            }
+          },
+          "summary": {
+            "format": "rhino",
+            "losses": [{
+              "code": {"namespace": "rhino", "code": "source.dialect-unverified"},
+              "severity": "warning",
+              "message": "archive word is residual"
+            }],
+            "dialects": {
+              "primary": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "declared": {"archive_version": "80"},
+                "admission": "admitted"
+              },
+              "extra": []
+            }
+          },
+          "decode_report": null,
+          "check_report": null,
+          "export": {"format": "step", "target": "step:ap242-e3"}
+        }"#,
+    );
+
+    let output = cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "refusal_dialects\t{\"primary\":",
+        "refusal_dialect\trhino:unknown",
+        "refusal_dialect_declared\t{\"archive_version\":\"100\"}",
+        "inspect_dialects\t{\"primary\":",
+        "inspect_dialect\trhino:archive-80",
+        "inspect_dialect_declared\t{\"archive_version\":\"80\"}",
+        "export_format\tstep",
+        "export_target\tstep:ap242-e3",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "missing {expected:?} in:\n{stdout}"
+        );
+    }
+    assert!(!stdout.contains("_extra_"), "{stdout}");
+
+    let json = cadmpeg()
+        .args(["query", "summary", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(
+        json["payload"]["refusal_dialects"]["primary"]["dialect"],
+        "rhino:unknown"
+    );
+    assert_eq!(
+        json["payload"]["inspect_dialect_declared"]["archive_version"],
+        "80"
+    );
+    assert_eq!(json["payload"]["export_target"], "step:ap242-e3");
+
+    cadmpeg()
+        .args(["query", "losses", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            "severity\tcode\tmessage\n\
+             warning\trhino/source.dialect-unverified\tarchive word is residual\n",
+        );
+}
+
+#[test]
+fn summary_projects_structured_target_refusals() {
+    let dir = tempdir().unwrap();
+    let report = write(
+        dir.path(),
+        "target-refusal.json",
+        r#"{
+          "command": "convert",
+          "status": "refused",
+          "refusal": {
+            "stage": "plan",
+            "code": "unsupported_target",
+            "message": "iges cannot write 9.9",
+            "target": {
+              "kind": "unknown_explicit",
+              "format": "iges",
+              "requested": "9.9",
+              "available": [{
+                "id": "iges:5.3-fixed-ascii",
+                "aliases": ["5.3"],
+                "default": true
+              }]
+            }
+          },
+          "summary": null,
+          "decode_report": null,
+          "check_report": null,
+          "export": null
+        }"#,
+    );
+
+    let output = cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("refusal_target\t{\"available\":[{"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\"kind\":\"unknown_explicit\""), "{stdout}");
+
+    let output = cadmpeg()
+        .args(["query", "summary", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["payload"]["refusal_target"]["kind"],
+        "unknown_explicit"
+    );
+    assert_eq!(value["payload"]["refusal_target"]["requested"], "9.9");
+    assert_eq!(
+        value["payload"]["refusal_target"]["available"][0]["id"],
+        "iges:5.3-fixed-ascii"
+    );
+}
+
+#[test]
+fn sidecar_summary_discloses_unchecked_fidelity() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
+
+    cadmpeg()
+        .args(["query", "summary", sidecar.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "sidecar_fidelity_validation\tnot_run",
+        ));
+}
+
+#[test]
 fn findings_and_losses_project_tsv_with_a_header() {
     let dir = tempdir().unwrap();
     let report = write(dir.path(), "report.json", CHECK_REPORT);
@@ -96,7 +351,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .stdout(
             "severity\tcheck\tentity\tmessage\n\
              error\tidentity\te1\tduplicate id\n\
-             warning\tunits\t\tnon-canonical unit\n",
+             warning\tbounds\t\tnegative radius\n",
         );
 
     cadmpeg()
@@ -201,7 +456,7 @@ fn findings_on_a_cadir_document_teaches_check_then_query() {
 }
 
 #[test]
-fn query_json_wraps_the_projection_in_the_versioned_envelope() {
+fn query_json_wraps_the_projection_in_an_envelope() {
     let dir = tempdir().unwrap();
     let report = write(dir.path(), "report.json", CHECK_REPORT);
     let output = cadmpeg()
@@ -210,10 +465,12 @@ fn query_json_wraps_the_projection_in_the_versioned_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
-    assert_eq!(value["command"], "query findings");
-    assert_eq!(value["findings"].as_array().unwrap().len(), 2);
-    assert_eq!(value["findings"][0]["check"], "identity");
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["refusal"], serde_json::Value::Null);
+    assert!(value["generator"].is_string());
+    assert_eq!(value["payload"].as_array().unwrap().len(), 2);
+    assert_eq!(value["payload"][0]["check"], "identity");
 }
 
 #[test]
@@ -224,21 +481,6 @@ fn query_reads_stdin_with_dash() {
         .assert()
         .success()
         .stdout(predicate::str::contains("metadata_not_transferred"));
-}
-
-#[test]
-fn a_version_two_sidecar_still_projects() {
-    let dir = tempdir().unwrap();
-    let sidecar = write(
-        dir.path(),
-        "model.fidelity.json",
-        &SIDECAR.replace("\"version\": \"1\"", "\"version\": \"2\""),
-    );
-    cadmpeg()
-        .args(["query", "coverage", sidecar.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("streams\t7"));
 }
 
 #[test]
@@ -310,7 +552,7 @@ fn query_projects_a_real_check_report_end_to_end() {
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "sketch_entities": [
       {
@@ -342,12 +584,10 @@ const ITEM_DOC: &str = r#"{
   },
   "native": {
     "creo": {
-      "arenas": {
-        "curve_parameters": [
-          {"id": "creo:curve#818", "type_byte": 8, "feature_id": 11372},
-          {"id": "creo:curve#825", "type_byte": 1, "feature_id": 11831}
-        ]
-      }
+      "curve_parameters": [
+        {"id": "creo:curve#818", "type_byte": 8, "feature_id": 11372},
+        {"id": "creo:curve#825", "type_byte": 1, "feature_id": 11831}
+      ]
     }
   }
 }"#;
@@ -520,11 +760,10 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 6);
-    assert_eq!(value["command"], "query item");
-    assert_eq!(value["item"].as_array().unwrap().len(), 1);
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["payload"].as_array().unwrap().len(), 1);
     assert_eq!(
-        value["item"][0]["id"],
+        value["payload"][0]["id"],
         "ns:sketch_entity#offset:1299062:skamp:2"
     );
 }
@@ -791,7 +1030,7 @@ fn item_round_trips_counts_dotted_name_on_unit_cube() {
         .unwrap();
     assert!(counts.status.success());
     let value: serde_json::Value = serde_json::from_slice(&counts.stdout).unwrap();
-    let counts_map = value["counts"].as_object().unwrap();
+    let counts_map = value["payload"].as_object().unwrap();
     assert!(counts_map.contains_key("model.faces"));
     assert!(counts_map["model.faces"].as_u64().unwrap() > 0);
 
@@ -827,7 +1066,7 @@ fn schema_lists_model_arenas_with_element_types() {
 #[test]
 fn schema_projects_feature_fields_with_tagged_union_inventory() {
     let output = cadmpeg()
-        .args(["query", "schema", "model.features"])
+        .args(["query", "schema", "types", "model.features"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -850,7 +1089,7 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 
     // Bare shorthand is byte-identical to the dotted name.
     let bare = cadmpeg()
-        .args(["query", "schema", "features"])
+        .args(["query", "schema", "types", "features"])
         .output()
         .unwrap();
     assert_eq!(output.stdout, bare.stdout);
@@ -859,16 +1098,16 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 #[test]
 fn schema_teaches_on_native_without_file_and_unknown_ir_arena() {
     let native = cadmpeg()
-        .args(["query", "schema", "native.creo.rows"])
+        .args(["query", "schema", "types", "native.creo.rows"])
         .output()
         .unwrap();
     assert_eq!(native.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&native.stderr);
-    assert!(stderr.contains("query schema FILE"), "{stderr}");
+    assert!(stderr.contains("query schema file FILE"), "{stderr}");
     assert!(stderr.contains("native.creo.rows"), "{stderr}");
 
     let unknown = cadmpeg()
-        .args(["query", "schema", "model.bogus"])
+        .args(["query", "schema", "types", "model.bogus"])
         .output()
         .unwrap();
     assert_eq!(unknown.status.code(), Some(2));
@@ -884,7 +1123,13 @@ fn schema_infers_native_fields_from_a_document() {
     let path = doc.to_str().unwrap();
 
     cadmpeg()
-        .args(["query", "schema", path, "native.creo.curve_parameters"])
+        .args([
+            "query",
+            "schema",
+            "file",
+            path,
+            "native.creo.curve_parameters",
+        ])
         .assert()
         .success()
         .stdout(
@@ -898,7 +1143,7 @@ fn schema_infers_native_fields_from_a_document() {
         ));
 
     let output = cadmpeg()
-        .args(["query", "schema", path, "model.sketch_entities"])
+        .args(["query", "schema", "file", path, "model.sketch_entities"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -925,6 +1170,7 @@ fn schema_infers_native_fields_from_a_document() {
             "query",
             "schema",
             "--json",
+            "file",
             path,
             "native.creo.curve_parameters",
         ])
@@ -932,11 +1178,11 @@ fn schema_infers_native_fields_from_a_document() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
-    assert_eq!(value["schema"]["inferred"], true);
-    assert_eq!(value["schema"]["arena"], "native.creo.curve_parameters");
-    assert_eq!(value["schema"]["records"], 2);
-    let fields = value["schema"]["fields"].as_array().unwrap();
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["payload"]["inferred"], true);
+    assert_eq!(value["payload"]["arena"], "native.creo.curve_parameters");
+    assert_eq!(value["payload"]["records"], 2);
+    let fields = value["payload"]["fields"].as_array().unwrap();
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0]["path"], "feature_id");
     assert_eq!(fields[0]["present"], 2);
@@ -953,7 +1199,7 @@ fn schema_document_unknown_arena_lists_counts() {
     let path = doc.to_str().unwrap();
 
     let missing = cadmpeg()
-        .args(["query", "schema", path, "native.creo.missing"])
+        .args(["query", "schema", "file", path, "native.creo.missing"])
         .output()
         .unwrap();
     assert_eq!(missing.status.code(), Some(2));
@@ -970,7 +1216,10 @@ fn schema_document_unknown_arena_lists_counts() {
     assert!(stderr.contains("model.empty_arena\t0"), "{stderr}");
     assert!(!stderr.contains("model.null_arena"), "{stderr}");
 
-    let file_only = cadmpeg().args(["query", "schema", path]).output().unwrap();
+    let file_only = cadmpeg()
+        .args(["query", "schema", "file", path])
+        .output()
+        .unwrap();
     assert_eq!(file_only.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&file_only.stderr);
     assert!(stderr.contains("needs an arena name"), "{stderr}");
@@ -980,7 +1229,7 @@ fn schema_document_unknown_arena_lists_counts() {
     );
 
     cadmpeg()
-        .args(["query", "schema", path, "model.empty_arena"])
+        .args(["query", "schema", "file", path, "model.empty_arena"])
         .assert()
         .success()
         .stdout("path\tpresence\ttype\texample\trelation\n")
@@ -991,6 +1240,7 @@ fn schema_document_unknown_arena_lists_counts() {
         .args([
             "query",
             "schema",
+            "file",
             report.to_str().unwrap(),
             "native.creo.rows",
         ])
@@ -1013,34 +1263,32 @@ fn schema_sidecar_and_json_envelope() {
     assert!(stdout.contains("ir_sha256\tstring\tyes"), "{stdout}");
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", "model.faces"])
+        .args(["query", "schema", "--json", "types", "model.faces"])
         .output()
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
-    assert_eq!(value["schema"]["element"], "Face");
-    assert!(value["schema"]["defs"]
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["payload"]["element"], "Face");
+    assert!(value["payload"]["defs"]
         .as_object()
         .unwrap()
         .contains_key("FaceId"));
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "version": "1",
   "ir_sha256": "abc",
   "report": {"format": "f3d", "container_only": false, "geometry_transferred": true,
-             "coverage": {}, "losses": []},
+             "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
-    "version": "3",
     "annotations": {"streams": ["Contents/Config-0"],
                     "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
                     "exactness": {}},
     "retained_records": [
       {"id": "r1", "stream": "Contents/Config-0", "offset": 0, "byte_len": 4,
-       "sha256": "x", "data": "QUJDRA=="},
+       "sha256": "e12e115acf4552b2568b55e93cbd39394c4ef81c82447fafc997882a02d23677", "data": "QUJDRA=="},
       {"id": "r2", "stream": "Contents/Config-0", "offset": 4, "byte_len": 2,
-       "sha256": "y", "data": "RUY="},
+       "sha256": "3a4db4ee1e59ce1a0a1b9f56bd6d5506d8c204e2f1d501b7a3a4021e6365e8db", "data": "RUY="},
       {"id": "r3", "stream": "Other", "offset": 0, "byte_len": 3, "sha256": "z"}
     ]
   }
@@ -1222,10 +1470,10 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query fidelity");
-    assert_eq!(value["fidelity"]["annotations"]["provenance"], 1);
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["payload"]["annotations"]["provenance"], 1);
     assert_eq!(
-        value["fidelity"]["retained_records"][2]["data_retained"],
+        value["payload"]["retained_records"][2]["data_retained"],
         false
     );
 }
@@ -1259,7 +1507,7 @@ fn a_written_report_carries_the_generator_and_summary_prints_it() {
         .success()
         .stdout(predicate::str::contains("generator\tcadmpeg "));
 
-    // Reports from older builds have no generator; the row is simply absent.
+    // The generator row is optional: a report without one prints no row.
     let stripped = write(dir.path(), "old.report.json", CHECK_REPORT);
     let output = cadmpeg()
         .args(["query", "summary", stripped.to_str().unwrap()])
@@ -1267,4 +1515,149 @@ fn a_written_report_carries_the_generator_and_summary_prints_it() {
         .unwrap();
     assert!(output.status.success());
     assert!(!String::from_utf8_lossy(&output.stdout).contains("generator"));
+}
+
+// --- envelope ---------------------------------------------------------------
+
+/// Runs one query view and returns its `--json` stdout.
+fn view_json(args: &[&str]) -> Vec<u8> {
+    let output = cadmpeg().args(args).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+/// First non-empty `model.<arena>` in the document, from `query counts`.
+fn first_model_arena(doc: &std::path::Path) -> String {
+    let stdout = view_json(&["query", "counts", "--json", doc.to_str().unwrap()]);
+    let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    value["payload"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(name, count)| name.starts_with("model.") && count.as_u64().is_some_and(|n| n > 0))
+        .map(|(name, _)| name.clone())
+        .expect("the fixture decodes into at least one model arena")
+}
+
+#[test]
+fn every_view_json_is_a_query_command_report() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("triangle.sldprt");
+    fs::write(
+        &source,
+        include_bytes!("fixtures/sldprt_triangle_body.sldprt").as_slice(),
+    )
+    .unwrap();
+    let doc = dir.path().join("triangle.cadir.json");
+    let report = dir.path().join("triangle.report.json");
+    cadmpeg()
+        .args([
+            "dump",
+            source.to_str().unwrap(),
+            "-o",
+            doc.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let sidecar = dir.path().join("triangle.cadir.fidelity.json");
+    assert!(sidecar.exists(), "dump writes a decode sidecar");
+
+    let doc = doc.to_str().unwrap();
+    let report = report.to_str().unwrap();
+    let sidecar = sidecar.to_str().unwrap();
+    let arena = first_model_arena(std::path::Path::new(doc));
+    let arena = arena.as_str();
+
+    let views: Vec<(&str, Vec<&str>)> = vec![
+        ("summary", vec!["query", "summary", "--json", doc]),
+        ("coverage", vec!["query", "coverage", "--json", sidecar]),
+        ("findings", vec!["query", "findings", "--json", report]),
+        ("losses", vec!["query", "losses", "--json", report]),
+        ("counts", vec!["query", "counts", "--json", doc]),
+        ("item", vec!["query", "item", "--json", doc, arena]),
+        (
+            "schema",
+            vec!["query", "schema", "--json", "file", doc, arena],
+        ),
+        ("graph", vec!["query", "graph", "--json", doc, arena]),
+        (
+            "join",
+            vec![
+                "query",
+                "join",
+                "--json",
+                doc,
+                arena,
+                arena,
+                "--left-key",
+                "id",
+                "--right-key",
+                "id",
+            ],
+        ),
+        ("fidelity", vec!["query", "fidelity", "--json", sidecar]),
+    ];
+
+    for (view, args) in views {
+        let stdout = view_json(&args);
+        let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(value["command"], "query", "{view}");
+        assert_eq!(value["status"], "ok", "{view}");
+        assert_eq!(value["view"], view, "{view}");
+        assert!(!value["payload"].is_null(), "{view}");
+        assert!(
+            value.as_object().unwrap().get(view).is_none(),
+            "{view}: the view name is a value, not a top-level key"
+        );
+
+        let summarized = cadmpeg()
+            .args(["query", "summary", "-"])
+            .write_stdin(stdout.clone())
+            .output()
+            .unwrap();
+        assert!(summarized.status.success(), "{view}");
+        let rows = String::from_utf8(summarized.stdout).unwrap();
+        assert!(rows.contains("kind\tcommand report"), "{view}: {rows}");
+        assert!(rows.contains("command\tquery"), "{view}: {rows}");
+        assert!(rows.contains("status\tok"), "{view}: {rows}");
+        assert!(!rows.contains("inspect_"), "{view}: {rows}");
+
+        let relosses = cadmpeg()
+            .args(["query", "losses", "-"])
+            .write_stdin(stdout)
+            .output()
+            .unwrap();
+        assert!(relosses.status.success(), "{view}");
+        assert!(
+            String::from_utf8_lossy(&relosses.stderr)
+                .contains("(this report has no inspect, decode, or check stage)"),
+            "{view}"
+        );
+    }
+}
+
+#[test]
+fn a_foreign_ir_version_is_refused() {
+    let dir = tempdir().unwrap();
+    let doc = write(
+        dir.path(),
+        "old.cadir.json",
+        r#"{"ir_version": "5", "model": {"faces": []}}"#,
+    );
+    cadmpeg()
+        .args(["query", "counts", doc.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("has ir_version 5").and(predicate::str::contains(format!(
+                "this build reads ir_version {}",
+                cadmpeg_ir::IR_VERSION
+            ))),
+        );
 }

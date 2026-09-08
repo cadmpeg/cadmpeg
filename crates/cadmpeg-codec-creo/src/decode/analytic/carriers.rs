@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Placed carriers, topology-bound plane transfer, and face orientations.
 
+use crate::container::SectionRole;
+use crate::feature::schema::SchemaClass;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -9,7 +12,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
@@ -70,7 +73,8 @@ pub fn transfer_topology_bound_planes(
         .into_iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let points = solved_vertices
             .iter()
             .filter_map(|(vertex_id, point)| {
@@ -84,13 +88,14 @@ pub fn transfer_topology_bound_planes(
             .topology
             .loops
             .iter()
-            .filter(|lp| lp.face_id == row.id)
+            .filter(|lp| lp.face_id == std::num::NonZeroU32::new(row.id))
             .flat_map(|lp| lp.half_edges.iter())
             .filter_map(|half_edge| {
                 unique_curve_ids
                     .contains(&half_edge.curve_id)
                     .then_some(())?;
-                let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                let id = CurveId::mint(format!("creo:visibgeom:curve#{}", half_edge.curve_id))
+                    .expect("identity grammar");
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
                 Some(&curve.geometry)
             })
@@ -164,7 +169,7 @@ pub fn transfer_topology_bound_planes(
                 u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -191,7 +196,8 @@ pub fn retain_unresolved_surface_carriers(
         ),
     ] {
         for row in crate::surface::uniquely_identified_rows(rows) {
-            let id = SurfaceId(format!("{}{}", namespace.ir_prefix(), row.id));
+            let id = SurfaceId::mint(format!("{}{}", namespace.ir_prefix(), row.id))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -217,7 +223,7 @@ pub fn retain_unresolved_surface_carriers(
                     record: geometry_section_record(scan, row.offset),
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("{}{}", namespace.source_prefix(), row.id),
                     name: None,
                     color: None,
@@ -233,7 +239,8 @@ pub fn retain_unresolved_surface_carriers(
         }
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -251,7 +258,7 @@ pub fn retain_unresolved_surface_carriers(
                 record: geometry_section_record(scan, row.offset),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -351,9 +358,9 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
     for surface in &ir.model.surfaces {
         let Some(id) = surface
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:visibgeom:surface#")
-            .or_else(|| surface.id.0.strip_prefix("creo:novisgeom:surface#"))
+            .or_else(|| surface.id.as_str().strip_prefix("creo:novisgeom:surface#"))
             .and_then(|id| id.parse().ok())
         else {
             continue;
@@ -384,16 +391,16 @@ fn positional_cylinder_carrier(
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
     let inline = record.has_inline_non_plane_envelope()
-        || record.has_inline_non_plane_local_system_suffix(row.type_byte)
-        || record
-            .selector_corner_interval_cylinder_frame(row.type_byte)
-            .is_some();
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+        || record.has_inline_non_plane_local_system_suffix()
+        || record.selector_corner_interval_cylinder_frame().is_some();
+    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
+        == Some(SchemaClass::Round)
         && !inline
     {
         return None;
     }
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
+        == Some(SchemaClass::Round)
         && inline
     {
         let id = native_surface_id(scan, row.id);
@@ -409,7 +416,7 @@ fn positional_cylinder_carrier(
             }
         }
     }
-    let frame = record.positional_cylinder_frame?;
+    let frame = record.positional_cylinder_frame()?;
     frame
         .is_valid()
         .then_some(CarrierEquation::Cylinder(CylinderEquation {
@@ -456,14 +463,14 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             radius,
             ratio,
             half_angle,
-        } if ratio.is_finite() && *ratio > 0.0 => Some(CarrierEquation::Cone(ConeEquation {
-            origin: [origin.x, origin.y, origin.z],
-            axis: [axis.x, axis.y, axis.z],
-            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            radius: *radius,
-            ratio: *ratio,
-            half_angle: *half_angle,
-        })),
+        } => Some(CarrierEquation::Cone(ConeEquation::new(
+            [origin.x, origin.y, origin.z],
+            [axis.x, axis.y, axis.z],
+            [ref_direction.x, ref_direction.y, ref_direction.z],
+            *radius,
+            *ratio,
+            *half_angle,
+        )?)),
         SurfaceGeometry::Torus {
             center,
             axis,
@@ -485,11 +492,14 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
     scan.framing
         .sections
         .iter()
-        .filter(|section| section.role == role::GEOMETRY)
+        .filter(|section| section.role == SectionRole::PsbGeometry)
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
-        .map(|section| UnknownId(format!("creo:{}:section#{}", section.name, section.offset)))
+        .map(|section| {
+            UnknownId::mint(format!("creo:{}:section#{}", section.name, section.offset))
+                .expect("identity grammar")
+        })
 }
 
 #[cfg(test)]
@@ -775,7 +785,7 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         .features
         .rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(913))
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let available_surfaces = ir
@@ -785,7 +795,7 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         .filter_map(|surface| {
             surface
                 .id
-                .0
+                .as_str()
                 .strip_prefix("creo:visibgeom:surface#")?
                 .parse()
                 .ok()
@@ -804,7 +814,6 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
 mod namespace_tests {
     use super::native_face_orientations;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::units::Units;
 
     #[test]
     fn native_face_orientations_reads_nonvisible_rows() {
@@ -813,16 +822,15 @@ mod namespace_tests {
             .nonvisible_rows
             .push(crate::surface::SurfaceRow {
                 id: 17,
-                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Plane,
                 feature_id: 1,
                 reversed: true,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             });
 
-        let orientations = native_face_orientations(&scan, &CadIr::empty(Units::default()));
+        let orientations = native_face_orientations(&scan, &CadIr::empty());
 
         assert_eq!(orientations.get(&17), Some(&true));
     }

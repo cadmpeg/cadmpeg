@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -51,14 +50,23 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "378".into(),
+        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("empty-label named scope");
-    assert_eq!(scope.kind, "CylinderPrimitive");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("empty-label named scope");
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::DesignFeatureKind::CylinderPrimitive
+    );
     assert_eq!(scope.frame_length, paired_at as u64);
     assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, 0);
+    assert_eq!(scope.previous_history_state_id_offset, None);
 }

@@ -16,8 +16,8 @@ fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
     payload.push(0xe3);
     let record = parameter_records(&payload).remove(0);
 
-    assert!(record.type24_round_edge_envelope(0x24).is_some());
-    assert!(record.type24_generated_round_radius(0x24).is_none());
+    assert!(record.type24_round_edge_envelope().is_some());
+    assert!(record.type24_generated_round_radius().is_none());
 }
 
 #[test]
@@ -36,16 +36,13 @@ fn decodes_extended_type24_round_edge_separator_and_shells() {
         SurfaceParameterRecord {
             surface_id: 7,
             body,
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cylinder,
+            ),
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -55,7 +52,7 @@ fn decodes_extended_type24_round_edge_separator_and_shells() {
     for delimiter in [0x90, 0x91] {
         for shell in [[0x18].as_slice(), &[0x39, 0x19, 0x00], &[0x39, 0x29, 0x00]] {
             let envelope = record(shell, delimiter)
-                .type24_round_edge_envelope(0x24)
+                .type24_round_edge_envelope()
                 .expect("extended round-edge envelope");
             assert_eq!(envelope.parameter_interval, [2.0, 3.0]);
             assert_eq!(envelope.vertices, [[0.0; 3], [0.0; 3]]);
@@ -75,24 +72,28 @@ fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
     let record = SurfaceParameterRecord {
         surface_id: 7,
         body,
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cylinder,
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
         body_offset: 0,
     };
 
-    assert!(record.type24_round_edge_envelope(0x24).is_some());
-    assert_eq!(record.type24_generated_round_radius(0x24), Some(1.0));
-    assert!(record.type24_round_edge_envelope(0x25).is_none());
+    assert!(record.type24_round_edge_envelope().is_some());
+    assert_eq!(record.type24_generated_round_radius(), Some(1.0));
+    assert!(crate::surface::SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cone
+        ),
+        ..record.clone()
+    }
+    .type24_round_edge_envelope()
+    .is_none());
 }
 
 #[test]

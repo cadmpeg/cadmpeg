@@ -2,24 +2,25 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unit_square_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid unit-square surface")
 }
 
 fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> B2OwnerNumericTail {
@@ -262,12 +263,12 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
 fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     let points = [
         Point {
-            id: PointId("on".to_string()),
+            id: PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 7.0),
             source_object: None,
         },
         Point {
-            id: PointId("off".to_string()),
+            id: PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.01, 7.0),
             source_object: None,
         },
@@ -282,12 +283,13 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
 fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let points = [
         Point {
-            id: PointId("incident".to_string()),
+            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("other-occurrence".to_string()),
+            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+                .expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },
@@ -313,12 +315,13 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
 fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     let points = [
         Point {
-            id: PointId("incident".to_string()),
+            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("other-occurrence".to_string()),
+            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+                .expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },
@@ -395,23 +398,25 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
 fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
         Point {
-            id: PointId("a".to_string()),
+            id: PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("b".to_string()),
+            id: PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
             position: Point3::new(1.01, 0.0, 0.0),
             source_object: None,
         },
     ];
     let tolerances = [(2usize, 0.02)].into_iter().collect();
-    let ambiguous =
-        unique_native_identity_points(&[7], &[[1.0, 0.0, 0.0]], 2, &tolerances, &points);
+    let vertices = [B5LogicalVertex {
+        object_id: 7,
+        point: [1.0, 0.0, 0.0],
+    }];
+    let ambiguous = unique_native_identity_points(&vertices, 2, &tolerances, &points);
     assert!(ambiguous.is_empty());
 
-    let exact =
-        unique_native_identity_points(&[7], &[[1.0, 0.0, 0.0]], 2, &BTreeMap::new(), &points);
+    let exact = unique_native_identity_points(&vertices, 2, &BTreeMap::new(), &points);
     assert_eq!(exact.get(&7), Some(&0));
 }
 
@@ -419,10 +424,10 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
     let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("reverse semicircle");
-    let PcurveGeometry::Nurbs { knots, .. } = &arc else {
+    let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };
-    assert!(knots.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert!(nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
     let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
     let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
@@ -519,24 +524,7 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
         &SurfaceGeometry::Unknown { record: None },
         None,
     ));
-    let nurbs = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let nurbs = SurfaceGeometry::Nurbs(unit_square_surface());
     assert!(point_on_standard_face(
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
@@ -545,15 +533,6 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(!point_on_standard_face(
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
-        None,
-    ));
-    let mut unresolved = nurbs.clone();
-    if let SurfaceGeometry::Nurbs(surface) = &mut unresolved {
-        surface.weights = Some(vec![1.0]);
-    }
-    assert!(point_on_standard_face(
-        Point3::new(0.5, 0.5, 0.1),
-        &unresolved,
         None,
     ));
     assert!(!point_on_standard_face(
@@ -618,13 +597,11 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
             source: StandardRollingBallSource::E5D8,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: 5,
-                knots,
-                multiplicities,
-                sites,
+                stations,
             },
-    }) if knots == &vec![2.0, 5.0]
-            && multiplicities == &vec![6, 6]
-            && sites.len() == 2
+    }) if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == vec![2.0, 5.0]
+            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
+            && stations.len() == 2
     ));
 
     let mut opposite_records = records.clone();
@@ -649,7 +626,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         .copy_from_slice(&1_i32.to_le_bytes());
     assert_eq!(
         crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
-        1
+        crate::families::e5::graph::Sign::Positive
     );
     assert!(
         associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
@@ -659,20 +636,20 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
 
 #[test]
 fn cached_face_point_membership_matches_the_source_predicate() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
-            id: PointId("point-0".into()),
+            id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
             position: Point3::new(1.0, 2.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("point-1".into()),
+            id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
             position: Point3::new(1.0, 2.0, 1.0),
             source_object: None,
         },
     ]);
-    let surface_id = SurfaceId("surface-0".into());
+    let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -760,21 +737,21 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
 #[test]
 fn standard_emission_reverses_only_face_pcurve_use_range() {
     for reversed in [false, true] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point {
-                id: PointId("point-0".into()),
+                id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             },
             Point {
-                id: PointId("point-1".into()),
+                id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
                 position: Point3::new(1.0, 0.0, 0.0),
                 source_object: None,
             },
         ]);
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("surface-0".into()),
+            id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -783,16 +760,20 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             source_object: None,
         });
         ir.model.faces.push(Face {
-            id: FaceId("catia:standard:face#0".into()),
-            shell: ShellId("shell-0".into()),
-            surface: SurfaceId("surface-0".into()),
+            id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+            shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
+            surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
         });
-        let bindings = [(SurfaceId("surface-0".into()), false, 0)];
+        let bindings = [(
+            SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
+            false,
+            0,
+        )];
         let surface_indices = HashMap::from([(bindings[0].0.clone(), 0)]);
         let supports = [StandardCurveSupport {
             pos: 0,
@@ -839,18 +820,17 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
         };
-        let [vertex_use] = loop_.vertex_uses.as_slice() else {
+        let [vertex_use] = loop_.anchored_vertex_uses() else {
             panic!("standard edge emission must retain one vertex use");
         };
         assert_eq!(
             vertex_use.vertex,
-            VertexId("catia:standard:v#1".to_string())
+            VertexId::mint("catia:standard:v#1".to_string()).expect("identity grammar")
         );
         assert_eq!(
             vertex_use.after,
-            Some(cadmpeg_ir::ids::CoedgeId(
-                "catia:standard:coedge#0:0:0".to_string()
-            ))
+            cadmpeg_ir::ids::CoedgeId::mint("catia:standard:coedge#0:0:0".to_string())
+                .expect("identity grammar")
         );
 
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
@@ -920,20 +900,13 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
             .expect("closed contained plane circle pcurve");
     assert_eq!(range, [0.0, std::f64::consts::TAU]);
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        ..
-    } = &geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &geometry else {
         panic!("closed plane circle must use a rational arc");
     };
-    assert_eq!(*degree, 2);
-    assert_eq!(knots.len(), 12);
-    assert_eq!(control_points.len(), 9);
-    assert_eq!(weights.as_ref().map(Vec::len), Some(9));
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.knots().len(), 12);
+    assert_eq!(nurbs.control_points().len(), 9);
+    assert_eq!(nurbs.weights().map(<[f64]>::len), Some(9));
     for parameter in [range[0], range[1]] {
         let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
         let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
@@ -974,13 +947,13 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
 
 #[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point-0".into()),
+        id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
         position: Point3::new(2.0, 0.0, 0.0),
         source_object: None,
     });
-    let surface_id = SurfaceId("surface-0".into());
+    let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {

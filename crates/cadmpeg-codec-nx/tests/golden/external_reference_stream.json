@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -143,181 +143,178 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "external_reference_empty_records": [
-              {
-                "closing_marker": false,
-                "id": "nx:external-reference-empty-record:/Root/ExternalReferences#7",
-                "indexed_record": "nx:external-reference-indexed-record:/Root/ExternalReferences#7"
-              }
-            ],
-            "external_reference_indexed_records": [
-              {
-                "byte_len": 45,
-                "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#6",
-                "record_id": 6,
-                "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 392
-              },
-              {
-                "byte_len": 6,
-                "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#7",
-                "record_id": 7,
-                "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 386
-              }
-            ],
-            "external_reference_record_children": [
-              {
-                "directory_reference": "nx:external-reference:/Root/ExternalReferences#2",
-                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "id": "nx:external-reference-record:/Root/ExternalReferences#6:child",
-                "name_reference": "nx:external-reference:/Root/ExternalReferences#0"
-              }
-            ],
-            "external_reference_record_string_uses": [
-              {
-                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
-                "id": "nx:external-reference:record-string-use#6-0",
-                "slot": 0,
-                "source_offset": 399,
-                "string_index": 0
-              },
-              {
-                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
-                "id": "nx:external-reference:record-string-use#6-1",
-                "slot": 1,
-                "source_offset": 403,
-                "string_index": 1
-              },
-              {
-                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
-                "id": "nx:external-reference:record-string-use#6-2",
-                "slot": 2,
-                "source_offset": 407,
-                "string_index": 2
-              },
-              {
-                "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
-                "id": "nx:external-reference:record-string-use#6-3",
-                "slot": 3,
-                "source_offset": 411,
-                "string_index": 3
-              }
-            ],
-            "external_reference_records": [
-              {
-                "closing_duplicate": false,
-                "declared_count": 2,
-                "handles": [
-                  16,
-                  32
-                ],
-                "id": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "id_slots": [
-                  0,
-                  1,
-                  2,
-                  3
-                ],
-                "prefix_byte_len": 36,
-                "record_id": 6,
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 392,
-                "tail_byte_len": 9
-              }
-            ],
-            "external_reference_tail_reference_pairs": [
-              {
-                "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
-                "id": "nx:external-reference:tail-reference-pair#6-0",
-                "ordinal": 0,
-                "persistent_handle": 5,
-                "source_offset": 428,
-                "tagged_reference": 1
-              }
-            ],
-            "external_references": [
-              {
-                "id": "nx:external-reference:/Root/ExternalReferences#0",
-                "ordinal": 0,
-                "path": "child.prt",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 444
-              },
-              {
-                "id": "nx:external-reference:/Root/ExternalReferences#1",
-                "ordinal": 1,
-                "path": "dirA",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 455
-              },
-              {
-                "id": "nx:external-reference:/Root/ExternalReferences#2",
-                "ordinal": 2,
-                "path": "dirB",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 461
-              },
-              {
-                "id": "nx:external-reference:/Root/ExternalReferences#3",
-                "ordinal": 3,
-                "path": "extra",
-                "source_entry": "/Root/ExternalReferences",
-                "source_offset": 467
-              }
-            ],
-            "persistent_handles": [
-              {
-                "external_occurrence_count": 1,
-                "external_records": [
-                  "nx:external-reference-record:/Root/ExternalReferences#6"
-                ],
-                "id": "nx:om-persistent-handles:handle#00000005",
-                "occurrence_count": 0,
-                "records": [],
-                "value": 5
-              },
-              {
-                "external_occurrence_count": 1,
-                "external_records": [
-                  "nx:external-reference-record:/Root/ExternalReferences#6"
-                ],
-                "id": "nx:om-persistent-handles:handle#00000010",
-                "occurrence_count": 0,
-                "records": [],
-                "value": 16
-              },
-              {
-                "external_occurrence_count": 1,
-                "external_records": [
-                  "nx:external-reference-record:/Root/ExternalReferences#6"
-                ],
-                "id": "nx:om-persistent-handles:handle#00000020",
-                "occurrence_count": 0,
-                "records": [],
-                "value": 32
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          },
-          "version": 189
+          "external_reference_empty_records": [
+            {
+              "closing_marker": false,
+              "id": "nx:external-reference-empty-record:/Root/ExternalReferences#7",
+              "indexed_record": "nx:external-reference-indexed-record:/Root/ExternalReferences#7"
+            }
+          ],
+          "external_reference_indexed_records": [
+            {
+              "byte_len": 45,
+              "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#6",
+              "record_id": 6,
+              "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 392
+            },
+            {
+              "byte_len": 6,
+              "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#7",
+              "record_id": 7,
+              "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 386
+            }
+          ],
+          "external_reference_record_children": [
+            {
+              "directory_reference": "nx:external-reference:/Root/ExternalReferences#2",
+              "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "id": "nx:external-reference-record:/Root/ExternalReferences#6:child",
+              "name_reference": "nx:external-reference:/Root/ExternalReferences#0"
+            }
+          ],
+          "external_reference_record_string_uses": [
+            {
+              "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
+              "id": "nx:external-reference:record-string-use#6-0",
+              "slot": 0,
+              "source_offset": 399,
+              "string_index": 0
+            },
+            {
+              "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
+              "id": "nx:external-reference:record-string-use#6-1",
+              "slot": 1,
+              "source_offset": 403,
+              "string_index": 1
+            },
+            {
+              "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
+              "id": "nx:external-reference:record-string-use#6-2",
+              "slot": 2,
+              "source_offset": 407,
+              "string_index": 2
+            },
+            {
+              "external_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
+              "id": "nx:external-reference:record-string-use#6-3",
+              "slot": 3,
+              "source_offset": 411,
+              "string_index": 3
+            }
+          ],
+          "external_reference_records": [
+            {
+              "closing_duplicate": false,
+              "declared_count": 2,
+              "handles": [
+                16,
+                32
+              ],
+              "id": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "id_slots": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "prefix_byte_len": 36,
+              "record_id": 6,
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 392,
+              "tail_byte_len": 9
+            }
+          ],
+          "external_reference_tail_reference_pairs": [
+            {
+              "handle_set_record": "nx:external-reference-record:/Root/ExternalReferences#6",
+              "id": "nx:external-reference:tail-reference-pair#6-0",
+              "ordinal": 0,
+              "persistent_handle": 5,
+              "source_offset": 428,
+              "tagged_reference": 1
+            }
+          ],
+          "external_references": [
+            {
+              "id": "nx:external-reference:/Root/ExternalReferences#0",
+              "ordinal": 0,
+              "path": "child.prt",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 444
+            },
+            {
+              "id": "nx:external-reference:/Root/ExternalReferences#1",
+              "ordinal": 1,
+              "path": "dirA",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 455
+            },
+            {
+              "id": "nx:external-reference:/Root/ExternalReferences#2",
+              "ordinal": 2,
+              "path": "dirB",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 461
+            },
+            {
+              "id": "nx:external-reference:/Root/ExternalReferences#3",
+              "ordinal": 3,
+              "path": "extra",
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 467
+            }
+          ],
+          "persistent_handles": [
+            {
+              "external_occurrence_count": 1,
+              "external_records": [
+                "nx:external-reference-record:/Root/ExternalReferences#6"
+              ],
+              "id": "nx:om-persistent-handles:handle#00000005",
+              "occurrence_count": 0,
+              "records": [],
+              "value": 5
+            },
+            {
+              "external_occurrence_count": 1,
+              "external_records": [
+                "nx:external-reference-record:/Root/ExternalReferences#6"
+              ],
+              "id": "nx:om-persistent-handles:handle#00000010",
+              "occurrence_count": 0,
+              "records": [],
+              "value": 16
+            },
+            {
+              "external_occurrence_count": 1,
+              "external_records": [
+                "nx:external-reference-record:/Root/ExternalReferences#6"
+              ],
+              "id": "nx:om-persistent-handles:handle#00000020",
+              "occurrence_count": 0,
+              "records": [],
+              "value": 32
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -334,9 +331,29 @@
           "footer_offset": "472",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@120",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -350,6 +367,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@120",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -370,12 +408,20 @@
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@120 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -485,12 +531,32 @@
           "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@120",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -544,10 +610,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@120 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 472, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

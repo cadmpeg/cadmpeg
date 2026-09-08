@@ -2,13 +2,35 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
+
+#[test]
+fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
+    let xml =
+        r#"<swSolidWorks swVersion="34000"><swModel swConfigurationName="Old"/></swSolidWorks>"#;
+    let mut payload = vec![0xff, 0xfe];
+    for unit in xml.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
+    let patched = super::super::patch_active_configuration_xml(&payload, "New")
+        .unwrap()
+        .expect("the UTF-16 envelope is recognized");
+    let envelope = container::first_solidworks_envelope([patched.as_slice()])
+        .expect("the rewritten envelope remains recognizable");
+    assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
+    assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
+}
 
 #[test]
 fn encoder_writes_source_less_datum_features() {
@@ -39,11 +61,11 @@ fn encoder_writes_source_less_datum_features() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#datum-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#datum-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
@@ -57,10 +79,7 @@ fn encoder_writes_source_less_datum_features() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let decoded = SldprtCodec
@@ -93,31 +112,31 @@ fn encoder_writes_source_less_neutral_configurations() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
+        id: ConfigurationId::mint("sldprt:model:configuration#generated:z")
+            .expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
+        id: ConfigurationId::mint("sldprt:model:configuration#generated:a")
+            .expect("identity grammar"),
         ordinal: 1,
-        active: false.into(),
+        active: false,
         source_index: None,
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -126,10 +145,7 @@ fn encoder_writes_source_less_neutral_configurations() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let scan = container::scan_bytes(&encoded);
@@ -172,7 +188,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
     assert_eq!(
         configuration.bodies,
         decoded
@@ -190,9 +206,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         .model
         .configurations
         .iter_mut()
-        .for_each(|configuration| configuration.active = false.into());
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&inactive, &fidelity, &mut Vec::new())
+        .for_each(|configuration| configuration.active = false);
+    let error = crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
@@ -212,25 +227,27 @@ fn semantic_writer_round_trips_active_configuration() {
         "Contents/SolidWorks",
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Default"/></swSolidWorks>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.configurations[0].active.is_active());
-    assert!(decoded.ir().model.configurations[1].active.is_inactive());
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    assert!(decoded.ir().model.configurations[0].active);
+    assert!(!decoded.ir().model.configurations[1].active);
 
-    decoded.ir_mut().model.configurations[0].active = false.into();
-    decoded.ir_mut().model.configurations[1].active = true.into();
+    decoded.ir_mut().model.configurations[0].active = false;
+    decoded.ir_mut().model.configurations[1].active = true;
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(regenerated.ir().model.configurations[0]
-        .active
-        .is_inactive());
-    assert!(regenerated.ir().model.configurations[1].active.is_active());
+    assert!(!regenerated.ir().model.configurations[0].active);
+    assert!(regenerated.ir().model.configurations[1].active);
     assert_eq!(
         regenerated.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Manufacturing & QA"
@@ -269,66 +286,61 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     for (index, body) in ir.model.bodies.iter_mut().enumerate() {
-        body.transform = Some(Transform {
-            rows: [
+        body.transform = Some(
+            Transform::from_rows([
                 [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
-            ],
-        });
+            ])
+            .expect("affine transform"),
+        );
     }
     ir.model.tessellations = body_ids
         .iter()
         .enumerate()
-        .map(|(index, body)| Tessellation {
-            id: format!("synthetic:test:tessellation#{index}"),
-            body: Some(body.clone()),
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: vec![3],
-            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
+        .map(|(index, body)| {
+            Tessellation::from_decoded(
+                format!("synthetic:test:tessellation#{index}"),
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                vec![[0, 1, 2]],
+                vec![3],
+                vec![Vector3::new(0.0, 0.0, 1.0); 3],
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("valid tessellation")
+            .with_body(Some(body.clone()))
         })
         .collect();
     ir.model.configurations = body_ids
         .iter()
         .enumerate()
         .map(|(index, body)| DesignConfiguration {
-            id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#config-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u32,
-            active: false.into(),
+            active: false,
             source_index: None,
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
         })
         .collect();
-    ir.model.configurations[1].active = true.into();
+    ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let scan = container::scan_bytes(&encoded);
@@ -342,12 +354,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
     assert_eq!(container::active_configuration_index(&scan), Some(1));
     assert_eq!(
-        container::select_active_parasolid(&scan)
+        container::select_active_parasolid_site(&scan)
             .unwrap()
-            .0
-            .section
-            .as_deref(),
-        Some("Contents/Config-1-Partition")
+            .name(),
+        "Contents/Config-1-Partition"
     );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -355,7 +365,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     assert_eq!(decoded.ir().model.bodies.len(), 2);
     assert_eq!(decoded.ir().model.configurations[0].bodies.len(), 1);
     assert_eq!(decoded.ir().model.configurations[1].bodies.len(), 1);
-    assert!(decoded.ir().model.configurations[1].active.is_active());
+    assert!(decoded.ir().model.configurations[1].active);
     assert_ne!(
         decoded.ir().model.configurations[0].bodies,
         decoded.ir().model.configurations[1].bodies
@@ -365,7 +375,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .model
         .tessellations
         .iter()
-        .flat_map(|mesh| mesh.vertices.iter().map(|point| point.x))
+        .flat_map(|mesh| mesh.vertices().iter().map(|point| point.x))
         .collect::<Vec<_>>();
     assert!(mesh_x.iter().any(|value| (*value - 10.0).abs() < 1.0e-6));
     assert!(mesh_x.iter().any(|value| (*value - 20.0).abs() < 1.0e-6));
@@ -394,17 +404,21 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         "Contents/Config-3-ResolvedFeatures",
         &resolved_features_payload(&[0]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(3));
-    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[0].active);
 
     decoded.ir_mut().model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -416,12 +430,10 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
-        container::select_active_parasolid(&scan)
+        container::select_active_parasolid_site(&scan)
             .unwrap()
-            .0
-            .section
-            .as_deref(),
-        Some("Contents/Config-5-Partition")
+            .name(),
+        "Contents/Config-5-Partition"
     );
     let stale = scan
         .blocks
@@ -471,15 +483,19 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
         "Contents/Config-3-ResolvedFeatures",
         &resolved_features_payload(&[0]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0].source_index = None;
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -510,14 +526,17 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
 
 #[test]
 fn semantic_writer_rejects_duplicate_configuration_source_indices() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut duplicate = decoded.ir().model.configurations[0].clone();
-    duplicate.id.0.push_str("-duplicate");
+    duplicate.id =
+        cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
+            .expect("identity grammar");
     duplicate.ordinal += 1;
     duplicate
         .name
@@ -527,13 +546,12 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     duplicate.native_ref = None;
     decoded.ir_mut().model.configurations.push(duplicate);
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -544,41 +562,42 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
 
 #[test]
 fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0]
         .name
         .resolved_mut()
         .expect("resolved configuration name")
         .clear();
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("empty name"), "{error}");
 
     decoded.ir_mut().model.configurations[0].name = "Default".into();
     let mut duplicate = decoded.ir().model.configurations[0].clone();
-    duplicate.id.0.push_str("-duplicate");
+    duplicate.id =
+        cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
+            .expect("identity grammar");
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
-    duplicate.active = false.into();
+    duplicate.active = false;
     decoded.ir_mut().model.configurations.push(duplicate);
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error.to_string().contains("repeats configuration name"),
         "{error}"
@@ -599,15 +618,15 @@ fn encoder_writes_source_less_neutral_parameters() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let feature_id = FeatureId("sldprt:model:feature#generated:equation".into());
+    let feature_id =
+        FeatureId::mint("sldprt:model:feature#generated:equation").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Equation".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
+        source_properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
@@ -615,12 +634,12 @@ fn encoder_writes_source_less_neutral_parameters() {
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),
             parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
-            properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
         },
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("sldprt:model:parameter#generated:equation:0".into()),
+        id: ParameterId::mint("sldprt:model:parameter#generated:equation:0")
+            .expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),
@@ -635,10 +654,7 @@ fn encoder_writes_source_less_neutral_parameters() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let decoded = SldprtCodec
@@ -649,11 +665,13 @@ fn encoder_writes_source_less_neutral_parameters() {
         decoded.ir().model.parameters[0].expression,
         "D1@Sketch1 * 2"
     );
-    assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Native { properties, .. }
-            if properties.get("EquationSet").map(String::as_str) == Some("Global")
-    ));
+    assert_eq!(
+        decoded.ir().model.features[0]
+            .source_properties
+            .get("EquationSet")
+            .map(String::as_str),
+        Some("Global")
+    );
 }
 
 #[test]
@@ -679,14 +697,15 @@ fn encoder_bakes_rigid_body_transform() {
             _ => None,
         })
         .unwrap();
-    ir.model.bodies[0].transform = Some(Transform {
-        rows: [
+    ir.model.bodies[0].transform = Some(
+        Transform::from_rows([
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
             [0.0, 0.0, 1.0, 30.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     let expected_point = Point3::new(
         -original_point.y + 10.0,
         original_point.x + 20.0,
@@ -696,10 +715,7 @@ fn encoder_bakes_rigid_body_transform() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let decoded = SldprtCodec
@@ -726,13 +742,13 @@ fn encoder_bakes_rigid_body_transform() {
 fn semantic_writer_regenerates_modified_planar_brep() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source);
-    let mut result = SldprtCodec
+    let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     result.ir_mut().model.points[0].position.x += 1.0;
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut encoded)
+    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = Cursor::new(encoded);
     let decoded = SldprtCodec
@@ -748,34 +764,42 @@ fn semantic_writer_regenerates_modified_planar_brep() {
 
 #[test]
 fn semantic_writer_uses_schema_specific_face_families() {
-    let mut solid = SldprtCodec
+    let solid = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut solid = cadmpeg_test_support::EditableDecodeResult::from(solid);
     solid.ir_mut().model.points[0].position.z += 1.0;
     let mut solid_bytes = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(solid.ir(), solid.source_fidelity(), &mut solid_bytes)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        solid.ir(),
+        solid.source_fidelity(),
+        &mut solid_bytes,
+    )
+    .unwrap();
     let solid_scan = container::scan_bytes(&solid_bytes);
     let solid_payload = &solid_scan.blocks[0].payload;
     assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
     assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
 
     let sheet_body = owned_triangle_with_kind(0, 701, 0.0, 3);
-    let mut sheet = SldprtCodec
+    let sheet = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&sheet_body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut sheet = cadmpeg_test_support::EditableDecodeResult::from(sheet);
     sheet.ir_mut().model.points[0].position.z += 1.0;
     let mut sheet_bytes = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(sheet.ir(), sheet.source_fidelity(), &mut sheet_bytes)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        sheet.ir(),
+        sheet.source_fidelity(),
+        &mut sheet_bytes,
+    )
+    .unwrap();
     let sheet_scan = container::scan_bytes(&sheet_bytes);
     let sheet_payload = &sheet_scan.blocks[0].payload;
     assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
@@ -805,14 +829,18 @@ fn semantic_writer_preserves_outer_header() {
     let mut source = sldprt_with_body(&triangle_body());
     source[..4].copy_from_slice(&0x1234_5678u32.to_le_bytes());
     source[4..8].copy_from_slice(&7u32.to_be_bytes());
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
 
     assert_eq!(
         u32::from_le_bytes(encoded[..4].try_into().unwrap()),
@@ -826,19 +854,19 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
     for body in [closed_cylinder_body(), sphere_patch_body()] {
         let source = sldprt_with_body(&body);
         let mut cur = Cursor::new(source);
-        let mut result = SldprtCodec
+        let result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
+        let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
         translate_model_x(&mut result.ir_mut(), 1.0);
 
         let mut encoded = Vec::new();
-        SldprtCodec
-            .write_preserved_with_source_fidelity(
-                result.ir(),
-                result.source_fidelity(),
-                &mut encoded,
-            )
-            .unwrap();
+        crate::test_support::plan_inherited_write(
+            result.ir(),
+            result.source_fidelity(),
+            &mut encoded,
+        )
+        .unwrap();
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -873,20 +901,24 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
 #[test]
 fn semantic_writer_preserves_sheet_body_classification() {
     let body = owned_triangle_with_kind(0, 701, 0.0, 3);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -910,52 +942,54 @@ fn semantic_writer_preserves_sheet_body_classification() {
 
 #[test]
 fn semantic_writer_rejects_invalid_ir_without_panicking() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir_mut().model.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    decoded.ir_mut().model.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
 fn semantic_writer_rejects_unrepresented_typed_fields() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.edges[0].param_range = Some([0.0, 1.0]);
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
 pub(crate) fn semantic_writer_rejects_subds() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
+        id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
@@ -964,13 +998,12 @@ pub(crate) fn semantic_writer_rejects_subds() {
         source_object: None,
     });
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::NotImplemented(message)
@@ -1006,12 +1039,13 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 
 #[test]
 fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Ellipse {
         center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1020,13 +1054,12 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
         minor_radius: 2.0,
     };
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::Malformed(message)
@@ -1036,12 +1069,13 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
 
 #[test]
 pub(crate) fn semantic_writer_rejects_nonfinite_analytic_carriers() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
@@ -1052,13 +1086,12 @@ pub(crate) fn semantic_writer_rejects_nonfinite_analytic_carriers() {
         center.x = f64::INFINITY;
     }
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::Malformed(message)
@@ -1123,12 +1156,15 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
     for (geometry, expected) in cases {
         let mut ir = decoded.ir().clone();
-        let surface_id = ir.model.surfaces[0].id.0.clone();
+        let surface_id = ir.model.surfaces[0].id.as_str().to_owned();
         ir.model.surfaces[0].geometry = geometry;
 
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(&ir, decoded.source_fidelity(), &mut Vec::new())
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            &ir,
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
 
         assert!(matches!(
             error,
@@ -1140,18 +1176,22 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
 #[test]
 fn semantic_writer_converts_millimetres_to_native_metres() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.x = 50.8;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1171,18 +1211,22 @@ fn semantic_writer_preserves_multiple_body_ownership() {
     body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
     body.extend(owned_triangle(0, 700, 0.0));
     body.extend(owned_triangle(200, 701, 0.0));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1197,13 +1241,13 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .iter()
         .all(|shell| shell.faces.len() == 1));
     assert!(regenerated.ir().model.regions.iter().all(|region| {
-        regenerated.source_fidelity().annotations.provenance[&region.id.0]
+        regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
             .as_deref()
             == Some("00_51_region")
     }));
     assert!(regenerated.ir().model.shells.iter().all(|shell| {
-        regenerated.source_fidelity().annotations.provenance[&shell.id.0]
+        regenerated.source_fidelity().annotations.provenance[shell.id.as_str()]
             .tag
             .as_deref()
             == Some("00_51_shell")
@@ -1221,31 +1265,39 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
     body.extend(nurbs_curve_carrier(170, 171));
     body.extend(nurbs_surface_carrier(180, 181, 10));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let CurveGeometry::Nurbs(curve) = &mut ir_edit.model.curves[0].geometry else {
             panic!("expected NURBS curve");
         };
-        curve.control_points[1].y += 250.0;
+        curve
+            .edit_control_points(|points| points[1].y += 250.0)
+            .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Nurbs(surface) = &mut ir_edit.model.surfaces[0].geometry else {
             panic!("expected NURBS surface");
         };
-        surface.control_points[3].z += 500.0;
+        surface
+            .edit_control_points(|points| points[3].z += 500.0)
+            .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)
     };
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1260,7 +1312,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
 
 #[test]
 fn semantic_writer_preserves_unbound_material_definition() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_material(
                 &triangle_body(),
@@ -1270,14 +1322,18 @@ fn semantic_writer_preserves_unbound_material_definition() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1299,7 +1355,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
 
 #[test]
 fn semantic_writer_rejects_overlong_material_names() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_material(
                 &triangle_body(),
@@ -1309,6 +1365,7 @@ fn semantic_writer_rejects_overlong_material_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
@@ -1317,13 +1374,12 @@ fn semantic_writer_rejects_overlong_material_names() {
         b: 128.0 / 255.0,
         a: 1.0,
     });
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("material name is too long"));
 }
 
@@ -1342,18 +1398,22 @@ fn semantic_writer_preserves_face_appearance() {
     ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     body.extend(owned_triangle(0, 700, 0.0));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1377,7 +1437,7 @@ fn semantic_writer_preserves_face_appearance() {
 
 #[test]
 fn semantic_writer_derives_resolved_feature_section_names() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -1386,16 +1446,20 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
-            crate::records::SketchInputKind::Native(9);
+            crate::records::SketchInputKind::from_native_code(9);
     });
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -1407,9 +1471,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
         native.feature_input_lanes[0].configuration = None;
     });
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&unscoped, &fidelity, &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(&unscoped, &fidelity, &mut written).unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -1425,32 +1487,42 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Root" Type="Folder" id="1"><Folder Name="Group"><Sketch Name="Profile" Type="Sketch" id="2"/></Folder></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = &sldprt_native(decoded.ir()).feature_histories[0].features;
     assert_eq!(
-        native[1].tree_parent.as_deref(),
+        native[1].tree_parent_record_id(),
         Some(native[0].id.as_str())
     );
     assert_eq!(
-        native[2].tree_parent.as_deref(),
+        native[2].tree_parent_record_id(),
         Some(native[1].id.as_str())
     );
     assert_eq!(
-        decoded.ir().model.features[1].parent.as_ref(),
+        decoded
+            .ir()
+            .model
+            .feature_parent(&decoded.ir().model.features[1].id),
         Some(&decoded.ir().model.features[0].id)
     );
     assert_eq!(
-        decoded.ir().model.features[2].parent.as_ref(),
+        decoded
+            .ir()
+            .model
+            .feature_parent(&decoded.ir().model.features[2].id),
         Some(&decoded.ir().model.features[1].id)
     );
     decoded.ir_mut().model.features[2].name = Some("Edited Profile".into());
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1460,11 +1532,11 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     assert_eq!(native[1].xml_tag, "Folder");
     assert_eq!(native[2].xml_tag, "Sketch");
     assert_eq!(
-        native[1].tree_parent.as_deref(),
+        native[1].tree_parent_record_id(),
         Some(native[0].id.as_str())
     );
     assert_eq!(
-        native[2].tree_parent.as_deref(),
+        native[2].tree_parent_record_id(),
         Some(native[1].id.as_str())
     );
     assert_eq!(native[2].name, "Edited Profile");
@@ -1472,12 +1544,13 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
 
 #[test]
 fn semantic_writer_applies_neutral_configuration_edits() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let configuration = &mut ir_edit.model.configurations[0];
@@ -1489,9 +1562,12 @@ fn semantic_writer_applies_neutral_configuration_edits() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1505,24 +1581,24 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 
 #[test]
 fn semantic_writer_rejects_conflicting_configuration_edits() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0].name = "Neutral".into();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].configurations[0].name = "Native".into();
     });
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("conflicting neutral and native SLDPRT configuration edits"));
@@ -1532,12 +1608,13 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
 fn semantic_writer_applies_neutral_parameter_edits() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -1551,9 +1628,12 @@ fn semantic_writer_applies_neutral_parameter_edits() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1584,9 +1664,10 @@ fn semantic_writer_preserves_dimension_attributes() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Driven="true" EquationId="D1@Boss">12mm</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
@@ -1597,9 +1678,12 @@ fn semantic_writer_preserves_dimension_attributes() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1622,9 +1706,10 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Value="24mm" EquationId="D1@Boss">Width * 2</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
@@ -1636,9 +1721,12 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

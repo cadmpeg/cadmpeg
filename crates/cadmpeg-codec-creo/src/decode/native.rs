@@ -7,9 +7,6 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use serde::Serialize;
 
-/// Schema version stamped on the `creo` namespace whenever any arena is stored.
-const CREO_NATIVE_VERSION: u32 = 1;
-
 /// Native arena keys `build_ir` and `attach_expanded_sections` may populate.
 ///
 /// [`store_arena`] asserts the key appears here.
@@ -123,8 +120,8 @@ pub(super) fn annotate(
 ///
 /// An empty slice returns without touching the namespace, so an arena that was
 /// absent for empty input stays absent — flipping it to present-but-empty would
-/// be an observable change. On non-empty input the namespace schema version is
-/// stamped and the records are serialized under `key`.
+/// be an observable change. On non-empty input the records are serialized under
+/// `key`.
 pub(super) fn store_arena<T: Serialize>(
     ir: &mut CadIr,
     key: &str,
@@ -138,7 +135,6 @@ pub(super) fn store_arena<T: Serialize>(
         return Ok(());
     }
     let namespace = ir.native.namespace_mut("creo");
-    namespace.version = CREO_NATIVE_VERSION;
     namespace.set_arena(key, records)?;
     Ok(())
 }

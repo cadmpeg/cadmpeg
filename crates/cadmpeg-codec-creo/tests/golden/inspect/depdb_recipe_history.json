@@ -1,5 +1,16 @@
 {
   "container_kind": "psb",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": "admitted",
+      "declared": {
+        "version_line": "#UGC:2 P c"
+      },
+      "dialect": "creo:depdb",
+      "format": "creo"
+    }
+  },
   "entries": [
     {
       "attributes": {

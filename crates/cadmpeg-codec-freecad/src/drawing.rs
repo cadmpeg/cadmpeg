@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{DrawingRecord, DrawingRole, ObjectRecord, PropertyRecord, ValueRecord};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -29,23 +30,23 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             ensure_unique_property_names(&owned)?;
-            let (views, template) = if is_page_type(&object.type_name) {
-                let views = typed_links(&owned, "Views", "App::PropertyLinkList")?
-                    .into_iter()
-                    .filter_map(|link| link.object)
-                    .collect();
-                let template = typed_single_link(&owned, "Template", "App::PropertyLink")?
-                    .and_then(|link| link.object);
-                (views, template)
+            let role = if is_page_type(&object.type_name) {
+                DrawingRole::Page {
+                    views: typed_links(&owned, "Views", "App::PropertyLinkList")?
+                        .into_iter()
+                        .filter_map(|link| link.object().map(str::to_owned))
+                        .collect(),
+                    template: typed_single_link(&owned, "Template", "App::PropertyLink")?
+                        .and_then(|link| link.object().map(str::to_owned)),
+                }
             } else {
-                (Vec::new(), None)
+                DrawingRole::Other
             };
             Ok(DrawingRecord {
                 id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
                 kind: object.type_name.clone(),
-                views,
-                template,
+                role,
                 sources: [
                     "Source",
                     "XSource",
@@ -62,13 +63,13 @@ pub(crate) fn transfer(
                 .collect(),
                 relationships: owned
                     .iter()
-                    .filter(|property| !property.links.is_empty())
-                    .map(|property| (property.name.clone(), property.links.clone()))
+                    .filter(|property| !property.links().is_empty())
+                    .map(|property| (property.name.clone(), property.links().to_vec()))
                     .collect(),
                 parameters: drawing_parameters(&owned)?,
                 side_entries: owned
                     .iter()
-                    .flat_map(|property| &property.side_entries)
+                    .flat_map(|property| property.side_entries())
                     .cloned()
                     .collect(),
             })
@@ -95,26 +96,26 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
-        let relationship = |link: &crate::native::LinkTarget| DrawingTarget {
-            target: link
-                .document
-                .is_none()
-                .then(|| {
-                    link.object
-                        .as_ref()
-                        .filter(|object| !object.is_empty())
-                        .map(|object| {
-                            neutral_ids
-                                .get(object.as_str())
-                                .cloned()
-                                .unwrap_or_else(|| object.clone())
-                        })
-                })
-                .flatten(),
-            external_document: link.document.clone(),
-            external_object: link.document.as_ref().and(link.object.clone()),
-            is_null: link.document.is_none() && link.object.as_deref() == Some(""),
-            subelements: link.subelements.clone(),
+        let relationship = |link: &crate::native::LinkTarget| {
+            let target = match (link.document_name(), link.object()) {
+                (Some(document), Some(object)) => ReferenceTarget::External {
+                    document: document.to_owned(),
+                    object: object.to_owned(),
+                },
+                (None, None) => ReferenceTarget::Null,
+                (None, Some(object)) => ReferenceTarget::Local(
+                    neutral_ids
+                        .get(object)
+                        .cloned()
+                        .unwrap_or_else(|| object.to_owned()),
+                ),
+                _ => {
+                    return Err(CodecError::malformed(
+                        "drawing relationship has no complete target",
+                    ));
+                }
+            };
+            Ok(ReferenceSelection::new(target, link.subelements.clone()))
         };
         let parameter = |name: &str| scalar_property(&owned, name);
         let x = parameter("X")?;
@@ -175,8 +176,14 @@ pub(crate) fn transfer_neutral(
         let relationships = record
             .relationships
             .iter()
-            .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
-            .collect::<BTreeMap<_, _>>();
+            .map(|(role, targets)| {
+                let targets = targets
+                    .iter()
+                    .map(&relationship)
+                    .collect::<Result<Vec<_>, CodecError>>()?;
+                Ok((role.clone(), targets))
+            })
+            .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
         let template = if is_page_type(&record.kind) {
             record
                 .relationships
@@ -186,14 +193,15 @@ pub(crate) fn transfer_neutral(
                     if link.document.is_some() {
                         return None;
                     }
-                    let object = link.object.as_deref().filter(|object| !object.is_empty())?;
+                    let object = link.object()?;
                     neutral_ids.get(object).cloned()
                 })
         } else {
             None
         };
         model.drawings.push(Drawing {
-            id: DrawingId(neutral_ids[record.object.as_str()].clone()),
+            id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
+                .expect("identity grammar"),
             object: record.object.clone(),
             kind: classify(&record.kind),
             runtime_type: record.kind.clone(),
@@ -350,12 +358,12 @@ fn source_links(
         )));
     }
     let is_list = is_link_list_type(&property.type_name);
-    if !is_list && property.links.len() > 1 {
+    if !is_list && property.links().len() > 1 {
         return Err(CodecError::malformed(format_args!(
             "drawing source {name} has multiple targets",
         )));
     }
-    Ok(property.links.clone())
+    Ok(property.links().to_vec())
 }
 
 fn is_link_carrier_type(type_name: &str) -> bool {
@@ -407,7 +415,7 @@ fn typed_links(
     type_name: &str,
 ) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
     Ok(typed_property(properties, name, type_name)?
-        .map(|property| property.links.clone())
+        .map(|property| property.links().to_vec())
         .unwrap_or_default())
 }
 
@@ -419,7 +427,7 @@ fn typed_single_link(
     let Some(property) = typed_property(properties, name, type_name)? else {
         return Ok(None);
     };
-    match property.links.as_slice() {
+    match property.links() {
         [] => Ok(None),
         [link] => Ok(Some(link.clone())),
         _ => Err(CodecError::malformed(format_args!(
@@ -609,7 +617,7 @@ fn root_value<'a>(
     match selected_orders.as_slice() {
         [] => Ok(None),
         [selected_order] => property
-            .values
+            .values()
             .iter()
             .find(|value| value.order == *selected_order)
             .map(Some)

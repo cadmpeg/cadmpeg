@@ -5,12 +5,27 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, Layout};
+use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
 use crate::test_support::*;
 use crate::CreoCodec;
 
 use super::*;
+
+#[test]
+fn unknown_declaration_codes_retain_scope_identity() {
+    let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    assert_eq!(persistence.conflicting_declaration_count(), 1);
+    assert_eq!(persistence.unresolved_value_count(), 1);
+    assert_eq!(persistence.scopes[0].values.len(), 1);
+    assert_eq!(persistence.scopes[0].values[0].attribute_id, 2);
+    assert!(matches!(
+        persistence.scopes[0].declarations[1].type_code,
+        LegacyTypeCode::Other(_)
+    ));
+    assert!(parse_declaration(b"@future 1 256", 0).is_none());
+}
 
 #[test]
 fn scan_resolves_declarations_values_and_continuations() {
@@ -22,16 +37,16 @@ fn scan_resolves_declarations_values_and_continuations() {
 
     assert_eq!(scope.declarations.len(), 2);
     assert_eq!(scope.declarations[1].name, "matrix");
-    assert_eq!(scope.declarations[1].type_code, 2);
+    assert_eq!(scope.declarations[1].type_code, LegacyTypeCode::Real);
     assert_eq!(scope.values.len(), 2);
     assert_eq!(&data[scope.values[0].payload.clone()], b"->");
     assert_eq!(&data[scope.values[1].payload.clone()], b"[2][2]");
-    assert_eq!(scope.values[1].continuation_count, 2);
     let continuation = scope.values[1]
-        .continuation_rows
-        .clone()
+        .continuation
+        .as_ref()
         .expect("continuations");
-    assert_eq!(&data[continuation], b"$3FF,0\n$0,3FF");
+    assert_eq!(continuation.count.get(), 2);
+    assert_eq!(&data[continuation.rows.clone()], b"$3FF,0\n$0,3FF");
     assert_eq!(persistence.unresolved_value_count(), 0);
     assert_eq!(persistence.conflicting_declaration_count(), 0);
 }
@@ -474,16 +489,17 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         StringPayload::Array {
             dimensions: vec![2, 81],
             values: vec![
-                StringValue::Utf8 {
+                Ok(StringValue::Utf8 {
                     text: "first".to_string()
-                },
-                StringValue::Utf8 {
+                }),
+                Ok(StringValue::Utf8 {
                     text: String::new()
-                },
+                }),
             ],
-            complete: true,
+            continuation: None,
         }
     );
+    assert!(persistence.string_values[4].payload.is_complete());
     assert_eq!(persistence.string_values[4].payload.element_count(), 2);
     assert_eq!(
         persistence.string_values[3]
@@ -505,16 +521,47 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
+    assert!(!persistence.string_values[0].payload.is_complete());
     assert_eq!(persistence.unresolved_string_value_count, 1);
     assert_eq!(
         persistence.string_values[0].payload,
         StringPayload::Array {
             dimensions: vec![2],
-            values: vec![StringValue::Utf8 {
+            values: vec![Ok(StringValue::Utf8 {
                 text: "only".to_string()
-            }],
-            complete: false,
+            })],
+            continuation: None,
         }
+    );
+}
+
+#[test]
+fn array_completeness_wire_retains_continuation_failures() {
+    let data = b"@names 1 10\n0 1 [1]\n$header\n1 1 value\n\
+        @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    assert_eq!(persistence.incomplete_string_array_count, 2);
+    assert_eq!(persistence.unresolved_string_value_count, 2);
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[0].payload).unwrap(),
+        serde_json::json!({"form": "array", "dimensions": [1],
+            "values": [{"form": "utf8", "text": "value"}], "complete": false})
+    );
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[1].payload).unwrap(),
+        serde_json::json!({"form": "array", "dimensions": [1],
+            "values": [], "complete": false})
+    );
+    let payload = ObjectPayload::Array {
+        dimensions: vec![1, 2],
+        elements: vec!["first".into(), "second".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(payload).unwrap(),
+        serde_json::json!({
+            "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
+            "complete": true
+        })
     );
 }
 
@@ -542,6 +589,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
+    assert!(persistence.objects[1].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 0);
     assert_eq!(
         persistence.objects[1].parent.as_deref(),
@@ -555,7 +603,6 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
                 object_node_id(first_child_offset),
                 object_node_id(second_child_offset),
             ],
-            complete: true,
         }
     );
     assert_eq!(persistence.integer_values.len(), 1);
@@ -578,13 +625,11 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
+    assert!(!persistence.objects[0].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(
         persistence.objects[0].payload,
-        ObjectPayload::Array {
-            complete: false,
-            ..
-        }
+        ObjectPayload::Array { .. }
     ));
     assert_eq!(
         persistence.objects[1].payload,
@@ -640,35 +685,35 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(source.attributes["principal_unit"], "inLbmS");
     assert_eq!(source.attributes["source_length_scale_mm"], "25.4");
     assert_eq!(
-        result.report().coverage["decoded_legacy_principal_unit_count"],
+        result.report().coverage()["decoded_legacy_principal_unit_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_real_scalar_count"],
+        result.report().coverage()["decoded_legacy_real_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_real_element_count"],
+        result.report().coverage()["decoded_legacy_real_element_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_integer_scalar_count"],
+        result.report().coverage()["decoded_legacy_integer_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_object_arrow_count"],
+        result.report().coverage()["decoded_legacy_object_arrow_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_string_scalar_count"],
+        result.report().coverage()["decoded_legacy_string_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_string_element_count"],
+        result.report().coverage()["decoded_legacy_string_element_count"],
         2
     );
     assert_eq!(
-        result.report().coverage["undecoded_legacy_string_encoding_count"],
+        result.report().coverage()["undecoded_legacy_string_encoding_count"],
         1
     );
     let reals = &result
@@ -676,7 +721,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_real_values"];
+        .arenas()["legacy_real_values"];
     assert_eq!(reals.len(), 1);
     assert_eq!(
         reals[0].field("name"),
@@ -691,7 +736,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_integer_values"];
+        .arenas()["legacy_integer_values"];
     assert_eq!(integers.len(), 1);
     assert_eq!(
         integers[0].field("name"),
@@ -706,7 +751,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_objects"];
+        .arenas()["legacy_objects"];
     assert_eq!(objects.len(), 1);
     assert_eq!(
         integers[0].field("parent"),
@@ -717,7 +762,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_string_values"];
+        .arenas()["legacy_string_values"];
     assert_eq!(strings.len(), 2);
     let principal = strings
         .iter()
@@ -768,43 +813,43 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy numbered numeric decode");
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_5_scalar_count"],
+        result.report().coverage()["decoded_legacy_type_5_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_5_array_count"],
+        result.report().coverage()["decoded_legacy_type_5_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_5_element_count"],
+        result.report().coverage()["decoded_legacy_type_5_element_count"],
         4
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_6_scalar_count"],
+        result.report().coverage()["decoded_legacy_type_6_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_6_array_count"],
+        result.report().coverage()["decoded_legacy_type_6_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_6_element_count"],
+        result.report().coverage()["decoded_legacy_type_6_element_count"],
         5
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_7_scalar_count"],
+        result.report().coverage()["decoded_legacy_type_7_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_9_array_count"],
+        result.report().coverage()["decoded_legacy_type_9_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_11_array_count"],
+        result.report().coverage()["decoded_legacy_type_11_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_11_element_count"],
+        result.report().coverage()["decoded_legacy_type_11_element_count"],
         1
     );
 
@@ -813,20 +858,20 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         .native
         .namespace("creo")
         .expect("Creo namespace");
-    assert_eq!(native.arenas["legacy_type_5_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_6_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_7_values"].len(), 1);
-    assert_eq!(native.arenas["legacy_type_9_values"].len(), 1);
-    assert_eq!(native.arenas["legacy_type_11_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_5_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_6_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_7_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_9_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_11_values"].len(), 1);
     assert_eq!(
-        native.arenas["legacy_type_6_values"]
+        native.arenas()["legacy_type_6_values"]
             .iter()
             .find(|record| record.field("name") == Some(serde_json::json!("six")))
             .and_then(|record| record.field("payload")),
         Some(serde_json::json!({"form": "scalar", "value": 2.0}))
     );
     assert_eq!(
-        native.arenas["legacy_type_11_values"][0].field("payload"),
+        native.arenas()["legacy_type_11_values"][0].field("payload"),
         Some(serde_json::json!({
             "form": "array",
             "dimensions": [1],
@@ -834,8 +879,8 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         }))
     );
     assert_eq!(
-        native.arenas["legacy_type_11_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+        native.arenas()["legacy_type_11_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }
 
@@ -850,19 +895,19 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy type-3/type-4 decode");
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_3_scalar_count"],
+        result.report().coverage()["decoded_legacy_type_3_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage["decoded_legacy_type_4_scalar_count"],
+        result.report().coverage()["decoded_legacy_type_4_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_type_3_value_count"],
+        result.report().coverage()["unresolved_legacy_type_3_value_count"],
         0
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_type_4_value_count"],
+        result.report().coverage()["unresolved_legacy_type_4_value_count"],
         0
     );
 
@@ -871,23 +916,23 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
         .native
         .namespace("creo")
         .expect("Creo namespace");
-    assert_eq!(native.arenas["legacy_type_3_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_4_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_3_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_4_values"].len(), 1);
     assert_eq!(
-        native.arenas["legacy_type_3_values"][0].field("payload"),
+        native.arenas()["legacy_type_3_values"][0].field("payload"),
         Some(serde_json::json!({"form": "null"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_3_values"][1].field("payload"),
+        native.arenas()["legacy_type_3_values"][1].field("payload"),
         Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_4_values"][0].field("payload"),
+        native.arenas()["legacy_type_4_values"][0].field("payload"),
         Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_4_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+        native.arenas()["legacy_type_4_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }
 
@@ -908,35 +953,35 @@ fn incomplete_legacy_values_are_reported() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy incomplete-array decode");
     assert_eq!(
-        result.report().coverage["unresolved_legacy_real_value_count"],
+        result.report().coverage()["unresolved_legacy_real_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_integer_value_count"],
+        result.report().coverage()["unresolved_legacy_integer_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["incomplete_legacy_object_array_count"],
+        result.report().coverage()["incomplete_legacy_object_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_object_value_count"],
+        result.report().coverage()["unresolved_legacy_object_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["incomplete_legacy_string_array_count"],
+        result.report().coverage()["incomplete_legacy_string_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_string_value_count"],
+        result.report().coverage()["unresolved_legacy_string_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["unresolved_legacy_type_3_value_count"],
+        result.report().coverage()["unresolved_legacy_type_3_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["undecoded_legacy_type_4_encoding_count"],
+        result.report().coverage()["undecoded_legacy_type_4_encoding_count"],
         1
     );
     assert_eq!(
@@ -966,17 +1011,21 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
     assert!(scan.framing.sections.is_empty());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "6");
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
     assert_eq!(legacy.persistence.declaration_count(), 1);
     assert_eq!(legacy.persistence.value_count(), 1);
-    assert!(container::summarize(&scan).notes.iter().any(|note| {
-        note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
-    }));
+    let classification = crate::dialect::classify(&scan);
+    assert!(container::summarize(&scan, &classification)
+        .notes
+        .iter()
+        .any(|note| {
+            note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
+        }));
 }
 
 #[test]
@@ -999,15 +1048,15 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
     assert_eq!(scan.framing.sections[0].name, "BasicData");
     assert_eq!(scan.framing.sections[0].offset, section_offset);
     assert_eq!(scan.framing.sections[0].length, section.len());
     let persistence = &scan
         .framing
-        .legacy_ascii
-        .as_ref()
+        .layout
+        .legacy_ascii()
         .expect("legacy framing")
         .persistence;
     assert_eq!(persistence.scopes.len(), 2);
@@ -1020,7 +1069,7 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release 16.0  All Rights Reserved\n";
     let scan = container::scan_bytes(release.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "12");
     assert_eq!(legacy.product_release.as_deref(), Some("16.0"));
 
@@ -1041,13 +1090,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";
     let scan = container::scan_bytes(concatenated_release.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release.as_deref(), Some("18.0"));
 
     let unspecified = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER\n";
     let scan = container::scan_bytes(unspecified.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release, None);
 }
 
@@ -1056,13 +1105,13 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
     let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
     assert_eq!(
         container::scan_bytes(incomplete).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
     let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER";
     assert_eq!(
         container::scan_bytes(empty_schema).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 
     let embedded = build_prt_raw(
@@ -1074,6 +1123,6 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
     );
     assert_eq!(
         container::scan_bytes(embedded).framing.layout,
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 }

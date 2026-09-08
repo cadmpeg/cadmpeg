@@ -5,8 +5,10 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, Sk
 
 fn definition() -> crate::feature::FeatureDefinition {
     crate::feature::FeatureDefinition {
-        id: 7,
-        owner_feature_id: Some(7),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(7),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -30,11 +32,10 @@ fn surface_row(
 ) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     }
@@ -42,23 +43,20 @@ fn surface_row(
 
 fn generated_side_table() -> crate::feature::FeatureEntityTable {
     crate::feature::FeatureEntityTable {
-        feature_id: Some(7),
+        feature_id: 7,
         table_class_id: 29,
-        entry_ids: vec![31],
         entries: vec![crate::feature::FeatureEntityTableEntry {
             entity_id: 31,
             class_id: 200,
-            source_entity_id: Some(11),
-            related_entity_id: None,
-            related_entity_state: None,
+            payload: crate::feature::entry_payload(200, Some(11), None, None),
             prefixed: false,
             offset: 0,
             end_offset: 0,
+            is_surface: false,
         }],
-        surface_ids: vec![31],
-        non_surface_entity_ids: Vec::new(),
         offset: 0,
     }
+    .with_surface_ids([31])
 }
 
 fn sketch() -> Sketch {
@@ -121,24 +119,23 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     let mut table = generated_side_table();
     let cap = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
+        payload: crate::feature::entry_payload(class_id, None, None, None),
+
         entity_id,
         class_id,
-        source_entity_id: None,
-        related_entity_id: None,
-        related_entity_state: None,
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     let materialized = crate::feature::FeatureEntityTableEntry {
         entity_id: 32,
         class_id: 200,
-        source_entity_id: Some(13),
-        related_entity_id: None,
-        related_entity_state: None,
+        payload: crate::feature::entry_payload(200, Some(13), None, None),
         prefixed: false,
         offset: 0,
         end_offset: 0,
+        is_surface: false,
     };
     table.entries = vec![
         cap(29, 204),
@@ -146,9 +143,9 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         table.entries[0].clone(),
         materialized,
     ];
-    table.entry_ids = table.entries.iter().map(|entry| entry.entity_id).collect();
-    table.surface_ids = vec![29, 30, 32];
-    table.non_surface_entity_ids = vec![31];
+    for entry in &mut table.entries {
+        entry.is_surface = matches!(entry.entity_id, 29 | 30 | 32);
+    }
     scan.features.entity_tables.push(table);
     scan.surfaces
         .rows

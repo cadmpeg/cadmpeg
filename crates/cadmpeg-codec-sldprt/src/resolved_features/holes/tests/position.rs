@@ -14,9 +14,8 @@ use cadmpeg_ir::sketches::{
 
 use super::super::*;
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputName, FeatureInputRelationFamily,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
+    FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
 
 #[test]
@@ -84,13 +83,12 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 kind: SketchInputKind::LineOrCircle,
                 state_value: Some(1.0),
                 coordinates_m: Some(coordinates_m),
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             },
         )
         .collect();
     let surface = |id, x| Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 7.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -130,8 +128,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([1.0, 1.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
         SketchInputEntity {
             id: "auxiliary-anchor".into(),
@@ -144,8 +141,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             kind: SketchInputKind::Point,
             state_value: Some(1.0),
             coordinates_m: Some([0.0, 0.0]),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         },
     ]);
     assert_eq!(
@@ -156,7 +152,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     );
 
     let opposite_side = |id, x| Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 30.0, 10.0),
             axis: Vector3::new(0.0, 0.0, -1.0),
@@ -217,15 +213,15 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             kind: SketchInputKind::Arc,
             state_value: Some(1.0),
             coordinates_m: Some(coordinates_m),
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         })
         .collect();
     let surfaces = [-70.0, 70.0]
         .into_iter()
         .enumerate()
         .map(|(id, x)| Surface {
-            id: SurfaceId(format!("carrier-{id}")),
+            id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(x, 11.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -264,8 +260,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = lane();
     lane.sketch_entities = vec![
@@ -336,7 +331,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .cloned()
         .enumerate()
         .map(|(index, mut surface)| {
-            surface.id = SurfaceId(format!("opposite-{index}"));
+            surface.id = SurfaceId::mint(format!("test:model:entity#opposite-{index}"))
+                .expect("identity grammar");
             let SurfaceGeometry::Cylinder { origin, axis, .. } = &mut surface.geometry else {
                 unreachable!();
             };
@@ -354,7 +350,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     );
 
     surfaces.push(Surface {
-        id: SurfaceId("duplicate-locus-bore".into()),
+        id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(1000.0, 1000.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -462,7 +458,6 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: None,
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -492,11 +487,10 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
 fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-sketch".into()),
+        id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -504,8 +498,9 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(SketchId("position-geometry".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "position-geometry".into(),
+            ))),
         },
         native_ref: Some("native-position-sketch".into()),
     };
@@ -516,7 +511,6 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("6".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -550,8 +544,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.002, 0.003]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "origin-marker".into(),
@@ -601,17 +594,14 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     };
-    let entities = [SketchEntity {
-        id: SketchEntityId("point".into()),
-        sketch: sketch.id.clone(),
-        construction: false,
-        native_ref: Some("authored-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let entities = [SketchEntity::new(
+        SketchEntityId("point".into()),
+        sketch.id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(2.0, 3.0),
         },
-    }];
+    )
+    .with_native_ref(Some("authored-point".into()))];
     let mut features = vec![hole, sketch_feature];
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
@@ -632,6 +622,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         panic!("expected hole");
     };
+    let placements = placements.as_deref().expect("resolved placements");
     assert_eq!(placements.len(), 1);
     assert!(matches!(
         placements[0],
@@ -650,7 +641,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     ));
     assert_eq!(
         features[0].dependencies,
-        [FeatureId("position-sketch".into())]
+        [FeatureId::mint("position-sketch").expect("identity grammar")]
     );
 
     let mut paired_features = vec![model_hole(), features[1].clone()];
@@ -668,6 +659,9 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     else {
         panic!("expected hole");
     };
+    let paired_placements = paired_placements
+        .as_deref()
+        .expect("resolved paired placements");
     assert_eq!(paired_placements.len(), 2);
     assert!(matches!(
         paired_placements[0],
@@ -721,18 +715,17 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let FeatureDefinition::Hole { placements, .. } = &incomplete_features[0].definition else {
         panic!("expected hole");
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
 fn unique_unindexed_point_locus_is_projected() {
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-sketch".into()),
+        id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -740,8 +733,9 @@ fn unique_unindexed_point_locus_is_projected() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(SketchId("position-geometry".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "position-geometry".into(),
+            ))),
         },
         native_ref: Some("native-position-sketch".into()),
     };
@@ -752,7 +746,6 @@ fn unique_unindexed_point_locus_is_projected() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("6".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "Sketch".into(),
@@ -776,8 +769,7 @@ fn unique_unindexed_point_locus_is_projected() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some(coordinates_m),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     lane.sketch_entities = vec![
         marker("relation-anchor-0", 0, [0.0, 0.0]),
@@ -811,8 +803,8 @@ fn unique_unindexed_point_locus_is_projected() {
         panic!("expected hole");
     };
     assert!(matches!(
-        placements.as_slice(),
-        [HolePlacement::Axis {
+        placements.as_deref(),
+        Some([HolePlacement::Axis {
             origin: Point3 {
                 x: 14.0,
                 y: 25.0,
@@ -823,7 +815,7 @@ fn unique_unindexed_point_locus_is_projected() {
                 y: 0.0,
                 z: 1.0
             },
-        }]
+        }])
     ));
 
     lane.sketch_entities
@@ -839,7 +831,7 @@ fn unique_unindexed_point_locus_is_projected() {
     let FeatureDefinition::Hole { placements, .. } = &ambiguous_features[0].definition else {
         panic!("expected hole");
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
@@ -847,11 +839,10 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId("position-geometry".into());
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-sketch".into()),
+        id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -870,7 +861,6 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("6".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -894,8 +884,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "same-axis-endpoint".into(),
@@ -908,8 +897,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     lane.sketch_entities.push(SketchInputEntity {
         id: "construction-point".into(),
@@ -922,8 +910,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -934,39 +921,31 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         native_ref: Some("lane".into()),
     };
     let point = Point3::new(12.0, 23.0, 30.0);
-    let entity = SpatialSketchEntity {
-        id: SpatialSketchEntityId("point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("authored-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: point },
-    };
-    let same_axis_endpoint = SpatialSketchEntity {
-        id: SpatialSketchEntityId("same-axis-endpoint".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("same-axis-endpoint".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
+    let entity = SpatialSketchEntity::new(
+        SpatialSketchEntityId("point".into()),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Point { position: point },
+    )
+    .with_native_ref(Some("authored-point".into()));
+    let same_axis_endpoint = SpatialSketchEntity::new(
+        SpatialSketchEntityId("same-axis-endpoint".into()),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Point {
             position: Point3::new(12.0, 23.0, 20.0),
         },
-    };
-    let construction_point = SpatialSketchEntity {
-        id: SpatialSketchEntityId("construction-point".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some("construction-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
+    )
+    .with_native_ref(Some("same-axis-endpoint".into()));
+    let construction_point = SpatialSketchEntity::new(
+        SpatialSketchEntityId("construction-point".into()),
+        sketch_id,
+        SpatialSketchGeometry::Point {
             position: Point3::new(100.0, 100.0, 100.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
-        id: SurfaceId("bore".into()),
+        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(12.0, 23.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -990,11 +969,13 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(12.0, 23.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        placements.as_deref(),
+        Some(
+            &[cadmpeg_ir::features::HolePlacement::Axis {
+                origin: Point3::new(12.0, 23.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }][..]
+        )
     );
 }
 
@@ -1003,11 +984,10 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId("position-geometry".into());
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-sketch".into()),
+        id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -1026,7 +1006,6 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("6".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1056,14 +1035,12 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     let entities = positions
         .into_iter()
         .enumerate()
-        .map(|(index, position)| SpatialSketchEntity {
-            id: SpatialSketchEntityId(format!("point-{index}")),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Point { position },
+        .map(|(index, position)| {
+            SpatialSketchEntity::new(
+                SpatialSketchEntityId(format!("point-{index}")),
+                sketch_id.clone(),
+                SpatialSketchGeometry::Point { position },
+            )
         })
         .collect::<Vec<_>>();
     let mut features = vec![hole, sketch_feature];
@@ -1081,21 +1058,23 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[
-            HolePlacement::Axis {
-                origin: Point3::new(12.0, 23.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-            HolePlacement::Axis {
-                origin: Point3::new(12.0, 33.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-            HolePlacement::Axis {
-                origin: Point3::new(22.0, 23.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-        ]
+        placements.as_deref(),
+        Some(
+            &[
+                HolePlacement::Axis {
+                    origin: Point3::new(12.0, 23.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                HolePlacement::Axis {
+                    origin: Point3::new(12.0, 33.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                HolePlacement::Axis {
+                    origin: Point3::new(22.0, 23.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            ][..]
+        )
     );
 }
 
@@ -1104,11 +1083,10 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let hole = model_hole();
     let sketch_id = SpatialSketchId("position-geometry".into());
     let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId("position-sketch".into()),
+        id: FeatureId::mint("position-sketch").expect("identity grammar"),
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -1127,7 +1105,6 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("6".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Position".into(),
         kind: "3DSketch".into(),
@@ -1151,8 +1128,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         kind: SketchInputKind::Relation(SketchRelationKind::Vertical),
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     });
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -1163,17 +1139,14 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         native_ref: Some("lane".into()),
     };
     let locus = Point3::new(12.0, 23.0, 30.0);
-    let entity = SpatialSketchEntity {
-        id: SpatialSketchEntityId("relation-locus".into()),
-        sketch: sketch_id,
-        construction: false,
-        native_ref: Some("relation-handle".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: locus },
-    };
+    let entity = SpatialSketchEntity::new(
+        SpatialSketchEntityId("relation-locus".into()),
+        sketch_id,
+        SpatialSketchGeometry::Point { position: locus },
+    )
+    .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
-        id: SurfaceId("bore".into()),
+        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(12.0, 23.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1197,11 +1170,13 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[HolePlacement::Axis {
-            origin: Point3::new(12.0, 23.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        placements.as_deref(),
+        Some(
+            &[HolePlacement::Axis {
+                origin: Point3::new(12.0, 23.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }][..]
+        )
     );
 }
 
@@ -1257,7 +1232,6 @@ fn source_intervals_supply_legacy_hole_profiles() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("9".into()),
-        parent_source_id: None,
         ordinal: 1,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1306,7 +1280,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         name: "depth-name".into(),
         value: 0.0068,
         role: FeatureInputScalarRole::Native,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     });
     let mut histories = [history];
@@ -1359,7 +1333,6 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: Some("58".into()),
-        parent_source_id: None,
         ordinal: 9,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1469,7 +1442,6 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: None,
-        parent_source_id: None,
         ordinal: 2,
         name: "Profile".into(),
         kind: "Sketch".into(),
@@ -1511,7 +1483,6 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         ordinal: 0,
         offset: 100,
         name: "moAngleParameter_c".into(),
-        role: FeatureInputClassRole::Parameter,
     });
     lane.names.push(FeatureInputName {
         id: "angle-name".into(),
@@ -1531,7 +1502,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         name: "angle-name".into(),
         value: std::f64::consts::TAU,
         role: FeatureInputScalarRole::Native,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     });
 
@@ -1567,5 +1538,5 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }

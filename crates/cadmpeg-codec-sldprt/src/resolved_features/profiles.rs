@@ -63,6 +63,7 @@ use cadmpeg_ir::sketches::{
     SketchId, SketchPlacement,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -113,7 +114,7 @@ pub(crate) fn bind_sketch_profiles(
                 sketch.native_ref.as_deref() == Some(lane.id.as_str())
                     && annotations
                         .provenance
-                        .get(&sketch.id.0)
+                        .get(sketch.id.as_str())
                         .is_some_and(|source| source.offset > start && source.offset < end)
             });
             let Some(sketch) = enclosed.next() else {
@@ -137,12 +138,11 @@ pub(crate) fn bind_sketch_profiles(
             }
             match &mut feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: feature_sketch,
-                    ..
                 } => {
                     sketch.name = Some(native_feature.name.clone());
-                    *feature_sketch = Some(sketch.id.clone());
+                    *feature_sketch =
+                        cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone()));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Sweep { section, .. }
                     if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) =>
@@ -172,7 +172,7 @@ pub(crate) fn bind_sketch_profiles(
         sketch_entities
             .iter()
             .filter(|entity| superseded.contains(&entity.sketch))
-            .map(|entity| entity.id.0.clone()),
+            .map(|entity| entity.id().0.clone()),
     );
     removed.extend(
         sketch_constraints
@@ -184,7 +184,9 @@ pub(crate) fn bind_sketch_profiles(
     sketch_entities.retain(|entity| !superseded.contains(&entity.sketch));
     sketch_constraints.retain(|constraint| !superseded.contains(&constraint.sketch));
     annotations.provenance.retain(|id, _| !removed.contains(id));
-    annotations.exactness.retain(|id, _| !removed.contains(id));
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    builder.retain_exactness(|id| !removed.contains(id));
+    *annotations = builder.build();
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
 }
 
@@ -324,7 +326,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 feature.native_ref.as_deref() == Some(native_feature.id.as_str())
                     && matches!(
                         feature.definition,
-                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: None, .. }
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                            ..
+                        }
                     )
             }) else {
                 continue;
@@ -357,7 +363,7 @@ pub(crate) fn project_compact_sketch_profiles(
                             | FeatureInputRelationFamily::CircleDiameter
                     )
                 })
-                .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+                .filter_map(|relation| relation.parameter_scalar_ref())
                 .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
                 .map(|scalar| scalar.value * NATIVE_TO_IR)
                 .collect::<Vec<_>>();
@@ -448,8 +454,7 @@ pub(crate) fn project_compact_sketch_profiles(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        sketch: Some(sketch_id),
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     };
                 continue;
             }
@@ -511,23 +516,22 @@ pub(crate) fn project_compact_sketch_profiles(
                         entity: entity_id.clone(),
                         reversed: false,
                     });
-                    sketch_entities.push(SketchEntity {
-                        id: entity_id,
-                        sketch: sketch_id.clone(),
-                        construction: false,
-                        native_ref: Some(start_marker.id.clone()),
-                        geometry_ref: None,
-                        endpoint_refs: vec![start_marker.id.clone(), end_marker.id.clone()],
-                        geometry: SketchGeometry::Line { start: *start, end },
-                    });
+                    sketch_entities.push(
+                        SketchEntity::new(
+                            entity_id,
+                            sketch_id.clone(),
+                            SketchGeometry::Line { start: *start, end },
+                        )
+                        .with_native_ref(Some(start_marker.id.clone()))
+                        .with_endpoint_refs(vec![start_marker.id.clone(), end_marker.id.clone()]),
+                    );
                 }
                 let mut sketch = sketch;
                 sketch.profiles.push(profile);
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        sketch: Some(sketch_id),
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     };
                 continue;
             }
@@ -570,15 +574,15 @@ pub(crate) fn project_compact_sketch_profiles(
                     complete_ordered_compact_line_profile(&lines, markers.len())
                 {
                     for (entity_id, marker, vertex, start, end) in lines {
-                        sketch_entities.push(SketchEntity {
-                            id: entity_id,
-                            sketch: sketch_id.clone(),
-                            construction: false,
-                            native_ref: Some(marker.id.clone()),
-                            geometry_ref: None,
-                            endpoint_refs: vec![marker.id.clone(), vertex.id.clone()],
-                            geometry: SketchGeometry::Line { start, end },
-                        });
+                        sketch_entities.push(
+                            SketchEntity::new(
+                                entity_id,
+                                sketch_id.clone(),
+                                SketchGeometry::Line { start, end },
+                            )
+                            .with_native_ref(Some(marker.id.clone()))
+                            .with_endpoint_refs(vec![marker.id.clone(), vertex.id.clone()]),
+                        );
                     }
                     profile
                 } else {
@@ -617,15 +621,18 @@ pub(crate) fn project_compact_sketch_profiles(
                             entity: entity_id.clone(),
                             reversed: false,
                         });
-                        sketch_entities.push(SketchEntity {
-                            id: entity_id,
-                            sketch: sketch_id.clone(),
-                            construction: false,
-                            native_ref: Some(start_marker.id.clone()),
-                            geometry_ref: None,
-                            endpoint_refs: vec![start_marker.id.clone(), end_marker.id.clone()],
-                            geometry: SketchGeometry::Line { start: *start, end },
-                        });
+                        sketch_entities.push(
+                            SketchEntity::new(
+                                entity_id,
+                                sketch_id.clone(),
+                                SketchGeometry::Line { start: *start, end },
+                            )
+                            .with_native_ref(Some(start_marker.id.clone()))
+                            .with_endpoint_refs(vec![
+                                start_marker.id.clone(),
+                                end_marker.id.clone(),
+                            ]),
+                        );
                     }
                     profile
                 };
@@ -634,8 +641,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        sketch: Some(sketch_id),
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     };
                 continue;
             }
@@ -674,22 +680,20 @@ pub(crate) fn project_compact_sketch_profiles(
                     entity: entity_id.clone(),
                     reversed: false,
                 });
-                sketch_entities.push(SketchEntity {
-                    id: entity_id,
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: Some(marker.id.clone()),
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SketchGeometry::Line { start: *start, end },
-                });
+                sketch_entities.push(
+                    SketchEntity::new(
+                        entity_id,
+                        sketch_id.clone(),
+                        SketchGeometry::Line { start: *start, end },
+                    )
+                    .with_native_ref(Some(marker.id.clone())),
+                );
             }
             let mut sketch = sketch;
             sketch.profiles.push(profile);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch_id),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             };
         }
     }
@@ -789,7 +793,7 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                     match &feature.definition {
                         cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } => {
-                            Some((index, sketch.clone(), false))
+                            Some((index, sketch.id().cloned(), false))
                         }
                         cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
                             sketch,
@@ -903,8 +907,9 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                     features[feature_index].definition =
                         cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
-                            sketch: Some(sketch_id),
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                sketch_id,
+                            )),
                         };
                 }
                 continue;
@@ -916,8 +921,7 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                 } else {
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
-                        sketch: Some(sketch_id),
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     }
                 };
                 continue;
@@ -1235,8 +1239,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     major_angle: Angle((axis.1 as f64).atan2(axis.0 as f64)),
                                     major_radius: Length(major * NATIVE_TO_IR),
                                     minor_radius: Length(minor * NATIVE_TO_IR),
-                                    start_angle: None,
-                                    end_angle: None,
+                                    bounds: None,
                                 }
                             } else if let Some([center, start, end]) =
                                 usize::try_from(marker.offset).ok().and_then(|offset| {
@@ -1468,7 +1471,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 })
                             }
                         }
-                        SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
+                        SketchInputKind::Relation(_)
+                        | SketchInputKind::Native(_)
+                        | SketchInputKind::NativeHandle(_) => return None,
                     };
                     let endpoint_refs = if matches!(
                         marker.kind,
@@ -1495,27 +1500,26 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         return None;
                     }
-                    Some(SketchEntity {
-                        id: SketchEntityId(format!(
-                            "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
-                            native_feature.ordinal, marker.ordinal
-                        )),
-                        sketch: sketch_id.clone(),
-                        construction: usize::try_from(marker.offset).ok().is_some_and(|offset| {
-                            (marker_is_selected_construction_line(&lane.native_payload, offset)
-                                || current_compact_roster_selected_axis(
-                                    &lane.native_payload,
-                                    offset,
-                                ))
-                                && !(matches!(&geometry, SketchGeometry::Circle { .. })
-                                    && marker_profile_curve_role(&lane.native_payload, offset)
-                                        == Some(1))
-                        }),
-                        native_ref: Some(marker.id.clone()),
-                        geometry_ref: None,
-                        endpoint_refs,
-                        geometry,
-                    })
+                    let construction = usize::try_from(marker.offset).ok().is_some_and(|offset| {
+                        (marker_is_selected_construction_line(&lane.native_payload, offset)
+                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
+                            && !(matches!(&geometry, SketchGeometry::Circle { .. })
+                                && marker_profile_curve_role(&lane.native_payload, offset)
+                                    == Some(1))
+                    });
+                    Some(
+                        SketchEntity::new(
+                            SketchEntityId(format!(
+                                "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
+                                native_feature.ordinal, marker.ordinal
+                            )),
+                            sketch_id.clone(),
+                            geometry,
+                        )
+                        .with_construction(construction)
+                        .with_native_ref(Some(marker.id.clone()))
+                        .with_endpoint_refs(endpoint_refs),
+                    )
                 })
                 .collect::<Vec<_>>();
             if let Some(rectangle) = encoded_rectangle {
@@ -1656,21 +1660,17 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                 }
                 for (index, start) in corners.iter().enumerate() {
-                    projected.push(SketchEntity {
-                        id: SketchEntityId(format!(
+                    projected.push(SketchEntity::new(
+                        SketchEntityId(format!(
                             "sldprt:model:sketch-entity#markers:{lane_key}:{}:rectangle:{index}",
                             native_feature.ordinal
                         )),
-                        sketch: sketch_id.clone(),
-                        construction: false,
-                        native_ref: None,
-                        geometry_ref: None,
-                        endpoint_refs: Vec::new(),
-                        geometry: SketchGeometry::Line {
+                        sketch_id.clone(),
+                        SketchGeometry::Line {
                             start: *start,
                             end: corners[(index + 1) % corners.len()],
                         },
-                    });
+                    ));
                 }
             }
             resolve_two_center_semicircle_profile(
@@ -1702,8 +1702,7 @@ pub(crate) fn project_marker_backed_sketches(
                 }
             } else {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: Some(sketch_id),
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                 }
             };
         }
@@ -1812,7 +1811,11 @@ pub(crate) fn project_sketch_block_profiles(
                 };
                 if !matches!(
                     features[profile_index].definition,
-                    FeatureDefinition::Sketch { sketch: None, .. }
+                    FeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                            | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                        ..
+                    }
                 ) {
                     continue;
                 }
@@ -1856,8 +1859,10 @@ pub(crate) fn project_sketch_block_profiles(
                         break;
                     }
                     block_sketches.insert(source.to_string(), sketch_id.clone());
-                    block_feature_ids
-                        .insert(source.to_string(), features[definition_index].id.0.clone());
+                    block_feature_ids.insert(
+                        source.to_string(),
+                        features[definition_index].id.as_str().to_owned(),
+                    );
                 }
                 if !definitions_complete || block_sketches.len() != children.len() {
                     continue;
@@ -1895,13 +1900,14 @@ pub(crate) fn project_sketch_block_profiles(
                         break;
                     };
                     if !block_sketches.contains_key(&block_source)
-                        || block_feature_ids.get(&block_source) != Some(&block.0)
+                        || block_feature_ids.get(&block_source).map(String::as_str)
+                            != Some(block.as_str())
                     {
                         instances_complete = false;
                         break;
                     }
                     instances.push(SketchBlockInstancePlacement {
-                        feature_id: features[instance_index].id.0.clone(),
+                        feature_id: features[instance_index].id.as_str().to_owned(),
                         block_source,
                         transform: *transform,
                     });
@@ -1937,7 +1943,7 @@ pub(crate) fn project_sketch_block_profiles(
                 if let FeatureDefinition::Sketch { sketch, .. } =
                     &mut features[profile_index].definition
                 {
-                    *sketch = Some(sketch_id);
+                    *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                 }
             }
         }
@@ -1990,39 +1996,41 @@ fn assemble_sketch_block_profile(
             .iter()
             .map(|entity| {
                 (
-                    entity.id.clone(),
+                    entity.id().clone(),
                     SketchEntityId(format!(
                         "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
                         id_key(&input.sketch_id.0),
                         id_key(&instance.feature_id),
-                        id_key(&entity.id.0)
+                        id_key(entity.id().0.as_str())
                     )),
                 )
             })
             .collect::<HashMap<_, _>>();
         for source_entity in &source_entities {
-            let id = entity_ids.get(&source_entity.id)?.clone();
-            assembled_entities.push(SketchEntity {
-                id,
-                sketch: input.sketch_id.clone(),
-                construction: source_entity.construction,
-                native_ref: Some(format!(
+            let id = entity_ids.get(source_entity.id())?.clone();
+            assembled_entities.push(
+                SketchEntity::new(
+                    id,
+                    input.sketch_id.clone(),
+                    transform_sketch_block_geometry(
+                        &source_entity.geometry,
+                        instance.transform,
+                        placement,
+                        rotation,
+                    )?,
+                )
+                .with_construction(source_entity.construction)
+                .with_native_ref(Some(format!(
                     "{}:{}",
                     instance.feature_id,
                     source_entity
                         .native_ref
                         .as_deref()
-                        .unwrap_or(&source_entity.id.0)
-                )),
-                geometry_ref: source_entity.geometry_ref.clone(),
-                endpoint_refs: source_entity.endpoint_refs.clone(),
-                geometry: transform_sketch_block_geometry(
-                    &source_entity.geometry,
-                    instance.transform,
-                    placement,
-                    rotation,
-                )?,
-            });
+                        .unwrap_or(source_entity.id().0.as_str())
+                )))
+                .with_geometry_ref(source_entity.geometry_ref.clone())
+                .with_endpoint_refs(source_entity.endpoint_refs.clone()),
+            );
         }
         let source_profiles = if source_sketch.profiles.is_empty() {
             closed_marker_profiles_allowing_shared_endpoints(&source_entities)
@@ -2157,69 +2165,58 @@ fn transform_sketch_block_geometry(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle,
-            end_angle,
+            bounds,
         } => SketchGeometry::Ellipse {
             center: point(*center)?,
             major_angle: angle(*major_angle),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
-            start_angle: start_angle.map(angle),
-            end_angle: end_angle.map(angle),
+            bounds: bounds.map(|[start, end]| [angle(start), angle(end)]),
         },
         SketchGeometry::Hyperbola {
             center,
             major_angle,
             major_radius,
             minor_radius,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => SketchGeometry::Hyperbola {
             center: point(*center)?,
             major_angle: angle(*major_angle),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
-            start_parameter: *start_parameter,
-            end_parameter: *end_parameter,
+            bounds: *bounds,
         },
         SketchGeometry::Parabola {
             vertex,
             axis_angle,
             focal_length,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => SketchGeometry::Parabola {
             vertex: point(*vertex)?,
             axis_angle: angle(*axis_angle),
             focal_length: *focal_length,
-            start_parameter: *start_parameter,
-            end_parameter: *end_parameter,
+            bounds: *bounds,
         },
-        SketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => SketchGeometry::Nurbs {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points
+        SketchGeometry::Nurbs { curve } => {
+            let mut curve = curve.clone();
+            let transformed = curve
+                .control_points()
                 .iter()
                 .copied()
                 .map(point)
-                .collect::<Option<Vec<_>>>()?,
-            weights: weights.clone(),
-            periodic: *periodic,
-        },
+                .collect::<Option<Vec<_>>>()?;
+            curve
+                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .ok()?;
+            SketchGeometry::Nurbs { curve }
+        }
         SketchGeometry::Text {
             text,
             font_family,
             font_weight,
             height,
             width_factor,
-            anchor,
-            rotation: text_rotation,
+            placement,
             horizontal_alignment,
             vertical_alignment,
         } => SketchGeometry::Text {
@@ -2228,11 +2225,13 @@ fn transform_sketch_block_geometry(
             font_weight: *font_weight,
             height: *height,
             width_factor: *width_factor,
-            anchor: match anchor {
-                Some(anchor) => Some(point(*anchor)?),
+            placement: match placement {
+                Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
+                    anchor: point(placement.anchor)?,
+                    rotation: angle(placement.rotation),
+                }),
                 None => None,
             },
-            rotation: text_rotation.map(angle),
             horizontal_alignment: *horizontal_alignment,
             vertical_alignment: *vertical_alignment,
         },
@@ -2311,7 +2310,11 @@ fn project_detached_legacy_config_sketches(
             };
             if !matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None, .. }
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    ..
+                }
             ) {
                 continue;
             }
@@ -2384,8 +2387,7 @@ fn project_detached_legacy_config_sketches(
             sketch_entities.append(&mut entities);
             sketches.push(sketch.clone());
             feature.definition = FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch.id),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id)),
             };
         }
     }
@@ -2465,7 +2467,7 @@ fn legacy_config_hex_sketch(
         .id
         .0
         .rsplit_once('#')
-        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+        .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
         SketchEntityId(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
@@ -2478,43 +2480,45 @@ fn legacy_config_hex_sketch(
             .into_iter()
             .enumerate()
     {
-        entities.push(SketchEntity {
-            id: entity_id("axis", index),
-            sketch: sketch.id.clone(),
-            construction: true,
-            native_ref: Some(curve.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: endpoints.iter().map(|marker| marker.id.clone()).collect(),
-            geometry: SketchGeometry::Line {
-                start: point(endpoints[0])?,
-                end: point(endpoints[1])?,
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                entity_id("axis", index),
+                sketch.id.clone(),
+                SketchGeometry::Line {
+                    start: point(endpoints[0])?,
+                    end: point(endpoints[1])?,
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(curve.id.clone()))
+            .with_endpoint_refs(endpoints.iter().map(|marker| marker.id.clone()).collect()),
+        );
     }
-    entities.push(SketchEntity {
-        id: entity_id("circle", 0),
-        sketch: sketch.id.clone(),
-        construction: false,
-        native_ref: Some(circle.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: vec![circle.id.clone(), circle_radial.id.clone()],
-        geometry: SketchGeometry::Circle {
-            center,
-            radius: Length(circle_radius),
-        },
-    });
-    entities.push(SketchEntity {
-        id: entity_id("circle", 1),
-        sketch: sketch.id.clone(),
-        construction: true,
-        native_ref: Some(construction_circle.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: vec![origin.id.clone(), construction_radial.id.clone()],
-        geometry: SketchGeometry::Circle {
-            center: construction_center,
-            radius: Length(construction_radius),
-        },
-    });
+    entities.push(
+        SketchEntity::new(
+            entity_id("circle", 0),
+            sketch.id.clone(),
+            SketchGeometry::Circle {
+                center,
+                radius: Length(circle_radius),
+            },
+        )
+        .with_native_ref(Some(circle.id.clone()))
+        .with_endpoint_refs(vec![circle.id.clone(), circle_radial.id.clone()]),
+    );
+    entities.push(
+        SketchEntity::new(
+            entity_id("circle", 1),
+            sketch.id.clone(),
+            SketchGeometry::Circle {
+                center: construction_center,
+                radius: Length(construction_radius),
+            },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(construction_circle.id.clone()))
+        .with_endpoint_refs(vec![origin.id.clone(), construction_radial.id.clone()]),
+    );
     let line_curves = [line0, line1, line2, line3, line4, line5];
     let mut outer_profile = Vec::new();
     for (index, curve) in line_curves.into_iter().enumerate() {
@@ -2525,18 +2529,18 @@ fn legacy_config_hex_sketch(
             entity: id.clone(),
             reversed: false,
         });
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch.id.clone(),
-            construction: false,
-            native_ref: Some(curve.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: vec![start.id.clone(), end.id.clone()],
-            geometry: SketchGeometry::Line {
-                start: point(start)?,
-                end: point(end)?,
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                id,
+                sketch.id.clone(),
+                SketchGeometry::Line {
+                    start: point(start)?,
+                    end: point(end)?,
+                },
+            )
+            .with_native_ref(Some(curve.id.clone()))
+            .with_endpoint_refs(vec![start.id.clone(), end.id.clone()]),
+        );
     }
     let mut sketch = sketch.clone();
     sketch.profiles = vec![
@@ -2612,7 +2616,7 @@ fn legacy_config_collinear_sketch(
         .id
         .0
         .rsplit_once('#')
-        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+        .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
         SketchEntityId(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
@@ -2631,18 +2635,17 @@ fn legacy_config_collinear_sketch(
         .zip(segments)
         .enumerate()
         .map(|(index, (curve, (start, end)))| {
-            Some(SketchEntity {
-                id: entity_id("line", index),
-                sketch: sketch.id.clone(),
-                construction: false,
-                native_ref: Some(curve.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
-                    start: project(start)?,
-                    end: project(end)?,
-                },
-            })
+            Some(
+                SketchEntity::new(
+                    entity_id("line", index),
+                    sketch.id.clone(),
+                    SketchGeometry::Line {
+                        start: project(start)?,
+                        end: project(end)?,
+                    },
+                )
+                .with_native_ref(Some(curve.id.clone())),
+            )
         })
         .collect::<Option<Vec<_>>>()?;
     let mut points = markers
@@ -2660,17 +2663,16 @@ fn legacy_config_collinear_sketch(
         same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
     });
     for (index, (marker, coordinates)) in points.into_iter().enumerate() {
-        entities.push(SketchEntity {
-            id: entity_id("point", index),
-            sketch: sketch.id.clone(),
-            construction: false,
-            native_ref: marker.map(|marker| marker.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: project(coordinates)?,
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                entity_id("point", index),
+                sketch.id.clone(),
+                SketchGeometry::Point {
+                    position: project(coordinates)?,
+                },
+            )
+            .with_native_ref(marker.map(|marker| marker.id.clone())),
+        );
     }
     Some((sketch.clone(), entities))
 }
@@ -2680,8 +2682,8 @@ mod detached_legacy_sketch_tests {
     use super::*;
     use crate::layout::current_terminal_relation_carrier as terminal;
     use crate::records::{
-        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-        FeatureInputRelationFamily, FeatureInputRelationInstance,
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputRelationFamily,
+        FeatureInputRelationInstance,
     };
 
     fn feature() -> Feature {
@@ -2691,7 +2693,6 @@ mod detached_legacy_sketch_tests {
             xml_tag: "Sketch".into(),
             tree_parent: None,
             source_id: Some("30".into()),
-            parent_source_id: None,
             ordinal: 30,
             name: "profile".into(),
             kind: "ProfileFeature".into(),
@@ -2738,8 +2739,7 @@ mod detached_legacy_sketch_tests {
             kind,
             state_value: None,
             coordinates_m,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }
     }
 
@@ -2800,7 +2800,6 @@ mod detached_legacy_sketch_tests {
                 ordinal: 0,
                 offset: terminal::LEN as u64,
                 name: "sgCircleDim".into(),
-                role: FeatureInputClassRole::SketchConstraint,
             }],
             names: Vec::new(),
             scalars: Vec::new(),
@@ -2813,9 +2812,12 @@ mod detached_legacy_sketch_tests {
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: class_id.into(),
                 feature_ref: feature_id.into(),
-                scalar_refs: Vec::new(),
-                parameter_scalar_ref: None,
-                display_scalar_ref: None,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    Vec::new(),
+                    None,
+                    None,
+                )
+                .unwrap(),
                 operands: Vec::new(),
             }],
             body_selections: Vec::new(),
@@ -2929,11 +2931,10 @@ mod detached_legacy_sketch_tests {
         };
         let expected_sketch = SketchId("sldprt:model:sketch#markers:1:30".into());
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId("neutral".into()),
+            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         );
         neutral_feature.name = Some("empty".into());
@@ -2958,7 +2959,7 @@ mod detached_legacy_sketch_tests {
         assert!(matches!(
             &features[0].definition,
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } if sketch == &expected_sketch
         ));
@@ -3006,11 +3007,10 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![unbound],
         };
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId("neutral".into()),
+            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         );
         neutral_feature.name = Some("empty".into());
@@ -3030,7 +3030,11 @@ mod detached_legacy_sketch_tests {
         assert!(sketches.is_empty());
         assert!(matches!(
             features[0].definition,
-            FeatureDefinition::Sketch { sketch: None, .. }
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                ..
+            }
         ));
     }
 
@@ -3187,39 +3191,33 @@ mod detached_legacy_sketch_tests {
             native_ref: Some("lane".into()),
         };
         let block_entities = vec![
-            SketchEntity {
-                id: block_entity_id,
-                sketch: block_sketch_id.clone(),
-                construction: false,
-                native_ref: Some("circle".into()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Circle {
+            SketchEntity::new(
+                block_entity_id,
+                block_sketch_id.clone(),
+                SketchGeometry::Circle {
                     center: Point2::new(1.0, 2.0),
                     radius: Length(3.0),
                 },
-            },
-            SketchEntity {
-                id: block_line_id,
-                sketch: block_sketch_id.clone(),
-                construction: true,
-                native_ref: Some("line".into()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
+            )
+            .with_native_ref(Some("circle".into())),
+            SketchEntity::new(
+                block_line_id,
+                block_sketch_id.clone(),
+                SketchGeometry::Line {
                     start: Point2::new(0.0, 0.0),
                     end: Point2::new(1.0, 0.0),
                 },
-            },
+            )
+            .with_construction(true)
+            .with_native_ref(Some("line".into())),
         ];
-        let quarter_turn = Transform {
-            rows: [
-                [0.0, -1.0, 0.0, 5.0],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        };
+        let quarter_turn = Transform::from_rows([
+            [0.0, -1.0, 0.0, 5.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform");
         let assembled_id = SketchId("sldprt:model:sketch#block-profile:test".into());
         let block_sketches = HashMap::from([("23".into(), block_sketch_id)]);
         let instances = [

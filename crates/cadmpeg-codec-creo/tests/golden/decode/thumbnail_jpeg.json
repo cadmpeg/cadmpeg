@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,14 +42,11 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:THMB_IMG_MAIN:section#91"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "creo:THMB_IMG_MAIN:section#91"
+          }
+        ]
       }
     },
     "source": {
@@ -57,7 +54,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "97",
-        "layout": "unknown",
         "section.0.length": "21",
         "section.0.name": "THMB_IMG_MAIN",
         "section.0.offset": "76",
@@ -65,6 +61,17 @@
         "section.0.role": "thumbnail",
         "section_count": "1",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -441,9 +448,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -520,7 +547,6 @@
         "sha256": "fc16d7dcee9cae83ef3923222a81ccd8fe96c9d25fdb7f504d66f1011e0cd870",
         "stream": "creo:THMB_IMG_MAIN"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

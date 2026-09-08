@@ -55,7 +55,7 @@ The active part kernel carrier is the sole record with type identifier `5c5945f6
 
 Segment major versions 15 through 22 use a 17-byte footer. Segment major versions 23 and later use an 18-byte footer with one additional zero byte. The footer contains a u32 selected key, a Boolean byte, an i32 delta state, the optional zero byte, a u32 history reference, and u32 `0xffffffff`. The footer ends at the record boundary.
 
-Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM header and SAB grammar in [asm.md](asm.md). Kernel bytes beginning with `ACIS BinaryFile` and declaring ACIS save-format major 217 or 218 use the 32-bit ACIS header and SAB grammar in [asm.md](asm.md). Other ACIS save-format bands remain retained carriers. A kernel signature validates the already typed record. It is not a record locator.
+Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM header and SAB grammar in [asm.md](asm.md). Kernel bytes beginning with `ACIS BinaryFile` use the 32-bit ACIS header and SAB grammar in [asm.md](asm.md) at every save format. Save-format majors 217 and 218 are the verified bands. A kernel signature validates the already typed record. It is not a record locator.
 
 ## 6. OLE properties and preview
 

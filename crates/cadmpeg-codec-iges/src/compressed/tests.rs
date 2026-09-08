@@ -2,11 +2,24 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
-use crate::{IgesCodec, IgesEncoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use crate::IgesCodec;
+use crate::IgesVersion;
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
+
+fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
+    normalize(source, &ctx)
+}
 
 fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
     bytes
@@ -109,7 +122,7 @@ fn compressed_points_file_with_global(global: &[u8]) -> Vec<u8> {
 #[test]
 fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     let source = compressed_points_file();
-    let normalized = normalize(&source, None).unwrap();
+    let normalized = normalize_for_test(&source).unwrap();
     let lines = source_lines(&normalized);
     assert_eq!(
         lines
@@ -154,15 +167,60 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .notes
         .contains(&"normalized_representation=compressed-ascii".into()));
 
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: result.ir(),
-            fidelity: Some(result.source_fidelity()),
-        })
+    // Compressed ASCII is not the dialect this writer synthesizes, so an
+    // explicit Fixed ASCII target declines replay and charges displacement.
+    // The gate used to compare the version alone and replayed the
+    // compressed bytes while the plan claimed Fixed ASCII.
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
         .unwrap();
-    let mut replayed = Vec::new();
-    plan.write_to(&mut replayed).unwrap();
-    assert_eq!(replayed, source);
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .expect("representation displacement is charged");
+    assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
+    assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
+}
+
+/// Preservation is not synthesis: a Compressed ASCII source replays its own
+/// bytes under an inherit request even though no input makes the semantic
+/// writer emit Compressed ASCII.
+///
+/// The retained image is the original bytes, so the resolved dialect is the
+/// source's by construction and the replay law admits the copy. This is the
+/// capability an explicit Fixed ASCII target cannot ask for.
+#[test]
+fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
+    let source = compressed_points_file();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+
+    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
+    assert_eq!(
+        plan.report().target().map(ToString::to_string),
+        Some("iges:5.3-compressed-ascii".to_owned())
+    );
+    assert!(matches!(
+        &plan.report().fidelity(),
+        FidelityResolution::Replayed
+    ));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
 }
 
 #[test]
@@ -196,7 +254,7 @@ fn compressed_ascii_accepts_directory_specifiers_on_multiple_lines() {
     source.extend_from_slice(&fixed[terminate]);
     source.push(b'\n');
 
-    let normalized = normalize(&source, None).unwrap();
+    let normalized = normalize_for_test(&source).unwrap();
     assert_eq!(
         source_lines(&normalized)
             .iter()
@@ -227,7 +285,7 @@ fn compressed_ascii_preserves_v4_and_v5_0_profiles() {
             .unwrap();
         assert_eq!(result.ir().model.points.len(), 2, "{version}");
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
         );
     }
@@ -240,8 +298,7 @@ fn compressed_ascii_record_termination_ignores_hollerith_payload_delimiters() {
         b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
         b"116,1.0,2.0,3H;X;;".as_slice(),
     ];
-    let previous = std::array::from_fn(|_| None);
-    let (entity, next) = parse_data_entity(&lines, 0, &previous, true, b',', b';').unwrap();
+    let (entity, next) = parse_data_entity(&lines, 0, None, b',', b';').unwrap();
     assert_eq!(next, 3);
     assert_eq!(entity.parameter_lines.len(), 1);
 }
@@ -272,4 +329,86 @@ fn compressed_ascii_rejects_redundant_directory_specifiers() {
     let lines = [b"D1@1_116@2_1;".as_slice()];
     let error = parse_directory_record(&lines, 0, b';').unwrap_err();
     assert!(error.to_string().contains("Directory field 2 is redundant"));
+}
+
+/// A 26-field Global record carrying `version_flag` in field 23.
+fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
+    format!(
+        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
+         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
+    )
+    .into_bytes()
+}
+
+/// The one dialect match of a report or summary.
+fn only_match(dialects: Option<&DialectLayers>) -> &DialectMatch {
+    let layers = dialects.expect("IGES reports dialect layers");
+    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
+    assert_eq!(layers.primary().format(), "iges");
+    layers.primary()
+}
+
+#[test]
+fn compressed_ascii_classifies_into_its_own_representation_row() {
+    // The registry states Compressed ASCII at IGES 5.3, so a compressed file at
+    // flag 11 names that row rather than the Fixed ASCII one it normalizes to.
+    let source = compressed_points_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    let matched = only_match(decoded.report().dialects());
+    assert_eq!(matched.dialect().as_str(), "iges:5.3-compressed-ascii");
+    assert_eq!(matched.admission(), &Admission::Admitted);
+    assert_eq!(matched.declared()["representation"], "compressed-ascii");
+
+    let source_meta = decoded.ir().source.as_ref().unwrap();
+    assert_eq!(source_meta.dialect(), Some(matched));
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(source),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(summary.dialects()), matched);
+}
+
+#[test]
+fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() {
+    // The registry declines to invent Compressed ASCII rows below IGES 4.0: the
+    // IGES 3.0 specification would witness them. A compressed file at flag 4
+    // therefore satisfies no row, which is the totality row's whole purpose.
+    let source = compressed_points_file_with_global(&compressed_global_with_version_flag("4"));
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    let matched = only_match(decoded.report().dialects());
+    assert_eq!(matched.dialect().as_str(), "iges:unknown");
+    assert_eq!(
+        matched.using(),
+        Some(DialectId::pinned("iges:5.3-compressed-ascii"))
+    );
+    assert_eq!(matched.declared()["representation"], "compressed-ascii");
+    assert_eq!(matched.declared()["version_flag"], "4");
+    assert_eq!(matched.declared()["effective_version"], "3.0");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::SourceDialectUnverified.kind()));
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(source),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(only_match(summary.dialects()), matched);
+    assert!(summary.notes.contains(&"iges_version=unverified".into()));
+    assert!(summary
+        .notes
+        .contains(&"iges_declared_version_flag=4".into()));
+    assert!(summary.notes.contains(&"iges_effective_version=3.0".into()));
 }

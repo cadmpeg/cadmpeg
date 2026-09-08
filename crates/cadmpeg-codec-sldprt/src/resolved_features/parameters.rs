@@ -31,7 +31,7 @@ pub(crate) fn enrich_history_parameters<'a>(
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
 ) {
-    let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit, bool)>>::new();
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
         let names_by_id = lane
             .names
@@ -77,7 +77,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             .collect::<HashMap<_, _>>();
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
-            for scalar in &relation.scalar_refs {
+            for scalar in relation.scalar_refs() {
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }
@@ -135,24 +135,19 @@ pub(crate) fn enrich_history_parameters<'a>(
                     candidates
                         .entry((history_index, feature_index, name.to_string()))
                         .or_default()
-                        .push((scalar.value, unit, value_only));
+                        .push((scalar.value, unit));
                 }
             }
         }
     }
 
     for ((history_index, feature_index, name), values) in candidates {
-        let Some((&(first, unit, value_only), rest)) = values.split_first() else {
+        let Some((&(first, unit), rest)) = values.split_first() else {
             continue;
         };
-        if rest
-            .iter()
-            .any(|(value, candidate_unit, candidate_value_only)| {
-                value.to_bits() != first.to_bits()
-                    || *candidate_unit != unit
-                    || *candidate_value_only != value_only
-            })
-        {
+        if rest.iter().any(|(value, candidate_unit)| {
+            value.to_bits() != first.to_bits() || *candidate_unit != unit
+        }) {
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
@@ -161,9 +156,6 @@ pub(crate) fn enrich_history_parameters<'a>(
         });
         if unit == ScalarUnit::Native && source_dimension && feature.parameters.contains_key(&name)
         {
-            continue;
-        }
-        if unit == ScalarUnit::Native && value_only && feature.parameters.contains_key(&name) {
             continue;
         }
         if unit == ScalarUnit::Native

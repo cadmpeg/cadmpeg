@@ -3,13 +3,14 @@
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
+    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
@@ -164,18 +165,29 @@ impl TopologyIdentityIndex {
 
 fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<FaceId> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    unique_id_for_attribute(faces.iter().map(|face| face.id.0.clone()), &prefix).map(FaceId)
+    unique_id_for_attribute(
+        faces.iter().map(|face| face.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| FaceId::try_from(id).expect("existing entity identity"))
 }
 
 fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<EdgeId> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    unique_id_for_attribute(edges.iter().map(|edge| edge.id.0.clone()), &prefix).map(EdgeId)
+    unique_id_for_attribute(
+        edges.iter().map(|edge| edge.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| EdgeId::try_from(id).expect("existing entity identity"))
 }
 
 fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<VertexId> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
-    unique_id_for_attribute(vertices.iter().map(|vertex| vertex.id.0.clone()), &prefix)
-        .map(VertexId)
+    unique_id_for_attribute(
+        vertices.iter().map(|vertex| vertex.id.as_str().to_owned()),
+        &prefix,
+    )
+    .map(|id| VertexId::try_from(id).expect("existing entity identity"))
 }
 
 fn unique_id_for_attribute<I>(ids: I, prefix: &str) -> Option<String>
@@ -236,26 +248,22 @@ pub(crate) fn annotations(
     let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
         return Vec::new();
     };
-    let mut projected = project_with_topology(&root, topology);
-    enrich_implicit_nominals_with_context(
-        &root,
-        &rendered_dimensions,
-        &mut projected,
-        pattern_hole_nominals,
-    );
+    let projected =
+        project_with_topology(&root, topology, &rendered_dimensions, pattern_hole_nominals);
     for (reference, entity) in root
         .annotations
         .references
         .iter()
         .zip(&root.annotations.entities)
     {
-        let prefix = pmi_id(&reference.id).0;
+        let prefix = pmi_id(&reference.id).into_string();
         for annotation in projected.iter().filter(|annotation| {
-            annotation.id.0 == prefix || annotation.id.0.starts_with(&format!("{prefix}:"))
+            annotation.id.as_str() == prefix
+                || annotation.id.as_str().starts_with(&format!("{prefix}:"))
         }) {
             crate::annotations::note(
                 annotations,
-                annotation.id.0.clone(),
+                annotation.id.as_str().to_owned(),
                 stream.clone(),
                 entity.offset as u64,
                 "swift_gdt_analysis",
@@ -614,12 +622,33 @@ fn peek_pstr<'a>(cursor: &View<'a>) -> Option<&'a str> {
 
 #[cfg(test)]
 fn project(root: &Entity) -> Vec<PmiAnnotation> {
-    project_with_topology(root, None)
+    project_with_topology(root, None, &[], None)
+}
+
+#[cfg(test)]
+fn enrich_implicit_nominals(
+    root: &Entity,
+    rendered: &[RenderedDimension],
+    annotations: &mut Vec<PmiAnnotation>,
+) {
+    *annotations = project_with_topology(root, None, rendered, None);
+}
+
+#[cfg(test)]
+fn enrich_implicit_nominals_with_context(
+    root: &Entity,
+    rendered: &[RenderedDimension],
+    annotations: &mut Vec<PmiAnnotation>,
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+) {
+    *annotations = project_with_topology(root, None, rendered, pattern_hole_nominals);
 }
 
 fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Vec<PmiAnnotation> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Vec::new();
@@ -657,29 +686,48 @@ fn project_with_topology(
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
             continue;
         }
-        if let Some((system, mut annotation)) =
-            project_tolerance(reference, entity, &datum_ids, &feature_index, topology)
-        {
-            if let Some(system) = system {
-                let PmiDefinition::DatumSystem { references } = &system.definition else {
-                    unreachable!("projected datum system definition");
-                };
-                if let Some((_, id)) = datum_systems
-                    .iter()
-                    .find(|(candidate, _)| candidate == references)
-                {
-                    let PmiDefinition::GeometricTolerance { datum_system, .. } =
-                        &mut annotation.definition
-                    else {
-                        unreachable!("projected geometric tolerance definition");
-                    };
-                    *datum_system = Some(id.clone());
-                } else {
-                    datum_systems.push((references.clone(), system.id.clone()));
-                    projected.push(system);
-                }
-            }
-            projected.push(annotation);
+        if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
+            let datum_system = if tolerance.references.is_empty() {
+                None
+            } else if let Some((_, id)) = datum_systems
+                .iter()
+                .find(|(candidate, _)| *candidate == tolerance.references)
+            {
+                Some(id.clone())
+            } else {
+                let id = PmiId::mint(format!(
+                    "{}:datum-system",
+                    pmi_id(&reference.id).into_string()
+                ))
+                .expect("identity grammar");
+                datum_systems.push((tolerance.references.clone(), id.clone()));
+                projected.push(PmiAnnotation {
+                    id: id.clone(),
+                    name: None,
+                    visible: None,
+                    targets: Vec::new(),
+                    definition: PmiDefinition::DatumSystem {
+                        references: tolerance.references,
+                    },
+                });
+                Some(id)
+            };
+            let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
+            projected.push(PmiAnnotation {
+                id: pmi_id(&reference.id),
+                name: object_name(entity),
+                visible: None,
+                targets: targets(entity, &feature_index, topology),
+                definition: PmiDefinition::GeometricTolerance {
+                    tolerance: tolerance.kind,
+                    magnitude: tolerance.magnitude,
+                    defined_unit,
+                    defined_area_unit,
+                    defined_area_second_unit,
+                    datum_system,
+                    modifiers: tolerance_modifiers(entity),
+                },
+            });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
                     project_lower_profile_tier(reference, entity, &feature_index, topology)
@@ -687,9 +735,15 @@ fn project_with_topology(
                     projected.push(lower_tier);
                 }
             }
-        } else if let Some(annotation) =
-            project_dimension(reference, entity, &feature_index, topology)
-        {
+        } else if let Some(annotation) = project_dimension(
+            root,
+            reference,
+            entity,
+            &feature_index,
+            topology,
+            rendered,
+            pattern_hole_nominals,
+        ) {
             projected.push(annotation);
         }
     }
@@ -716,46 +770,23 @@ fn project_datum(
     })
 }
 
+struct ProjectedTolerance {
+    kind: GeometricToleranceKind,
+    magnitude: PmiValue,
+    references: Vec<DatumReference>,
+}
+
 fn project_tolerance(
-    reference: &Reference,
     entity: &Entity,
     datum_ids: &BTreeMap<&str, PmiId>,
-    feature_index: &BTreeMap<&str, &Entity>,
-    topology: Option<&TopologyIdentityIndex>,
-) -> Option<(Option<PmiAnnotation>, PmiAnnotation)> {
+) -> Option<ProjectedTolerance> {
     let kind = tolerance_kind(short_class(&entity.class))?;
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
-    let references = datum_references(entity, datum_ids);
-    let system = (!references.is_empty()).then(|| {
-        let id = PmiId(format!("{}:datum-system", pmi_id(&reference.id).0));
-        PmiAnnotation {
-            id,
-            name: None,
-            visible: None,
-            targets: Vec::new(),
-            definition: PmiDefinition::DatumSystem { references },
-        }
-    });
-    let datum_system = system.as_ref().map(|system| system.id.clone());
-    let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
-    Some((
-        system,
-        PmiAnnotation {
-            id: pmi_id(&reference.id),
-            name: object_name(entity),
-            visible: None,
-            targets: targets(entity, feature_index, topology),
-            definition: PmiDefinition::GeometricTolerance {
-                tolerance: kind,
-                magnitude: length(magnitude),
-                defined_unit,
-                defined_area_unit,
-                defined_area_second_unit,
-                datum_system,
-                modifiers: tolerance_modifiers(entity),
-            },
-        },
-    ))
+    Some(ProjectedTolerance {
+        kind,
+        magnitude: length(magnitude),
+        references: datum_references(entity, datum_ids),
+    })
 }
 
 fn project_lower_profile_tier(
@@ -766,7 +797,11 @@ fn project_lower_profile_tier(
 ) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
-        id: PmiId(format!("{}:lower-tier", pmi_id(&reference.id).0)),
+        id: PmiId::mint(format!(
+            "{}:lower-tier",
+            pmi_id(&reference.id).into_string()
+        ))
+        .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
         targets: targets(entity, feature_index, topology),
@@ -783,22 +818,37 @@ fn project_lower_profile_tier(
 }
 
 fn project_dimension(
+    root: &Entity,
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
-    let nominal = finite(entity.doubles.get("Nominal").copied()?).filter(|value| {
-        *value != 0.0
-            || entity
-                .integers
-                .get("Dimension")
-                .is_some_and(|dimension| *dimension != 0)
-    });
-    let lower_deviation = deviation(entity, nominal, "LowerLimit", "MinusTolerance");
-    let upper_deviation = deviation(entity, nominal, "UpperLimit", "PlusTolerance");
+    let nominal = finite(entity.doubles.get("Nominal").copied()?)
+        .filter(|value| {
+            *value != 0.0
+                || entity
+                    .integers
+                    .get("Dimension")
+                    .is_some_and(|dimension| *dimension != 0)
+        })
+        .or_else(|| {
+            implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
+        });
+    let tolerance = match (
+        deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
+        deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
+    ) {
+        (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
+            lower: pmi_value(lower, quantity),
+            upper: pmi_value(upper, quantity),
+        }),
+        _ => None,
+    };
     Some(PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
@@ -807,136 +857,65 @@ fn project_dimension(
         definition: PmiDefinition::Dimension {
             dimension,
             nominal: nominal.map(|value| pmi_value(value, quantity)),
-            lower_deviation: lower_deviation.map(|value| pmi_value(value, quantity)),
-            upper_deviation: upper_deviation.map(|value| pmi_value(value, quantity)),
-            limits_and_fits: None,
+            tolerance,
         },
     })
 }
 
-#[cfg(test)]
-fn enrich_implicit_nominals(
+fn implicit_dimension_nominal(
     root: &Entity,
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
     rendered: &[RenderedDimension],
-    annotations: &mut [PmiAnnotation],
-) {
-    enrich_implicit_nominals_with_context(root, rendered, annotations, None);
-}
-
-fn enrich_implicit_nominals_with_context(
-    root: &Entity,
-    rendered: &[RenderedDimension],
-    annotations: &mut [PmiAnnotation],
     pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
-) {
-    let feature_index = feature_index(root);
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
-    {
-        if suppressed(entity) {
-            continue;
+) -> Option<f64> {
+    let source = match short_class(&entity.class) {
+        "GdtDiameter" => diameter_nominal(root, entity, feature_index, pattern_hole_nominals),
+        "GdtDepth" => depth_nominal(root, entity, feature_index),
+        "GdtWidth" => {
+            width_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
         }
-        let (dimension_kind, source) = match short_class(&entity.class) {
-            "GdtDiameter" => (
-                DimensionKind::Diameter,
-                diameter_nominal(root, entity, &feature_index, pattern_hole_nominals),
-            ),
-            "GdtDepth" => (
-                DimensionKind::Size,
-                depth_nominal(root, entity, &feature_index),
-            ),
-            "GdtWidth" => (
-                DimensionKind::Size,
-                width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtRadius" => (
-                DimensionKind::Radius,
-                radius_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtLength" => (
-                DimensionKind::Size,
-                length_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtDistanceBetween" => (
-                DimensionKind::Location,
-                directional_distance(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterBore" => (
-                DimensionKind::Size,
-                counterbore_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterSinkDiameter" => (
-                DimensionKind::Size,
-                countersink_diameter_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterSinkAngle" => (
-                DimensionKind::Angular,
-                countersink_angle_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            _ => continue,
-        };
-        let Some(source) = source else {
-            continue;
-        };
-        let nominal = match source {
-            ImplicitNominal::Exact(value) => Some(value),
-            ImplicitNominal::Rendered { kind, geometry } => entity
-                .integers
-                .get("BlockToleranceDecimalPlaces")
-                .copied()
-                .and_then(|value| u32::try_from(value).ok())
-                .filter(|value| *value <= 9)
-                .and_then(|decimal_places| {
-                    rendered_nominal(geometry, decimal_places, kind, rendered)
-                }),
-            ImplicitNominal::RenderedOrExact {
-                kind,
-                geometry,
-                exact,
-            } => entity
-                .integers
-                .get("BlockToleranceDecimalPlaces")
-                .copied()
-                .and_then(|value| u32::try_from(value).ok())
-                .filter(|value| *value <= 9)
-                .and_then(|decimal_places| {
-                    rendered_nominal(geometry, decimal_places, kind, rendered)
-                })
-                .or(Some(exact)),
-        };
-        let Some(nominal) = nominal else {
-            continue;
-        };
-        let Some(annotation) = annotations
-            .iter_mut()
-            .find(|annotation| annotation.id == pmi_id(&reference.id))
-        else {
-            continue;
-        };
-        let PmiDefinition::Dimension {
-            dimension,
-            nominal: slot,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &mut annotation.definition
-        else {
-            continue;
-        };
-        if dimension == &dimension_kind && slot.is_none() {
-            let quantity = dimension_quantity(&dimension_kind);
-            *slot = Some(pmi_value(nominal, quantity));
-            *lower_deviation = deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance")
-                .map(|value| pmi_value(value, quantity));
-            *upper_deviation = deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance")
-                .map(|value| pmi_value(value, quantity));
+        "GdtRadius" => {
+            radius_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
         }
+        "GdtLength" => {
+            length_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtDistanceBetween" => {
+            directional_distance(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtCounterBore" => {
+            counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtCounterSinkDiameter" => {
+            countersink_diameter_from_direct_geometry(entity, feature_index)
+                .map(ImplicitNominal::Exact)
+        }
+        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
+            .map(ImplicitNominal::Exact),
+        _ => None,
+    }?;
+    match source {
+        ImplicitNominal::Exact(value) => Some(value),
+        ImplicitNominal::Rendered { kind, geometry } => entity
+            .integers
+            .get("BlockToleranceDecimalPlaces")
+            .copied()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= 9)
+            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered)),
+        ImplicitNominal::RenderedOrExact {
+            kind,
+            geometry,
+            exact,
+        } => entity
+            .integers
+            .get("BlockToleranceDecimalPlaces")
+            .copied()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= 9)
+            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
+            .or(Some(exact)),
     }
 }
 
@@ -1985,9 +1964,9 @@ fn deviation(
 fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<DatumReference> {
     let mut result = Vec::new();
     for (name, precedence) in [
-        ("PrimaryDatums", 1),
-        ("SecondaryDatums", 2),
-        ("TertiaryDatums", 3),
+        ("PrimaryDatums", NonZeroU32::MIN),
+        ("SecondaryDatums", NonZeroU32::MIN.saturating_add(1)),
+        ("TertiaryDatums", NonZeroU32::MIN.saturating_add(2)),
     ] {
         let Some(collection) = unique_related(entity, name) else {
             continue;
@@ -2008,7 +1987,7 @@ fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<D
             result.push(DatumReference {
                 datum: (*id).clone(),
                 precedence,
-                common_group: (applied.len() > 1).then_some(precedence),
+                common_group: (applied.len() > 1).then_some(precedence.get()),
                 modifiers: integer_modifier(datum.entity.integers.get("Modifier").copied()),
             });
         }
@@ -2284,7 +2263,7 @@ fn object_name(entity: &Entity) -> Option<String> {
 }
 
 fn pmi_id(source_id: &str) -> PmiId {
-    PmiId(format!("sldprt:model:pmi#{source_id}"))
+    PmiId::mint(format!("sldprt:model:pmi#{source_id}")).expect("identity grammar")
 }
 
 fn suppressed(entity: &Entity) -> bool {
@@ -2315,1970 +2294,4 @@ fn pmi_value(value: f64, quantity: PmiQuantity) -> PmiValue {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn reference(id: &str, class: &str) -> Reference {
-        Reference {
-            id: id.into(),
-            class: format!("PrizMetrik.GdtAnalysis.{class},gdtanalysis.net"),
-        }
-    }
-
-    fn entity(class: &str) -> Entity {
-        Entity {
-            class: format!("PrizMetrik.GdtAnalysis.{class}"),
-            ..Entity::default()
-        }
-    }
-
-    fn semantic_root() -> Entity {
-        let mut datum = entity("GdtDatum");
-        datum.strings.insert("ObjectName".into(), "Datum A".into());
-        datum.strings.insert("DatumIdentifier".into(), "A".into());
-        datum.features.references.push(reference("F10", "GdtPlane"));
-
-        let mut applied = entity("GdtAppliedDatum");
-        applied.integers.insert("Modifier".into(), 2);
-        applied
-            .annotations
-            .references
-            .push(reference("A10", "GdtDatum"));
-        let mut collection = entity("GdtAppliedDatumCollection");
-        collection.related.push(RelatedObject {
-            name: "SubAnnotation0".into(),
-            class: "PrizMetrik.GdtAnalysis.GdtAppliedDatum".into(),
-            entity: applied,
-        });
-
-        let mut position = entity("GdtPosition");
-        position
-            .strings
-            .insert("ObjectName".into(), "Position 1".into());
-        position.integers.insert("Modifier".into(), 1);
-        position.integers.insert("ProjectedZoneEnabled".into(), 1);
-        position.doubles.insert("Tolerance".into(), 0.25);
-        position.doubles.insert("ProjectedZoneValue".into(), 4.0);
-        position
-            .features
-            .references
-            .push(reference("FP", "GdtPattern"));
-        position.related.push(RelatedObject {
-            name: "PrimaryDatums".into(),
-            class: "PrizMetrik.GdtAnalysis.GdtAppliedDatumCollection".into(),
-            entity: collection,
-        });
-
-        let mut diameter = entity("GdtDiameter");
-        diameter
-            .strings
-            .insert("ObjectName".into(), "Diameter 1".into());
-        diameter.doubles.insert("Nominal".into(), 0.0);
-        diameter.doubles.insert("MinusTolerance".into(), -0.1);
-        diameter.doubles.insert("PlusTolerance".into(), 0.2);
-        diameter.doubles.insert("LowerLimit".into(), 0.0);
-        diameter.doubles.insert("UpperLimit".into(), 0.0);
-        diameter
-            .features
-            .references
-            .push(reference("F20", "GdtCylinder"));
-
-        let mut angle = entity("GdtAngleBetween");
-        angle.integers.insert("Dimension".into(), 1);
-        angle.doubles.insert("Nominal".into(), 0.0);
-        angle.doubles.insert("MinusTolerance".into(), -0.01);
-        angle.doubles.insert("PlusTolerance".into(), 0.01);
-        angle.doubles.insert("LowerLimit".into(), 0.0);
-        angle.doubles.insert("UpperLimit".into(), 0.0);
-
-        let mut root = Entity {
-            class: ROOT_CLASS.into(),
-            ..Entity::default()
-        };
-        let cylinder = entity("GdtCylinder");
-        let second_cylinder = cylinder.clone();
-        let mut subfeatures = entity("GdtAppliedFeatureCollection");
-        for (ordinal, id) in ["F20", "F21"].into_iter().enumerate() {
-            let mut applied = entity("GdtAppliedFeature");
-            applied
-                .features
-                .references
-                .push(reference(id, "GdtCylinder"));
-            subfeatures.related.push(RelatedObject {
-                name: format!("SubFeature{ordinal}"),
-                class: "PrizMetrik.GdtAnalysis.GdtAppliedFeature".into(),
-                entity: applied,
-            });
-        }
-        let mut pattern = entity("GdtPattern");
-        pattern.related.push(RelatedObject {
-            name: "SubFeatures".into(),
-            class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
-            entity: subfeatures,
-        });
-        root.features.references = vec![
-            reference("FP", "GdtPattern"),
-            reference("F20", "GdtCylinder"),
-            reference("F21", "GdtCylinder"),
-        ];
-        root.features.entities = vec![pattern, cylinder, second_cylinder];
-        root.annotations.references = vec![
-            reference("A10", "GdtDatum"),
-            reference("A20", "GdtPosition"),
-            reference("A30", "GdtDiameter"),
-            reference("A40", "GdtAngleBetween"),
-        ];
-        root.annotations.entities = vec![datum, position, diameter, angle];
-        root
-    }
-
-    fn neutral_feature(
-        id: &str,
-        name: &str,
-        ordinal: u64,
-        dependencies: Vec<cadmpeg_ir::features::FeatureId>,
-        definition: cadmpeg_ir::features::FeatureDefinition,
-    ) -> cadmpeg_ir::features::Feature {
-        cadmpeg_ir::features::Feature {
-            id: cadmpeg_ir::features::FeatureId(format!("sldprt:model:feature#{id}")),
-            ordinal,
-            name: Some(name.into()),
-            suppressed: None,
-            parent: None,
-            dependencies,
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: Some(format!("sldprt:history:feature#{id}")),
-        }
-    }
-
-    fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
-        use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length};
-
-        FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            position: None,
-            direction: None,
-            placements: Vec::new(),
-            kind: HoleKind::Simple,
-            exit_kind: None,
-            diameter: Some(Length(diameter)),
-            extent: None,
-            bottom: None,
-            taper_angle: None,
-            specification: None,
-            allow_multi_profile_faces: None,
-        }
-    }
-
-    #[test]
-    fn empty_swift_pattern_uses_one_native_hole_join() {
-        use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PatternKind, PatternSeed};
-
-        let seed = FeatureId("sldprt:model:feature#seed".into());
-        let pattern_definition = FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::Unresolved { form: None },
-        };
-        let features = vec![
-            neutral_feature(
-                "seed",
-                "Sketch20",
-                1,
-                Vec::new(),
-                FeatureDefinition::Native {
-                    kind: "Sketch".into(),
-                    parameters: BTreeMap::new(),
-                    properties: BTreeMap::new(),
-                },
-            ),
-            neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
-            neutral_feature(
-                "hole",
-                "Hole5",
-                3,
-                vec![seed],
-                simple_hole_definition(6.1468),
-            ),
-        ];
-        let context = pattern_hole_nominal_context(&features);
-        assert_eq!(context.get("Hole Pattern6"), Some(&6.1468));
-
-        let mut pattern = cad_feature("GdtPattern", "");
-        pattern
-            .strings
-            .insert("ObjectName".into(), "Hole Pattern6".into());
-        pattern.related.push(RelatedObject {
-            name: "SubFeatures".into(),
-            class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
-            entity: entity("GdtAppliedFeatureCollection"),
-        });
-        let mut diameter = entity("GdtDiameter");
-        diameter
-            .strings
-            .insert("ObjectName".into(), "Diameter 8".into());
-        diameter.doubles.insert("Nominal".into(), 0.0);
-        diameter.features.references = vec![reference("FP", "GdtPattern")];
-        let root = Entity {
-            class: ROOT_CLASS.into(),
-            features: ObjectSection {
-                references: vec![reference("FP", "GdtPattern")],
-                entities: vec![pattern],
-            },
-            annotations: ObjectSection {
-                references: vec![reference("A8", "GdtDiameter")],
-                entities: vec![diameter],
-            },
-            ..Entity::default()
-        };
-        let mut projected = project(&root);
-        enrich_implicit_nominals_with_context(&root, &[], &mut projected, Some(&context));
-        let PmiDefinition::Dimension { nominal, .. } =
-            &projected.first().expect("diameter annotation").definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(6.1468)));
-
-        let mut ambiguous = features.clone();
-        ambiguous.push(neutral_feature(
-            "hole2",
-            "Hole6",
-            4,
-            vec![FeatureId("sldprt:model:feature#seed".into())],
-            simple_hole_definition(6.1468),
-        ));
-        assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
-
-        let mut unresolved = features;
-        let mut unresolved_hole = neutral_feature(
-            "hole2",
-            "Hole6",
-            4,
-            vec![FeatureId("sldprt:model:feature#seed".into())],
-            simple_hole_definition(6.1468),
-        );
-        let FeatureDefinition::Hole { diameter, .. } = &mut unresolved_hole.definition else {
-            panic!("expected hole definition");
-        };
-        *diameter = None;
-        unresolved.push(unresolved_hole);
-        assert!(pattern_hole_nominal_context(&unresolved).is_empty());
-    }
-
-    fn cad_feature(class: &str, identifier: &str) -> Entity {
-        let mut cad_ref = entity("CadRef");
-        cad_ref
-            .strings
-            .insert("CadIdentifier".into(), identifier.into());
-        let mut references = entity("CadRefCollection");
-        references.related.push(RelatedObject {
-            name: "CadRef0".into(),
-            class: "PrizMetrik.GdtAnalysis.CadRef".into(),
-            entity: cad_ref,
-        });
-        let mut feature = entity(class);
-        feature.related.push(RelatedObject {
-            name: "CadReferences".into(),
-            class: "PrizMetrik.GdtAnalysis.CadRefCollection".into(),
-            entity: references,
-        });
-        feature
-    }
-
-    #[test]
-    fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
-        let mut datum = entity("GdtDatum");
-        datum.strings.insert("DatumIdentifier".into(), "A".into());
-        datum.features.references.push(reference("F10", "GdtPlane"));
-        let mut root = Entity {
-            class: ROOT_CLASS.into(),
-            ..Entity::default()
-        };
-        root.features.references.push(reference("F10", "GdtPlane"));
-        root.features
-            .entities
-            .push(cad_feature("GdtPlane", "125:42"));
-        root.annotations
-            .references
-            .push(reference("A10", "GdtDatum"));
-        root.annotations.entities.push(datum);
-
-        let mut index = TopologyIdentityIndex::default();
-        index.sequence_targets.insert(
-            42,
-            Some(PmiTarget::Face {
-                face: FaceId("sldprt:brep:face#42".into()),
-            }),
-        );
-        let projected = project_with_topology(&root, Some(&index));
-        let first = projected.first().expect("projected datum");
-        assert_eq!(
-            first.targets,
-            [PmiTarget::Face {
-                face: "sldprt:brep:face#42".into()
-            }]
-        );
-
-        root.features
-            .entities
-            .first_mut()
-            .expect("GdtPlane")
-            .related
-            .first_mut()
-            .expect("CadReferences")
-            .entity
-            .related
-            .first_mut()
-            .expect("CadRef0")
-            .entity
-            .strings
-            .insert("CadIdentifier".into(), "125:99".into());
-        let projected = project_with_topology(&root, Some(&index));
-        let first = projected.first().expect("projected datum");
-        assert_eq!(
-            first.targets,
-            [PmiTarget::ShapeAspect {
-                source_id: "F10".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
-        use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, PointId, ShellId, SurfaceId, VertexId};
-        use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
-
-        let body = Body {
-            id: BodyId("sldprt:brep:body#11".into()),
-            kind: BodyKind::default(),
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
-        let face = Face {
-            id: FaceId("sldprt:brep:face#22".into()),
-            shell: ShellId("sldprt:brep:shell#1".into()),
-            surface: SurfaceId("sldprt:brep:surf#22".into()),
-            sense: Sense::Forward,
-            loops: Vec::new(),
-            name: None,
-            color: None,
-            tolerance: None,
-        };
-        let edge = Edge {
-            id: EdgeId("sldprt:brep:edge#33".into()),
-            curve: None,
-            start: VertexId("sldprt:brep:vertex#1".into()),
-            end: VertexId("sldprt:brep:vertex#2".into()),
-            param_range: None,
-            tolerance: None,
-        };
-        let vertex = Vertex {
-            id: VertexId("sldprt:brep:vertex#44".into()),
-            point: PointId("sldprt:brep:point#44".into()),
-            tolerance: None,
-        };
-        let index = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[(222, 22)],
-            &[(333, 33)],
-            &[(444, 44)],
-        );
-
-        assert_eq!(
-            index.resolve("schema-a:11"),
-            Some(PmiTarget::Body {
-                body: body.id.clone(),
-            })
-        );
-        assert_eq!(
-            index.resolve("schema-b:222"),
-            Some(PmiTarget::Face {
-                face: face.id.clone(),
-            })
-        );
-        assert!(index.resolve("schema-b:22").is_none());
-        assert_eq!(
-            index.resolve("schema-c:33"),
-            Some(PmiTarget::Edge {
-                edge: edge.id.clone(),
-            })
-        );
-        assert_eq!(
-            index.resolve("schema-d:44"),
-            Some(PmiTarget::Vertex {
-                vertex: vertex.id.clone(),
-            })
-        );
-        assert_eq!(
-            index.resolve("schema-e:333"),
-            Some(PmiTarget::Edge {
-                edge: edge.id.clone(),
-            })
-        );
-        assert_eq!(
-            index.resolve("schema-f:444"),
-            Some(PmiTarget::Vertex {
-                vertex: vertex.id.clone(),
-            })
-        );
-
-        let qualified_alternate = Face {
-            id: FaceId("sldprt:brep:face#22@alternate".into()),
-            ..face.clone()
-        };
-        let active_with_alternate = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            &[face.clone(), qualified_alternate],
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[(222, 22)],
-            &[],
-            &[],
-        );
-        assert_eq!(
-            active_with_alternate.resolve("schema-g:222"),
-            Some(PmiTarget::Face {
-                face: face.id.clone(),
-            })
-        );
-        assert!(index.resolve("schema-e:not-a-number").is_none());
-        assert!(index.resolve("11").is_none());
-
-        let collision = Face {
-            id: FaceId("sldprt:brep:face#11".into()),
-            ..face.clone()
-        };
-        let index = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            &[collision],
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[],
-            &[],
-            &[],
-        );
-        assert_eq!(
-            index.resolve("schema-g:11"),
-            Some(PmiTarget::Body {
-                body: body.id.clone(),
-            })
-        );
-
-        let sequence_wins = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[],
-            &[(11, 33)],
-            &[],
-        );
-        assert_eq!(
-            sequence_wins.resolve("schema-h:11"),
-            Some(PmiTarget::Edge {
-                edge: edge.id.clone(),
-            })
-        );
-
-        let unresolved = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[(11, 999)],
-            &[],
-            &[],
-        );
-        assert!(unresolved.resolve("schema-i:11").is_none());
-
-        let conflicting = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            &[
-                face.clone(),
-                Face {
-                    id: FaceId("sldprt:brep:face#23".into()),
-                    ..face.clone()
-                },
-            ],
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[(77, 22), (77, 23)],
-            &[],
-            &[],
-        );
-        assert!(conflicting.resolve("schema-j:77").is_none());
-
-        let conflicting_families = TopologyIdentityIndex::from_model(
-            std::slice::from_ref(&body),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&edge),
-            std::slice::from_ref(&vertex),
-            &[(88, 22)],
-            &[(88, 33)],
-            &[],
-        );
-        assert!(conflicting_families.resolve("schema-k:88").is_none());
-    }
-
-    fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
-        bytes.push(u8::try_from(value.len()).expect("fixture Pascal string"));
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
-    fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {
-        put_pstr(bytes, "Entity");
-        put_pstr(bytes, &entity.class);
-        put_pstr(bytes, "gdtanalysis.net");
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        if !entity.strings.is_empty() {
-            put_pstr(bytes, "Strings");
-            bytes.extend_from_slice(&(entity.strings.len() as u32).to_le_bytes());
-            for (key, value) in &entity.strings {
-                put_pstr(bytes, key);
-                put_pstr(bytes, value);
-            }
-            put_pstr(bytes, "EndStrings");
-        }
-        if !entity.integers.is_empty() {
-            put_pstr(bytes, "Integers");
-            bytes.extend_from_slice(&(entity.integers.len() as u32).to_le_bytes());
-            for (key, value) in &entity.integers {
-                put_pstr(bytes, key);
-                bytes.extend_from_slice(&value.to_le_bytes());
-            }
-            put_pstr(bytes, "EndIntegers");
-        }
-        if !entity.doubles.is_empty() {
-            put_pstr(bytes, "Doubles");
-            bytes.extend_from_slice(&(entity.doubles.len() as u32).to_le_bytes());
-            for (key, value) in &entity.doubles {
-                put_pstr(bytes, key);
-                bytes.extend_from_slice(&value.to_le_bytes());
-            }
-            put_pstr(bytes, "EndDoubles");
-        }
-        encode_objects("Features", "EndFeatures", &entity.features, bytes);
-        encode_objects("Annotations", "EndAnnotations", &entity.annotations, bytes);
-        if !entity.related.is_empty() {
-            put_pstr(bytes, "RelatedObjects");
-            bytes.extend_from_slice(&(entity.related.len() as u32).to_le_bytes());
-            for object in &entity.related {
-                put_pstr(bytes, &object.name);
-                put_pstr(bytes, &object.class);
-            }
-            for object in &entity.related {
-                encode_entity(&object.entity, bytes);
-            }
-            put_pstr(bytes, "EndRelatedObjects");
-        }
-        put_pstr(bytes, "EndEntity");
-    }
-
-    fn encode_objects(name: &str, end: &str, section: &ObjectSection, bytes: &mut Vec<u8>) {
-        if section.references.is_empty() && section.entities.is_empty() {
-            return;
-        }
-        put_pstr(bytes, name);
-        bytes.extend_from_slice(&(section.references.len() as u32).to_le_bytes());
-        for reference in &section.references {
-            put_pstr(bytes, &reference.id);
-            put_pstr(bytes, &reference.class);
-        }
-        for entity in &section.entities {
-            encode_entity(entity, bytes);
-        }
-        put_pstr(bytes, end);
-    }
-
-    fn encoded_root() -> Vec<u8> {
-        let mut bytes = vec![0x11, 0x22, 0x33];
-        encode_entity(&semantic_root(), &mut bytes);
-        bytes
-    }
-
-    #[test]
-    fn parses_and_projects_semantic_graph() {
-        let parsed = parse_unique_root(&encoded_root()).expect("synthetic SWIFT root");
-        let annotations = project(&parsed);
-        assert_eq!(annotations.len(), 5);
-
-        let position = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Position 1"))
-            .expect("position annotation");
-        let PmiDefinition::GeometricTolerance {
-            magnitude,
-            datum_system,
-            modifiers,
-            ..
-        } = &position.definition
-        else {
-            panic!("position definition");
-        };
-        assert_eq!(*magnitude, length(0.25));
-        assert_eq!(
-            datum_system.as_ref().map(|id| id.0.as_str()),
-            Some("sldprt:model:pmi#A20:datum-system")
-        );
-        assert_eq!(
-            modifiers,
-            &["maximum_material_requirement", "projected_zone:4_mm"]
-        );
-        assert_eq!(
-            position.targets,
-            [
-                PmiTarget::ShapeAspect {
-                    source_id: "F20".into()
-                },
-                PmiTarget::ShapeAspect {
-                    source_id: "F21".into()
-                }
-            ]
-        );
-
-        let system = annotations
-            .iter()
-            .find(|annotation| annotation.id.0.ends_with(":datum-system"))
-            .expect("datum system");
-        let PmiDefinition::DatumSystem { references } = &system.definition else {
-            panic!("datum-system definition");
-        };
-        assert_eq!(references.len(), 1);
-        let datum_reference = references.first().expect("primary datum reference");
-        assert_eq!(datum_reference.precedence, 1);
-        assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
-
-        let diameter = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension {
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &diameter.definition
-        else {
-            panic!("diameter definition");
-        };
-        assert_eq!(*nominal, None, "zero is an omitted nominal sentinel");
-        assert_eq!(*lower_deviation, Some(length(-0.1)));
-        assert_eq!(*upper_deviation, Some(length(0.2)));
-
-        let angle = annotations
-            .iter()
-            .find(|annotation| annotation.id.0.ends_with("#A40"))
-            .expect("angular annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &angle.definition else {
-            panic!("angular definition");
-        };
-        assert_eq!(
-            *nominal,
-            Some(PmiValue {
-                value: 0.0,
-                quantity: PmiQuantity::Angle,
-            })
-        );
-    }
-
-    #[test]
-    fn rejects_ambiguous_root_and_impossible_count() {
-        let encoded = encoded_root();
-        let mut duplicate = encoded.clone();
-        duplicate.extend_from_slice(&encoded);
-        assert_eq!(parse_unique_root(&duplicate), None);
-
-        let mut malformed = encoded;
-        let marker = b"\x0bAnnotations";
-        let offset = malformed
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("root annotations marker")
-            + marker.len();
-        malformed
-            .get_mut(offset..offset + 4)
-            .expect("count field")
-            .copy_from_slice(&u32::MAX.to_le_bytes());
-        assert_eq!(parse_unique_root(&malformed), None);
-    }
-
-    fn cylinder_with_radius(radius: f64) -> Entity {
-        let mut cylinder = entity("GdtCylinder");
-        let mut geometry = Entity {
-            class: "PrizMetrik.Geometry.GeoCylinder".into(),
-            ..Entity::default()
-        };
-        geometry.doubles.insert("R".into(), radius);
-        geometry.doubles.insert("I".into(), 0.0);
-        geometry.doubles.insert("J".into(), 0.0);
-        geometry.doubles.insert("K".into(), 1.0);
-        cylinder.related.push(RelatedObject {
-            name: "NomCylinder".into(),
-            class: geometry.class.clone(),
-            entity: geometry,
-        });
-        cylinder
-    }
-
-    fn cylinder_with_radius_and_depth(radius: f64, depth: f64) -> Entity {
-        let mut cylinder = cylinder_with_radius(radius);
-        for (name, z) in [("NomTop", depth), ("NomBottom", 0.0)] {
-            let mut plane = Entity {
-                class: "PrizMetrik.Geometry.GeoPlane".into(),
-                ..Entity::default()
-            };
-            plane.doubles.insert("X".into(), 0.0);
-            plane.doubles.insert("Y".into(), 0.0);
-            plane.doubles.insert("Z".into(), z);
-            cylinder.related.push(RelatedObject {
-                name: name.into(),
-                class: plane.class.clone(),
-                entity: plane,
-            });
-        }
-        cylinder
-    }
-
-    fn cone_with_angle_and_top(angle: f64, top: f64) -> Entity {
-        let mut cone = entity("GdtCone");
-        let mut geometry = Entity {
-            class: "PrizMetrik.Geometry.GeoCone".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [
-            ("FullAngle", angle),
-            ("I", 0.0),
-            ("J", 0.0),
-            ("K", 1.0),
-            ("X", 0.0),
-            ("Y", 0.0),
-            ("Z", 0.0),
-        ] {
-            geometry.doubles.insert(name.into(), value);
-        }
-        cone.related.push(RelatedObject {
-            name: "NomCone".into(),
-            class: geometry.class.clone(),
-            entity: geometry,
-        });
-        let mut plane = Entity {
-            class: "PrizMetrik.Geometry.GeoPlane".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [
-            ("I", 0.0),
-            ("J", 0.0),
-            ("K", -1.0),
-            ("X", 0.0),
-            ("Y", 0.0),
-            ("Z", top),
-        ] {
-            plane.doubles.insert(name.into(), value);
-        }
-        cone.related.push(RelatedObject {
-            name: "NomTop".into(),
-            class: plane.class.clone(),
-            entity: plane,
-        });
-        cone
-    }
-
-    fn plane_with_origin(origin_z: f64) -> Entity {
-        let mut feature = entity("GdtPlane");
-        let mut plane = Entity {
-            class: "PrizMetrik.Geometry.GeoPlane".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [
-            ("I", 0.0),
-            ("J", 0.0),
-            ("K", 1.0),
-            ("X", 5.0),
-            ("Y", 0.0),
-            ("Z", 0.0),
-        ] {
-            plane.doubles.insert(name.into(), value);
-        }
-        feature.related.push(RelatedObject {
-            name: "NomPlane".into(),
-            class: plane.class.clone(),
-            entity: plane,
-        });
-        let mut origin = Entity {
-            class: "PrizMetrik.Geometry.GeoPoint".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [("X", 0.0), ("Y", 0.0), ("Z", origin_z)] {
-            origin.doubles.insert(name.into(), value);
-        }
-        feature.related.push(RelatedObject {
-            name: "NomOrigin".into(),
-            class: origin.class.clone(),
-            entity: origin,
-        });
-        feature
-    }
-
-    fn plane_at(point: [f64; 3], normal: [f64; 3]) -> Entity {
-        let mut feature = entity("GdtPlane");
-        let mut plane = Entity {
-            class: "PrizMetrik.Geometry.GeoPlane".into(),
-            ..Entity::default()
-        };
-        for (name, value) in ["X", "Y", "Z"].into_iter().zip(point) {
-            plane.doubles.insert(name.into(), value);
-        }
-        for (name, value) in ["I", "J", "K"].into_iter().zip(normal) {
-            plane.doubles.insert(name.into(), value);
-        }
-        feature.related.push(RelatedObject {
-            name: "NomPlane".into(),
-            class: plane.class.clone(),
-            entity: plane,
-        });
-        feature
-    }
-
-    fn cylinder_at(point: [f64; 3], axis: [f64; 3]) -> Entity {
-        let mut feature = cylinder_with_radius(3.0);
-        let cylinder = &mut feature
-            .related
-            .first_mut()
-            .expect("nominal cylinder")
-            .entity;
-        for (name, value) in ["X", "Y", "Z"].into_iter().zip(point) {
-            cylinder.doubles.insert(name.into(), value);
-        }
-        for (name, value) in ["I", "J", "K"].into_iter().zip(axis) {
-            cylinder.doubles.insert(name.into(), value);
-        }
-        feature
-    }
-
-    fn distance_annotation(first: Reference, second: Reference, direction: [f64; 3]) -> Entity {
-        let mut annotation = entity("GdtDistanceBetween");
-        annotation.doubles.insert("Nominal".into(), 0.0);
-        annotation.doubles.insert("MinusTolerance".into(), -0.5);
-        annotation.doubles.insert("PlusTolerance".into(), 0.5);
-        annotation.doubles.insert("LowerLimit".into(), 0.0);
-        annotation.doubles.insert("UpperLimit".into(), 0.0);
-        annotation.integers.insert("ComputeAnswerBy".into(), 0);
-        annotation.integers.insert("Dimension".into(), 0);
-        annotation.integers.insert("Direction".into(), 4);
-        annotation.integers.insert("NormalTo".into(), 1);
-        annotation.features.references = vec![first, second];
-        let mut transform = Entity {
-            class: "PrizMetrik.Geometry.GeoTransform".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [
-            ("R1C1", 1.0),
-            ("R1C2", 0.0),
-            ("R1C3", 0.0),
-            ("R2C1", 0.0),
-            ("R2C2", 1.0),
-            ("R2C3", 0.0),
-            ("R3C1", 0.0),
-            ("R3C2", 0.0),
-            ("R3C3", 1.0),
-            ("X", 0.0),
-            ("Y", 0.0),
-            ("Z", 0.0),
-        ] {
-            transform.doubles.insert(name.into(), value);
-        }
-        annotation.related.push(RelatedObject {
-            name: "NominalTransform".into(),
-            class: transform.class.clone(),
-            entity: transform,
-        });
-        let mut vector = Entity {
-            class: "PrizMetrik.Geometry.GeoUnitVector".into(),
-            ..Entity::default()
-        };
-        for (name, value) in ["I", "J", "K"].into_iter().zip(direction) {
-            vector.doubles.insert(name.into(), value);
-        }
-        annotation.related.push(RelatedObject {
-            name: "DirectionVector".into(),
-            class: vector.class.clone(),
-            entity: vector,
-        });
-        annotation
-    }
-
-    fn feature_with_nominal_measurement(
-        feature_class: &str,
-        object_name: &str,
-        geometry_class: &str,
-        field: &str,
-        value: f64,
-    ) -> Entity {
-        let mut feature = entity(feature_class);
-        let mut geometry = Entity {
-            class: format!("PrizMetrik.Geometry.{geometry_class}"),
-            ..Entity::default()
-        };
-        geometry.doubles.insert(field.into(), value);
-        feature.related.push(RelatedObject {
-            name: object_name.into(),
-            class: geometry.class.clone(),
-            entity: geometry,
-        });
-        feature
-    }
-
-    #[test]
-    fn rendered_diameter_resolves_rounded_applied_geometry() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("first cylinder") =
-            cylinder_with_radius(1.984_375);
-        *root.features.entities.get_mut(2).expect("second cylinder") =
-            cylinder_with_radius(1.984_375);
-        let diameter = root.annotations.entities.get_mut(2).expect("diameter");
-        diameter
-            .integers
-            .insert("BlockToleranceDecimalPlaces".into(), 3);
-        diameter.doubles.insert("MinusTolerance".into(), 0.0);
-        diameter.doubles.insert("PlusTolerance".into(), 0.0);
-        diameter.doubles.insert("LowerLimit".into(), 3.8);
-        diameter.doubles.insert("UpperLimit".into(), 4.1);
-        let displayed = [RenderedDimension {
-            kind: RenderedDimensionKind::Diameter,
-            value: 0.156,
-            decimal_places: 3,
-        }];
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &displayed, &mut annotations);
-        let diameter = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension {
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &diameter.definition
-        else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
-        assert!(lower_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, -0.162_4)));
-        assert!(upper_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 0.137_6)));
-
-        root.annotations
-            .entities
-            .get_mut(2)
-            .expect("diameter")
-            .features
-            .references = vec![reference("FP", "GdtPattern")];
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &displayed, &mut annotations);
-        let diameter = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
-    }
-
-    #[test]
-    fn conflicting_pattern_sizes_do_not_resolve_a_nominal() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(2.5);
-        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(3.0);
-        let diameter = root.annotations.entities.get_mut(2).expect("diameter");
-        diameter
-            .integers
-            .insert("BlockToleranceDecimalPlaces".into(), 1);
-        diameter.features.references = vec![reference("FP", "GdtPattern")];
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(
-            &root,
-            &[RenderedDimension {
-                kind: RenderedDimensionKind::Diameter,
-                value: 5.0,
-                decimal_places: 1,
-            }],
-            &mut annotations,
-        );
-        let diameter = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(2.5);
-        *root.features.entities.get_mut(2).expect("second cylinder") =
-            cylinder_with_radius(2.500_002_5);
-        root.annotations
-            .entities
-            .get_mut(2)
-            .expect("diameter")
-            .features
-            .references = vec![reference("FP", "GdtPattern")];
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(5.0)));
-    }
-
-    #[test]
-    fn diameter_equivalence_does_not_merge_distinct_sizes() {
-        assert_eq!(unique_diameter(&[10.0, 10.000_005]), Some(10.0));
-        assert_eq!(unique_diameter(&[10.0, 10.000_02]), None);
-    }
-
-    #[test]
-    fn empty_pattern_does_not_bind_an_unrelated_rendered_diameter() {
-        let mut root = semantic_root();
-        root.features
-            .entities
-            .first_mut()
-            .and_then(|pattern| pattern.related.first_mut())
-            .expect("pattern members")
-            .entity
-            .related
-            .clear();
-        root.annotations
-            .entities
-            .get_mut(2)
-            .expect("diameter")
-            .features
-            .references = vec![reference("FP", "GdtPattern")];
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(
-            &root,
-            &[RenderedDimension {
-                kind: RenderedDimensionKind::Diameter,
-                value: 0.25,
-                decimal_places: 3,
-            }],
-            &mut annotations,
-        );
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("empty-pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn counterbore_pattern_supplies_distinct_hole_diameter() {
-        let mut root = semantic_root();
-        *root
-            .features
-            .entities
-            .get_mut(1)
-            .expect("counterbore cylinder") = cylinder_with_radius(5.0);
-        *root.features.entities.get_mut(2).expect("hole cylinder") = cylinder_with_radius(3.0);
-        root.annotations
-            .entities
-            .get_mut(2)
-            .expect("diameter")
-            .features
-            .references = vec![reference("FP", "GdtPattern")];
-
-        let mut counterbore = entity("GdtCounterBore");
-        counterbore.doubles.insert("Nominal".into(), 0.0);
-        counterbore.features.references = vec![
-            reference("FP", "GdtPattern"),
-            reference("F20", "GdtCylinder"),
-        ];
-        root.annotations
-            .references
-            .push(reference("A50", "GdtCounterBore"));
-        root.annotations.entities.push(counterbore);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(6.0)));
-    }
-
-    #[test]
-    fn unrelated_counterbore_size_does_not_select_a_pattern_diameter() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(5.0);
-        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(3.0);
-        root.annotations
-            .entities
-            .get_mut(2)
-            .expect("diameter")
-            .features
-            .references = vec![reference("FP", "GdtPattern")];
-        root.features
-            .references
-            .push(reference("FCB", "GdtCylinder"));
-        root.features.entities.push(cylinder_with_radius(4.0));
-
-        let mut counterbore = entity("GdtCounterBore");
-        counterbore.doubles.insert("Nominal".into(), 0.0);
-        counterbore.features.references = vec![
-            reference("FP", "GdtPattern"),
-            reference("FCB", "GdtCylinder"),
-        ];
-        root.annotations
-            .references
-            .push(reference("A50", "GdtCounterBore"));
-        root.annotations.entities.push(counterbore);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("direct cylinder") = cylinder_with_radius(17.5);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("direct diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(35.0)));
-
-        *root.features.entities.get_mut(1).expect("direct sphere") =
-            feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
-        root.features
-            .references
-            .get_mut(1)
-            .expect("direct feature reference")
-            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
-        root.annotations
-            .entities
-            .get_mut(2)
-            .and_then(|diameter| diameter.features.references.first_mut())
-            .expect("diameter feature reference")
-            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("direct diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(31.75)));
-    }
-
-    #[test]
-    fn conflicting_rendered_units_do_not_resolve_a_nominal() {
-        assert_eq!(
-            rendered_nominal(
-                5.0,
-                1,
-                RenderedDimensionKind::Diameter,
-                &[
-                    RenderedDimension {
-                        kind: RenderedDimensionKind::Diameter,
-                        value: 5.0,
-                        decimal_places: 1,
-                    },
-                    RenderedDimension {
-                        kind: RenderedDimensionKind::Diameter,
-                        value: 0.2,
-                        decimal_places: 1,
-                    },
-                ],
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn directional_plane_distance_supplies_location_nominal() {
-        let mut root = semantic_root();
-        root.features.references.push(reference("FL1", "GdtPlane"));
-        root.features
-            .entities
-            .push(plane_at([3.0, 4.0, 5.0], [0.0, 0.0, 1.0]));
-        root.features.references.push(reference("FL2", "GdtPlane"));
-        root.features
-            .entities
-            .push(plane_at([8.0, 9.0, 25.0], [0.0, 0.0, 1.0]));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtDistanceBetween"));
-        root.annotations.entities.push(distance_annotation(
-            reference("FL1", "GdtPlane"),
-            reference("FL2", "GdtPlane"),
-            [0.0, 0.0, -1.0],
-        ));
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension {
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("location dimension")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(20.0)));
-        assert_eq!(*lower_deviation, Some(length(-0.5)));
-        assert_eq!(*upper_deviation, Some(length(0.5)));
-
-        *root.features.entities.last_mut().expect("second plane") =
-            plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("location dimension")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn directional_compound_hole_axes_supply_location_nominal() {
-        let mut root = semantic_root();
-        for (hole_id, cylinder_id, y) in [("FH1", "FC1", 210.0), ("FH2", "FC2", 285.0)] {
-            let mut hole = entity("GdtCompoundHole");
-            hole.features
-                .references
-                .push(reference(cylinder_id, "GdtCylinder"));
-            root.features
-                .references
-                .push(reference(hole_id, "GdtCompoundHole"));
-            root.features.entities.push(hole);
-            root.features
-                .references
-                .push(reference(cylinder_id, "GdtCylinder"));
-            root.features
-                .entities
-                .push(cylinder_at([230.0, y, 27.0], [0.0, 0.0, 1.0]));
-        }
-        root.annotations
-            .references
-            .push(reference("A50", "GdtDistanceBetween"));
-        root.annotations.entities.push(distance_annotation(
-            reference("FH1", "GdtCompoundHole"),
-            reference("FH2", "GdtCompoundHole"),
-            [0.0, 1.0, 0.0],
-        ));
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("hole-axis location")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(75.0)));
-    }
-
-    #[test]
-    fn closed_slot_end_feature_supplies_length_location_nominal() {
-        let mut root = semantic_root();
-        root.features
-            .references
-            .push(reference("FSC", "GdtCylinder"));
-        root.features
-            .entities
-            .push(cylinder_at([38.1, 3.037_84, -95.25], [0.0, 1.0, 0.0]));
-        root.features
-            .entities
-            .last_mut()
-            .and_then(|cylinder| cylinder.related.first_mut())
-            .expect("nominal cylinder")
-            .entity
-            .doubles
-            .insert("R".into(), 3.175);
-        let mut slot = entity("GdtCompoundClosedSlot3D");
-        slot.features
-            .references
-            .push(reference("FSC", "GdtCylinder"));
-        let mut geometry = Entity {
-            class: "PrizMetrik.Geometry.GeoClosedSlot".into(),
-            ..Entity::default()
-        };
-        for (name, value) in [
-            ("I", 0.0),
-            ("J", -1.0),
-            ("K", 0.0),
-            ("LongitudeI", -1.0),
-            ("LongitudeJ", 0.0),
-            ("LongitudeK", 0.0),
-            ("X", 47.625),
-            ("Y", 3.037_84),
-            ("Z", -95.25),
-            ("Length", 25.4),
-            ("Width", 6.35),
-        ] {
-            geometry.doubles.insert(name.into(), value);
-        }
-        slot.related.push(RelatedObject {
-            name: "NomClosedSlot".into(),
-            class: geometry.class.clone(),
-            entity: geometry,
-        });
-        root.features
-            .references
-            .push(reference("FS", "GdtCompoundClosedSlot3D"));
-        root.features.entities.push(slot);
-        root.annotations
-            .references
-            .push(reference("A50", "GdtDistanceBetween"));
-        let mut distance = distance_annotation(
-            reference("FSC", "GdtCylinder"),
-            reference("FS", "GdtCompoundClosedSlot3D"),
-            [-1.0, 0.0, 0.0],
-        );
-        distance.integers.insert("FeatureFosUsage".into(), 2);
-        distance.integers.insert("OriginFeatureFosUsage".into(), 2);
-        root.annotations.entities.push(distance);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("slot length location")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(25.4)));
-
-        root.features
-            .entities
-            .last_mut()
-            .and_then(|slot| slot.related.first_mut())
-            .expect("nominal slot")
-            .entity
-            .doubles
-            .insert("Width".into(), 7.0);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("slot length location")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn rendered_depth_resolves_axial_nominal_planes() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("first cylinder") =
-            cylinder_with_radius_and_depth(2.5, 7.625);
-        let mut depth = entity("GdtDepth");
-        depth.strings.insert("ObjectName".into(), "Depth 1".into());
-        depth
-            .integers
-            .insert("BlockToleranceDecimalPlaces".into(), 2);
-        depth.doubles.insert("Nominal".into(), 0.0);
-        depth.doubles.insert("MinusTolerance".into(), -0.254);
-        depth.doubles.insert("PlusTolerance".into(), 0.254);
-        depth.doubles.insert("LowerLimit".into(), 0.0);
-        depth.doubles.insert("UpperLimit".into(), 0.0);
-        depth
-            .features
-            .references
-            .push(reference("F20", "GdtCylinder"));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtDepth"));
-        root.annotations.entities.push(depth);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(
-            &root,
-            &[RenderedDimension {
-                kind: RenderedDimensionKind::Depth,
-                value: 0.3,
-                decimal_places: 2,
-            }],
-            &mut annotations,
-        );
-        let depth = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Depth 1"))
-            .expect("depth annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &depth.definition else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 7.62)));
-    }
-
-    #[test]
-    fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
-        let mut root = semantic_root();
-        *root.features.entities.get_mut(1).expect("direct cylinder") =
-            cylinder_with_radius_and_depth(5.0, 14.2875);
-        let mut depth = entity("GdtDepth");
-        depth.doubles.insert("Nominal".into(), 0.0);
-        depth
-            .features
-            .references
-            .push(reference("F20", "GdtCylinder"));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtDepth"));
-        root.annotations.entities.push(depth);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("direct depth annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 14.2875)));
-
-        root.annotations
-            .entities
-            .last_mut()
-            .expect("thread-depth annotation")
-            .integers
-            .insert("IsThreadDepth".into(), 1);
-        let cylinder = root
-            .features
-            .entities
-            .get_mut(1)
-            .expect("threaded cylinder");
-        cylinder.integers.insert("IsThreaded".into(), 1);
-        cylinder.doubles.insert("ThreadDepth".into(), 12.0);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("thread depth annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(12.0)));
-    }
-
-    #[test]
-    fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
-        let mut root = semantic_root();
-        root.features
-            .references
-            .push(reference("FCB", "GdtCylinder"));
-        root.features
-            .entities
-            .push(cylinder_with_radius_and_depth(5.0, 12.7));
-        root.features.references.push(reference("FDP", "GdtPlane"));
-        root.features.entities.push(plane_with_origin(0.0));
-
-        let mut counterbore = entity("GdtCounterBore");
-        counterbore.doubles.insert("Nominal".into(), 0.0);
-        counterbore.features.references = vec![
-            reference("FP", "GdtPattern"),
-            reference("FCB", "GdtCylinder"),
-        ];
-        root.annotations
-            .references
-            .push(reference("ACB", "GdtCounterBore"));
-        root.annotations.entities.push(counterbore);
-        let mut depth = entity("GdtDepth");
-        depth.doubles.insert("Nominal".into(), 0.0);
-        depth.features.references =
-            vec![reference("FP", "GdtPattern"), reference("FDP", "GdtPlane")];
-        root.annotations
-            .references
-            .push(reference("AD", "GdtDepth"));
-        root.annotations.entities.push(depth);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("AD"))
-            .expect("counterbore depth")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, Some(length(12.7)));
-
-        root.features
-            .entities
-            .last_mut()
-            .and_then(|plane| plane.related.get_mut(1))
-            .expect("depth-plane origin")
-            .entity
-            .doubles
-            .insert("Z".into(), 1.0);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("AD"))
-            .expect("counterbore depth")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn semantic_slot_dimensions_resolve_exact_nominals() {
-        let mut root = semantic_root();
-        root.features
-            .references
-            .push(reference("FW", "GdtCompoundWidth"));
-        root.features
-            .entities
-            .push(feature_with_nominal_measurement(
-                "GdtCompoundWidth",
-                "NomCompoundWidth",
-                "GeoOpenSlot",
-                "Width",
-                12.7,
-            ));
-        root.features
-            .references
-            .push(reference("FL", "GdtCompoundClosedSlot3D"));
-        root.features
-            .entities
-            .push(feature_with_nominal_measurement(
-                "GdtCompoundClosedSlot3D",
-                "NomClosedSlot",
-                "GeoClosedSlot",
-                "Length",
-                38.1,
-            ));
-        let mut width = entity("GdtWidth");
-        width.strings.insert("ObjectName".into(), "Width 1".into());
-        width.doubles.insert("Nominal".into(), 0.0);
-        width.doubles.insert("MinusTolerance".into(), 0.0);
-        width.doubles.insert("PlusTolerance".into(), 0.0);
-        width.doubles.insert("LowerLimit".into(), 12.5);
-        width.doubles.insert("UpperLimit".into(), 12.9);
-        width
-            .features
-            .references
-            .push(reference("FW", "GdtCompoundWidth"));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtWidth"));
-        root.annotations.entities.push(width);
-        let mut length = entity("GdtLength");
-        length
-            .strings
-            .insert("ObjectName".into(), "Length 1".into());
-        length.doubles.insert("Nominal".into(), 0.0);
-        length
-            .features
-            .references
-            .push(reference("FL", "GdtCompoundClosedSlot3D"));
-        root.annotations
-            .references
-            .push(reference("A60", "GdtLength"));
-        root.annotations.entities.push(length);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let width = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Width 1"))
-            .expect("width annotation");
-        let PmiDefinition::Dimension {
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &width.definition
-        else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 12.7)));
-        assert!(lower_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, -0.2)));
-        assert!(upper_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 0.2)));
-        let length = annotations
-            .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
-            .expect("length annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &length.definition else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 38.1)));
-    }
-
-    #[test]
-    fn compound_hole_dimensions_use_direct_operation_geometry() {
-        let mut root = semantic_root();
-        *root
-            .features
-            .entities
-            .get_mut(1)
-            .expect("first pattern member") = cylinder_with_radius(3.0);
-        *root
-            .features
-            .entities
-            .get_mut(2)
-            .expect("second pattern member") = cylinder_with_radius(3.0);
-        root.features
-            .references
-            .push(reference("FCB", "GdtCylinder"));
-        root.features.entities.push(cylinder_with_radius(7.9375));
-        root.features.references.push(reference("FCS", "GdtCone"));
-        root.features
-            .entities
-            .push(cone_with_angle_and_top(std::f64::consts::FRAC_PI_2, 10.0));
-
-        for (id, class, feature) in [
-            ("ACB", "GdtCounterBore", "FCB"),
-            ("ACSD", "GdtCounterSinkDiameter", "FCS"),
-            ("ACSA", "GdtCounterSinkAngle", "FCS"),
-        ] {
-            let mut annotation = entity(class);
-            annotation.doubles.insert("Nominal".into(), 0.0);
-            annotation
-                .features
-                .references
-                .push(reference("FP", "GdtPattern"));
-            annotation.features.references.push(reference(
-                feature,
-                if feature == "FCB" {
-                    "GdtCylinder"
-                } else {
-                    "GdtCone"
-                },
-            ));
-            root.annotations.references.push(reference(id, class));
-            root.annotations.entities.push(annotation);
-        }
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        for (id, expected, quantity) in [
-            ("ACB", 15.875, PmiQuantity::Length),
-            ("ACSD", 20.0, PmiQuantity::Length),
-            ("ACSA", std::f64::consts::FRAC_PI_2, PmiQuantity::Angle),
-        ] {
-            let PmiDefinition::Dimension { nominal, .. } = &annotations
-                .iter()
-                .find(|annotation| annotation.id == pmi_id(id))
-                .expect("compound-hole annotation")
-                .definition
-            else {
-                panic!("dimension definition");
-            };
-            assert!(nominal.as_ref().is_some_and(|value| {
-                value.quantity == quantity && approximately_equal(value.value, expected)
-            }));
-        }
-    }
-
-    #[test]
-    fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
-        let mut root = semantic_root();
-        for (index, value) in [(1, 9.525), (2, 9.525)] {
-            *root
-                .features
-                .entities
-                .get_mut(index)
-                .expect("pattern member") = feature_with_nominal_measurement(
-                "GdtCompoundClosedSlot3D",
-                "NomClosedSlot",
-                "GeoClosedSlot",
-                "Width",
-                value,
-            );
-        }
-        let pattern_members = root
-            .features
-            .entities
-            .first_mut()
-            .and_then(|pattern| pattern.related.first_mut())
-            .expect("pattern members");
-        for applied in &mut pattern_members.entity.related {
-            applied
-                .entity
-                .features
-                .references
-                .first_mut()
-                .expect("pattern member reference")
-                .class = "PrizMetrik.GdtAnalysis.GdtCompoundClosedSlot3D,gdtanalysis.net".into();
-        }
-        let mut width = entity("GdtWidth");
-        width.doubles.insert("Nominal".into(), 0.0);
-        width
-            .features
-            .references
-            .push(reference("FP", "GdtPattern"));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtWidth"));
-        root.annotations.entities.push(width);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("width annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 9.525)));
-
-        root.features
-            .entities
-            .get_mut(2)
-            .and_then(|feature| feature.related.first_mut())
-            .expect("second nominal slot")
-            .entity
-            .doubles
-            .insert("Width".into(), 6.35);
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("width annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
-        let mut root = semantic_root();
-        let mut fillet = entity("GdtFillet");
-        fillet.doubles.insert("Radius".into(), 3.175);
-        *root.features.entities.get_mut(1).expect("first member") = fillet;
-        *root.features.entities.get_mut(2).expect("second member") = cylinder_with_radius(3.175);
-        root.features
-            .references
-            .get_mut(1)
-            .expect("first feature reference")
-            .class = "PrizMetrik.GdtAnalysis.GdtFillet,gdtanalysis.net".into();
-        let pattern_members = root
-            .features
-            .entities
-            .first_mut()
-            .and_then(|pattern| pattern.related.first_mut())
-            .expect("pattern members");
-        for (applied, class) in pattern_members
-            .entity
-            .related
-            .iter_mut()
-            .zip(["GdtFillet", "GdtCylinder"])
-        {
-            applied
-                .entity
-                .features
-                .references
-                .first_mut()
-                .expect("pattern member reference")
-                .class = format!("PrizMetrik.GdtAnalysis.{class},gdtanalysis.net");
-        }
-        let mut radius = entity("GdtRadius");
-        radius.doubles.insert("Nominal".into(), 0.0);
-        radius.doubles.insert("MinusTolerance".into(), -0.1);
-        radius.doubles.insert("PlusTolerance".into(), 0.0);
-        radius.doubles.insert("UpperLimit".into(), 0.0);
-        radius
-            .features
-            .references
-            .push(reference("FP", "GdtPattern"));
-        root.annotations
-            .references
-            .push(reference("A50", "GdtRadius"));
-        root.annotations.entities.push(radius);
-
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension {
-            nominal,
-            upper_deviation,
-            ..
-        } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("radius annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.175)));
-        assert_eq!(*upper_deviation, Some(length(0.0)));
-
-        *root.features.entities.get_mut(2).expect("second member") =
-            feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 4.0);
-        root.features
-            .references
-            .get_mut(2)
-            .expect("second feature reference")
-            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
-        root.features
-            .entities
-            .first_mut()
-            .and_then(|pattern| pattern.related.first_mut())
-            .and_then(|members| members.entity.related.get_mut(1))
-            .and_then(|applied| applied.entity.features.references.first_mut())
-            .expect("second pattern member reference")
-            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
-        let mut annotations = project(&root);
-        enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
-            .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("radius annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
-    }
-
-    #[test]
-    fn scans_explicit_rendered_diameter_literals() {
-        let mut payload = Vec::new();
-        for text in [
-            "<COUNT=#X ><MOD-DIAM> .156",
-            "<MOD-DIAM> <sft_holeDia>",
-            "<MOD-DIAM> .281<HOLE-SPOT><MOD-DIAM> .438",
-            "<MOD-DIAM> .250 <HOLE-DEPTH> .30",
-        ] {
-            payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
-            payload.push(u8::try_from(text.encode_utf16().count()).expect("fixture length"));
-            for unit in text.encode_utf16() {
-                payload.extend_from_slice(&unit.to_le_bytes());
-            }
-        }
-        assert_eq!(
-            rendered_dimensions(&payload),
-            [
-                RenderedDimension {
-                    kind: RenderedDimensionKind::Diameter,
-                    value: 0.156,
-                    decimal_places: 3,
-                },
-                RenderedDimension {
-                    kind: RenderedDimensionKind::Diameter,
-                    value: 0.281,
-                    decimal_places: 3,
-                },
-                RenderedDimension {
-                    kind: RenderedDimensionKind::Diameter,
-                    value: 0.438,
-                    decimal_places: 3,
-                },
-                RenderedDimension {
-                    kind: RenderedDimensionKind::Diameter,
-                    value: 0.25,
-                    decimal_places: 3,
-                },
-                RenderedDimension {
-                    kind: RenderedDimensionKind::Depth,
-                    value: 0.3,
-                    decimal_places: 2,
-                },
-            ]
-        );
-    }
-}
+mod tests;

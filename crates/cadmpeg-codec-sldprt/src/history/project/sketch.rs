@@ -73,9 +73,9 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
 
 pub(crate) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
     let origin = parse_point3_mm(feature.properties.get("BlockOrigin")?)?;
-    let mut placement = Transform::identity();
-    placement.rows[0][3] = origin.x;
-    placement.rows[1][3] = origin.y;
-    placement.rows[2][3] = origin.z;
-    Some(placement)
+    Transform::affine([
+        [1.0, 0.0, 0.0, origin.x],
+        [0.0, 1.0, 0.0, origin.y],
+        [0.0, 0.0, 1.0, origin.z],
+    ])
 }

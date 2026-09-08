@@ -85,7 +85,102 @@ fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+/// The `RSe` version declarations a synthetic primary envelope carries.
+///
+/// [`Default`] is the pair this codec implements. A test that needs an
+/// unimplemented declaration changes one field, so the rest of the document
+/// stays byte-identical and the classification is the only difference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EnvelopeDeclarations {
+    /// The `RSeDb` schema word.
+    pub(crate) schema: u32,
+    /// The `RSe` metadata stream marker.
+    pub(crate) meta_marker: &'static str,
+    /// The `RSe` metadata stream version word.
+    pub(crate) meta_version: u16,
+}
+
+impl Default for EnvelopeDeclarations {
+    fn default() -> Self {
+        Self {
+            schema: 31,
+            meta_marker: "RSe Meta Stream Version 8",
+            meta_version: 8,
+        }
+    }
+}
+
 pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
+    primary_envelope_fixture_with(EnvelopeDeclarations::default())
+}
+
+pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        declarations,
+        &asm_kernel_stream(),
+        false,
+        false,
+    )
+}
+
+pub(crate) fn primary_envelope_fixture_with_broken_database() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        EnvelopeDeclarations::default(),
+        &asm_kernel_stream(),
+        true,
+        false,
+    )
+}
+
+pub(crate) fn primary_envelope_fixture_with_broken_metadata() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        EnvelopeDeclarations::default(),
+        &asm_kernel_stream(),
+        false,
+        true,
+    )
+}
+
+/// The primary envelope carrying one caller-supplied kernel stream, so a test
+/// can put an ACIS carrier at any save format inside a well-formed document.
+pub(crate) fn primary_envelope_fixture_with_kernel(
+    declarations: EnvelopeDeclarations,
+    kernel: &[u8],
+) -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(declarations, kernel, false, false)
+}
+
+/// A part envelope whose typed kernel-carrier record is too short to select.
+pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &[0_u8; 8],
+        false,
+        false,
+    )
+}
+
+fn primary_envelope_fixture_with_kernel_and_failures(
+    declarations: EnvelopeDeclarations,
+    kernel: &[u8],
+    break_database_body: bool,
+    break_metadata_body: bool,
+) -> Vec<u8> {
+    let carrier = kernel_carrier_fixture(kernel);
+    primary_envelope_fixture_with_carrier_and_failures(
+        declarations,
+        &carrier,
+        break_database_body,
+        break_metadata_body,
+    )
+}
+
+fn primary_envelope_fixture_with_carrier_and_failures(
+    declarations: EnvelopeDeclarations,
+    carrier: &[u8],
+    break_database_body: bool,
+    break_metadata_body: bool,
+) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
     const V1: usize = 2;
@@ -101,10 +196,15 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
-    let carrier = kernel_carrier_fixture();
-    let meta = meta_stream_fixture(carrier.len());
-    let bulk = bulk_stream_fixture(&carrier);
-    let database = database_fixture();
+    let mut meta = meta_stream_fixture(carrier.len(), declarations);
+    if break_metadata_body {
+        meta.push(0xff);
+    }
+    let bulk = bulk_stream_fixture(carrier);
+    let mut database = database_fixture(declarations.schema);
+    if break_database_body {
+        database.truncate(20);
+    }
     let registry = registry_fixture();
     let revisions = revision_fixture();
     let streams = [
@@ -290,9 +390,9 @@ pub(crate) fn primary_envelope_fixture() -> Vec<u8> {
     file
 }
 
-fn database_fixture() -> Vec<u8> {
+fn database_fixture(schema: u32) -> Vec<u8> {
     let mut bytes = vec![0x21; 16];
-    put_u32_vec(&mut bytes, 31);
+    put_u32_vec(&mut bytes, schema);
     push_version(&mut bytes, 24);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     push_version(&mut bytes, 25);
@@ -342,11 +442,11 @@ fn revision_fixture() -> Vec<u8> {
     [3_u32, 0].into_iter().flat_map(u32::to_le_bytes).collect()
 }
 
-fn meta_stream_fixture(payload_len: usize) -> Vec<u8> {
+fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -> Vec<u8> {
     let body = meta_table_body(payload_len);
     let mut bytes = Vec::new();
-    push_bytes_vec(&mut bytes, b"RSe Meta Stream Version 8");
-    bytes.extend_from_slice(&8_u16.to_le_bytes());
+    push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
+    bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
     push_utf16_vec(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);
@@ -415,11 +515,122 @@ fn bulk_stream_fixture(carrier: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn kernel_carrier_fixture() -> Vec<u8> {
+/// The `ASM BinaryFile4` stream the primary envelope carries by default.
+fn asm_kernel_stream() -> Vec<u8> {
     let mut kernel = b"ASM BinaryFile4".to_vec();
     kernel.extend_from_slice(&700_u32.to_le_bytes());
     kernel.extend_from_slice(&[0_u8; 12]);
-    for value in ["Inventor", "synthetic ASM", "2000-01-01"] {
+    kernel_trailer(&mut kernel, "synthetic ASM");
+    kernel
+}
+
+/// An `ACIS BinaryFile` stream at one save format, for the band tests.
+pub(crate) fn acis_kernel_stream(save_format_version: u32) -> Vec<u8> {
+    let mut kernel = b"ACIS BinaryFile".to_vec();
+    for value in [save_format_version, 0, 0, 0] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ACIS");
+    kernel
+}
+
+/// An `ACIS BinaryFile` stream at one save format carrying one loopless closed
+/// sphere face.
+///
+/// The record-bearing counterpart of [`acis_kernel_stream`]: a band test on an
+/// empty stream proves only the label, so the recovery tests need a carrier
+/// whose records decode into geometry. The binary unit is centimetres, so the
+/// 2.5 stored here is a 25 mm radius in the model.
+pub(crate) fn acis_sphere_kernel_stream(save_format_version: u32) -> Vec<u8> {
+    let mut kernel = b"ACIS BinaryFile".to_vec();
+    for value in [save_format_version, 0, 2, 2] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ACIS");
+    append_sphere_records(&mut kernel);
+    kernel
+}
+
+/// The six SAB records of the sphere body, at four-byte reference width.
+fn append_sphere_records(bytes: &mut Vec<u8>) {
+    fn ident(bytes: &mut Vec<u8>, tag: u8, name: &str) {
+        bytes.push(tag);
+        bytes.push(name.len() as u8);
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    fn reference(bytes: &mut Vec<u8>, value: i32) {
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    fn long(bytes: &mut Vec<u8>, value: i32) {
+        bytes.push(0x04);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    // asmheader (index 0)
+    ident(bytes, 0x0d, "asmheader");
+    reference(bytes, -1);
+    long(bytes, -1);
+    bytes.extend_from_slice(&[0x07, 13]);
+    bytes.extend_from_slice(b"232.4.0.65535");
+    bytes.push(0x11);
+    // body (1) -> lump 2
+    ident(bytes, 0x0d, "body");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, 2, -1, -1] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // lump (2) -> shell 3, owner 1
+    ident(bytes, 0x0d, "lump");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, 3, 1] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // shell (3) -> face 4, owner 2
+    ident(bytes, 0x0d, "shell");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, -1, 4, -1, 2] {
+        reference(bytes, value);
+    }
+    bytes.push(0x11);
+    // face (4) -> shell 3, surface 5, loopless
+    ident(bytes, 0x0d, "face");
+    reference(bytes, -1);
+    long(bytes, -1);
+    for value in [-1, -1, -1, 3, -1, 5] {
+        reference(bytes, value);
+    }
+    bytes.extend_from_slice(&[0x0b, 0x0b, 0x11]);
+    // sphere-surface (5): centre, radius 2.5 cm, two axes, uv sense, bounds
+    ident(bytes, 0x0e, "sphere");
+    ident(bytes, 0x0d, "surface");
+    reference(bytes, -1);
+    long(bytes, -1);
+    reference(bytes, -1);
+    bytes.push(0x13);
+    for value in [0.0_f64, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x06);
+    bytes.extend_from_slice(&2.5_f64.to_le_bytes());
+    for triple in [[1.0_f64, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+        bytes.push(0x14);
+        for value in triple {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0x0b; 5]);
+    bytes.push(0x11);
+}
+
+/// The product strings and the scale/tolerance triple both headers end with.
+fn kernel_trailer(kernel: &mut Vec<u8>, product: &str) {
+    for value in ["Inventor", product, "2000-01-01"] {
         kernel.push(0x07);
         kernel.push(value.len() as u8);
         kernel.extend_from_slice(value.as_bytes());
@@ -428,12 +639,15 @@ fn kernel_carrier_fixture() -> Vec<u8> {
         kernel.push(0x06);
         kernel.extend_from_slice(&value.to_le_bytes());
     }
+}
+
+fn kernel_carrier_fixture(kernel: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&2_u16.to_le_bytes());
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(&4_u32.to_le_bytes());
-    bytes.extend_from_slice(&kernel);
+    bytes.extend_from_slice(kernel);
     bytes.extend_from_slice(&5_u32.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&(-1_i32).to_le_bytes());

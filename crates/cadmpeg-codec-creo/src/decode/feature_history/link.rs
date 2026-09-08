@@ -26,7 +26,8 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
             .is_some()
         })
         .filter_map(|transform| {
-            let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
+            let owner = IrFeatureId::mint(format!("creo:model:feature#{}", transform.feature_id?))
+                .expect("identity grammar");
             let definition =
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
             let sketch = model_sketch_id(scan, definition);
@@ -68,9 +69,10 @@ pub(in super::super) fn surface_kind_for_geometry(
         }
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
         SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Procedural { cache, .. } => cache
+            .as_ref()
+            .and_then(|cache| surface_kind_for_geometry(cache.as_geometry())),
+        SurfaceGeometry::Polygonal(_) | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -81,15 +83,15 @@ pub(in super::super) fn generated_surface_id_for_feature(
 ) -> Option<u32> {
     let mut matches = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| {
             table
                 .entries
                 .iter()
                 .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id == Some(source_entity_id)
+                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
                 })
-                .filter(|entry| table.surface_ids.contains(&entry.entity_id))
+                .filter(|entry| table.surface_ids().contains(&entry.entity_id))
                 .map(|entry| entry.entity_id)
         });
     let surface_id = matches.next()?;
@@ -103,20 +105,25 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
-    if entry.class_id != 200 || entry.source_entity_id.is_none() {
+    if entry.class_id != 200 || entry.source_entity_id().is_none() {
         return false;
     }
-    if table.surface_ids.contains(&entry.entity_id) {
-        return crate::surface::unique_surface_row(rows, entry.entity_id)
-            .is_some_and(|row| row.feature_id == feature_id && expected_kinds.contains(&row.kind));
+    if table.surface_ids().contains(&entry.entity_id) {
+        return crate::surface::unique_surface_row(rows, entry.entity_id).is_some_and(|row| {
+            row.feature_id == feature_id
+                && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
+        });
     }
-    table.non_surface_entity_ids.contains(&entry.entity_id)
+    table.non_surface_entity_ids().contains(&entry.entity_id)
         && generated_profile_table_shape(table)
         && table.entries.iter().skip(2).any(|candidate| {
             candidate.class_id == 200
-                && table.surface_ids.contains(&candidate.entity_id)
+                && table.surface_ids().contains(&candidate.entity_id)
                 && crate::surface::unique_surface_row(rows, candidate.entity_id).is_some_and(
-                    |row| row.feature_id == feature_id && expected_kinds.contains(&row.kind),
+                    |row| {
+                        row.feature_id == feature_id
+                            && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
+                    },
                 )
         })
 }
@@ -138,7 +145,8 @@ pub(in super::super) fn section_entity_is_generated_profile(
     let direct = generated_surface_id_for_feature(tables, feature_id, source_entity_id)
         .is_some_and(|surface_id| {
             crate::surface::unique_surface_row(rows, surface_id).is_some_and(|row| {
-                row.feature_id == feature_id && expected_kinds.contains(&row.kind)
+                row.feature_id == feature_id
+                    && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
             })
         });
     if direct {
@@ -146,19 +154,19 @@ pub(in super::super) fn section_entity_is_generated_profile(
     }
     let rowless_matches = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter_map(|table| {
             let matching = table
                 .entries
                 .iter()
                 .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id == Some(source_entity_id)
+                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
                 })
                 .collect::<Vec<_>>();
             let [entry] = matching.as_slice() else {
                 return None;
             };
-            (!table.surface_ids.contains(&entry.entity_id)
+            (!table.surface_ids().contains(&entry.entity_id)
                 && generated_profile_entry_is_admissible(
                     feature_id,
                     table,
@@ -177,7 +185,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
     }
     let mut blind_cylinders = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == feature_id)
         .filter_map(|table| {
             let [rowless_cap, cap, profile, cylinder] = table.entries.as_slice() else {
                 return None;
@@ -188,14 +196,14 @@ pub(in super::super) fn section_entity_is_generated_profile(
                 profile.class_id,
                 cylinder.class_id,
             ] == [204, 203, 200, 200]
-                && profile.source_entity_id == Some(source_entity_id)
-                && cylinder.source_entity_id.is_none()
-                && table.surface_ids.contains(&cap.entity_id)
-                && table.surface_ids.contains(&cylinder.entity_id)
+                && profile.source_entity_id() == Some(source_entity_id)
+                && cylinder.source_entity_id().is_none()
+                && table.surface_ids().contains(&cap.entity_id)
+                && table.surface_ids().contains(&cylinder.entity_id)
                 && table
-                    .non_surface_entity_ids
+                    .non_surface_entity_ids()
                     .contains(&rowless_cap.entity_id)
-                && table.non_surface_entity_ids.contains(&profile.entity_id)
+                && table.non_surface_entity_ids().contains(&profile.entity_id)
                 && crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(
                     |row| {
                         row.feature_id == feature_id
@@ -217,7 +225,7 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         || rest.is_empty()
         || !rest
             .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
+            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
     {
         return false;
     }
@@ -227,25 +235,25 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     let roster = table
-        .surface_ids
+        .surface_ids()
         .iter()
-        .chain(&table.non_surface_entity_ids)
+        .chain(&table.non_surface_entity_ids())
         .copied()
         .collect::<BTreeSet<_>>();
-    table.entry_ids.len() == entry_ids.len()
-        && table.entry_ids.iter().copied().collect::<BTreeSet<_>>() == entry_ids
+    table.entry_ids().len() == entry_ids.len()
+        && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
         && roster == entry_ids
         && table
-            .surface_ids
+            .surface_ids()
             .iter()
-            .all(|id| !table.non_surface_entity_ids.contains(id))
-        && table.surface_ids.iter().collect::<BTreeSet<_>>().len() == table.surface_ids.len()
+            .all(|id| !table.non_surface_entity_ids().contains(id))
+        && table.surface_ids().iter().collect::<BTreeSet<_>>().len() == table.surface_ids().len()
         && table
-            .non_surface_entity_ids
+            .non_surface_entity_ids()
             .iter()
             .collect::<BTreeSet<_>>()
             .len()
-            == table.non_surface_entity_ids.len()
+            == table.non_surface_entity_ids().len()
 }
 
 pub(in super::super) fn section_generated_profile_surface_kinds(
@@ -258,7 +266,7 @@ pub(in super::super) fn section_generated_profile_surface_kinds(
         }
         SketchGeometry::Nurbs { .. } => Some(&[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ]),
         _ => None,
     }
@@ -286,7 +294,7 @@ pub(in super::super) fn analytic_surface_id_for_feature(
     let surface_id = generated_surface_id_for_feature(tables, feature_id, external_id)?;
     let expected_kind = surface_kind_for_geometry(geometry)?;
     crate::surface::unique_surface_row(surface_rows, surface_id)
-        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
         .then_some(surface_id)
 }
 
@@ -309,7 +317,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
             return BTreeMap::new();
         };
         if !crate::surface::unique_surface_row(surface_rows, surface_id)
-            .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+            .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
             || !bound_surfaces.insert(surface_id)
         {
             return BTreeMap::new();
@@ -321,7 +329,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
 
 pub(in super::super) fn profile_segment_ids(
     definition_id: u32,
-    segments: &[crate::feature::FeatureSegment],
+    segments: &[&crate::feature::FeatureSegment],
     profiles: &[Vec<SketchEntityUse>],
 ) -> BTreeSet<u32> {
     segments

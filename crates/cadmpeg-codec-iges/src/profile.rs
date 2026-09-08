@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed support-envelope admission rules.
 
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 
-pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -> bool {
+pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, global_table: GlobalTable) -> bool {
     let admitted = if macro_instance_type(entity_type) {
         true
     } else {
@@ -45,9 +45,9 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
         }
     };
     admitted
-        && match dialect {
-            Dialect::V4_0 => envelope_a_v4_admits(entity_type, form),
-            Dialect::V5_0 => envelope_a_v5_0_admits(entity_type, form),
+        && match global_table {
+            GlobalTable::V4_0 => envelope_a_v4_admits(entity_type, form),
+            GlobalTable::V5_0 => envelope_a_v5_0_admits(entity_type, form),
             _ => true,
         }
 }

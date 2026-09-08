@@ -5,6 +5,8 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
@@ -13,16 +15,15 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
-use crate::container::{self, ContainerScan};
+use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
@@ -31,7 +32,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 
 pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "catia".to_string(),
+        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
         object_id: format!("cgm-{kind}:{key}"),
         name: None,
         color: None,
@@ -67,7 +68,7 @@ pub(crate) fn neutral_model_is_admissible(
     ir.model.finalize();
     cadmpeg_ir::admit_with_additional_native_identities(
         ir,
-        pending_unknowns.iter().map(|record| record.id.as_str()),
+        pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
     )
@@ -79,20 +80,30 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .model
         .curves
         .iter()
-        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter(|curve| {
+            !matches!(
+                curve.geometry,
+                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+            )
+        })
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
     let mut resolved_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| !matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .filter(|surface| {
+            !matches!(
+                surface.geometry,
+                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+            )
+        })
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
     loop {
         let mut changed = false;
         for procedural in &ir.model.procedural_surfaces {
-            let resolved = match &procedural.definition {
+            let resolved = match procedural.definition() {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
                 | ProceduralSurfaceDefinition::RollingBallJet { .. } => true,
@@ -109,11 +120,13 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 _ => false,
             };
             if resolved {
-                changed |= resolved_surfaces.insert(procedural.surface.clone());
+                if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
+                    changed |= resolved_surfaces.insert(owner.clone());
+                }
             }
         }
         for procedural in &ir.model.procedural_curves {
-            let resolved = match &procedural.definition {
+            let resolved = match procedural.definition() {
                 ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     context.sides.iter().all(|side| {
@@ -122,8 +135,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                             .is_some_and(|surface| resolved_surfaces.contains(surface))
                     })
                 }
-                ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
-                    let (has_side, all_resolved) = context
+                ProceduralCurveDefinition::SurfaceCurve { family } => {
+                    let (has_side, all_resolved) = family
+                        .context()
                         .sides
                         .iter()
                         .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
@@ -135,7 +149,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 _ => false,
             };
             if resolved {
-                changed |= resolved_curves.insert(procedural.curve.clone());
+                if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
+                    changed |= resolved_curves.insert(owner.clone());
+                }
             }
         }
         if !changed {
@@ -147,8 +163,10 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .curves
         .iter()
         .filter(|curve| {
-            matches!(curve.geometry, CurveGeometry::Unknown { .. })
-                && !resolved_curves.contains(&curve.id)
+            matches!(
+                curve.geometry,
+                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+            ) && !resolved_curves.contains(&curve.id)
         })
         .count()
         + ir.model
@@ -161,8 +179,10 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .surfaces
         .iter()
         .filter(|surface| {
-            matches!(surface.geometry, SurfaceGeometry::Unknown { .. })
-                && !resolved_surfaces.contains(&surface.id)
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+            ) && !resolved_surfaces.contains(&surface.id)
         })
         .count();
     (curves, surfaces)
@@ -187,10 +207,13 @@ pub(crate) fn attach_free_vertices(
     namespace: &str,
     stream: &str,
 ) {
-    let body_id = BodyId(format!("catia:{namespace}:body#unbound-points"));
-    let region_id = RegionId(format!("catia:{namespace}:region#unbound-points"));
-    let shell_id = ShellId(format!("catia:{namespace}:shell#unbound-points"));
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    let body_id =
+        BodyId::mint(format!("catia:{namespace}:body#unbound-points")).expect("identity grammar");
+    let region_id = RegionId::mint(format!("catia:{namespace}:region#unbound-points"))
+        .expect("identity grammar");
+    let shell_id =
+        ShellId::mint(format!("catia:{namespace}:shell#unbound-points")).expect("identity grammar");
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
             id,
@@ -383,9 +406,8 @@ pub(crate) struct GeometryReportCounts {
     pub(crate) admitted_standard_face_rows: usize,
 }
 
-pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
+pub(crate) fn source_meta(scan: &ContainerScan, matched: &DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("variant".to_string(), scan.variant.token().to_string());
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert(
         "outer_dir_offset".to_string(),
@@ -423,16 +445,6 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             preview.components.to_string(),
         );
     }
-    if let Some(version) = &scan.last_save_version {
-        attributes.insert("catia_version".to_string(), version.version.to_string());
-        attributes.insert("catia_release".to_string(), version.release.to_string());
-        attributes.insert(
-            "catia_service_pack".to_string(),
-            version.service_pack.to_string(),
-        );
-        attributes.insert("catia_hot_fix".to_string(), version.hot_fix.to_string());
-        attributes.insert("catia_build_date".to_string(), version.build_date.clone());
-    }
     attributes.insert(
         "external_reference_count".to_string(),
         scan.external_references.len().to_string(),
@@ -456,10 +468,10 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
             format!("0x{:08x}", segment.type_word),
         );
     }
-    SourceMeta {
-        format: "catia".to_string(),
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
         attributes,
-    }
+    )
 }
 
 pub(crate) fn build_geometry_report(
@@ -470,7 +482,7 @@ pub(crate) fn build_geometry_report(
     analytic_record_count: usize,
     report_counts: &GeometryReportCounts,
     topology_failure: Option<&str>,
-) -> DecodeReport {
+) -> DecodeBody {
     let mut losses = Vec::new();
 
     losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
@@ -553,45 +565,36 @@ pub(crate) fn build_geometry_report(
         ),
     );
 
-    DecodeReport {
-        format: "catia".to_string(),
-        container_only: false,
+    DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
-        notes: container::summarize(scan).notes,
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 
-pub(crate) fn build_metadata_ir(
+pub(crate) fn build_metadata_fallback(
     scan: &ContainerScan,
 ) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
-    let mut ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
 
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
     if let Some(brep) = &scan.brep {
-        let id = UnknownId("catia:payload:unknown#brep-stream".to_string());
+        let id = UnknownId::mint("catia:payload:unknown#brep-stream".to_string())
+            .expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
             "MainDataStream+SurfacicReps",
             0,
-            scan.variant.token(),
+            scan.variant.id().to_string(),
             Exactness::Unknown,
         );
-        unknowns.push(UnknownRecord {
-            id,
-            offset: 0,
-            byte_len: brep.len() as u64,
-            sha256: sha256_hex(brep),
-            data: Some(brep.clone()),
-            links: Vec::new(),
-        });
+        unknowns.push(UnknownRecord::retained(id, 0, brep.clone(), Vec::new()));
     }
     (ir, annotations.build(), unknowns)
 }
@@ -608,23 +611,16 @@ pub(crate) fn preserve_raw_payload(
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_ref(), "CATPart"),
     };
-    let id = UnknownId(id.to_string());
+    let id = UnknownId::mint(id.to_string()).expect("identity grammar");
     annotate(
         annotations,
         &id,
         stream,
         0,
-        scan.variant.token(),
+        scan.variant.id().to_string(),
         Exactness::Unknown,
     );
-    unknowns.push(UnknownRecord {
-        id,
-        offset: 0,
-        byte_len: bytes.len() as u64,
-        sha256: sha256_hex(bytes),
-        data: Some(bytes.to_vec()),
-        links: Vec::new(),
-    });
+    unknowns.push(UnknownRecord::retained(id, 0, bytes.to_vec(), Vec::new()));
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding
@@ -639,8 +635,13 @@ pub(crate) fn link_payload_carriers(
         .model
         .surfaces
         .iter()
-        .map(|surface| surface.id.0.clone())
-        .chain(ir.model.curves.iter().map(|curve| curve.id.0.clone()))
+        .map(|surface| surface.id.as_str().to_owned())
+        .chain(
+            ir.model
+                .curves
+                .iter()
+                .map(|curve| curve.id.as_str().to_owned()),
+        )
         .collect::<Vec<_>>();
     if links.is_empty() {
         return;
@@ -648,39 +649,29 @@ pub(crate) fn link_payload_carriers(
     let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
-    payload.links = links;
-    annotations.derived(&payload.id, "links");
+    *payload.links_mut() = links;
+    annotations.derived(payload.id(), "links");
 }
 
-pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
-    let summary = container::summarize(scan);
+pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
-        scan.variant.token(),
+        scan.variant.id(),
         scan.variant.description()
     ))];
-
-    if container_only {
-        losses.push(
-            CatiaLossCode::ContainerOnlyDecode
-                .note("Container-only decode requested; entity decode was not attempted."),
-        );
-    }
 
     losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(
         "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
                   for this file.",
     ));
 
-    DecodeReport {
-        format: "catia".to_string(),
-        container_only,
+    DecodeBody {
         geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
-        notes: summary.notes,
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 
@@ -758,11 +749,14 @@ pub(crate) fn rational_pcurve_arc(
         return None;
     }
     Some(PcurveGeometry::Nurbs {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            knots,
+            control_points,
+            Some(weights),
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -776,14 +770,17 @@ pub(crate) fn quintic_jet_pcurve(
     let (full_knots, controls) =
         crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
     Some(PcurveGeometry::Nurbs {
-        degree,
-        knots: full_knots,
-        control_points: controls
-            .into_iter()
-            .map(|point| Point2::new(point[0], point[1]))
-            .collect(),
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            degree,
+            full_knots,
+            controls
+                .into_iter()
+                .map(|point| Point2::new(point[0], point[1]))
+                .collect(),
+            None,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -806,26 +803,19 @@ mod route_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use cadmpeg_ir::topology::Shell;
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::unknown::UnknownRecord;
 
     #[test]
     fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
         let range = [0.0, 1e-200];
         let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("tiny circular arc");
-        let PcurveGeometry::Nurbs {
-            knots,
-            control_points,
-            weights,
-            ..
-        } = pcurve
-        else {
+        let PcurveGeometry::Nurbs { nurbs } = pcurve else {
             panic!("rational arc must produce NURBS");
         };
-        assert_eq!(knots.first(), Some(&range[0]));
-        assert_eq!(knots.last(), Some(&range[1]));
-        assert_eq!(control_points.len(), 3);
-        assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+        assert_eq!(nurbs.knots().first(), Some(&range[0]));
+        assert_eq!(nurbs.knots().last(), Some(&range[1]));
+        assert_eq!(nurbs.control_points().len(), 3);
+        assert_eq!(nurbs.weights(), Some(&[1.0, 1.0, 1.0][..]));
     }
 
     #[test]
@@ -950,13 +940,13 @@ mod route_tests {
 
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
-        let mut valid = CadIr::empty(Units::default());
+        let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(&mut valid, &[]));
 
-        let mut invalid = CadIr::empty(Units::default());
+        let mut invalid = CadIr::empty();
         invalid.model.shells.push(Shell {
-            id: ShellId("catia:test:shell#invalid".into()),
-            region: RegionId("catia:test:region#missing".into()),
+            id: ShellId::mint("catia:test:shell#invalid").expect("identity grammar"),
+            region: RegionId::mint("catia:test:region#missing").expect("identity grammar"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
@@ -979,10 +969,10 @@ mod route_tests {
     /// that arena in the order the pipeline publishes it.
     #[test]
     fn neutral_model_admissibility_canonicalizes_arena_order() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("catia:test:curve#{key}")),
+                id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
                 geometry: CurveGeometry::Line {
                     origin: Point3::new(0.0, 0.0, f64::from(key)),
                     direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1006,7 +996,7 @@ mod route_tests {
             ir.model
                 .curves
                 .iter()
-                .map(|curve| curve.id.0.clone())
+                .map(|curve| curve.id.as_str().to_owned())
                 .collect::<Vec<_>>(),
             ["catia:test:curve#10", "catia:test:curve#9"]
         );
@@ -1022,10 +1012,12 @@ mod route_tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn neutral_model_admissibility_includes_pending_unknown_records() {
-        let record_id = UnknownId("catia:test:unknown#0".into());
-        let mut ir = CadIr::empty(Units::default());
-        let curve_id = CurveId("catia:test:curve#0".into());
+        let record_id = UnknownId::mint("catia:test:unknown#0").expect("identity grammar");
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown {
@@ -1033,43 +1025,48 @@ mod route_tests {
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId("catia:test:procedural-curve#0".into()),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Unknown {
-                native_kind: None,
-                record: Some(record_id.clone()),
-            },
-            cache_fit_tolerance: None,
-        });
-        let unknowns = [UnknownRecord {
-            id: record_id,
-            offset: 0,
-            byte_len: 0,
-            sha256: String::new(),
-            data: Some(Vec::new()),
-            links: Vec::new(),
-        }];
+        ir.model
+            .add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint("catia:test:procedural-curve#0")
+                        .expect("identity grammar"),
+                    ProceduralCurveDefinition::Unknown {
+                        native_kind: None,
+                        record: Some(record_id.clone()),
+                    },
+                ),
+            )
+            .unwrap();
+        let unknowns = [UnknownRecord::retained(
+            record_id,
+            0,
+            Vec::new(),
+            Vec::new(),
+        )];
 
         assert!(neutral_model_is_admissible(&mut ir, &unknowns));
     }
 
     #[test]
     fn unresolved_carrier_accounting_requires_an_exact_construction() {
-        let mut ir = CadIr::empty(Units::default());
-        let curve_id = CurveId("curve-0".to_string());
+        let mut ir = CadIr::empty();
+        let curve_id =
+            CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
-        let surface_id = SurfaceId("surface-0".to_string());
+        let surface_id =
+            SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
-        let offset_id = SurfaceId("surface-1".to_string());
+        let offset_id =
+            SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -1077,49 +1074,73 @@ mod route_tests {
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId("procedural-curve-0".to_string()),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Unknown {
-                native_kind: None,
-                record: Some(UnknownId("record-0".to_string())),
-            },
-            cache_fit_tolerance: None,
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId("procedural-surface-0".to_string()),
-            surface: surface_id.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown {
-                record: Some(UnknownId("record-1".to_string())),
-            },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId("procedural-surface-1".to_string()),
-            surface: offset_id,
-            definition: ProceduralSurfaceDefinition::Offset {
-                support: surface_id,
-                distance: 2.0,
-                u_sense: Some(1),
-                v_sense: Some(1),
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+        ir.model
+            .add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(
+                        "catia:test:proceduralcurve#procedural-curve-0".to_string(),
+                    )
+                    .expect("identity grammar"),
+                    ProceduralCurveDefinition::Unknown {
+                        native_kind: None,
+                        record: Some(
+                            UnknownId::mint("catia:test:unknown#record-0".to_string())
+                                .expect("identity grammar"),
+                        ),
+                    },
+                ),
+            )
+            .expect("attach construction to its fixture carrier");
+        ir.model
+            .add_procedural_surface(
+                surface_id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(
+                        "catia:test:proceduralsurface#procedural-surface-0".to_string(),
+                    )
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Unknown {
+                        record: Some(
+                            UnknownId::mint("catia:test:unknown#record-1".to_string())
+                                .expect("identity grammar"),
+                        ),
+                    },
+                    None,
+                ),
+            )
+            .expect("attach construction to its fixture carrier");
+        ir.model
+            .add_procedural_surface(
+                offset_id,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(
+                        "catia:test:proceduralsurface#procedural-surface-1".to_string(),
+                    )
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Offset {
+                        support: surface_id,
+                        distance: 2.0,
+                        u_sense: Some(1),
+                        v_sense: Some(1),
+                        support_extension: None,
+                        extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        ),
+                    },
+                    None,
+                ),
+            )
+            .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves[0].definition = ProceduralCurveDefinition::Exact;
-        ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Exact {
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+        ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
+        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact {
+            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
             },
-            extension: 0,
-            revision_form: None,
-        };
+        });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

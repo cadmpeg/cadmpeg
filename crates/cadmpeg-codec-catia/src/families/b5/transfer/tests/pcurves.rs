@@ -1,24 +1,16 @@
-#![allow(unused_imports)]
-
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
+    loop_chain_closes, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex, B5Loop, B5OpaquePcurve,
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
-    B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+    B5Surface,
 };
-use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
-};
+use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
     cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
     neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
-use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
-use super::super::unit;
-use super::super::vertices::transfer_vertex_tolerances;
+use super::super::surfaces::revolution_surface;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
@@ -26,10 +18,8 @@ use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{SurfaceId, UnknownId};
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -113,9 +103,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![20],
-                edges: vec![30],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[20], &[30]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -159,26 +148,32 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![angular_range[0]],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: angular_range[0],
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![angular_range[1]],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: angular_range[1],
+                        control: 0,
+                    }],
                 },
             ),
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[2.0, 0.0, 0.5]],
-        logical_vertex_refs: vec![50],
+        logical_vertices: vec![B5LogicalVertex {
+            object_id: 50,
+            point: [2.0, 0.0, 0.5],
+        }],
         edge_vertices: BTreeMap::from([(30, [0, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -195,8 +190,12 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         resolved_surface_carrier_in_graph(&graph, 10),
         Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Nurbs(_)))
     ));
-    let plan = build_plan(&graph, &UnknownId("catia:test-payload".to_string()))
-        .expect("closed revolution graph");
+    let plan = build_plan(
+        &graph,
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+            .expect("identity grammar"),
+    )
+    .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
     assert_eq!(curve.parameter_range, Some(angular_range));
     assert!(matches!(curve.geometry, CurveGeometry::Nurbs(_)));
@@ -227,8 +226,8 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
     let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
         panic!("plane lift must be NURBS");
     };
-    assert_eq!(curve.control_points[0], Point3::new(1.0, 4.0, 3.0));
-    assert_eq!(curve.control_points[1], Point3::new(4.0, 4.0, 3.0));
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 4.0, 3.0));
+    assert_eq!(curve.control_points()[1], Point3::new(4.0, 4.0, 3.0));
 
     let cylinder = B5Surface::Cylinder {
         origin: [0.0, 0.0, 0.0],
@@ -377,19 +376,22 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
         panic!("expected lifted rational curve");
     };
-    assert_eq!(curve.weights, pcurve.weights);
-    assert!(curve.control_points.iter().all(|point| point.z == 2.0));
+    assert_eq!(curve.weights(), pcurve.weights.as_deref());
+    assert!(curve.control_points().iter().all(|point| point.z == 2.0));
 }
 
 #[test]
 fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
-    let geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
-        weights: None,
-        periodic: false,
-    });
+    let geometry = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 10.0, 10.0],
+            vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+            None,
+            false,
+        )
+        .expect("valid affine lift curve"),
+    );
     let forward = oriented_nurbs_range(
         geometry.clone(),
         [2.0, 8.0],
@@ -413,19 +415,22 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         unreachable!();
     };
     assert_eq!(
-        reversed.control_points,
+        reversed.control_points(),
         [Point3::new(10.0, 0.0, 2.0), Point3::new(0.0, 0.0, 2.0)]
     );
     assert!(oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none());
 
     let tolerant = oriented_nurbs_range(
-        CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 10.0, 10.0],
-            control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
-            weights: None,
-            periodic: false,
-        }),
+        CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 10.0, 10.0],
+                vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+                None,
+                false,
+            )
+            .expect("valid tolerant lift curve"),
+        ),
         [2.0, 8.0],
         [2.0, 0.0, 2.0 + 1e-4],
         [8.0, 0.0, 2.0],
@@ -885,9 +890,8 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
             3,
             B5Loop {
                 object_id: 3,
-                pcurves: vec![4, 4, 4],
-                edges: vec![5, 6, 7],
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[4, 4, 4], &[5, 6, 7]),
+                metadata: test_loop_metadata(),
                 surface: 2,
             },
         )]),
@@ -931,14 +935,14 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::from([(5, [0, 1]), (6, [1, 2]), (7, [2, 0])]),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    let payload = UnknownId("catia:test-payload".to_string());
+    let payload = UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+        .expect("identity grammar");
 
     assert!(ownership_plan(&graph).is_some());
     assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
@@ -965,7 +969,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     );
     assert!(plan.exact_support_edges.contains(&5));
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),
@@ -1017,8 +1021,7 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::new(),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1035,9 +1038,8 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
             component.loop_,
             B5Loop {
                 object_id: component.loop_,
-                pcurves: vec![component.pcurve; 3],
-                edges: component.edges.to_vec(),
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[component.pcurve; 3], &component.edges),
+                metadata: test_loop_metadata(),
                 surface: component.surface,
             },
         );
@@ -1131,12 +1133,12 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         },
     ]);
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(transfer(
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:payload:unknown#test".to_string()),
+        &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
     ));
 
     // Native traversal order, which the arena-order check reads as unsorted.
@@ -1144,7 +1146,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#9", "catia:b5:face#10"]
     );
@@ -1170,7 +1172,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#10", "catia:b5:face#9"]
     );
@@ -1242,29 +1244,30 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
-    let surface = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = cadmpeg_ir::geometry::NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 1.0, 2.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid tensor surface");
     let curve = crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true).expect("u isocurve");
-    assert_eq!(curve.degree, 1);
-    assert_eq!(curve.knots, surface.v_knots);
-    assert_eq!(curve.control_points[0], Point3::new(0.5, 0.0, 0.0));
-    assert_eq!(curve.control_points[1], Point3::new(0.5, 1.0, 0.5));
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.knots(), surface.v_knots());
+    assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));
+    assert_eq!(curve.control_points()[1], Point3::new(0.5, 1.0, 0.5));
 }
 
 #[test]
@@ -1313,7 +1316,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance <= 1e-4);
     assert_eq!(
-        plan.cache.control_points.first(),
+        plan.cache.control_points().first(),
         Some(&Point3::new(2.0, 0.0, 3.0))
     );
 
