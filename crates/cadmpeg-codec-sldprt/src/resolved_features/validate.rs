@@ -162,11 +162,11 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         }
     }
     for (lane, expected_lane) in crate::native::lanes::expected_lanes(&native) {
-        let mut ordinals = std::collections::HashSet::new();
-        let mut offsets = std::collections::HashSet::new();
-        let mut previous_offset = None;
-        for (index, entity) in lane.sketch_entities.iter().enumerate() {
-            let expected_entity = &expected_lane.sketch_entities[index];
+        for (entity, expected_entity) in lane
+            .sketch_entities
+            .iter()
+            .zip(&expected_lane.sketch_entities)
+        {
             if entity.feature_ref != expected_entity.feature_ref {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -184,93 +184,9 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     entity: Some(entity.id.clone()),
                 });
             }
-            if entity.ordinal != index as u32 {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                        entity.ordinal
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            if previous_offset.is_some_and(|offset| entity.offset <= offset) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "SolidWorks feature-input entities are not in stream order".into(),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            previous_offset = Some(entity.offset);
-            if !ordinals.insert(entity.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane repeats entity ordinal {}",
-                        entity.ordinal
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            if !offsets.insert(entity.offset) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks feature-input lane repeats entity offset {}",
-                        entity.offset
-                    ),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                crate::resolved_features::markers::sketch_marker_at(&lane.native_payload, offset)
-            });
-            if !valid {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "feature-input entity is outside its native payload".into(),
-                    entity: Some(lane.id.clone()),
-                });
-            }
-            if usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                entity.object_index
-                    != crate::resolved_features::markers::marker_object_index(
-                        &lane.native_payload,
-                        offset,
-                    )
-            }) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message:
-                        "SolidWorks feature-input object index does not match its native payload"
-                            .into(),
-                    entity: Some(entity.id.clone()),
-                });
-            }
-            if usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                entity.local_id
-                    != crate::resolved_features::markers::marker_local_id(
-                        &lane.native_payload,
-                        offset,
-                    )
-            }) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message:
-                        "SolidWorks feature-input local object id does not match its native payload"
-                            .into(),
-                    entity: Some(entity.id.clone()),
-                });
-            }
         }
     }
+
     findings
 }
 

@@ -143,18 +143,18 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
                   offset: u64,
                   object_index: Option<u32>,
                   coordinates_m: Option<[f64; 2]>,
-                  kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+                  kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         marker(
@@ -339,12 +339,12 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         .zip([[0.01, -0.03], [0.0, -0.03], [0.01, 0.0], [0.0, 0.0]])
         .enumerate()
     {
-        marker.offset = u64::try_from(index + 1).unwrap();
+        *marker = marker.with_test_position(marker.ordinal(), u64::try_from(index + 1).unwrap());
         marker.coordinates_m = Some(coordinates);
         marker.kind = SketchInputKind::Point;
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
-        marker.offset = (CURVE_START + index * 92) as u64;
+        *marker = marker.with_test_position(marker.ordinal(), (CURVE_START + index * 92) as u64);
         marker.kind = if index == 3 {
             SketchInputKind::Arc
         } else {
@@ -429,19 +429,17 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
     payload[terminal + 112..terminal + 116].copy_from_slice(b"line");
     let marker =
         |id: &str, offset: u64, object_index: u32, coordinates_m: Option<[f64; 2]>, kind| {
-            SketchInputEntity {
-                id: id.into(),
-                parent: "lane".into(),
-                feature_ref: Some("feature".into()),
-                ordinal: 0,
-                offset,
-                object_index: Some(object_index),
-                local_id: None,
-                kind,
-                state_value: Some(1.0),
-                coordinates_m,
-                links: None,
-            }
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker.object_index = Some(object_index);
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.links = None;
+            constructed_marker
         };
     let markers = [
         marker("missing", 0, 1, None, SketchInputKind::Point),
@@ -581,24 +579,28 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
     }
     payload[3 * 84 + 74..3 * 84 + 76].copy_from_slice(&2u16.to_le_bytes());
     payload[4 * 84..].copy_from_slice(SKETCH_MARKER);
-    let marker =
-        |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
-            id: id.into(),
-            parent: "lane".into(),
-            feature_ref: Some("feature".into()),
-            ordinal: 0,
+    let marker = |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
             offset,
-            object_index,
-            local_id: None,
-            kind: if coordinates_m.is_some() {
+            if coordinates_m.is_some() {
                 SketchInputKind::Point
             } else {
                 SketchInputKind::LineOrCircle
             },
-            state_value: Some(1.0),
-            coordinates_m,
-            links: None,
-        };
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
+    };
     let markers = [
         marker("missing", 500, Some(1), None),
         marker("top-right", 510, Some(2), Some([2.0, 1.0])),
@@ -646,18 +648,23 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     payload[142..146].copy_from_slice(&6u32.to_le_bytes());
     payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let marker = SketchInputEntity {
-        id: "diagonal".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "diagonal".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
 
     assert_eq!(
@@ -680,18 +687,18 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
 
 #[test]
 fn dimensioned_rectangle_selects_one_complete_marker_product() {
-    let marker = |id: &str, u, v| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m: Some([u, v]),
-        links: None,
+    let marker = |id: &str, u, v| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = Some([u, v]);
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         marker("center", -0.023, 0.0),
@@ -737,18 +744,18 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
 
 #[test]
 fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
-    let marker = SketchInputEntity {
-        id: "marker".into(),
-        parent: "lane".into(),
-        feature_ref: None,
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "marker".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
+        constructed_marker.feature_ref = None;
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let point = |u, v| Point2::new(u, v);
     let lines = vec![
@@ -823,24 +830,29 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     }
     assert!(current_linked_semicircle_record(&payload, 0));
     assert!(current_linked_semicircle_record(&payload, 112));
-    let marker = |id: &str, offset, center: &str| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: crate::records::SketchInputLinks::new(
+    let marker = |id: &str, offset, center: &str| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = crate::records::SketchInputLinks::new(
             1,
             vec![SketchInputLink {
                 entity_ref: center.into(),
                 local_id: 1,
             }],
-        ),
+        );
+        constructed_marker
     };
     let records = [
         marker("curve-a", 0, "center-a"),

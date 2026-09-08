@@ -386,3 +386,36 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
     assert!(error.to_string().contains("omits marker"), "{error}");
 }
+
+#[test]
+fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    for (field, value, message) in [
+        ("ordinal", serde_json::json!(3), "ordinal"),
+        ("offset", serde_json::json!(u64::MAX), "offset"),
+        ("object_index", serde_json::json!(77), "object index"),
+        ("local_id", serde_json::json!(77), "local object id"),
+    ] {
+        let mut wire = original.clone();
+        wire["sketch_input_entities"][0][field] = value;
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(error.to_string().contains(message), "{field}: {error}");
+    }
+    for field in ["ordinal", "offset"] {
+        let mut wire = original.clone();
+        wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(error.to_string().contains(field), "{field}: {error}");
+    }
+}

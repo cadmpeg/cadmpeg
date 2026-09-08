@@ -1342,41 +1342,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    let expected_offsets = lane
-        .native_payload
-        .windows(MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset))
-        .collect::<Vec<_>>();
-    if expected_offsets.len() != lane.sketch_entities.len() {
-        return Err(CodecError::malformed(format_args!(
-            "feature-input lane {} has {} markers but {} native records",
-            lane.id,
-            expected_offsets.len(),
-            lane.sketch_entities.len()
-        )));
-    }
-    for (ordinal, ((entity, expected_entity), expected_offset)) in lane
+    for (entity, expected_entity) in lane
         .sketch_entities
         .iter()
         .zip(&expected_lane.sketch_entities)
-        .zip(&expected_offsets)
-        .enumerate()
     {
-        if entity.ordinal != ordinal as u32
-            || usize::try_from(entity.offset) != Ok(*expected_offset)
-            || entity.feature_ref != expected_entity.feature_ref
+        if entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
-            || entity.object_index
-                != crate::resolved_features::markers::marker_object_index(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
-            || entity.local_id
-                != crate::resolved_features::markers::marker_local_id(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
         {
             return Err(CodecError::malformed(format_args!(
                 "feature-input lane {} has inconsistent marker order",
@@ -1386,7 +1358,7 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
-        let offset = usize::try_from(entity.offset).map_err(|_| {
+        let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::Malformed("feature-input offset exceeds address space".into())
         })?;
         let marker_end = offset

@@ -40,7 +40,7 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
         let actual_offsets = lane
             .sketch_entities
             .iter()
-            .map(|entity| entity.offset)
+            .map(|entity| entity.offset())
             .collect::<std::collections::HashSet<_>>();
         if let Some(offset) = expected_offsets.difference(&actual_offsets).next() {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

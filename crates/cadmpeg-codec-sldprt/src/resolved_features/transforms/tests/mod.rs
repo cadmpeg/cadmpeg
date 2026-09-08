@@ -4,18 +4,23 @@ use super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
 
 fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
-    SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature-native".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature-native".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     }
 }
 

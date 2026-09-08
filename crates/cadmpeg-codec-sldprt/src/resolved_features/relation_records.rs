@@ -1945,7 +1945,7 @@ fn feature_entities<'a>(
         .iter()
         .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
         .collect::<Vec<_>>();
-    entities.sort_unstable_by_key(|entity| (entity.offset, entity.ordinal));
+    entities.sort_unstable_by_key(|entity| (entity.offset(), entity.ordinal()));
     entities
 }
 

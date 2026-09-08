@@ -176,7 +176,7 @@ fn patch_spatial_sketches(
                         .sketch_entities
                         .iter()
                         .find(|marker| marker.id == native_ref)?;
-                    let offset = usize::try_from(marker.offset).ok()?;
+                    let offset = usize::try_from(marker.offset()).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
                     if coordinate_offset.is_none()

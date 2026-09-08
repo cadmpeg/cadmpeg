@@ -74,7 +74,7 @@ fn feature_input_lane(
     let references = reference_cells(&scalars, &classes);
     let sketch_entities = sketch_input_entities(payload, &parent);
     for entity in &sketch_entities {
-        let signature = usize::try_from(entity.offset)
+        let signature = usize::try_from(entity.offset())
             .ok()
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
             .map_or("sketch-marker", |prefix| {
@@ -90,7 +90,7 @@ fn feature_input_lane(
             annotations,
             entity.id.clone(),
             section,
-            entity.offset,
+            entity.offset(),
             signature,
             Exactness::ByteExact,
         );
