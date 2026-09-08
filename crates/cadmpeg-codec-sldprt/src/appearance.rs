@@ -288,10 +288,7 @@ pub(crate) fn resolve_display_appearances(
     let mut matched_feature_sources = BTreeSet::new();
     let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
     for (table_index, face) in faces.iter().enumerate() {
-        if let Some(source_id) = face
-            .feature_source_id()
-            .and_then(|value| FeatureSourceId::try_from(value).ok())
-        {
+        if let Some(source_id) = face.feature_source_id() {
             faces_by_source
                 .entry(source_id)
                 .or_default()

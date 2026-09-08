@@ -647,7 +647,10 @@ fn opaque_surface_suffix_remains_source_only() {
         metadata: ByteRange { start: 1, end: 2 },
         surface_references: references,
     };
-    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(
+        face.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(face.persistent_surface_identity(), None);
 }
 
@@ -662,7 +665,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
             PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
         ],
     };
-    assert_eq!(face.feature_source_id(), Some(7));
+    assert_eq!(
+        face.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(
         face.persistent_surface_identity(),
         Some(persistent_identity(7, 3, &[]))
@@ -672,7 +678,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
         identity.local_id = 4;
     }
-    assert_eq!(conflicting.feature_source_id(), Some(7));
+    assert_eq!(
+        conflicting.feature_source_id().map(FeatureSourceId::value),
+        Some(7)
+    );
     assert_eq!(conflicting.persistent_surface_identity(), None);
 }
 

@@ -157,7 +157,7 @@ pub(crate) struct PersistentFaceBinding {
 
 impl DisplayFace {
     /// Return the source ID only when all duplicated references agree.
-    pub(crate) fn feature_source_id(&self) -> Option<u32> {
+    pub(crate) fn feature_source_id(&self) -> Option<FeatureSourceId> {
         let mut sources = self
             .surface_references
             .iter()
@@ -165,7 +165,7 @@ impl DisplayFace {
         let source = sources.next()?;
         sources
             .all(|candidate| candidate == source)
-            .then_some(source.value())
+            .then_some(source)
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
