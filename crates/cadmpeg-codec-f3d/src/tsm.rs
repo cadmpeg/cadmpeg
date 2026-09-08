@@ -1433,17 +1433,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         crease_incidence[vertices[1] as usize] += 1;
     }
     let vertices = (0..live_vertices)
-        .map(|index| SubdVertex {
-            point: vertex_points[&(index as u32)],
-            tag: match crease_incidence[index] {
-                0 => SubdVertexTag::Smooth,
-                1 => SubdVertexTag::Dart,
-                2 => SubdVertexTag::Crease,
-                _ => SubdVertexTag::Corner,
-            },
-            secondary_grips: secondary_layouts[index].clone(),
+        .map(|index| {
+            SubdVertex::new(
+                vertex_points[&(index as u32)],
+                match crease_incidence[index] {
+                    0 => SubdVertexTag::Smooth,
+                    1 => SubdVertexTag::Dart,
+                    2 => SubdVertexTag::Crease,
+                    _ => SubdVertexTag::Corner,
+                },
+                secondary_layouts[index].clone(),
+            )
+            .map_err(|error| malformed(name, &error.to_string()))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let creased_edges = crease_edges
         .iter()
         .filter_map(|slot| edge_ir.get(*slot).copied().flatten())
@@ -1942,7 +1945,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert_eq!(cage.cage.vertices().len(), 4);
         assert_eq!(cage.cage.edges().len(), 4);
         assert_eq!(cage.cage.faces().len(), 1);
-        assert_eq!(cage.cage.vertices()[1].point.x, 10.0);
+        assert_eq!(cage.cage.vertices()[1].point().x, 10.0);
         assert!(cage.cage.faces()[0]
             .edges()
             .iter()

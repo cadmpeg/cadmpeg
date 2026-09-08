@@ -763,7 +763,7 @@ fn scales_control_points_once_without_scaling_edge_metadata() {
         panic!("expected surface");
     };
     assert_eq!(
-        surface.cage.vertices()[2].point,
+        surface.cage.vertices()[2].point(),
         Point3::new(25.4, 25.4, 0.0)
     );
     assert_eq!(surface.cage.edges()[0].sharpness(), [0.25, 0.25]);
@@ -832,7 +832,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     assert_eq!(result.ir().model.subds.len(), 1);
     let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
-    assert_eq!(subd.cage.vertices()[2].point.x, 25.4);
+    assert_eq!(subd.cage.vertices()[2].point().x, 25.4);
     assert_eq!(
         result
             .source_fidelity()

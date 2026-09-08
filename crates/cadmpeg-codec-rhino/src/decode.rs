@@ -2077,7 +2077,7 @@ impl<'a> DecodeContext<'a> {
             subd.cage
                 .edit_vertices(|vertices| {
                     for vertex in vertices {
-                        vertex.point = transform.apply_point(vertex.point);
+                        vertex.set_point(transform.apply_point(vertex.point()))?;
                     }
                     Ok(())
                 })
