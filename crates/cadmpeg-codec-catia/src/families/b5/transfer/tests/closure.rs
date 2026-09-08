@@ -933,7 +933,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     graph
         .vertices
         .insert_edge(7, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])
-        .unwrap();
+        .expect("edge references select existing rows");
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
     assert_eq!(ownership.components().len(), 2);
