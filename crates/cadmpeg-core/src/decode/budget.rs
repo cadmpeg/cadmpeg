@@ -13,7 +13,8 @@ use super::policy::{
 
 #[derive(Debug)]
 pub(crate) struct DecodeBudget {
-    policy: DecodePolicy,
+    /// Policy applied to this budget.
+    pub(super) policy: DecodePolicy,
     input_bytes: u64,
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
