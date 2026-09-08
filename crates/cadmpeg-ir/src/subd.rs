@@ -260,13 +260,79 @@ impl SubdCage {
 /// A symmetry plane frame carried by a T-spline editor block.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdPlaneFrameWire")]
 pub struct SubdPlaneFrame {
     /// A point on the plane in document length units.
-    pub origin: Point3,
+    origin: Point3,
     /// First unit in-plane axis.
-    pub first_axis: Vector3,
+    first_axis: Vector3,
     /// Second unit in-plane axis.
-    pub second_axis: Vector3,
+    second_axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdPlaneFrameWire {
+    origin: Point3,
+    first_axis: Vector3,
+    second_axis: Vector3,
+}
+
+impl TryFrom<SubdPlaneFrameWire> for SubdPlaneFrame {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdPlaneFrameWire) -> Result<Self, Self::Error> {
+        Self::new(wire.origin, wire.first_axis, wire.second_axis)
+    }
+}
+
+impl SubdPlaneFrame {
+    /// Construct a finite plane frame with orthonormal axes.
+    pub fn new(
+        origin: Point3,
+        first_axis: Vector3,
+        second_axis: Vector3,
+    ) -> Result<Self, SubdError> {
+        if !finite_point(origin) {
+            return Err(SubdError("origin must be finite".into()));
+        }
+        if !finite_vector(first_axis) || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
+            return Err(SubdError(
+                "first_axis must be finite and unit length".into(),
+            ));
+        }
+        if !finite_vector(second_axis) || (second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME
+        {
+            return Err(SubdError(
+                "second_axis must be finite and unit length".into(),
+            ));
+        }
+        if first_axis.dot(second_axis).abs() > EPS_SUBD_SYMMETRY_FRAME {
+            return Err(SubdError(
+                "first_axis and second_axis must be orthogonal".into(),
+            ));
+        }
+        Ok(Self {
+            origin,
+            first_axis,
+            second_axis,
+        })
+    }
+
+    /// A point on the symmetry plane in document units.
+    pub const fn origin(&self) -> Point3 {
+        self.origin
+    }
+
+    /// First unit in-plane axis.
+    pub const fn first_axis(&self) -> Vector3 {
+        self.first_axis
+    }
+
+    /// Second unit in-plane axis.
+    pub const fn second_axis(&self) -> Vector3 {
+        self.second_axis
+    }
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
@@ -279,7 +345,7 @@ pub enum SubdSymmetryKind {
     /// Radial editor symmetry with native segment and sweep controls.
     Radial {
         /// Number of radial segments.
-        segments: u32,
+        segments: std::num::NonZeroU32,
         /// Native radial sweep value.
         sweep: f64,
         /// Selector-preserving native radial-symmetry maps.
@@ -321,7 +387,7 @@ pub struct SubdRadialSymmetryMap {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubdSymmetry {
     /// Symmetry mode and its radial controls, when present.
-    pub kind: SubdSymmetryKind,
+    kind: SubdSymmetryKind,
     /// Geometric symmetry-plane frame.
     pub plane: SubdPlaneFrame,
     /// Forward face correspondences for a topology-addressed symmetry block.
@@ -356,28 +422,37 @@ struct SubdSymmetryWire {
 }
 
 impl SubdSymmetry {
-    fn validate(&self) -> Result<(), SubdError> {
-        let plane = &self.plane;
-        if !finite_point(plane.origin)
-            || !finite_vector(plane.first_axis)
-            || !finite_vector(plane.second_axis)
-            || (plane.first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME
-            || (plane.second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME
-            || plane.first_axis.dot(plane.second_axis).abs() > EPS_SUBD_SYMMETRY_FRAME
-        {
-            return Err(SubdError("plane has an invalid orthonormal frame".into()));
-        }
-        if let SubdSymmetryKind::Radial {
-            segments,
-            sweep,
-            radial_maps,
-        } = &self.kind
-        {
-            if *segments == 0 || !sweep.is_finite() {
-                return Err(SubdError(
-                    "kind.radial requires nonzero segments and finite sweep".into(),
-                ));
+    /// Construct symmetry state with a finite radial sweep and distinct correspondences.
+    pub fn new(
+        kind: SubdSymmetryKind,
+        plane: SubdPlaneFrame,
+        face_pairs: Vec<[u32; 2]>,
+        edge_pairs: Vec<[u32; 2]>,
+        vertex_pairs: Vec<[u32; 2]>,
+    ) -> Result<Self, SubdError> {
+        if let SubdSymmetryKind::Radial { sweep, .. } = &kind {
+            if !sweep.is_finite() {
+                return Err(SubdError("kind.radial.sweep must be finite".into()));
             }
+        }
+        let symmetry = Self {
+            kind,
+            plane,
+            face_pairs,
+            edge_pairs,
+            vertex_pairs,
+        };
+        symmetry.validate()?;
+        Ok(symmetry)
+    }
+
+    /// Symmetry mode and its radial controls.
+    pub fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    fn validate(&self) -> Result<(), SubdError> {
+        if let SubdSymmetryKind::Radial { radial_maps, .. } = &self.kind {
             let mut selectors = std::collections::BTreeSet::new();
             for map in radial_maps {
                 if !selectors.insert(map.selector) {
@@ -420,7 +495,7 @@ impl Serialize for SubdSymmetry {
                 radial_maps,
             } => (
                 SubdSymmetryKindWire::Radial {
-                    segments: *segments,
+                    segments: segments.get(),
                     sweep: *sweep,
                 },
                 radial_maps.clone(),
@@ -454,18 +529,21 @@ impl<'de> Deserialize<'de> for SubdSymmetry {
                 ));
             }
             SubdSymmetryKindWire::Radial { segments, sweep } => SubdSymmetryKind::Radial {
-                segments,
+                segments: std::num::NonZeroU32::new(segments).ok_or_else(|| {
+                    serde::de::Error::custom("kind.radial.segments must be nonzero")
+                })?,
                 sweep,
                 radial_maps: wire.radial_maps,
             },
         };
-        Ok(Self {
+        Self::new(
             kind,
-            plane: wire.plane,
-            face_pairs: wire.face_pairs,
-            edge_pairs: wire.edge_pairs,
-            vertex_pairs: wire.vertex_pairs,
-        })
+            wire.plane,
+            wire.face_pairs,
+            wire.edge_pairs,
+            wire.vertex_pairs,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 
