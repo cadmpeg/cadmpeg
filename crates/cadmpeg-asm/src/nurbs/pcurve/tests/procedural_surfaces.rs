@@ -1350,7 +1350,14 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                 ProjectionTailPatchLayout::Ranged { flag, role, .. } => {
                     assert!(!early_close);
                     assert_eq!(flag, tail_flag);
-                    assert_eq!(&bytes[role], b"surf1");
+                    let role = role.range();
+                    assert_eq!(&bytes[role.clone()], b"surf1");
+                    for word in [b"surf".as_slice(), b"surf12", b"wrong"] {
+                        let mut malformed = bytes[..role.start - 1].to_vec();
+                        malformed.push(word.len() as u8);
+                        malformed.extend_from_slice(word);
+                        assert!(projection_patch_layout(&malformed, int_width).is_none());
+                    }
                 }
             }
         }
