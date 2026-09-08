@@ -1308,12 +1308,8 @@ fn exact_assembly_axial_selector(
     cursor = after_selector_context_id.checked_add(12)?;
     let occurrence_reference_offset = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
-    let occurrence_reference = occurrence.target?;
-    if occurrence_reference == 0
-        || occurrence.segment.is_some()
-        || occurrence.link_name.is_some()
-        || View::u32_le_at(bytes, cursor)? != 1
-    {
+    let (occurrence_reference, _) = occurrence.local()?;
+    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -1430,9 +1426,8 @@ pub(crate) fn exact_indexed_header_at(
 fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
     let mut cursor = at;
     let reference = take_reference(bytes, &mut cursor)?;
-    let target = u32::try_from(reference.target?).ok()?;
-    (cursor == at.checked_add(11)? && reference.segment.is_none() && reference.link_name.is_none())
-        .then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
+    let target = u32::try_from(reference.local()?.0).ok()?;
+    (cursor == at.checked_add(11)?).then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
 }
 
 fn exact_single_joint_origin_frame(
@@ -7881,7 +7876,7 @@ fn point_data_level(
         let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
         inputs.push(DesignWorkPointInput {
-            record_index: u32::try_from(reference.target?).ok()?,
+            record_index: u32::try_from(reference.target()?).ok()?,
             reference_offset: u64::try_from(reference_offset).ok()?,
             carrier: None,
         });
@@ -8201,7 +8196,7 @@ fn hole_construction_frame_at(
     for _ in 0..input_count {
         let reference_at = cursor;
         let reference = take_reference(body, &mut cursor)?;
-        let target = u32::try_from(reference.target?).ok()?;
+        let target = u32::try_from(reference.target()?).ok()?;
         input_records.push(crate::records::Located {
             value: target,
             offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
@@ -8279,9 +8274,7 @@ pub(crate) fn exact_combine_operation(
             .get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
             != [0; 18]
             || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
-            || reference.target.is_none_or(|target| target == 0)
-            || reference.segment.is_some()
-            || reference.link_name.is_some()
+            || reference.local().is_none_or(|(target, _)| target == 0)
             || reference_at != start.checked_add(combine_extended::LEN)?
         {
             return None;
@@ -8462,9 +8455,7 @@ fn exact_combine_external_body_identity(
     }
     let mut cursor = start.checked_add(combine_external::NESTED_REFERENCE_MARKER)?;
     let nested = take_reference(bytes, &mut cursor)?;
-    if nested.target != Some(u64::from(record_index.checked_add(3)?))
-        || nested.segment.is_some()
-        || nested.link_name.is_some()
+    if nested.local()?.0 != u64::from(record_index.checked_add(3)?)
         || View::u32_le_at(bytes, cursor)? != 1
     {
         return None;
@@ -8489,12 +8480,8 @@ fn exact_combine_external_body_identity(
     cursor = after_selector_context_id.checked_add(12)?;
     let occurrence_reference_at = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
-    let occurrence_reference = occurrence.target?;
-    if occurrence_reference == 0
-        || occurrence.segment.is_some()
-        || occurrence.link_name.is_some()
-        || View::u32_le_at(bytes, cursor)? != 1
-    {
+    let (occurrence_reference, _) = occurrence.local()?;
+    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -8518,10 +8505,7 @@ fn exact_combine_external_body_identity(
     cursor = cursor.checked_add(8)?;
     let take_local = |cursor: &mut usize, expected| {
         let reference = take_reference(bytes, cursor)?;
-        (reference.target == Some(u64::from(expected))
-            && reference.segment.is_none()
-            && reference.link_name.is_none())
-        .then_some(())
+        (reference.local()?.0 == u64::from(expected)).then_some(())
     };
     take_local(&mut cursor, record_index.checked_add(2)?)?;
     if bytes.get(cursor..cursor.checked_add(2)?)? != [0; 2] {

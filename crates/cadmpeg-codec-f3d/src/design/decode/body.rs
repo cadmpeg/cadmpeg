@@ -395,23 +395,21 @@ fn local_reference_candidates(
     let mut candidates = Vec::new();
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
-        if reference.segment.is_none() && reference.link_name.is_none() {
-            if let Some(target) = reference.target {
-                let inline_type_guid = reference.inline_type_guid;
+        if let Some((target, inline_type_guid)) = reference.local() {
+            let inline_type_guid = inline_type_guid.map(str::to_owned);
+            candidates.push(LocalReferenceCandidate {
+                target,
+                end,
+                inline_type_guid: inline_type_guid.clone(),
+                trailing_zeros: 2,
+            });
+            if allow_extra_zero && bytes.get(end) == Some(&0) {
                 candidates.push(LocalReferenceCandidate {
                     target,
-                    end,
-                    inline_type_guid: inline_type_guid.clone(),
+                    end: end + 1,
+                    inline_type_guid,
                     trailing_zeros: 2,
                 });
-                if allow_extra_zero && bytes.get(end) == Some(&0) {
-                    candidates.push(LocalReferenceCandidate {
-                        target,
-                        end: end + 1,
-                        inline_type_guid,
-                        trailing_zeros: 2,
-                    });
-                }
             }
         }
     }

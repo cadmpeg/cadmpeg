@@ -1227,8 +1227,8 @@ fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, Vec<u32>, usize)> {
     let mut discriminators = Vec::with_capacity(count);
     for _ in 0..count {
         let element = take_reference(body, &mut at)?;
-        if let Some(link_name) = element.link_name {
-            link_names.push(link_name);
+        if let Some(link_name) = element.link_name() {
+            link_names.push(link_name.to_owned());
         }
         discriminators.push(View::u32_le_at(body, at)?);
         at += 4;

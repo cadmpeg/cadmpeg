@@ -489,13 +489,10 @@ fn nested_record_identity(
 fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
     let mut cursor = at;
     let reference = take_reference(record, &mut cursor)?;
-    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?
-        || reference.segment.is_some()
-        || reference.link_name.is_some()
-    {
+    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? {
         return None;
     }
-    u32::try_from(reference.target?)
+    u32::try_from(reference.local()?.0)
         .ok()
         .filter(|target| *target != 0)
 }

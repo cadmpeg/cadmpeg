@@ -381,11 +381,7 @@ fn decode_sketch_visibility_member(
     let mut cursor = member_at + visibility_member::OWNER_REFERENCE;
     let owner = take_reference(bytes, &mut cursor)?;
     if cursor != member_at + visibility_member::STREAM_ORDINAL
-        || owner.target == Some(0)
-        || owner.target.is_none()
-        || owner.segment.is_some()
-        || owner.link_name.is_some()
-        || owner.inline_type_guid.is_some()
+        || !matches!(owner.local(), Some((target, None)) if target != 0)
     {
         return None;
     }
@@ -1722,7 +1718,7 @@ fn read_text_reference(
     slot: TextReferenceSlot,
 ) -> Option<Reference> {
     match slot {
-        TextReferenceSlot::Omitted => Some(Reference::default()),
+        TextReferenceSlot::Omitted => Some(Reference::Null),
         TextReferenceSlot::Written => take_reference(payload, cursor),
     }
 }
@@ -1786,7 +1782,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
 /// The record index a reference names, absent when the reference is null.
 fn reference_index(reference: &Reference) -> Option<u32> {
     reference
-        .target
+        .target()
         .and_then(|target| u32::try_from(target).ok())
 }
 
@@ -2313,12 +2309,10 @@ fn take_local_sketch_reference(
     cursor: &mut usize,
 ) -> Option<(u32, Option<String>)> {
     let reference = take_reference(payload, cursor)?;
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
-    }
+    let (target, inline_type_guid) = reference.local()?;
     Some((
-        u32::try_from(reference.target?).ok()?,
-        reference.inline_type_guid,
+        u32::try_from(target).ok()?,
+        inline_type_guid.map(str::to_owned),
     ))
 }
 
@@ -3641,7 +3635,7 @@ fn take_relation_reference(
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     Some(crate::records::Located {
-        value: u32::try_from(reference.target?).ok()?,
+        value: u32::try_from(reference.target()?).ok()?,
         offset: at + 1,
     })
 }
@@ -3656,7 +3650,7 @@ fn take_auxiliary_relation_reference(
 ) -> Option<bool> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
-    let Some(target) = reference.target else {
+    let Some(target) = reference.target() else {
         return Some(false);
     };
     auxiliary_references.push(crate::records::Located {
