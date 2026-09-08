@@ -711,6 +711,8 @@ pub enum LoftProfileData {
     Classic(ClassicLoftProfileData),
     /// Revision-gated nonzero member with a nullable bounded support.
     RevisionSupport {
+        /// The profile curve endpoint bounds.
+        endpoints: [Option<f64>; 2],
         /// The nonzero native member code.
         type_code: std::num::NonZeroI64,
         /// The nullable support surface.
@@ -730,6 +732,8 @@ pub enum LoftProfileData {
     },
     /// Revision-gated zero member with two nullable pcurve slots.
     RevisionPcurvePair {
+        /// The profile curve endpoint bounds.
+        endpoints: [Option<f64>; 2],
         /// The first pcurve slot.
         pcurve: Option<PcurveNurbs>,
         /// The second pcurve slot.
@@ -743,28 +747,45 @@ pub enum LoftProfileData {
     },
 }
 
+impl LoftProfileData {
+    /// The endpoint bounds carried by revision profiles.
+    pub fn endpoints(&self) -> Option<[Option<f64>; 2]> {
+        match self {
+            Self::Classic(_) => None,
+            Self::RevisionSupport { endpoints, .. }
+            | Self::RevisionPcurvePair { endpoints, .. } => Some(*endpoints),
+        }
+    }
+}
+
 /// One profile curve with its layout-specific constraint data.
 pub struct EmbeddedLoftProfileMember<D = LoftProfileData> {
     /// The embedded profile curve.
     pub curve: NurbsCurve,
-    /// Optional endpoint bounds of the profile curve.
-    pub endpoints: Option<[Option<f64>; 2]>,
     /// The support data selected by the parent layout.
     pub data: D,
 }
 
-/// An embedded loft path curve and its optional endpoint bounds.
-pub struct EmbeddedLoftPathCurve {
+/// A revision loft path curve with its endpoint bounds.
+pub struct EmbeddedRevisionLoftPathCurve {
     /// The embedded path curve.
     pub geometry: NurbsCurve,
-    /// Optional endpoint bounds of the path curve.
-    pub endpoints: Option<[Option<f64>; 2]>,
+    /// The endpoint bounds.
+    pub endpoints: [Option<f64>; 2],
+}
+
+/// The legacy and revision loft path layouts.
+pub enum EmbeddedLoftPathLayout {
+    /// The required legacy path curve.
+    Legacy(NurbsCurve),
+    /// The optional revision path with its endpoint bounds.
+    Revision(Option<EmbeddedRevisionLoftPathCurve>),
 }
 
 /// The path block of an embedded loft section.
 pub struct EmbeddedLoftPath {
-    /// The embedded path curve and its bounds, when serialized.
-    pub curve: Option<EmbeddedLoftPathCurve>,
+    /// The native path layout.
+    pub layout: EmbeddedLoftPathLayout,
     /// Auxiliary embedded curves, in stream order.
     pub auxiliaries: Vec<NurbsCurve>,
     /// The integer closing the path block.
@@ -1423,11 +1444,7 @@ fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedCompoundLof
         let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
         cur.set_pos(curve_end);
         let data = loft_profile_data(cur, type_code)?;
-        members.push(EmbeddedLoftProfileMember {
-            curve,
-            endpoints: None,
-            data,
-        });
+        members.push(EmbeddedLoftProfileMember { curve, data });
     }
     let (path, path_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(path_end);
@@ -1528,6 +1545,7 @@ fn revision_loft_profile_data(
     table: &SubtypeTable,
     type_code: i64,
     asm_extension_present: bool,
+    endpoints: [Option<f64>; 2],
 ) -> Option<LoftProfileData> {
     let tail = |cur: &mut Cur<'_>| {
         let asm_extension = if asm_extension_present {
@@ -1551,6 +1569,7 @@ fn revision_loft_profile_data(
             let first_flag = cur.take_bool()?;
             let (asm_extension, subdata, direction) = tail(cur)?;
             Some(LoftProfileData::RevisionSupport {
+                endpoints,
                 type_code,
                 surface,
                 support_bounds,
@@ -1566,6 +1585,7 @@ fn revision_loft_profile_data(
             let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
             let (asm_extension, subdata, direction) = tail(cur)?;
             Some(LoftProfileData::RevisionPcurvePair {
+                endpoints,
                 pcurve,
                 secondary_pcurve,
                 asm_extension,
@@ -1598,12 +1618,14 @@ fn revision_loft_section(
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            let data = revision_loft_profile_data(cur, table, type_code, asm_extension_present)?;
-            profile.push(EmbeddedLoftProfileMember {
-                curve,
-                endpoints: Some(endpoints),
-                data,
-            });
+            let data = revision_loft_profile_data(
+                cur,
+                table,
+                type_code,
+                asm_extension_present,
+                endpoints,
+            )?;
+            profile.push(EmbeddedLoftProfileMember { curve, data });
         }
         let saved = cur.pos();
         let path_curve = if cur.take_ident() == Some("null_curve") {
@@ -1615,9 +1637,9 @@ fn revision_loft_section(
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            Some(EmbeddedLoftPathCurve {
+            Some(EmbeddedRevisionLoftPathCurve {
                 geometry: curve,
-                endpoints: Some(endpoints),
+                endpoints,
             })
         };
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
@@ -1634,7 +1656,7 @@ fn revision_loft_section(
             parameter,
             profile,
             path: EmbeddedLoftPath {
-                curve: path_curve,
+                layout: EmbeddedLoftPathLayout::Revision(path_curve),
                 auxiliaries,
                 flag,
             },
@@ -1750,7 +1772,6 @@ fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
             let data = loft_profile_data(cur, type_code)?;
             profile.push(EmbeddedLoftProfileMember {
                 curve,
-                endpoints: None,
                 data: LoftProfileData::Classic(data),
             });
         }
@@ -1770,10 +1791,7 @@ fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
             parameter,
             profile,
             path: EmbeddedLoftPath {
-                curve: Some(EmbeddedLoftPathCurve {
-                    geometry: curve,
-                    endpoints: None,
-                }),
+                layout: EmbeddedLoftPathLayout::Legacy(curve),
                 auxiliaries,
                 flag,
             },
@@ -1909,12 +1927,9 @@ fn revision_cl_scale(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let data = revision_loft_profile_data(cur, table, type_code, asm_extension_present)?;
-        profile.push(EmbeddedLoftProfileMember {
-            curve,
-            endpoints: Some(endpoints),
-            data,
-        });
+        let data =
+            revision_loft_profile_data(cur, table, type_code, asm_extension_present, endpoints)?;
+        profile.push(EmbeddedLoftProfileMember { curve, data });
     }
     let saved = cur.pos();
     let path_curve = if cur.take_ident() == Some("null_curve") {
@@ -1926,9 +1941,9 @@ fn revision_cl_scale(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        Some(EmbeddedLoftPathCurve {
+        Some(EmbeddedRevisionLoftPathCurve {
             geometry: curve,
-            endpoints: Some(endpoints),
+            endpoints,
         })
     };
     let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
@@ -1944,7 +1959,7 @@ fn revision_cl_scale(
     Some((
         profile,
         EmbeddedLoftPath {
-            curve: path_curve,
+            layout: EmbeddedLoftPathLayout::Revision(path_curve),
             auxiliaries,
             flag,
         },
@@ -2446,11 +2461,7 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
             let data = loft_profile_data(&mut cur, type_code)?;
-            profiles.push(EmbeddedLoftProfileMember {
-                curve,
-                endpoints: None,
-                data,
-            });
+            profiles.push(EmbeddedLoftProfileMember { curve, data });
         }
         let (path, path_end) = curve_block(span, cur.pos())?;
         cur.set_pos(path_end);
