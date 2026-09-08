@@ -52,13 +52,7 @@ trait ContainerNoted {
 
 impl ContainerNoted for SavedToggleStream {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
-
-impl ContainerNoted for SavedToggleEntry {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        ("nx:saved-toggle:stream#0", self.source_offset)
     }
 }
 
@@ -2573,7 +2567,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("SAVED_TOGGLE_ENTRY"),
-            note: |m, r, tag, a| note_container(&m.toggle.entries, r, tag, a),
+            note: |m, r, tag, a| {
+                let stream = a.stream("nx:container");
+                for entry in &m.toggle.entries {
+                    let id = entry.id();
+                    let note = a.note(&id, stream, entry.source_offset());
+                    if let Some(tag) = tag {
+                        note.tag(tag);
+                    }
+                    a.exactness(&id, r.exactness);
+                }
+            },
         },
         emit: |m, r, ns| emit_arena(&m.toggle.entries, r, ns),
         len: |m| m.toggle.entries.len(),
