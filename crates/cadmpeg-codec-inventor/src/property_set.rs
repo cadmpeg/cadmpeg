@@ -39,7 +39,7 @@ pub(crate) struct PropertySection<'a> {
     pub(crate) fmtid: [u8; 16],
     pub(crate) code_page: Option<u16>,
     pub(crate) offsets_ordered: bool,
-    pub(crate) names: BTreeMap<u32, String>,
+    pub(crate) dictionary_entries: usize,
     pub(crate) properties: Vec<Property<'a>>,
 }
 
@@ -354,7 +354,7 @@ fn parse_section<'a>(
         fmtid,
         code_page,
         offsets_ordered,
-        names,
+        dictionary_entries: names.len(),
         properties,
     })
 }

@@ -164,7 +164,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         fmtid: hex(&section.fmtid),
                         code_page: section.code_page,
                         offsets_ordered: section.offsets_ordered,
-                        dictionary_entries: section.names.len() as u64,
+                        dictionary_entries: section.dictionary_entries as u64,
                         property_count: section.properties.len() as u64,
                     });
                     for property in &section.properties {
