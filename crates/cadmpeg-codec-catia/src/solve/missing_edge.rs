@@ -514,7 +514,7 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let cycles = trims
         .iter()
-        .map(|trim| boundary_cycles(&trim.triangles))
+        .map(|trim| boundary_cycles(trim.packet.triangles()))
         .collect::<Option<Vec<_>>>()?;
     let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
     Some(StandardMeshAnalysis {
@@ -639,7 +639,13 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let face_handles = trims
         .into_iter()
-        .map(|trim| trim.handles.into_iter().collect::<HashSet<_>>())
+        .map(|trim| {
+            trim.packet
+                .handles()
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+        })
         .collect::<Vec<_>>();
     repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
 }
@@ -1210,8 +1216,6 @@ enum MeshFaceAssignmentDomain {
 #[derive(Debug, Clone)]
 pub(crate) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
-    edge_rows: Vec<EdgeRow>,
-    fixed_complete_row_spans: bool,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
     edge_runs: Vec<MeshEdgeRun>,
@@ -1241,12 +1245,8 @@ impl StandardMeshBoundaryContext {
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
-        let edge_rows = analysis.edge_rows.clone();
-        let fixed_complete_row_spans = analysis.fixed_complete_row_spans;
         Some(Self {
             analysis,
-            edge_rows,
-            fixed_complete_row_spans,
             coverage,
             edge_ports,
             edge_runs,
@@ -1258,8 +1258,6 @@ impl StandardMeshBoundaryContext {
         let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
         Some(Self {
             analysis: Arc::clone(&self.analysis),
-            edge_rows: self.edge_rows.clone(),
-            fixed_complete_row_spans: self.fixed_complete_row_spans,
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
@@ -2167,7 +2165,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         )
     }
 
-    let edge_rows = &context.edge_rows;
+    let edge_rows = &context.analysis.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return None;
     }
@@ -2305,7 +2303,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (
                         placement_ports,
                         &corner_ports,
@@ -2323,7 +2321,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), endpoint_constraints, &corner_points),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2336,7 +2334,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2458,7 +2456,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                 for run in runs.iter().filter(|run| run.face == face) {
                     let length = cycles[run.cycle].length;
                     let fixed_direction = edge_candidates.is_none()
-                        || context.edge_rows[run.edge].boundary_layout
+                        || context.analysis.edge_rows[run.edge].boundary_layout
                             == EdgeBoundaryLayout::CompleteBoundaryRun;
                     cycles[run.cycle].exact_uses.push((
                         MeshBoundaryEdgeCandidate {
@@ -2493,7 +2491,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
                         let fixed_direction = edge_candidates.is_none()
-                            || context.edge_rows[run.edge].boundary_layout
+                            || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
@@ -3675,19 +3673,17 @@ pub(crate) fn motif_port_points(
     vertex_count: usize,
 ) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
-        let expected = record
-            .independent_count
-            .checked_mul(3)?
-            .checked_add(record.strip_lengths.iter().sum())?
-            .checked_add(record.fan_lengths.iter().sum())?;
-        if expected != record.handles.len() {
-            return None;
-        }
         Some((
-            [*record.handles.first()?, *record.handles.get(1)?],
             [
-                *record.handles.get(record.handles.len().checked_sub(2)?)?,
-                *record.handles.last()?,
+                *record.packet.handles().first()?,
+                *record.packet.handles().get(1)?,
+            ],
+            [
+                *record
+                    .packet
+                    .handles()
+                    .get(record.packet.handles().len().checked_sub(2)?)?,
+                *record.packet.handles().last()?,
             ],
         ))
     }
@@ -3745,14 +3741,14 @@ pub(crate) fn motif_port_points(
         if trims
             .get(at..at + 2)
             .is_some_and(|records| records[0].kind == 0x4a && records[1].kind == 0x4a)
-            && trims[at].handles.len() >= 4
-            && trims[at + 1].handles.len() >= 2
+            && trims[at].packet.handles().len() >= 4
+            && trims[at + 1].packet.handles().len() >= 2
         {
             for handle in [
-                trims[at + 1].handles[0],
-                trims[at].handles[2],
-                trims[at].handles[3],
-                trims[at + 1].handles[1],
+                trims[at + 1].packet.handles()[0],
+                trims[at].packet.handles()[2],
+                trims[at].packet.handles()[3],
+                trims[at + 1].packet.handles()[1],
             ] {
                 emit(&mut seen, handle);
             }

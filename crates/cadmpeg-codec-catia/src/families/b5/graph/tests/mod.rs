@@ -35,7 +35,7 @@ fn object_stream_pcurve(
 
 fn test_loop_metadata() -> B5LoopMetadata {
     B5LoopMetadata {
-        framing_controls: [0x05, 0x05],
+        framing_controls: [B5FramingControl::Control05; 2],
         extension: None,
     }
 }

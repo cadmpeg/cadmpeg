@@ -14,6 +14,7 @@ use super::super::unit;
 use super::super::vertices::transfer_vertex_tolerances;
 use super::super::*;
 use super::*;
+use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
@@ -249,12 +250,15 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: vec![B5LogicalVertex {
-            object_id: 50,
-            point: [0.0, 0.0, 0.0],
-        }],
-        edge_vertices: BTreeMap::from([(30, [0, 0])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            vec![B5LogicalVertex {
+                object_id: 50,
+                point: [0.0, 0.0, 0.0],
+            }],
+            BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -351,24 +355,29 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: vec![
-            B5LogicalVertex {
-                object_id: 50,
-                point: [0.0, 0.0, 0.0],
-            },
-            B5LogicalVertex {
-                object_id: 51,
-                point: [0.5, 0.0, 0.0],
-            },
-            B5LogicalVertex {
-                object_id: 52,
-                point: [1.0, 0.0, 0.0],
-            },
-        ],
-        // Edges 33, 34, and 35 have no entry: their carrier resolves no
-        // endpoint locus, which is what excludes face 3.
-        edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            vec![
+                B5LogicalVertex {
+                    object_id: 50,
+                    point: [0.0, 0.0, 0.0],
+                },
+                B5LogicalVertex {
+                    object_id: 51,
+                    point: [0.5, 0.0, 0.0],
+                },
+                B5LogicalVertex {
+                    object_id: 52,
+                    point: [1.0, 0.0, 0.0],
+                },
+            ],
+            BTreeMap::from([
+                (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
+                (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
+                (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
+            ]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -495,22 +504,29 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: vec![
-            B5LogicalVertex {
-                object_id: 50,
-                point: [0.0, 0.0, 0.0],
-            },
-            B5LogicalVertex {
-                object_id: 51,
-                point: [0.5, 0.0, 0.0],
-            },
-            B5LogicalVertex {
-                object_id: 52,
-                point: [1.0, 0.0, 0.0],
-            },
-        ],
-        edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            vec![
+                B5LogicalVertex {
+                    object_id: 50,
+                    point: [0.0, 0.0, 0.0],
+                },
+                B5LogicalVertex {
+                    object_id: 51,
+                    point: [0.5, 0.0, 0.0],
+                },
+                B5LogicalVertex {
+                    object_id: 52,
+                    point: [1.0, 0.0, 0.0],
+                },
+            ],
+            BTreeMap::from([
+                (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
+                (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
+                (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
+            ]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -870,9 +886,12 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
-        logical_vertices: Vec::new(),
-        edge_vertices: BTreeMap::from([(3, [0, 1])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            vec![[0.0; 3], [1.0, 0.0, 0.0]],
+            Vec::new(),
+            BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -911,7 +930,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
             surface: 10,
         },
     );
-    graph.edge_vertices.insert(7, [0, 1]);
+    graph
+        .vertices
+        .insert_edge(7, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])
+        .expect("edge references select existing rows");
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
     assert_eq!(ownership.components().len(), 2);
@@ -950,9 +972,11 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
     graph.faces.pop();
     graph.loops.remove(&6);
-    graph.edge_vertices.remove(&7);
-    graph.edge_vertices.insert(3, [0, 2]);
-    assert!(ownership_plan(&graph).is_none());
+    graph.vertices.remove_edge(7);
+    assert!(graph
+        .vertices
+        .insert_edge(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(2)])
+        .is_err());
 }
 
 #[test]
@@ -979,9 +1003,12 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: Vec::new(),
-        edge_vertices: BTreeMap::new(),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -1095,18 +1122,21 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: vec![
-            B5LogicalVertex {
-                object_id: 10,
-                point: [0.25, 0.0, 1e-4],
-            },
-            B5LogicalVertex {
-                object_id: 11,
-                point: [0.75, 0.0, 0.0],
-            },
-        ],
-        edge_vertices: BTreeMap::from([(3, [0, 1])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            vec![
+                B5LogicalVertex {
+                    object_id: 10,
+                    point: [0.25, 0.0, 1e-4],
+                },
+                B5LogicalVertex {
+                    object_id: 11,
+                    point: [0.75, 0.0, 0.0],
+                },
+            ],
+            BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),

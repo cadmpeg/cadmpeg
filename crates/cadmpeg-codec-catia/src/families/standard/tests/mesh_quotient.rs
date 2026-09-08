@@ -62,11 +62,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
             })
             .collect()],
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(EDGE_COUNT * 2),
-        domains: repeated_domain(HashSet::from([0]), EDGE_COUNT * 2),
-        members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), EDGE_COUNT * 2));
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
     let budget = WorkBudget::new(30);
 
@@ -101,13 +97,11 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
             },
         ]],
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0], vec![1], vec![0], vec![1]]
+    let quotient = MeshQuotient::new(
+        [vec![0], vec![1], vec![0], vec![1]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
 
     let options = quotient.assignment_options_limited(
         &assignment,
@@ -124,13 +118,11 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
 
 #[test]
 fn quotient_merge_preserves_physical_edge_pair_correlation() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0], vec![0, 1], vec![0], vec![2]]
+    let mut quotient = MeshQuotient::new(
+        [vec![0], vec![0, 1], vec![0], vec![2]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
     quotient.merge(1, 2).expect("nonempty port intersection");
     assert!(!quotient.edge_domains_viable(&[vec![[0, 1]], vec![[0, 2]]]));
 }
@@ -138,15 +130,11 @@ fn quotient_merge_preserves_physical_edge_pair_correlation() {
 #[test]
 fn quotient_clones_share_unconstrained_point_domains() {
     let all = Arc::new((0..1_000).collect::<HashSet<_>>());
-    let quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![all.clone(), all.clone(), all.clone(), all.clone()],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(vec![all.clone(), all.clone(), all.clone(), all.clone()]);
 
     let clone = quotient.clone();
-    assert!(Arc::ptr_eq(&quotient.domains[0], &clone.domains[0]));
-    assert!(Arc::ptr_eq(&quotient.domains[0], &quotient.domains[3]));
+    assert!(Arc::ptr_eq(&quotient.domains()[0], &clone.domains()[0]));
+    assert!(Arc::ptr_eq(&quotient.domains()[0], &quotient.domains()[3]));
 }
 
 #[test]
@@ -376,32 +364,26 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
 
 #[test]
 fn quotient_pair_domains_propagate_through_shared_components() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]
+    let mut quotient = MeshQuotient::new(
+        [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
     let root = quotient.merge(0, 2).expect("shared endpoint component");
 
     assert!(quotient.edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],]));
-    assert_eq!(*quotient.domains[root], HashSet::from([0]));
-    assert_eq!(
-        *quotient.domains[quotient.union.find(3)],
-        HashSet::from([3])
-    );
+    assert_eq!(*quotient.domains()[root], HashSet::from([0]));
+    let third_root = quotient.find(3);
+    assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
 }
 
 #[test]
 fn quotient_assignment_requires_one_consistent_closed_orientation() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0], vec![1], vec![2], vec![3]]
+    let mut quotient = MeshQuotient::new(
+        [vec![0], vec![1], vec![2], vec![3]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -419,19 +401,23 @@ fn quotient_assignment_requires_one_consistent_closed_orientation() {
         ]],
     };
     assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
-    Arc::make_mut(&mut quotient.domains[2]).insert(1);
+    quotient = MeshQuotient::new(
+        [vec![0], vec![1], vec![1, 2], vec![3]]
+            .map(|domain| Arc::new(domain.into_iter().collect()))
+            .into(),
+    );
     assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
-    Arc::make_mut(&mut quotient.domains[3]).insert(0);
+    quotient = MeshQuotient::new(
+        [vec![0], vec![1], vec![1, 2], vec![0, 3]]
+            .map(|domain| Arc::new(domain.into_iter().collect()))
+            .into(),
+    );
     assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
 }
 
 #[test]
 fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
-    let quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0]), 2),
-        members: (0..2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -464,11 +450,7 @@ fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
 #[test]
 fn fixed_boundary_option_has_no_recursive_depth_limit() {
     const EDGE_COUNT: usize = 10_000;
-    let quotient = MeshQuotient {
-        union: UnionFind::new(EDGE_COUNT * 2),
-        domains: repeated_domain(HashSet::from([0]), EDGE_COUNT * 2),
-        members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), EDGE_COUNT * 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..EDGE_COUNT)
             .map(|edge| MeshBoundaryEdgeCandidate {
@@ -486,13 +468,11 @@ fn fixed_boundary_option_has_no_recursive_depth_limit() {
 
 #[test]
 fn quotient_options_reject_an_interior_pair_contradiction() {
-    let quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [vec![0], vec![1, 2], vec![2], vec![3], vec![0, 3], vec![0]]
+    let quotient = MeshQuotient::new(
+        [vec![0], vec![1, 2], vec![2], vec![3], vec![0, 3], vec![0]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -542,11 +522,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
 
 #[test]
 fn quotient_options_decline_when_their_work_budget_is_exhausted() {
-    let quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0]), 2),
-        members: (0..2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -571,12 +547,12 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
 
 #[test]
 fn quotient_point_assignment_preserves_endpoint_pair_relations() {
-    let quotient = || MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0, 1], vec![2], vec![0, 1], vec![3]]
-            .map(|domain| Arc::new(domain.into_iter().collect()))
-            .into(),
-        members: (0..4).map(|node| vec![node]).collect(),
+    let quotient = || {
+        MeshQuotient::new(
+            [vec![0, 1], vec![2], vec![0, 1], vec![3]]
+                .map(|domain| Arc::new(domain.into_iter().collect()))
+                .into(),
+        )
     };
     assert!(quotient()
         .point_assignment(4, &[vec![], vec![]], None)
@@ -594,11 +570,7 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
 
 #[test]
 fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0, 1]), 2),
-        members: (0..2).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 2));
     let budget = WorkBudget::new(0);
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], Some(&budget)));
@@ -612,11 +584,7 @@ fn point_assignment_handles_deep_augmenting_paths_iteratively() {
         .map(|root| Arc::new(HashSet::from([root, root + 1])))
         .collect::<Vec<_>>();
     domains.push(Arc::new(HashSet::from([0])));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(ROOT_COUNT),
-        domains,
-        members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(domains);
 
     let assignment = quotient
         .point_assignment(ROOT_COUNT, &[], None)
@@ -629,27 +597,22 @@ fn point_assignment_handles_deep_augmenting_paths_iteratively() {
 
 #[test]
 fn quotient_point_existence_rejects_an_all_different_conflict() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([0])), Arc::new(HashSet::from([0]))],
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([0])),
+    ]);
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], None));
 }
 
 #[test]
 fn quotient_point_existence_can_become_viable_after_a_root_merge() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([1])),
-            Arc::new(HashSet::from([2])),
-        ],
-        members: vec![vec![0], vec![1], vec![2], vec![3]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([1])),
+        Arc::new(HashSet::from([2])),
+    ]);
 
     assert!(!quotient.point_assignment_exists(3, &[vec![], vec![]], None));
     quotient.merge(0, 1).expect("compatible roots merge");
@@ -1083,11 +1046,7 @@ fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
             },
         ]],
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0, 1]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     assert!(mesh_assignment_can_merge(&assignment, &mut quotient));
     quotient.merge(1, 2).expect("first boundary corner");
@@ -1136,11 +1095,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0, 1]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     assert_eq!(
         search.remaining_equation_merge_capacity(&mut quotient),
@@ -1192,11 +1147,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0, 1]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     assert_eq!(
         search.remaining_equation_merge_capacity(&mut quotient),
@@ -1236,16 +1187,12 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([1])),
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([2])),
-        ],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([1])),
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([2])),
+    ]);
 
     assert_eq!(
         search.remaining_equation_merge_capacity(&mut quotient),
@@ -1275,16 +1222,12 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([2, 3])),
-        ],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([2, 3])),
+    ]);
 
     assert_eq!(
         search.remaining_equation_merge_capacity(&mut quotient),
@@ -1314,16 +1257,12 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([0])),
-            Arc::new(HashSet::from([1, 2])),
-        ],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([1, 2])),
+    ]);
 
     assert_eq!(
         search.remaining_equation_merge_capacity(&mut quotient),
@@ -1387,11 +1326,7 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(0),
-        domains: Vec::new(),
-        members: Vec::new(),
-    };
+    let quotient = MeshQuotient::new(Vec::new());
 
     search.search_with_limit(&quotient, 0);
 
@@ -1449,11 +1384,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(edge_count * 2),
-        domains,
-        members: (0..edge_count * 2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(domains);
     let budget = WorkBudget::new(5);
     let propagation_budget = WorkBudget::new(0);
 
@@ -1500,11 +1431,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0]), 2),
-        members: (0..2).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
 
     search.search(&quotient);
 
@@ -1559,11 +1486,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0, 1, 2]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1, 2]), 4));
 
     search.search(&quotient);
 
@@ -1618,16 +1541,13 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    let mut quotient =
+        MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search.propagate_forced_face_equations(&mut quotient));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
-    assert_eq!(quotient.union.find(3), quotient.union.find(4));
-    assert_eq!(quotient.union.find(5), quotient.union.find(0));
+    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(quotient.find(3), quotient.find(4));
+    assert_eq!(quotient.find(5), quotient.find(0));
     assert_eq!(quotient.root_count(), 3);
 }
 
@@ -1669,14 +1589,11 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    let mut quotient =
+        MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search.propagate_forced_face_equations(&mut quotient));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    assert_eq!(quotient.find(1), quotient.find(2));
     assert_eq!(quotient.root_count(), 5);
 }
 
@@ -1718,18 +1635,16 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [1, 0, 0, 1, 2, 2]
+    let mut quotient = MeshQuotient::new(
+        [1, 0, 0, 1, 2, 2]
             .into_iter()
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
 
     assert!(search.propagate_forced_face_equations(&mut quotient));
-    assert_eq!(quotient.union.find(1), quotient.union.find(2));
-    assert_eq!(quotient.union.find(3), quotient.union.find(0));
+    assert_eq!(quotient.find(1), quotient.find(2));
+    assert_eq!(quotient.find(3), quotient.find(0));
     assert_eq!(quotient.root_count(), 4);
 }
 
@@ -1768,11 +1683,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(26),
-        domains: (0..26).map(|_| Arc::new((0..13).collect())).collect(),
-        members: (0..26).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new((0..26).map(|_| Arc::new((0..13).collect())).collect());
     for edge in 0..13 {
         quotient.merge(edge * 2, edge * 2 + 1).expect("closed port");
     }
@@ -1822,11 +1733,8 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    let mut quotient =
+        MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search.propagate_forced_face_equations(&mut quotient));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);

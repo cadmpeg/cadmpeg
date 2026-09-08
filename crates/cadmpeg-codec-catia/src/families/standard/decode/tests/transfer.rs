@@ -216,6 +216,13 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
+        result
+            .report()
+            .coverage()
+            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        Some(&0)
+    );
+    assert_eq!(
         [
             "standard_topology_mesh_exhaustion_quotient_preparation_count",
             "standard_topology_mesh_exhaustion_incidence_enumeration_count",
@@ -394,6 +401,13 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         decoded
             .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .coverage()
+            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        Some(&0)
     );
     assert_eq!(
         [
