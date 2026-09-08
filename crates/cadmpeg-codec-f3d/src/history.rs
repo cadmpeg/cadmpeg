@@ -6906,7 +6906,7 @@ fn component_histories<'a>(
                 && binding.entity_suffix >= space.component_record_index
                 && binding.entity_suffix < cluster_end
         })
-        .map(|binding| binding.blob_name())
+        .map(crate::records::DesignBodyBinding::blob_name)
         .collect::<HashSet<_>>();
     let mut selected = histories
         .iter()
