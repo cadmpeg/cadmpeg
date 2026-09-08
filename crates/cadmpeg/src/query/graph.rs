@@ -6,13 +6,13 @@
 //! record. Multiple routes to the same record are separate results. A node
 //! already on the current path is not expanded.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use anyhow::{bail, Result};
 use clap::Args;
 use serde_json::{json, Value};
 
-use super::document::{select_records, CadirDocument};
+use super::document::{CadirDocument, RecordRef};
 use super::item::{emit_values, ArenaTarget, Output};
 
 /// Default cap on emitted walks. Truncation notes on stderr and exits 0.
@@ -77,16 +77,10 @@ impl GraphArgs {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct NodeRef {
-    arena: usize,
-    rec: usize,
-}
-
 #[derive(Clone, Debug)]
 struct AdjEdge {
     field: String,
-    to: NodeRef,
+    to: RecordRef,
 }
 
 struct WalkOutcome {
@@ -98,16 +92,7 @@ struct WalkOutcome {
 pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
-    let arena_idx = doc.arena_index(&target)?;
-    let arena = &doc.arenas()[arena_idx];
-    let (starts, errors) = select_records(arena, &args.ids, args.head);
-    let start_nodes: Vec<NodeRef> = starts
-        .into_iter()
-        .map(|rec| NodeRef {
-            arena: arena_idx,
-            rec,
-        })
-        .collect();
+    let (start_nodes, errors) = doc.select_records(&target, &args.ids, args.head)?;
 
     let follow = args.follow.as_deref();
     let outcome = walk(
@@ -135,7 +120,7 @@ pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
 
 fn walk(
     doc: &CadirDocument,
-    starts: &[NodeRef],
+    starts: &[RecordRef],
     hops: usize,
     follow: Option<&[String]>,
     reverse: bool,
@@ -160,7 +145,7 @@ fn walk(
 
         while let Some(path) = queue.pop_front() {
             let node = path.last().map_or(*start, |edge| edge.to);
-            let neighbors = match adj.get(node.arena).and_then(|row| row.get(node.rec)) {
+            let neighbors = match adj.get(&node) {
                 Some(edges) => edges.as_slice(),
                 None => &[],
             };
@@ -191,65 +176,49 @@ fn walk(
     WalkOutcome { results, truncated }
 }
 
-fn result_value(doc: &CadirDocument, start: NodeRef, path: &[AdjEdge]) -> Value {
+fn result_value(doc: &CadirDocument, start: RecordRef, path: &[AdjEdge]) -> Value {
     let mut node = start;
     let steps: Vec<Value> = path
         .iter()
         .map(|edge| {
             let step = json!({
-                "from": doc.locator(node.arena, node.rec),
+                "from": doc.locator(node),
                 "field": edge.field,
-                "to": doc.locator(edge.to.arena, edge.to.rec),
+                "to": doc.locator(edge.to),
             });
             node = edge.to;
             step
         })
         .collect();
     json!({
-        "start": doc.locator(start.arena, start.rec),
+        "start": doc.locator(start),
         "path": steps,
-        "record": doc.arenas()[node.arena].records[node.rec],
+        "record": doc.record(node),
     })
-}
-
-fn empty_adj(doc: &CadirDocument) -> Vec<Vec<Vec<AdjEdge>>> {
-    doc.arenas()
-        .iter()
-        .map(|arena| {
-            let mut row = Vec::with_capacity(arena.records.len());
-            for _ in 0..arena.records.len() {
-                row.push(Vec::new());
-            }
-            row
-        })
-        .collect()
 }
 
 fn build_adj(
     doc: &CadirDocument,
     follow: Option<&[String]>,
     reverse: bool,
-) -> Vec<Vec<Vec<AdjEdge>>> {
+) -> BTreeMap<RecordRef, Vec<AdjEdge>> {
     let follow_set: Option<BTreeSet<&str>> =
         follow.map(|paths| paths.iter().map(String::as_str).collect());
-    let mut fwd = empty_adj(doc);
+    let mut fwd: BTreeMap<RecordRef, Vec<AdjEdge>> = BTreeMap::new();
 
-    for (ai, arena) in doc.arenas().iter().enumerate() {
-        for (ri, rec) in arena.records.iter().enumerate() {
-            let from = NodeRef { arena: ai, rec: ri };
-            let mut edges = Vec::new();
-            collect_edges(rec, "", true, doc, &mut edges);
-            for (field, to) in edges {
-                if from == to {
+    for (from, rec) in doc.records() {
+        let mut edges = Vec::new();
+        collect_edges(rec, "", true, doc, &mut edges);
+        for (field, to) in edges {
+            if from == to {
+                continue;
+            }
+            if let Some(set) = &follow_set {
+                if !set.contains(field.as_str()) {
                     continue;
                 }
-                if let Some(set) = &follow_set {
-                    if !set.contains(field.as_str()) {
-                        continue;
-                    }
-                }
-                fwd[ai][ri].push(AdjEdge { field, to });
             }
+            fwd.entry(from).or_default().push(AdjEdge { field, to });
         }
     }
 
@@ -257,16 +226,13 @@ fn build_adj(
         return fwd;
     }
 
-    let mut rev = empty_adj(doc);
-    for (ai, rows) in fwd.iter().enumerate() {
-        for (ri, edges) in rows.iter().enumerate() {
-            let from = NodeRef { arena: ai, rec: ri };
-            for edge in edges {
-                rev[edge.to.arena][edge.to.rec].push(AdjEdge {
-                    field: edge.field.clone(),
-                    to: from,
-                });
-            }
+    let mut rev: BTreeMap<RecordRef, Vec<AdjEdge>> = BTreeMap::new();
+    for (from, edges) in fwd {
+        for edge in edges {
+            rev.entry(edge.to).or_default().push(AdjEdge {
+                field: edge.field,
+                to: from,
+            });
         }
     }
     rev
@@ -277,7 +243,7 @@ fn collect_edges(
     path: &str,
     skip_top_id: bool,
     doc: &CadirDocument,
-    out: &mut Vec<(String, NodeRef)>,
+    out: &mut Vec<(String, RecordRef)>,
 ) {
     match value {
         Value::Object(map) => {
@@ -305,8 +271,8 @@ fn collect_edges(
             let Some(hits) = doc.id_locations(s) else {
                 return;
             };
-            for &(arena, rec) in hits {
-                out.push((path.to_owned(), NodeRef { arena, rec }));
+            for &record in hits {
+                out.push((path.to_owned(), record));
             }
         }
         _ => {}
@@ -322,18 +288,12 @@ mod tests {
         CadirDocument::from_value(v)
     }
 
-    fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<NodeRef> {
+    fn start_nodes(document: &CadirDocument, arena: &str, ids: &[&str]) -> Vec<RecordRef> {
         let target = ArenaTarget::parse(arena).unwrap();
-        let arena_idx = document.arena_index(&target).unwrap();
         let ids: Vec<String> = ids.iter().map(|s| (*s).to_owned()).collect();
-        let (recs, errors) = select_records(&document.arenas()[arena_idx], &ids, None);
+        let (recs, errors) = document.select_records(&target, &ids, None).unwrap();
         assert!(errors.is_empty(), "{errors:?}");
-        recs.into_iter()
-            .map(|rec| NodeRef {
-                arena: arena_idx,
-                rec,
-            })
-            .collect()
+        recs
     }
 
     fn walk_ids(
