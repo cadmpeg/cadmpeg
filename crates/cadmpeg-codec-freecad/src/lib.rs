@@ -892,7 +892,7 @@ impl CodecBackend for FcstdCodec {
         );
         attributes.insert(
             "document_kind".into(),
-            scan.document.document_kind.as_str().to_owned(),
+            scan.document.document_kind().as_str().to_owned(),
         );
         attributes.insert(
             "application_domains".into(),
