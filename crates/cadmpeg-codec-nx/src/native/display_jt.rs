@@ -163,8 +163,6 @@ pub struct DisplayJtDocument {
     pub index_row: String,
     /// Exact admitted 80-byte version field.
     pub version: JtVersionField,
-    /// Serialized JT byte-order flag.
-    pub byte_order: u8,
     /// Payload-relative table-of-contents offset.
     pub toc_offset: u32,
     /// Exact 16-byte logical scene-graph segment identifier.
@@ -202,7 +200,7 @@ impl From<DisplayJtDocument> for DisplayJtDocumentWire {
             version_field: value.version.into_string(),
             format_major,
             format_minor,
-            byte_order: value.byte_order,
+            byte_order: 0,
             toc_offset: value.toc_offset,
             lsg_segment_id: value.lsg_segment_id,
             toc_entries: value.toc_entries,
@@ -215,6 +213,9 @@ impl From<DisplayJtDocument> for DisplayJtDocumentWire {
 impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
     type Error = &'static str;
     fn try_from(wire: DisplayJtDocumentWire) -> Result<Self, Self::Error> {
+        if wire.byte_order != 0 {
+            return Err("DisplayJtDocument.byte_order must be 0");
+        }
         let version = JtVersionField::new(wire.version_field)?;
         if wire.format_major != version.major() || wire.format_minor != version.minor() {
             return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
@@ -223,7 +224,6 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
             id: wire.id,
             index_row: wire.index_row,
             version,
-            byte_order: wire.byte_order,
             toc_offset: wire.toc_offset,
             lsg_segment_id: wire.lsg_segment_id,
             toc_entries: wire.toc_entries,
@@ -332,6 +332,10 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
 
 /// One length-bounded object element in a JT shape-LOD segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtShapeLodElementWire",
+    into = "DisplayJtShapeLodElementWire"
+)]
 pub struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
     pub id: String,
@@ -341,8 +345,6 @@ pub struct DisplayJtShapeLodElement {
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
     pub object_type_id: Vec<u8>,
-    /// Serialized object-base-type discriminator.
-    pub object_base_type: u8,
     /// Serialized object identifier.
     pub object_id: u32,
     /// Bytes following the common element header.
@@ -351,6 +353,53 @@ pub struct DisplayJtShapeLodElement {
     pub body_sha256: String,
     /// Absolute source offset of the element length.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtShapeLodElementWire {
+    id: String,
+    segment: String,
+    ordinal: u32,
+    object_type_id: Vec<u8>,
+    object_base_type: u8,
+    object_id: u32,
+    body_byte_len: u32,
+    body_sha256: String,
+    source_offset: u64,
+}
+
+impl TryFrom<DisplayJtShapeLodElementWire> for DisplayJtShapeLodElement {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtShapeLodElementWire) -> Result<Self, Self::Error> {
+        if wire.object_base_type != 4 {
+            return Err("DisplayJtShapeLodElement.object_base_type must be 4");
+        }
+        Ok(Self {
+            id: wire.id,
+            segment: wire.segment,
+            ordinal: wire.ordinal,
+            object_type_id: wire.object_type_id,
+            object_id: wire.object_id,
+            body_byte_len: wire.body_byte_len,
+            body_sha256: wire.body_sha256,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
+    fn from(value: DisplayJtShapeLodElement) -> Self {
+        Self {
+            id: value.id,
+            segment: value.segment,
+            ordinal: value.ordinal,
+            object_type_id: value.object_type_id,
+            object_base_type: 4,
+            object_id: value.object_id,
+            body_byte_len: value.body_byte_len,
+            body_sha256: value.body_sha256,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Fixed version and binding header of a JT 9 tri-strip shape-LOD element.
@@ -1775,7 +1824,6 @@ pub fn display_jt_documents(
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
             version,
-            byte_order,
             toc_offset,
             lsg_segment_id: lsg_segment_id.to_vec(),
             toc_entries,
@@ -1906,7 +1954,6 @@ pub fn display_jt_shape_lod_elements(
                 ordinal: ordinal as u32,
                 object_type_id: element.object_type_id.to_vec(),
                 object_id: element.object_id,
-                object_base_type: element.object_base_type,
                 body_byte_len: element.body.len() as u32,
                 body_sha256: sha256_hex(element.body),
                 source_offset: segment.source_offset + 24 + element.offset as u64,
@@ -4188,6 +4235,9 @@ mod tests {
         });
         let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(document).unwrap(), wire);
+        let mut invalid = wire.clone();
+        invalid["byte_order"] = serde_json::json!(1);
+        assert!(serde_json::from_value::<super::DisplayJtDocument>(invalid).is_err());
         wire["format_minor"] = serde_json::json!(6);
         assert!(serde_json::from_value::<super::DisplayJtDocument>(wire).is_err());
     }
@@ -4390,7 +4440,10 @@ mod tests {
         assert_eq!(elements.len(), 1);
         assert_eq!(elements[0].object_type_id, object_type_id);
         assert_eq!(elements[0].object_id, 42);
-        assert_eq!(elements[0].object_base_type, 4);
+        assert_eq!(
+            serde_json::to_value(&elements[0]).unwrap()["object_base_type"],
+            4
+        );
         assert_eq!(elements[0].body_byte_len, 3);
 
         let mut malformed = container;
@@ -4583,7 +4636,6 @@ mod tests {
             segment: "shape-segment".into(),
             ordinal: 0,
             object_type_id: vec![0; 16],
-            object_base_type: 4,
             object_id: 7,
             body_byte_len: 0,
             body_sha256: "00".repeat(32),
@@ -5380,7 +5432,6 @@ mod tests {
                 0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
                 0x59, 0x97,
             ],
-            object_base_type: 4,
             object_id: 1,
             body_byte_len: body.len() as u32,
             body_sha256: String::new(),
