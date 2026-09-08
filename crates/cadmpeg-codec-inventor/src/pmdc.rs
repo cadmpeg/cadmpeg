@@ -246,8 +246,14 @@ impl<'a> Cursor<'a> {
         Ok(view.req_u32_le()?)
     }
 
-    pub(crate) fn take(&mut self, len: usize, _field: &str) -> Result<&'a [u8], CodecError> {
-        Ok(self.source.req_take(len)?)
+    /// Reads a fixed-width byte array.
+    pub(crate) fn take_array<const N: usize>(
+        &mut self,
+        field: &str,
+    ) -> Result<[u8; N], CodecError> {
+        self.source
+            .array()
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor PmDc {field}")))
     }
 
     pub(crate) fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
