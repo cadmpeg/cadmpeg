@@ -3481,7 +3481,7 @@ pub(crate) fn project_edge_flange(
         DesignSheetMetalHeightDatum,
     };
     use cadmpeg_ir::features::{
-        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeHeight,
+        FeatureDefinition, PositiveLength, SheetMetalBendPosition, SheetMetalFlangeHeight,
         SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
         SheetMetalHeightDatum,
     };
@@ -3620,11 +3620,9 @@ pub(crate) fn project_edge_flange(
             };
             let width_length = |owner, kind| {
                 let length = design_length(parameter(owner, kind)?)?;
-                Some(match source {
-                    DesignEdgeFlangeWidthParameterSource::EdgeWidth => length,
-                    DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
-                        Length::new(length.get().abs())?
-                    }
+                PositiveLength::new(match source {
+                    DesignEdgeFlangeWidthParameterSource::EdgeWidth => length.get(),
+                    DesignEdgeFlangeWidthParameterSource::EdgeOffset => length.get().abs(),
                 })
             };
             let widths = edges

@@ -5259,9 +5259,11 @@ impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SheetMetalFlangeTwoSidedWidth {
     /// Distance measured from the edge's first end.
-    pub first: Length,
+    #[serde(deserialize_with = "deserialize_flange_first")]
+    pub first: PositiveLength,
     /// Distance measured from the edge's second end.
-    pub second: Length,
+    #[serde(deserialize_with = "deserialize_flange_second")]
+    pub second: PositiveLength,
 }
 
 /// Distribution of sheet thickness relative to its construction plane.
@@ -5295,6 +5297,8 @@ selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
 selection_field_deserializer!(deserialize_selection_faces, "faces");
 selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
+selection_field_deserializer!(deserialize_flange_first, "first");
+selection_field_deserializer!(deserialize_flange_second, "second");
 selection_field_deserializer!(deserialize_selection_profiles, "profiles");
 selection_field_deserializer!(deserialize_selection_entities, "entities");
 selection_field_deserializer!(deserialize_selection_selections, "selections");

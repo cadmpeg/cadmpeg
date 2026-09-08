@@ -256,8 +256,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::Length::new(30.0).unwrap(),
-                    second: cadmpeg_ir::features::Length::new(15.0).unwrap(),
+                    first: cadmpeg_ir::features::PositiveLength::new(30.0).unwrap(),
+                    second: cadmpeg_ir::features::PositiveLength::new(15.0).unwrap(),
                 }
             ])
             .unwrap(),
@@ -471,12 +471,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::Length::new(30.0).unwrap(),
-                    second: cadmpeg_ir::features::Length::new(15.0).unwrap(),
+                    first: cadmpeg_ir::features::PositiveLength::new(30.0).unwrap(),
+                    second: cadmpeg_ir::features::PositiveLength::new(15.0).unwrap(),
                 },
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::Length::new(20.0).unwrap(),
-                    second: cadmpeg_ir::features::Length::new(40.0).unwrap(),
+                    first: cadmpeg_ir::features::PositiveLength::new(20.0).unwrap(),
+                    second: cadmpeg_ir::features::PositiveLength::new(40.0).unwrap(),
                 },
             ])
             .unwrap(),
