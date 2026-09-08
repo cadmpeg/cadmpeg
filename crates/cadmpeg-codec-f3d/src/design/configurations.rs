@@ -539,7 +539,7 @@ pub fn bind_configuration_suppressed_features(
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-                    dependencies: feature.dependencies.clone(),
+                    dependencies: feature.dependencies.iter().cloned().collect(),
                     definition: feature.definition.clone(),
                 },
             );

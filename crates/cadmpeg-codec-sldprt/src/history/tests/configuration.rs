@@ -330,9 +330,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: unresolved,
                 },
             ),
@@ -340,9 +340,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 spatial_feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: FeatureDefinition::SpatialSketch { sketch: None },
                 },
             ),
@@ -566,9 +566,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                     feature_id.clone(),
                     ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: Vec::new(),
+                            outputs: Default::default(),
                         },
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         definition: FeatureDefinition::SpatialSketch { sketch: None },
                     },
                 ),
@@ -576,9 +576,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                     planar_state_id.clone(),
                     ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: Vec::new(),
+                            outputs: Default::default(),
                         },
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         definition: FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                         },
@@ -651,9 +651,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         feature_id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Vec::new(),
+                outputs: Default::default(),
             },
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: FeatureDefinition::SpatialSketch { sketch: None },
         },
     );
@@ -734,9 +734,9 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                 producer_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: FeatureDefinition::StoredGeometry,
                 },
             ),
@@ -744,9 +744,9 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                 consumer_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: unresolved,
                 },
             ),
@@ -772,7 +772,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
     project_configuration_supplemental_edge_selections(&mut ir, &[lane]);
 
     let state = &ir.model.configurations[0].feature_states[&consumer_id];
-    assert_eq!(state.dependencies, vec![producer_id.clone()]);
+    assert_eq!(state.dependencies.as_slice(), vec![producer_id.clone()]);
     assert!(matches!(
         &state.definition,
         FeatureDefinition::Chamfer { groups, .. }
@@ -1018,9 +1018,9 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Vec::new(),
+                outputs: Default::default(),
             },
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: local_definition,
         },
     );
@@ -1536,9 +1536,9 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Vec::new(),
+                outputs: Default::default(),
             },
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: definition(),
         },
     );
@@ -1636,9 +1636,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Vec::new(),
+                outputs: Default::default(),
             },
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: definition(),
         },
     );

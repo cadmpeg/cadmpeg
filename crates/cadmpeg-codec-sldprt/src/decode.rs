@@ -3786,10 +3786,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
                         cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
                     } else {
                         cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: feature.outputs.clone(),
+                            outputs: feature.outputs.iter().cloned().collect(),
                         }
                     },
-                    dependencies: feature.dependencies.clone(),
+                    dependencies: feature.dependencies.iter().cloned().collect(),
                     definition: feature.definition.clone(),
                 },
             )

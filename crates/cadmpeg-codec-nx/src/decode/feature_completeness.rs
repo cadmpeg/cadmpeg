@@ -142,7 +142,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
             return true;
         };
         Some(state.evaluation.is_suppressed()) != feature.suppressed
-            || state.dependencies != feature.dependencies
+            || state.dependencies.as_slice() != feature.dependencies
             || state.evaluation.outputs() != feature.outputs.as_slice()
             || state.definition != feature.definition
     }) {

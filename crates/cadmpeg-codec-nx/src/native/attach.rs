@@ -1010,9 +1010,9 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
                 id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: feature.outputs.clone(),
+                        outputs: feature.outputs.iter().cloned().collect(),
                     },
-                    dependencies: feature.dependencies.clone(),
+                    dependencies: feature.dependencies.iter().cloned().collect(),
                     definition: feature.definition.clone(),
                 },
             )

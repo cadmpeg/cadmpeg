@@ -347,8 +347,8 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             ..
         } if profile == &profile_b.id
     ));
-    assert_eq!(state_a.dependencies, vec![profile_a.id.clone()]);
-    assert_eq!(state_b.dependencies, vec![profile_b.id.clone()]);
+    assert_eq!(state_a.dependencies.as_slice(), vec![profile_a.id.clone()]);
+    assert_eq!(state_b.dependencies.as_slice(), vec![profile_b.id.clone()]);
 }
 
 #[test]

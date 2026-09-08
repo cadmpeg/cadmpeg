@@ -23,7 +23,10 @@ fn apply_configuration_state(
     state: &cadmpeg_ir::features::ConfigurationFeatureState,
 ) {
     feature.suppressed = Some(state.evaluation.is_suppressed());
-    feature.dependencies.clone_from(&state.dependencies);
+    state
+        .dependencies
+        .as_slice()
+        .clone_into(&mut feature.dependencies);
     state.evaluation.outputs().clone_into(&mut feature.outputs);
     feature.definition.clone_from(&state.definition);
 }
@@ -33,7 +36,7 @@ fn configuration_evaluation(feature: &cadmpeg_ir::features::Feature) -> Configur
         ConfigurationEvaluation::Suppressed
     } else {
         ConfigurationEvaluation::Active {
-            outputs: feature.outputs.clone(),
+            outputs: feature.outputs.iter().cloned().collect(),
         }
     }
 }
@@ -288,10 +291,10 @@ pub(crate) fn project_configuration_design_states(
                             cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
                         } else {
                             cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                                outputs: feature.outputs,
+                                outputs: feature.outputs.into_iter().collect(),
                             }
                         },
-                        dependencies: feature.dependencies,
+                        dependencies: feature.dependencies.into_iter().collect(),
                         definition: feature.definition,
                     },
                 )
@@ -342,7 +345,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
-            state.dependencies = feature.dependencies;
+            state.dependencies = feature.dependencies.into_iter().collect();
             state.definition = feature.definition;
         }
     }
@@ -407,7 +410,7 @@ pub(crate) fn bind_configuration_topology_selections(
             };
             state.evaluation = configuration_evaluation(&feature);
             state.definition = feature.definition;
-            state.dependencies = feature.dependencies;
+            state.dependencies = feature.dependencies.into_iter().collect();
         }
     }
 }
@@ -690,7 +693,7 @@ pub(crate) fn project_configuration_sketch_states(
                 continue;
             };
             state.evaluation = configuration_evaluation(&feature);
-            state.dependencies = feature.dependencies;
+            state.dependencies = feature.dependencies.into_iter().collect();
             state.definition = feature.definition;
         }
     }
@@ -719,9 +722,7 @@ pub(crate) fn project_configuration_sketch_states(
                     ..
                 } = &state.definition
                 {
-                    if !state.dependencies.contains(reference) {
-                        state.dependencies.push(reference.clone());
-                    }
+                    state.dependencies.insert(reference.clone());
                 }
             }
         }
@@ -1093,7 +1094,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
             let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
                 continue;
             };
-            state.dependencies = feature.dependencies;
+            state.dependencies = feature.dependencies.into_iter().collect();
             state.definition = feature.definition;
         }
     }

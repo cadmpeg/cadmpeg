@@ -1261,9 +1261,9 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         feature.id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: feature.outputs.clone(),
+                outputs: (feature.outputs.clone()).try_into().unwrap(),
             },
-            dependencies: feature.dependencies.clone(),
+            dependencies: (feature.dependencies.clone()).try_into().unwrap(),
             definition: feature.definition.clone(),
         },
     );
@@ -1330,7 +1330,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         suppressed.id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-            dependencies: suppressed.dependencies,
+            dependencies: (suppressed.dependencies).try_into().unwrap(),
             definition: suppressed.definition,
         },
     );

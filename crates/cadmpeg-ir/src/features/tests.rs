@@ -100,12 +100,16 @@ fn configuration_body_membership_round_trips_and_validates() {
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![
+                outputs: (vec![
                     BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
-                ],
+                ])
+                .try_into()
+                .unwrap(),
             },
-            dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
-                .expect("identity grammar")],
+            dependencies: (vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
+                .expect("identity grammar")])
+            .try_into()
+            .unwrap(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -171,9 +175,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![body.clone(), body.clone()],
+                outputs: (vec![body.clone()]).try_into().unwrap(),
             },
-            dependencies: vec![later_feature.clone(), later_feature.clone()],
+            dependencies: (vec![later_feature.clone()]).try_into().unwrap(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -181,23 +185,17 @@ fn configuration_body_membership_round_trips_and_validates() {
         },
     )]);
     let report = validate_neutral(&ir, Vec::new());
-    for message in [
-        "does not precede",
-        "repeats dependency",
-        "repeats output body",
-    ] {
-        assert!(report.findings.iter().any(|finding| {
-            finding.entity.as_deref() == Some(configuration_id.0.as_str())
-                && finding.message.contains(message)
-        }));
-    }
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("does not precede")
+    }));
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -222,9 +220,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         later_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: vec![body.clone()],
+                outputs: (vec![body.clone()]).try_into().unwrap(),
             },
-            dependencies: vec![first_feature.clone()],
+            dependencies: (vec![first_feature.clone()]).try_into().unwrap(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -238,7 +236,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Suppressed,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -259,7 +257,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .get_mut(&first_feature)
         .expect("dependency state")
         .evaluation = ConfigurationEvaluation::Active {
-        outputs: Vec::new(),
+        outputs: Default::default(),
     };
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
@@ -360,7 +358,7 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
             feature.id.clone(),
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Suppressed,
-                dependencies: feature.dependencies.clone(),
+                dependencies: (feature.dependencies.clone()).try_into().unwrap(),
                 definition: feature.definition.clone(),
             },
         )]),
@@ -1193,7 +1191,7 @@ fn configuration_evaluation_wire_is_flat_and_strict() {
 
     let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
     let active = ConfigurationEvaluation::Active {
-        outputs: vec![body],
+        outputs: (vec![body]).try_into().unwrap(),
     };
     let wire = serde_json::to_value(&active).unwrap();
     assert_eq!(
@@ -1834,7 +1832,7 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
     use crate::features::ConfigurationEvaluation;
 
     let active = ConfigurationEvaluation::Active {
-        outputs: Vec::new(),
+        outputs: Default::default(),
     };
     assert_eq!(
         serde_json::to_value(&active).unwrap(),
@@ -2786,3 +2784,5 @@ mod patterns;
 mod selections;
 
 mod parameters;
+
+mod configuration_states;

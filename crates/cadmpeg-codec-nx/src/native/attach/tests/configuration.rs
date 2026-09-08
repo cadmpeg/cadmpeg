@@ -515,7 +515,9 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         ]
     );
     assert_eq!(
-        states[&FeatureId::mint("writer").expect("identity grammar")].dependencies,
+        states[&FeatureId::mint("writer").expect("identity grammar")]
+            .dependencies
+            .as_slice(),
         [FeatureId::mint("dependency").expect("identity grammar")]
     );
     assert_eq!(
