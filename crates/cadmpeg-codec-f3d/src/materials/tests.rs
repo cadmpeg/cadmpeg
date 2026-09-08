@@ -33,14 +33,9 @@ fn raw_body_map_pair(
     entity_suffix: u64,
 ) -> crate::design::decode::body::BodyBinding {
     crate::design::decode::body::BodyBinding {
-        blob_name: "BREP.synthetic.smbh".into(),
-        blob_name_offset: asm_key_offset + 32,
-        pair_count: 2,
-        pair_ordinal: 0,
         asm_key: 7,
         asm_key_offset,
         entity_suffix,
-        entity_suffix_offset: asm_key_offset + 8,
     }
 }
 

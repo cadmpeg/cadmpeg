@@ -1003,7 +1003,7 @@ pub(crate) fn decode_design_assignments(
                 asm_body_key: body_binding.asm_key,
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
 
-                entity_suffix_offset: body_binding.entity_suffix_offset as u64,
+                entity_suffix_offset: body_binding.entity_suffix_offset() as u64,
                 entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
@@ -1083,7 +1083,7 @@ fn decode_body_appearance_overrides(
                 map_pair.asm_key,
                 map_pair.asm_key_offset as u64,
                 map_pair.entity_suffix,
-                map_pair.entity_suffix_offset as u64,
+                map_pair.entity_suffix_offset() as u64,
             )?
             else {
                 continue;
