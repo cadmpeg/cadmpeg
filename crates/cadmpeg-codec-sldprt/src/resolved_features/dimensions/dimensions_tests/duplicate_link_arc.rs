@@ -128,9 +128,9 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     )
     .expect("duplicate-link arc carrier");
     assert_eq!(carrier.marker.id, "arc");
-    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.center(), [0.010, 0.020]);
     assert!(matches!(
-        carrier.curve,
+        carrier.curve(),
         Some(DimensionedCurveNative::Circle {
             center: [0.010, 0.020]
         })
