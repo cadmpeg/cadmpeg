@@ -673,7 +673,7 @@ fn project_with_topology(
         .map(|(reference, _)| (reference.id.as_str(), pmi_id(&reference.id)))
         .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::new();
-    let mut datum_systems = Vec::<(Vec<DatumReference>, PmiId)>::new();
+    let mut datum_systems = Vec::<(cadmpeg_ir::pmi::DatumReferences, PmiId)>::new();
     for (reference, entity) in &rows {
         if suppressed(entity) {
             continue;
@@ -690,7 +690,7 @@ fn project_with_topology(
             let Some(targets) = targets(entity, &feature_index, topology) else {
                 continue;
             };
-            let datum_system = if tolerance.references.is_empty() {
+            let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
             } else if let Some((_, id)) = datum_systems
                 .iter()
@@ -777,7 +777,7 @@ fn project_datum(
 struct ProjectedTolerance {
     kind: GeometricToleranceKind,
     magnitude: cadmpeg_ir::pmi::PmiMagnitude,
-    references: Vec<DatumReference>,
+    references: cadmpeg_ir::pmi::DatumReferences,
 }
 
 fn project_tolerance(
@@ -789,7 +789,7 @@ fn project_tolerance(
     Some(ProjectedTolerance {
         kind,
         magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
-        references: datum_references(entity, datum_ids),
+        references: datum_references(entity, datum_ids).try_into().ok()?,
     })
 }
 

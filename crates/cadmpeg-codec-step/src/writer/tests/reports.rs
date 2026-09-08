@@ -1164,7 +1164,11 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     let PmiDefinition::DatumSystem { references } = &mut system.definition else {
         unreachable!()
     };
-    references[0].modifiers.push("unknown_modifier".into());
+    let mut edited = references.as_slice().to_vec();
+    edited[0].modifiers.push("unknown_modifier".into());
+    references
+        .replace(edited)
+        .expect("unchanged datum compartments");
 
     let mut output = Vec::new();
     let report = write_step(

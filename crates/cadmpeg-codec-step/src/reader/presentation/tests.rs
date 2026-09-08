@@ -1414,7 +1414,7 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1 && references[0].common_group.is_none()
+            if references.as_slice().len() == 1 && references.as_slice()[0].common_group.is_none()
     )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1445,10 +1445,10 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
     assert!(matches!(
         &system.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].datum.as_str() == "step:presentation:pmi#7"
-                && references[0].common_group.is_none()
-                && references[0].modifiers == ["distance:0.2"]
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].datum.as_str() == "step:presentation:pmi#7"
+                && references.as_slice()[0].common_group.is_none()
+                && references.as_slice()[0].modifiers == ["distance:0.2"]
     ));
     assert!(result
         .report()

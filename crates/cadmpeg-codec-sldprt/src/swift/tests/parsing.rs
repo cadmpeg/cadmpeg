@@ -59,7 +59,7 @@ fn encode_objects(name: &str, end: &str, section: &ObjectSection, bytes: &mut Ve
         return;
     }
     put_pstr(bytes, name);
-    bytes.extend_from_slice(&(section.references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(section.references.as_slice().len() as u32).to_le_bytes());
     for reference in &section.references {
         put_pstr(bytes, &reference.id);
         put_pstr(bytes, &reference.class);
@@ -138,8 +138,11 @@ fn parses_and_projects_semantic_graph() {
     let PmiDefinition::DatumSystem { references } = &system.definition else {
         panic!("datum-system definition");
     };
-    assert_eq!(references.len(), 1);
-    let datum_reference = references.first().expect("primary datum reference");
+    assert_eq!(references.as_slice().len(), 1);
+    let datum_reference = references
+        .as_slice()
+        .first()
+        .expect("primary datum reference");
     assert_eq!(datum_reference.precedence.get(), 1);
     assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
 
