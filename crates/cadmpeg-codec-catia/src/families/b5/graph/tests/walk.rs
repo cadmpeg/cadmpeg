@@ -297,7 +297,7 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
     assert_eq!(graphs.len(), 2);
     assert!(graphs
         .iter()
-        .all(|(_, graph)| graph.vertex_points.len() == 3));
+        .all(|(_, graph)| graph.vertices.raw_points().len() == 3));
 }
 
 #[test]

@@ -11,6 +11,9 @@ use cadmpeg_ir::math::Point2;
 
 /// Admitted topology control bytes.
 pub(crate) mod controls;
+/// Vertex tables and typed endpoint references.
+pub(crate) mod vertex_refs;
+use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
@@ -70,14 +73,8 @@ pub struct B5Graph {
     pub edges: BTreeMap<u32, B5Edge>,
     /// Native class-`5d` vertex-to-incidence links, keyed by object id.
     pub vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink>,
-    /// World-frame `05 08 01` vertex coordinates, in stream order.
-    pub vertex_points: Vec<[f64; 3]>,
-    /// Native `5d` logical vertices. Their edge indices follow the raw
-    /// `vertex_points` indices.
-    pub logical_vertices: Vec<B5LogicalVertex>,
-    /// Per-edge pair of vertex indices. Raw `vertex_points` occupy the first
-    /// index range; native `5d` logical vertices occupy the following range.
-    pub edge_vertices: BTreeMap<u32, [usize; 2]>,
+    /// Vertex tables with bounds-checked edge bindings.
+    pub vertices: B5Vertices,
     /// Ordered class-`06` start/end parameter-incidence references from each
     /// native class-`5e` edge.
     pub edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
@@ -1358,9 +1355,7 @@ pub(crate) fn parse_from_records_budgeted(
         parameter_incidences,
         edges,
         vertex_incidence_links,
-        vertex_points,
-        logical_vertices,
-        edge_vertices,
+        vertices: B5Vertices::try_new(vertex_points, logical_vertices, edge_vertices).ok()?,
         edge_parameter_incidences,
         vertex_tolerances,
         profiles,
@@ -2266,7 +2261,7 @@ pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -
 }
 
 struct BoundNativeVertices {
-    edges: BTreeMap<u32, [usize; 2]>,
+    edges: BTreeMap<u32, [B5VertexRef; 2]>,
     vertices: Vec<B5LogicalVertex>,
     tolerances: BTreeMap<usize, f64>,
 }
@@ -2321,16 +2316,19 @@ fn bind_native_vertices(
     }
     let mut ranked: Vec<_> = logical_coordinates.into_iter().collect();
     ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
-    let logical_vertex_indices: HashMap<u32, usize> = ranked
+    let logical_vertex_indices: HashMap<u32, B5VertexRef> = ranked
         .iter()
         .enumerate()
-        .map(|(rank, (vertex, _))| (*vertex, points.len() + rank))
+        .map(|(rank, (vertex, _))| (*vertex, B5VertexRef::Logical(rank)))
         .collect();
     let logical_vertices: Vec<B5LogicalVertex> = ranked
         .into_iter()
         .map(|(object_id, point)| B5LogicalVertex { object_id, point })
         .collect();
-    let mut edge_vertices = geometric_edges.clone();
+    let mut edge_vertices = geometric_edges
+        .iter()
+        .map(|(&edge, vertices)| (edge, vertices.map(B5VertexRef::Raw)))
+        .collect::<BTreeMap<_, _>>();
     for (&edge, vertices) in native_edges {
         if let (Some(&start), Some(&end)) = (
             logical_vertex_indices.get(&vertices[0]),
@@ -2369,7 +2367,7 @@ fn bind_native_vertices(
             for (locus, residual) in residuals {
                 if residual > POINT_TOLERANCE && residual.is_finite() {
                     tolerances
-                        .entry(locus)
+                        .entry(locus.combined_index(points.len()))
                         .and_modify(|tolerance| {
                             *tolerance = tolerance.max(residual + EPS_B5_GRAPH_GEOMETRY);
                         })
@@ -2471,16 +2469,18 @@ fn propagate_vertex_component(
 fn vertex_coordinate(
     points: &[[f64; 3]],
     logical_vertices: &[B5LogicalVertex],
-    index: usize,
+    vertex: B5VertexRef,
 ) -> [f64; 3] {
-    if index < points.len() {
-        points[index]
-    } else {
-        logical_vertices[index - points.len()].point
+    match vertex {
+        B5VertexRef::Raw(index) => points[index],
+        B5VertexRef::Logical(index) => logical_vertices[index].point,
     }
 }
 
-pub(crate) fn loop_chain_closes(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
+pub(crate) fn loop_chain_closes(
+    loop_: &B5Loop,
+    edge_vertices: &BTreeMap<u32, [B5VertexRef; 2]>,
+) -> bool {
     let mut members = loop_.members.iter();
     let Some(first_member) = members.next() else {
         return false;

@@ -5576,8 +5576,8 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let graph = graph?;
     let identity_points = unique_native_identity_points(
-        &graph.logical_vertices,
-        graph.vertex_points.len(),
+        graph.vertices.logical_vertices(),
+        graph.vertices.raw_points().len(),
         &graph.vertex_tolerances,
         points,
     );
