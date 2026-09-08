@@ -556,15 +556,16 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         name: Some("3D path".into()),
         configuration: None,
         visible: Some(false),
-        profiles: vec![SpatialSketchProfile {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            boundary: vec![SpatialSketchEntityUse {
+        profiles: vec![SpatialSketchProfile::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            vec![SpatialSketchEntityUse {
                 entity: circle.clone(),
                 reversed: false,
             }],
-        }],
+        )
+        .unwrap()],
         native_ref: None,
     });
     ir.model
@@ -1966,4 +1967,75 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         })
         .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
+}
+
+#[test]
+fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
+    use crate::sketches::{SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchProfile};
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 1.0);
+    let u_axis = Vector3::new(1.0, 0.0, 0.0);
+    let boundary = vec![SpatialSketchEntityUse {
+        entity: SpatialSketchEntityId::mint("synthetic:test:spatial-entity#profile").unwrap(),
+        reversed: true,
+    }];
+    let mut profile =
+        SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone()).unwrap();
+    let wire = serde_json::json!({
+        "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
+        "boundary": [{"entity": "synthetic:test:spatial-entity#profile", "reversed": true}]
+    });
+    assert_eq!(serde_json::to_value(&profile).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
+        profile
+    );
+    assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![]).is_err());
+    assert!(SpatialSketchProfile::try_new(
+        origin,
+        normal,
+        u_axis,
+        vec![boundary[0].clone(), boundary[0].clone()]
+    )
+    .is_err());
+    for axis in [
+        Vector3::new(0.0, 0.0, 0.0),
+        normal,
+        Vector3::new(f64::NAN, 0.0, 0.0),
+    ] {
+        assert!(SpatialSketchProfile::try_new(origin, normal, axis, boundary.clone()).is_err());
+    }
+    assert!(SpatialSketchProfile::try_new(
+        origin,
+        normal,
+        Vector3::new(1.0 + EPS_SPATIAL_FRAME_BOUNDARY * 0.5, 0.0, 0.0),
+        boundary
+    )
+    .is_ok());
+    for (field, invalid) in [
+        ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),
+        ("normal", serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0})),
+        ("u_axis", serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})),
+        ("boundary", serde_json::json!([])),
+        (
+            "boundary",
+            serde_json::json!([wire["boundary"][0], wire["boundary"][0]]),
+        ),
+    ] {
+        let mut invalid_wire = wire.clone();
+        invalid_wire[field] = invalid;
+        assert!(serde_json::from_value::<SpatialSketchProfile>(invalid_wire).is_err());
+    }
+    let before = profile.clone();
+    assert!(profile
+        .set_origin(Point3::new(f64::INFINITY, 0.0, 0.0))
+        .is_err());
+    assert_eq!(profile, before);
+    let moved = Point3::new(4.0, 5.0, 6.0);
+    profile.set_origin(moved).unwrap();
+    assert_eq!(profile.origin(), moved);
+    assert_eq!(profile.boundary(), before.boundary());
 }

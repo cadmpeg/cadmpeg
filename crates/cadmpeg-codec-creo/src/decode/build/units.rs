@@ -143,7 +143,9 @@ pub(super) fn normalize_model_lengths(
     }
     for sketch in &mut ir.model.spatial_sketches {
         for profile in &mut sketch.profiles {
-            scale_point3(&mut profile.origin, length_scale_mm);
+            let mut origin = profile.origin();
+            scale_point3(&mut origin, length_scale_mm);
+            profile.set_origin(origin).map_err(CodecError::malformed)?;
         }
     }
     for entity in &mut ir.model.spatial_sketch_entities {

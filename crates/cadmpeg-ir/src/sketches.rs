@@ -716,18 +716,106 @@ pub struct SpatialSketch {
     pub native_ref: Option<String>,
 }
 
-/// One closed spatial-sketch profile and its model-space plane.
+const EPS_SPATIAL_PROFILE_FRAME: f64 = 1.0e-9;
+
+/// One closed spatial-sketch profile and its admitted model-space plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchProfileWire")]
 pub struct SpatialSketchProfile {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+    boundary: Vec<SpatialSketchEntityUse>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpatialSketchProfileWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+    boundary: Vec<SpatialSketchEntityUse>,
+}
+
+impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
+    type Error = &'static str;
+
+    fn try_from(wire: SpatialSketchProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.origin, wire.normal, wire.u_axis, wire.boundary)
+    }
+}
+
+impl SpatialSketchProfile {
+    /// Admit a finite plane with unit orthogonal axes and a nonempty distinct boundary.
+    pub fn try_new(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+        boundary: Vec<SpatialSketchEntityUse>,
+    ) -> Result<Self, &'static str> {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+            return Err("spatial profile origin must be finite");
+        }
+        let normal_length = normal.norm();
+        let u_length = u_axis.norm();
+        let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+        if !normal_length.is_finite()
+            || !u_length.is_finite()
+            || !dot.is_finite()
+            || (normal_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
+            || (u_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
+            || dot.abs() > EPS_SPATIAL_PROFILE_FRAME
+        {
+            return Err("spatial profile normal and u_axis must be unit and orthogonal");
+        }
+        let unique = boundary
+            .iter()
+            .map(|use_| &use_.entity)
+            .collect::<std::collections::HashSet<_>>();
+        if boundary.is_empty() || unique.len() != boundary.len() {
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
+        }
+        Ok(Self {
+            origin,
+            normal,
+            u_axis,
+            boundary,
+        })
+    }
+
     /// Profile-plane origin in model space.
-    pub origin: Point3,
-    /// Profile-plane unit normal, oriented by boundary traversal.
-    pub normal: Vector3,
+    #[must_use]
+    pub fn origin(&self) -> Point3 {
+        self.origin
+    }
+
+    /// Profile-plane unit normal.
+    #[must_use]
+    pub fn normal(&self) -> Vector3 {
+        self.normal
+    }
+
     /// Profile-plane unit u-axis.
-    pub u_axis: Vector3,
+    #[must_use]
+    pub fn u_axis(&self) -> Vector3 {
+        self.u_axis
+    }
+
     /// Ordered oriented boundary uses.
-    pub boundary: Vec<SpatialSketchEntityUse>,
+    #[must_use]
+    pub fn boundary(&self) -> &[SpatialSketchEntityUse] {
+        &self.boundary
+    }
+
+    /// Replace the origin after finite-coordinate admission.
+    pub fn set_origin(&mut self, origin: Point3) -> Result<(), &'static str> {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+            return Err("spatial profile origin must be finite");
+        }
+        self.origin = origin;
+        Ok(())
+    }
 }
 
 /// Oriented use of one spatial-sketch entity in a profile boundary.

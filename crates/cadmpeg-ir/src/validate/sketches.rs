@@ -592,37 +592,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.spatial_sketches {
         for profile in &sketch.profiles {
-            let normal_length = profile.normal.norm();
-            let u_length = profile.u_axis.norm();
-            let dot = profile.normal.x * profile.u_axis.x
-                + profile.normal.y * profile.u_axis.y
-                + profile.normal.z * profile.u_axis.z;
-            if !finite3(profile.origin)
-                || (normal_length - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
-                || (u_length - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
-                || dot.abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
-            {
-                finding(
-                    findings,
-                    Check::GeometricConsistency,
-                    sketch.id.as_str(),
-                    "invalid spatial sketch profile plane",
-                );
-            }
-            let unique = profile
-                .boundary
-                .iter()
-                .map(|use_| &use_.entity)
-                .collect::<HashSet<_>>();
-            if profile.boundary.is_empty() || unique.len() != profile.boundary.len() {
-                finding(
-                    findings,
-                    Check::Counts,
-                    sketch.id.as_str(),
-                    "spatial sketch profile boundary is empty or repeats an entity",
-                );
-            }
-            for use_ in &profile.boundary {
+            for use_ in profile.boundary() {
                 if spatial_geometry.get(&use_.entity).map(|(owner, _)| *owner) != Some(&sketch.id) {
                     finding(
                         findings,
@@ -632,10 +602,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            if profile.boundary.len() == 1 {
+            if profile.boundary().len() == 1 {
                 if !matches!(
                     spatial_geometry
-                        .get(&profile.boundary[0].entity)
+                        .get(&profile.boundary()[0].entity)
                         .map(|(sketch, geometry)| (sketch, geometry.definition())),
                     Some((_, SpatialSketchGeometryDefinition::Circle { .. }))
                 ) {
@@ -647,9 +617,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             } else {
-                for index in 0..profile.boundary.len() {
-                    let left = &profile.boundary[index];
-                    let right = &profile.boundary[(index + 1) % profile.boundary.len()];
+                for index in 0..profile.boundary().len() {
+                    let left = &profile.boundary()[index];
+                    let right = &profile.boundary()[(index + 1) % profile.boundary().len()];
                     let endpoints = spatial_geometry
                         .get(&left.entity)
                         .and_then(|(_, geometry)| {
