@@ -1199,14 +1199,16 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Blend {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Blend(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("blend surface-curve family")
         };
+        let (context, form) = context.into_intersection(
+            crate::nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve).unwrap(),
+        );
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
@@ -1219,8 +1221,8 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         ));
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(tail.flags);
+        assert_eq!(form.extension, 7);
+        assert!(flags);
     }
 }
 
@@ -1271,10 +1273,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
-            EmbeddedSurfaceCurve::Parametric {
-                context,
-                tail: Some(tail),
-            },
+            EmbeddedSurfaceCurve::Parametric(
+                crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst { context, flags },
+            ),
         ) = decoded.construction
         else {
             panic!("parametric surface-curve family")
@@ -1290,9 +1291,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
-        assert_eq!(tail.tail.extension, 7);
-        assert!(!tail.flags.flag);
-        assert_eq!(tail.flags.second_flag, Some(false));
+        assert_eq!(context.form.extension, 7);
+        assert!(!flags.flag);
+        assert_eq!(flags.second_flag, Some(false));
     }
 }
 
