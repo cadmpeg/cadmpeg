@@ -1007,11 +1007,48 @@ mod tests {
         let commands = address.inspect_commands("part.FCStd");
         assert_eq!(
             commands[0],
-            "cadmpeg inspect extract part.FCStd GuiDocument.xml -o part.FCStd.member"
+            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
         );
         assert_eq!(
             commands[1],
-            "cadmpeg inspect hex part.FCStd.member --offset 5 --len 64"
+            "cadmpeg inspect hex --offset 5 --len 64 -- 'part.FCStd.member'"
         );
+    }
+    #[test]
+    fn nested_archive_addresses_replay_both_members() {
+        let mut inner = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        inner
+            .start_file("Data/payload bytes.bin", SimpleFileOptions::default())
+            .expect("nested archive fixture");
+        inner
+            .write_all(b"payload bytes")
+            .expect("nested archive fixture");
+        let inner_bytes = inner.finish().expect("nested archive fixture").into_inner();
+        let mut outer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        outer
+            .start_file("Assets/inner archive.zip", SimpleFileOptions::default())
+            .expect("nested archive fixture");
+        outer
+            .write_all(&inner_bytes)
+            .expect("nested archive fixture");
+        let bytes = outer.finish().expect("nested archive fixture").into_inner();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("nested archive fixture");
+        let archive = ArchiveSnapshot::new(root).expect("nested archive fixture");
+        let inner_view = archive
+            .open(&ctx, "Assets/inner archive.zip")
+            .expect("nested archive fixture");
+        let nested = ArchiveSnapshot::new(inner_view).expect("nested archive fixture");
+        let payload = nested
+            .open(&ctx, "Data/payload bytes.bin")
+            .expect("nested archive fixture");
+        assert_eq!(payload.window(), b"payload bytes");
+        let address = ctx.resolve_location(payload.location_at(7));
+        assert_eq!(address.inspect_commands("project part.FCStd"), [
+            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
+        ]);
     }
 }

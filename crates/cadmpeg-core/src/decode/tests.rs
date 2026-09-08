@@ -335,7 +335,7 @@ fn unresolved_address_does_not_invent_a_root_step() {
     assert!(address.steps.is_empty());
     assert_eq!(
         address.inspect_commands("part.FCStd"),
-        ["cadmpeg inspect hex part.FCStd --offset 7 --len 64"]
+        ["cadmpeg inspect hex --offset 7 --len 64 -- 'part.FCStd'"]
     );
 }
 
@@ -367,8 +367,8 @@ fn nested_member_address_is_inspect_replayable() {
     assert_eq!(
         commands,
         [
-            "cadmpeg inspect extract part.FCStd GuiDocument.xml -o part.FCStd.member".to_string(),
-            "cadmpeg inspect hex part.FCStd.member --offset 120 --len 64".to_string(),
+            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
+            "cadmpeg inspect hex --offset 120 --len 64 -- 'part.FCStd.member'".to_string(),
         ]
     );
 }

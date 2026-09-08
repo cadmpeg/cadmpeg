@@ -121,37 +121,35 @@ impl ResolvedAddress {
         out
     }
 
-    /// Returns `cadmpeg inspect` commands that replay this byte location.
+    /// Returns POSIX shell commands that replay this byte location with `cadmpeg inspect`.
     ///
     /// Nested archive members emit `inspect extract` then `inspect hex` on the
     /// extracted member. Root-only addresses emit `inspect hex` on the file.
     pub fn inspect_commands(&self, file: &str) -> Vec<String> {
-        let leaf = self.steps.last();
-        match leaf {
-            None
-            | Some(AddressStep {
-                kind: AddressStepKind::Root,
-                ..
-            }) => {
-                vec![format!(
-                    "cadmpeg inspect hex {file} --offset {} --len 64",
-                    self.offset
-                )]
-            }
-            Some(AddressStep {
-                kind: AddressStepKind::Member,
-                label: member,
-            }) => {
-                let extracted = format!("{file}.member");
-                vec![
-                    format!("cadmpeg inspect extract {file} {member} -o {extracted}"),
-                    format!(
-                        "cadmpeg inspect hex {extracted} --offset {} --len 64",
-                        self.offset
-                    ),
-                ]
+        let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+        let mut input = file.to_owned();
+        let mut commands = Vec::new();
+        for step in &self.steps {
+            match step.kind {
+                AddressStepKind::Root => continue,
+                AddressStepKind::Member => {
+                    let extracted = format!("{input}.member");
+                    commands.push(format!(
+                        "cadmpeg inspect extract --output={} -- {} {}",
+                        quote(&extracted),
+                        quote(&input),
+                        quote(&step.label),
+                    ));
+                    input = extracted;
+                }
             }
         }
+        commands.push(format!(
+            "cadmpeg inspect hex --offset {} --len 64 -- {}",
+            self.offset,
+            quote(&input),
+        ));
+        commands
     }
 }
 
@@ -189,5 +187,77 @@ pub fn resolve_address(
     ResolvedAddress {
         steps,
         offset: location.offset,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decode::SourceLocation;
+
+    #[test]
+    fn nested_members_emit_every_extraction() {
+        let descriptors = [
+            SpaceDescriptor {
+                label: "root".into(),
+                derivation: SpaceDerivation::Root,
+            },
+            SpaceDescriptor {
+                label: "Assets/inner archive.zip".into(),
+                derivation: SpaceDerivation::Expanded {
+                    parent: SpaceId::ROOT,
+                    source_range: ByteRange { start: 30, end: 90 },
+                },
+            },
+            SpaceDescriptor {
+                label: "Data/payload bytes.bin".into(),
+                derivation: SpaceDerivation::StoredSlice {
+                    parent: SpaceId::from_index(1),
+                    range: ByteRange { start: 20, end: 84 },
+                },
+            },
+        ];
+        let address = resolve_address(
+            &descriptors,
+            SourceLocation {
+                space: SpaceId::from_index(2),
+                offset: 7,
+            },
+        );
+        assert_eq!(address.inspect_commands("project part.FCStd"), [
+            "cadmpeg inspect extract --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
+            "cadmpeg inspect extract --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
+            "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
+        ]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replay_paths_survive_posix_shell_parsing() {
+        let file = "-project's $HOME;*.FCStd";
+        let address = ResolvedAddress {
+            steps: Vec::new(),
+            offset: 7,
+        };
+        let commands = address.inspect_commands(file);
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "cadmpeg() {{ printf '%s\\0' \"$@\"; }}; {}",
+                commands[0]
+            ))
+            .output()
+            .expect("POSIX shell captures replay arguments");
+        assert!(output.status.success());
+        let arguments = output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|value| !value.is_empty())
+            .map(|value| std::str::from_utf8(value).expect("replay argument is UTF-8"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            ["inspect", "hex", "--offset", "7", "--len", "64", "--", file]
+        );
     }
 }
