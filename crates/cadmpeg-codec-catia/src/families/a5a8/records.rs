@@ -511,8 +511,13 @@ pub struct RollingBallSite {
     pub center: [f64; 3],
     /// Stored opening angle.
     pub theta: f64,
-    /// Radius derived from centre to either limit.
-    pub radius: f64,
+}
+
+impl RollingBallSite {
+    /// Radius from the centre to the first limit.
+    pub fn radius(&self) -> f64 {
+        distance3(self.center, self.limit1)
+    }
 }
 
 /// One knot of a degree-5 rolling-ball jet.
@@ -1122,7 +1127,6 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
             limit2,
             center,
             theta: v[9],
-            radius,
         });
     }
     Some(sites)
