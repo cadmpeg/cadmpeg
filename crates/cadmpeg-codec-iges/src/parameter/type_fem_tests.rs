@@ -163,7 +163,7 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end
                     && groups_for_candidate(&record, &directory, *candidate)
-                        .is_some_and(|groups| groups.fully_valid())
+                        .is_some_and(|groups| groups.fully_valid().is_some())
             }),
             "Type {entity_type} Form {form}"
         );

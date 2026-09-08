@@ -69,7 +69,8 @@ fn type430_entity_table_boundary_suppresses_generic_recovery_for_malformed_span(
         .expect("generic recovery candidate");
     assert!(groups_for_candidate(&record, &directory, generic_candidate)
         .expect("generic candidate groups")
-        .fully_valid());
+        .fully_valid()
+        .is_some());
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
     assert_eq!(

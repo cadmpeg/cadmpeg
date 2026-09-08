@@ -20,7 +20,7 @@ fn type124_table_boundary_precedes_valid_generic_alternative() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();
@@ -213,7 +213,7 @@ fn type118_table_boundary_precedes_valid_generic_alternative() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();
@@ -337,7 +337,7 @@ fn type120_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -443,7 +443,7 @@ fn type122_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -555,7 +555,7 @@ fn type182_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -677,7 +677,7 @@ fn type186_table_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -1038,7 +1038,7 @@ fn type_brep_table_boundaries_precede_valid_generic_alternatives() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();
@@ -1257,7 +1257,7 @@ fn analytic_surface_table_boundaries_precede_valid_generic_alternatives() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();
@@ -1501,7 +1501,7 @@ fn type304_table_boundary_precedes_valid_generic_alternative() {
             .into_iter()
             .filter(|candidate| {
                 groups_for_candidate(&record, &form_directory, *candidate)
-                    .is_some_and(|groups| groups.fully_valid())
+                    .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
             .collect::<Vec<_>>();
@@ -1790,7 +1790,7 @@ fn type310_nested_boundary_precedes_valid_generic_alternative() {
         .into_iter()
         .filter(|candidate| {
             groups_for_candidate(&record, &directory, *candidate)
-                .is_some_and(|groups| groups.fully_valid())
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();

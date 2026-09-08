@@ -71,11 +71,13 @@ pub(crate) struct TrailingPointerGroups {
 }
 
 impl TrailingPointerGroups {
-    pub(crate) fn fully_valid(&self) -> bool {
-        self.association_pointers
+    pub(crate) fn fully_valid(self) -> Option<ResolvedGroups> {
+        let valid = self
+            .association_pointers
             .iter()
             .chain(&self.property_pointers)
-            .all(|pointer| pointer.resolved.is_some())
+            .all(|pointer| pointer.resolved.is_some());
+        valid.then_some(ResolvedGroups(self))
     }
 
     pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
@@ -91,10 +93,21 @@ impl TrailingPointerGroups {
     }
 }
 
+/// Fully resolved trailing pointer groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedGroups(TrailingPointerGroups);
+
+impl ResolvedGroups {
+    /// The retained trailing pointer evidence.
+    pub(crate) fn as_groups(&self) -> &TrailingPointerGroups {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TrailingPointerAnalysis {
     Macro,
-    Unambiguous(TrailingPointerGroups),
+    Unambiguous(ResolvedGroups),
     SingleInvalid(TrailingPointerGroups),
     Ambiguous { candidates: usize, valid: usize },
 }
@@ -122,7 +135,8 @@ impl TrailingPointerAnalysis {
 
     fn groups(&self) -> Option<TrailingPointerGroups> {
         match self {
-            Self::Unambiguous(groups) | Self::SingleInvalid(groups) => Some(groups.clone()),
+            Self::Unambiguous(groups) => Some(groups.as_groups().clone()),
+            Self::SingleInvalid(groups) => Some(groups.clone()),
             Self::Macro | Self::Ambiguous { .. } => None,
         }
     }
@@ -531,7 +545,7 @@ fn analyze_trailing_pointer_groups_from_end(
     let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
-        .filter(TrailingPointerGroups::fully_valid);
+        .filter_map(TrailingPointerGroups::fully_valid);
     let valid_groups = valid_groups.collect::<Vec<_>>();
     let valid = valid_groups.len();
     match valid_groups.into_iter().next() {
@@ -3774,7 +3788,7 @@ pub(crate) fn assemble_with_context(
         record.parameter_end = trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .map_or(record.tokens.len(), |groups| groups.token_start);
