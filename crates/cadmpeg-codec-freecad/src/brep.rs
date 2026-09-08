@@ -4093,7 +4093,11 @@ fn parse_surface(
     }
     let kind = cursor.integer("surface type")?;
     Ok(match kind {
-        1..=5 => parse_analytic_surface(kind, cursor)?,
+        1 => parse_analytic_surface(AnalyticSurfaceKind::Plane, cursor)?,
+        2 => parse_analytic_surface(AnalyticSurfaceKind::Cylinder, cursor)?,
+        3 => parse_analytic_surface(AnalyticSurfaceKind::Cone, cursor)?,
+        4 => parse_analytic_surface(AnalyticSurfaceKind::Sphere, cursor)?,
+        5 => parse_analytic_surface(AnalyticSurfaceKind::Torus, cursor)?,
         6 => {
             let direction = cursor.vector("extrusion direction")?;
             if direction.norm() == 0.0 {
@@ -4151,8 +4155,16 @@ fn parse_surface(
     })
 }
 
+enum AnalyticSurfaceKind {
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
 fn parse_analytic_surface(
-    kind: i64,
+    kind: AnalyticSurfaceKind,
     cursor: &mut TokenCursor<'_>,
 ) -> Result<TextSurface, CodecError> {
     let origin = cursor.point("surface origin")?;
@@ -4160,20 +4172,20 @@ fn parse_analytic_surface(
     let ref_direction = cursor.vector("surface reference direction")?;
     let y_direction = cursor.vector("surface y direction")?;
     Ok(match kind {
-        1 => TextSurface::Plane {
+        AnalyticSurfaceKind::Plane => TextSurface::Plane {
             origin,
             axis,
             u_axis: ref_direction,
             v_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
-        2 => TextSurface::Cylinder {
+        AnalyticSurfaceKind::Cylinder => TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
             radius: cursor.real("cylinder radius")?,
             u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
-        3 => TextSurface::Cone {
+        AnalyticSurfaceKind::Cone => TextSurface::Cone {
             origin,
             axis,
             ref_direction,
@@ -4181,14 +4193,14 @@ fn parse_analytic_surface(
             half_angle: cursor.real("cone half angle")?,
             u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
-        4 => TextSurface::Sphere {
+        AnalyticSurfaceKind::Sphere => TextSurface::Sphere {
             center: origin,
             axis,
             ref_direction,
             radius: cursor.real("sphere radius")?,
             u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
-        5 => TextSurface::Torus {
+        AnalyticSurfaceKind::Torus => TextSurface::Torus {
             center: origin,
             axis,
             ref_direction,
@@ -4196,7 +4208,6 @@ fn parse_analytic_surface(
             minor_radius: cursor.real("torus minor radius")?,
             u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
-        _ => unreachable!("analytic surface kind was range checked"),
     })
 }
 
@@ -5275,7 +5286,8 @@ pub(crate) mod tests {
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
         ];
         let mut cursor = TokenCursor::new(&tokens);
-        let cone = parse_analytic_surface(3, &mut cursor).expect("indirect cone");
+        let cone =
+            parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
         assert!(matches!(
             cone,
             TextSurface::Cone {
@@ -5290,7 +5302,8 @@ pub(crate) mod tests {
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
         ];
         let mut cursor = TokenCursor::new(&tokens);
-        let sphere = parse_analytic_surface(4, &mut cursor).expect("indirect sphere");
+        let sphere = parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor)
+            .expect("indirect sphere");
         assert!(matches!(
             sphere,
             TextSurface::Sphere {
@@ -5304,7 +5317,8 @@ pub(crate) mod tests {
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
         ];
         let mut cursor = TokenCursor::new(&tokens);
-        let torus = parse_analytic_surface(5, &mut cursor).expect("indirect torus");
+        let torus = parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor)
+            .expect("indirect torus");
         assert!(matches!(
             torus,
             TextSurface::Torus {
