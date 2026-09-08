@@ -463,13 +463,9 @@ pub struct Persistence {
     /// Outer persistence scope followed by each named ASCII section scope.
     pub scopes: Vec<Scope>,
     /// Complete finite type-2 scalar and array values in source order.
-    pub real_values: Vec<RealRecord>,
-    /// Type-2 value rows not represented by a complete scalar or owning array.
-    pub unresolved_real_value_count: usize,
+    pub real_values: TypedValues<RealRecord>,
     /// Complete type-1 signed-integer scalars and arrays in source order.
-    pub integer_values: Vec<IntegerRecord>,
-    /// Type-1 value rows not represented by a complete scalar or owning array.
-    pub unresolved_integer_value_count: usize,
+    pub integer_values: TypedValues<IntegerRecord>,
     /// Type-0 object nodes in source order.
     pub objects: Vec<ObjectRecord>,
     /// Type-0 arrays whose direct element count differs from their extents.
@@ -695,6 +691,7 @@ impl Persistence {
     fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
         let mut matches = self
             .integer_values
+            .rows
             .iter()
             .filter(|record| record.parent == Some(parent) && record.name == name);
         let record = matches.next()?;
@@ -708,6 +705,7 @@ impl Persistence {
     fn unique_real_scalar(&self, parent: usize, name: &str) -> Option<f64> {
         let mut matches = self
             .real_values
+            .rows
             .iter()
             .filter(|record| record.parent == Some(parent) && record.name == name);
         let record = matches.next()?;
@@ -1401,10 +1399,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         NullToken::RepresentsBytes,
         &parents,
     );
-    let TypedValues {
-        rows: real_values,
-        unresolved_count: unresolved_real_value_count,
-    } = numeric_records(
+    let real_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Real,
@@ -1412,10 +1407,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         compact_real,
         &parents,
     );
-    let TypedValues {
-        rows: integer_values,
-        unresolved_count: unresolved_integer_value_count,
-    } = numeric_records(
+    let integer_values = numeric_records(
         data,
         &scopes,
         LegacyTypeCode::Integer,
@@ -1466,9 +1458,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     Persistence {
         scopes,
         real_values,
-        unresolved_real_value_count,
         integer_values,
-        unresolved_integer_value_count,
         objects,
         incomplete_object_array_count,
         unresolved_object_value_count,
