@@ -10,7 +10,43 @@ pub(crate) struct DimensionedScalars {
 }
 
 impl DimensionedScalars {
+    /// Allocates the declared shape with undecoded slots.
+    pub(crate) fn empty(dimensions: u32, count: u32) -> Option<Self> {
+        let len = usize::try_from(dimensions)
+            .ok()?
+            .checked_mul(usize::try_from(count).ok()?)?;
+        Some(Self {
+            dimensions,
+            count,
+            values: std::iter::repeat_n(None, len).collect(),
+            tokens: None,
+        })
+    }
+
+    /// Fills the declared slots in source order.
+    pub(crate) fn fill_values(&mut self, values: impl IntoIterator<Item = Option<f64>>) {
+        for (target, value) in self.values.iter_mut().zip(values) {
+            *target = value;
+        }
+    }
+
+    /// Fills the declared slots with values and source tokens.
+    pub(crate) fn fill_tokens(&mut self, slots: impl IntoIterator<Item = (Option<f64>, Vec<u8>)>) {
+        let mut slots = slots.into_iter();
+        self.tokens = Some(
+            self.values
+                .iter_mut()
+                .map(|value| {
+                    let (decoded, token) = slots.next().unwrap_or_default();
+                    *value = decoded;
+                    token
+                })
+                .collect(),
+        );
+    }
+
     /// Admits arrays whose declared extents and token lengths agree.
+    #[cfg(test)]
     pub(crate) fn try_new(
         dimensions: u32,
         count: u32,
@@ -59,7 +95,28 @@ pub(crate) struct CountedScalars {
 }
 
 impl CountedScalars {
+    /// Allocates the declared shape with undecoded slots.
+    pub(crate) fn empty(count: u32) -> Option<Self> {
+        let len = usize::try_from(count).ok()?;
+        Some(Self {
+            count,
+            values: std::iter::repeat_n(None, len).collect(),
+            tokens: std::iter::repeat_with(Vec::new).take(len).collect(),
+        })
+    }
+
+    /// Fills the declared slots with values and source tokens.
+    pub(crate) fn fill_tokens(&mut self, slots: impl IntoIterator<Item = (Option<f64>, Vec<u8>)>) {
+        for ((value, token), (decoded, bytes)) in
+            self.values.iter_mut().zip(&mut self.tokens).zip(slots)
+        {
+            *value = decoded;
+            *token = bytes;
+        }
+    }
+
     /// Admits arrays whose declared extents and token lengths agree.
+    #[cfg(test)]
     pub(crate) fn try_new(
         count: u32,
         values: Vec<Option<f64>>,
