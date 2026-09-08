@@ -698,22 +698,36 @@ impl<'a> Builder<'a> {
             let Some(color) = appearance.base_color else {
                 continue;
             };
+            enum StyleKind {
+                Surface,
+                Curve,
+                Point,
+            }
             let (target, style_kind) = match &binding.target {
-                AppearanceTarget::Face(id) => {
-                    (self.face_step_refs.get(id.as_str()).copied(), "surface")
+                AppearanceTarget::Face(id) => (
+                    self.face_step_refs.get(id.as_str()).copied(),
+                    StyleKind::Surface,
+                ),
+                AppearanceTarget::Surface(id) => (
+                    self.surface_refs.get(id.as_str()).copied(),
+                    StyleKind::Surface,
+                ),
+                AppearanceTarget::Curve(id) => {
+                    (self.curve_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Surface(id) => {
-                    (self.surface_refs.get(id.as_str()).copied(), "surface")
+                AppearanceTarget::Edge(id) => {
+                    (self.edge_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
+                AppearanceTarget::Point(id) => {
+                    (self.point_refs.get(id.as_str()).copied(), StyleKind::Point)
+                }
                 AppearanceTarget::Vertex(id) => {
-                    (self.vertex_refs.get(id.as_str()).copied(), "point")
+                    (self.vertex_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
-                AppearanceTarget::Tessellation(id) => {
-                    (self.tessellation_step_refs.get(id).copied(), "surface")
-                }
+                AppearanceTarget::Tessellation(id) => (
+                    self.tessellation_step_refs.get(id).copied(),
+                    StyleKind::Surface,
+                ),
                 AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -732,10 +746,9 @@ impl<'a> Builder<'a> {
             };
             let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                "surface" => self.surface_style(color, name, &mut style_refs),
-                "curve" => self.curve_style(color, name, &mut style_refs),
-                "point" => self.point_style(color, name, &mut style_refs),
-                _ => unreachable!(),
+                StyleKind::Surface => self.surface_style(color, name, &mut style_refs),
+                StyleKind::Curve => self.curve_style(color, name, &mut style_refs),
+                StyleKind::Point => self.point_style(color, name, &mut style_refs),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
