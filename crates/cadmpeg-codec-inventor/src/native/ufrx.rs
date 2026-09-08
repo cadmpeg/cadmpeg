@@ -430,7 +430,28 @@ impl UfrxRecordWire {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ExternalReferenceRecordWire",
+    into = "ExternalReferenceRecordWire"
+)]
 pub(crate) struct ExternalReferenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    identity: ExternalReferenceIdentity,
+    pub(crate) library_id: i32,
+    pub(crate) library_name: String,
+    pub(crate) display_name: String,
+    pub(crate) state_groups: Vec<[u16; 3]>,
+    pub(crate) state: [u16; 2],
+    pub(crate) database_id: String,
+    pub(crate) reference_id: u32,
+    pub(crate) occurrence_count: u32,
+    pub(crate) version: u32,
+    pub(crate) flags: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) path: String,
@@ -445,6 +466,93 @@ pub(crate) struct ExternalReferenceRecord {
     pub(crate) occurrence_count: u32,
     pub(crate) version: u32,
     pub(crate) flags: u32,
+}
+
+impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
+    type Error = String;
+    fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            identity: match NonEmptyString::new(wire.path) {
+                Some(path) => ExternalReferenceIdentity::Path {
+                    path,
+                    document_id: wire.document_id,
+                },
+                None => {
+                    if wire.document_id.chars().all(|character| character == '0') {
+                        return Err("path or a nonzero document_id is required".into());
+                    }
+                    ExternalReferenceIdentity::DocumentId(
+                        NonEmptyString::new(wire.document_id)
+                            .ok_or("document_id must not be empty")?,
+                    )
+                }
+            },
+            library_id: wire.library_id,
+            library_name: wire.library_name,
+            display_name: wire.display_name,
+            state_groups: wire.state_groups,
+            state: wire.state,
+            database_id: wire.database_id,
+            reference_id: wire.reference_id,
+            occurrence_count: wire.occurrence_count,
+            version: wire.version,
+            flags: wire.flags,
+        })
+    }
+}
+
+impl From<ExternalReferenceRecord> for ExternalReferenceRecordWire {
+    fn from(value: ExternalReferenceRecord) -> Self {
+        let (path, document_id) = match value.identity {
+            ExternalReferenceIdentity::Path { path, document_id } => {
+                (path.as_str().to_owned(), document_id)
+            }
+            ExternalReferenceIdentity::DocumentId(document_id) => {
+                (String::new(), document_id.as_str().to_owned())
+            }
+        };
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            path,
+            library_id: value.library_id,
+            library_name: value.library_name,
+            display_name: value.display_name,
+            state_groups: value.state_groups,
+            state: value.state,
+            document_id,
+            database_id: value.database_id,
+            reference_id: value.reference_id,
+            occurrence_count: value.occurrence_count,
+            version: value.version,
+            flags: value.flags,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExternalReferenceIdentity {
+    Path {
+        path: NonEmptyString,
+        document_id: String,
+    },
+    DocumentId(NonEmptyString),
+}
+
+impl ExternalReferenceRecord {
+    pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocumentReference {
+        use cadmpeg_ir::products::ExternalDocumentReference;
+        match &self.identity {
+            ExternalReferenceIdentity::Path { path, .. } => {
+                ExternalDocumentReference::Path(path.clone())
+            }
+            ExternalReferenceIdentity::DocumentId(document_id) => {
+                ExternalDocumentReference::DocumentId(document_id.clone())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -675,6 +783,34 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_reference_requires_path_or_nonzero_document_id() {
+        let valid = serde_json::json!({
+            "id": "reference", "ordinal": 0, "path": "part.ipt", "library_id": 0,
+            "library_name": "", "display_name": "", "state_groups": [], "state": [0,0],
+            "document_id": "0".repeat(32), "database_id": "", "reference_id": 1,
+            "occurrence_count": 0, "version": 0, "flags": 0
+        });
+        for (path, document_id, accepted) in [
+            ("part.ipt", "0000", true),
+            ("part.ipt", "", true),
+            ("", "0001", true),
+            ("part.ipt", "0001", true),
+            ("", "0000", false),
+            ("", "", false),
+        ] {
+            let mut wire = valid.clone();
+            wire["path"] = serde_json::json!(path);
+            wire["document_id"] = serde_json::json!(document_id);
+            let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
+            if accepted {
+                assert_eq!(serde_json::to_value(record.unwrap()).unwrap(), wire);
+            } else {
+                assert!(record.unwrap_err().to_string().contains("document_id"));
+            }
+        }
+    }
 
     #[test]
     fn reference_framing_admission_rejects_invalid_wire_values() {

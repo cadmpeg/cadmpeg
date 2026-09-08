@@ -6,9 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{
-    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
-};
+use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::transform::Transform;
 
 use crate::compact_matrix::CompactMatrix;
@@ -173,19 +171,8 @@ where
 }
 
 fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
-    let path = (!reference.path.is_empty()).then(|| reference.path.clone());
-    let document_id = reference
-        .document_id
-        .chars()
-        .any(|character| character != '0');
-    if path.is_none() && !document_id {
-        return PrototypeReference::Unresolved;
-    }
     PrototypeReference::External {
-        document: match path {
-            Some(path) => ExternalDocumentReference::path(path),
-            None => ExternalDocumentReference::document_id(reference.document_id.clone()),
-        },
+        document: reference.document(),
         object: None,
     }
 }
@@ -591,8 +578,12 @@ mod tests {
 
     #[test]
     fn path_identity_takes_precedence_on_external_prototypes() {
-        let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
+        let reference = external_reference_with_document_id(
+            4,
+            "components/part.ipt",
+            [0, 0],
+            "00112233445566778899aabbccddeeff",
+        );
         let projection = project_occurrences(
             &[ufrx_occurrence(4, 7, 0)],
             &[reference],
@@ -613,9 +604,13 @@ mod tests {
     #[test]
     fn projects_suppressed_occurrence_without_graphics_placement() {
         let ufrx = ufrx_occurrence(4, 7, 0);
-        let mut reference = external_reference(4, "", [SUPPRESSED_REFERENCE_STATE, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
-        let expected_document_id = reference.document_id.clone();
+        let expected_document_id = "00112233445566778899aabbccddeeff".to_owned();
+        let reference = external_reference_with_document_id(
+            4,
+            "",
+            [SUPPRESSED_REFERENCE_STATE, 0],
+            &expected_document_id,
+        );
         let occurrence = assembly_occurrence(7);
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
@@ -674,7 +669,16 @@ mod tests {
         path: &str,
         state: [u16; 2],
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord {
+        external_reference_with_document_id(reference_id, path, state, &"0".repeat(32))
+    }
+
+    fn external_reference_with_document_id(
+        reference_id: u32,
+        path: &str,
+        state: [u16; 2],
+        document_id: &str,
+    ) -> ExternalReferenceRecord {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),
@@ -683,13 +687,14 @@ mod tests {
             display_name: String::new(),
             state_groups: Vec::new(),
             state,
-            document_id: "0".repeat(32),
+            document_id: document_id.into(),
             database_id: "0".repeat(32),
             reference_id,
             occurrence_count: 1,
             version: 0,
             flags: 0,
-        }
+        })
+        .expect("valid reference fixture")
     }
 
     fn assembly_occurrence(occurrence_id: u32) -> AssemblyOccurrenceRecord {

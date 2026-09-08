@@ -28,9 +28,9 @@ use crate::native::protein::{
 };
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
-    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
-    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord, UfrxRepresentationRecord,
-    UfrxRepresentationRecordWire,
+    ExternalReferenceRecordWire, UfrxModelStateParameterRecord, UfrxModelStateRecord,
+    UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord,
+    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
@@ -368,23 +368,26 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| ExternalReferenceRecord {
-                    id: format!("inventor:ufrx:external-reference#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    path: reference.path.clone(),
-                    library_id: reference.library_id,
-                    library_name: reference.library_name.clone(),
-                    display_name: reference.display_name.clone(),
-                    state_groups: reference.state_groups.clone(),
-                    state: reference.state,
-                    document_id: hex(&reference.document_id),
-                    database_id: hex(&reference.database_id),
-                    reference_id: reference.reference_id,
-                    occurrence_count: reference.occurrence_count,
-                    version: reference.version,
-                    flags: reference.flags,
+                .map(|(ordinal, reference)| {
+                    ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
+                        id: format!("inventor:ufrx:external-reference#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        path: reference.path.clone(),
+                        library_id: reference.library_id,
+                        library_name: reference.library_name.clone(),
+                        display_name: reference.display_name.clone(),
+                        state_groups: reference.state_groups.clone(),
+                        state: reference.state,
+                        document_id: hex(&reference.document_id),
+                        database_id: hex(&reference.database_id),
+                        reference_id: reference.reference_id,
+                        occurrence_count: reference.occurrence_count,
+                        version: reference.version,
+                        flags: reference.flags,
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(CodecError::malformed)?;
             let embedded = document
                 .embedded_references
                 .iter()
