@@ -44,6 +44,7 @@ pub(super) enum TerminationVote {
     },
 }
 
+/// A lane reference with its fallback or a resolved consensus reference.
 #[derive(Clone)]
 pub(super) enum FaceReference {
     Lane {
