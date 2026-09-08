@@ -46,7 +46,7 @@ pub fn pmi(data: &[u8]) {
         if record.item_count != 1 {
             continue;
         }
-        let Ok(start) = usize::try_from(record.value_offset) else {
+        let Ok(start) = crate::pmi::patch_slots::field_offset(data, record.offset, "value") else {
             continue;
         };
         let Some(end) = start.checked_add(8) else {
@@ -63,11 +63,30 @@ pub fn pmi(data: &[u8]) {
         let again = crate::pmi::parse_payload(&patched, &mut again_losses);
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
             assert_eq!(parsed.value.to_bits(), edited.to_bits());
-            assert_eq!(parsed.value_offset, record.value_offset);
-            assert_eq!(parsed.precision_offset, record.precision_offset);
-            assert_eq!(parsed.basic_offset, record.basic_offset);
-            assert_eq!(parsed.inspection_offset, record.inspection_offset);
-            assert_eq!(parsed.reference_only_offset, record.reference_only_offset);
+            assert_eq!(
+                crate::pmi::patch_slots::field_offset(&patched, parsed.offset, "value").unwrap(),
+                crate::pmi::patch_slots::field_offset(data, record.offset, "value").unwrap()
+            );
+            assert_eq!(
+                crate::pmi::patch_slots::field_offset(&patched, parsed.offset, "valPrecision")
+                    .unwrap(),
+                crate::pmi::patch_slots::field_offset(data, record.offset, "valPrecision").unwrap()
+            );
+            assert_eq!(
+                crate::pmi::patch_slots::field_offset(&patched, parsed.offset, "isBasic").unwrap(),
+                crate::pmi::patch_slots::field_offset(data, record.offset, "isBasic").unwrap()
+            );
+            assert_eq!(
+                crate::pmi::patch_slots::field_offset(&patched, parsed.offset, "isInspection")
+                    .unwrap(),
+                crate::pmi::patch_slots::field_offset(data, record.offset, "isInspection").unwrap()
+            );
+            assert_eq!(
+                crate::pmi::patch_slots::field_offset(&patched, parsed.offset, "isReferenceOnly")
+                    .unwrap(),
+                crate::pmi::patch_slots::field_offset(data, record.offset, "isReferenceOnly")
+                    .unwrap()
+            );
             assert_eq!(parsed.display_text_offset(), record.display_text_offset());
         }
     }
