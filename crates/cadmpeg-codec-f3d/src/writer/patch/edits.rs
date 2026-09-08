@@ -1500,12 +1500,11 @@ pub(crate) fn validate_design_type_edits(
         let (before_entities, after_entities): (
             &[crate::records::Located<u64>],
             &[crate::records::Located<u64>],
-        ) = match (&before.entities, &after.entities) {
-            (
-                crate::records::ReferenceRun::Located(before),
-                crate::records::ReferenceRun::Located(after),
-            ) => (before, after),
-            (before, after) if before.is_empty() && after.is_empty() => (&[], &[]),
+        ) = match (
+            before.entities.located_rows(),
+            after.entities.located_rows(),
+        ) {
+            (Some(before), Some(after)) => (before, after),
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D design type {id} must retain its entity-id cardinality"
@@ -2636,10 +2635,8 @@ pub(crate) fn validate_sketch_relation_edits(
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
-        match &relation.auxiliary_references {
-            crate::records::ReferenceRun::Located(after)
-                if before.auxiliary_references.len() == after.len() =>
-            {
+        match relation.auxiliary_references.located_rows() {
+            Some(after) if before.auxiliary_references.len() == after.len() => {
                 values.extend(
                     before
                         .auxiliary_references
@@ -2652,8 +2649,6 @@ pub(crate) fn validate_sketch_relation_edits(
                         }),
                 );
             }
-            crate::records::ReferenceRun::Unlocated(after)
-                if after.is_empty() && before.auxiliary_references.is_empty() => {}
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D sketch relation {} must retain reference cardinality and offsets",

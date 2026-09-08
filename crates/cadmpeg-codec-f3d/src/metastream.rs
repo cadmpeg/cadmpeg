@@ -765,7 +765,7 @@ mod tests {
                     base.value
                 );
             }
-            let crate::records::ReferenceRun::Located(entities) = &design_type.entities else {
+            let Some(entities) = design_type.entities.located_rows() else {
                 panic!("parsed entity locations");
             };
             for crate::records::Located {

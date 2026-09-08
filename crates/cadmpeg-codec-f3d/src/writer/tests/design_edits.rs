@@ -74,7 +74,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .find(|design_type| design_type.entities.values().copied().eq([33, 44]))
         .expect("generated relation design type");
     assert!(object.byte_offset < object.version_offset);
-    let crate::records::ReferenceRun::Located(entities) = &object.entities else {
+    let Some(entities) = object.entities.located_rows() else {
         panic!("parsed entity locations");
     };
     assert_eq!(entities.len(), 2);

@@ -8381,10 +8381,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .copied()
                 == Some(relation.owner_entity_id.as_str())
             && relation.raw_bytes.len() >= 24
-            && match &relation.auxiliary_references {
-                records::ReferenceRun::Unlocated(values) => values.is_empty(),
-                records::ReferenceRun::Located(_) => true,
-            }
+            && relation.auxiliary_references.located_rows().is_some()
             && offsets_fit;
         if !valid {
             findings.push(Finding {

@@ -207,15 +207,16 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     );
 
     let mut duplicate_type_owner = native.clone();
-    let crate::records::ReferenceRun::Located(entities) =
-        &mut duplicate_type_owner.design_types[1].entities
-    else {
-        panic!("located fixture entities");
-    };
+    let mut entities = duplicate_type_owner.design_types[1]
+        .entities
+        .located_rows()
+        .unwrap()
+        .to_vec();
     entities.push(crate::records::Located {
         value: 35,
         offset: 108,
     });
+    duplicate_type_owner.design_types[1].entities = crate::records::ReferenceRun::located(entities);
     duplicate_type_owner
         .store(ir.native.namespace_mut("f3d"))
         .unwrap();

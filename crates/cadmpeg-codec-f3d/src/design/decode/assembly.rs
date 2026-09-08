@@ -39,7 +39,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
+    let Some(references) = scope.reference_members.located_rows() else {
         return None;
     };
     if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
@@ -161,10 +161,10 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
+    let Some(references) = scope.reference_members.located_rows() else {
         return None;
     };
-    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references.as_slice() else {
+    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
         return None;
     };
     if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt {
@@ -248,11 +248,11 @@ pub(crate) fn exact_legacy_as_built_421_operands(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
+    let Some(references) = scope.reference_members.located_rows() else {
         return None;
     };
     let [point_reference, first_selection_reference, hole_reference, second_selection_reference, _, _, _, _, frame_reference, _, _] =
-        references.as_slice()
+        references
     else {
         return None;
     };

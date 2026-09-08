@@ -1606,14 +1606,14 @@ fn empty_reference_runs_have_one_representation() {
 
     let empty = ReferenceRun::<u32>::unlocated(Vec::new());
     assert_eq!(empty, ReferenceRun::located(Vec::new()));
-    assert!(matches!(empty, ReferenceRun::Located(ref rows) if rows.is_empty()));
+    assert_eq!(empty.located_rows(), Some([].as_slice()));
     assert_eq!(
         ReferenceRun::<u32>::from_columns(Vec::new(), Vec::new(), "field").expect("empty columns"),
         ReferenceRun::located(Vec::new())
     );
 
     let unlocated = ReferenceRun::unlocated(vec![7u32]);
-    assert!(matches!(unlocated, ReferenceRun::Unlocated(_)));
+    assert!(unlocated.located_rows().is_none());
     assert_ne!(
         unlocated,
         ReferenceRun::located(vec![Located {

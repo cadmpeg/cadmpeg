@@ -198,37 +198,43 @@ impl<T, O> Located<T, O> {
     }
 }
 
-/// An ordered run whose encoding locations are either complete or absent.
-///
-/// Build one with [`ReferenceRun::unlocated`] or [`ReferenceRun::located`]:
-/// they canonicalize the empty run to `Located(vec![])` so that one run has
-/// one representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReferenceRun<T, O = u64> {
+enum ReferenceRunData<T, O> {
     Unlocated(Vec<T>),
     Located(Vec<Located<T, O>>),
 }
+
+/// An ordered run whose encoding locations are either complete or absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceRun<T, O = u64>(ReferenceRunData<T, O>);
 
 impl<T, O> ReferenceRun<T, O> {
     /// A run whose values carry no encoding locations. The empty run has no
     /// locations in either wire form, so it is always `Located(vec![])`.
     pub fn unlocated(values: Vec<T>) -> Self {
         if values.is_empty() {
-            Self::Located(Vec::new())
+            Self(ReferenceRunData::Located(Vec::new()))
         } else {
-            Self::Unlocated(values)
+            Self(ReferenceRunData::Unlocated(values))
         }
     }
 
     /// A run whose values each carry an encoding location.
     pub fn located(rows: Vec<Located<T, O>>) -> Self {
-        Self::Located(rows)
+        Self(ReferenceRunData::Located(rows))
+    }
+
+    pub(crate) fn located_rows(&self) -> Option<&[Located<T, O>]> {
+        match &self.0 {
+            ReferenceRunData::Located(rows) => Some(rows),
+            ReferenceRunData::Unlocated(_) => None,
+        }
     }
 
     pub fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
-        (0..self.len()).map(|index| match self {
-            Self::Unlocated(values) => &values[index],
-            Self::Located(values) => &values[index].value,
+        (0..self.len()).map(|index| match &self.0 {
+            ReferenceRunData::Unlocated(values) => &values[index],
+            ReferenceRunData::Located(values) => &values[index].value,
         })
     }
 
@@ -247,12 +253,12 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
-        match self {
-            Self::Unlocated(values) => {
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => {
                 let values: &[T; N] = values.as_slice().try_into().ok()?;
                 Some(values.each_ref())
             }
-            Self::Located(values) => {
+            ReferenceRunData::Located(values) => {
                 let values: &[Located<T, O>; N] = values.as_slice().try_into().ok()?;
                 Some(values.each_ref().map(|row| &row.value))
             }
@@ -260,18 +266,18 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn offsets(&self) -> impl ExactSizeIterator<Item = &O> + DoubleEndedIterator + Clone {
-        let rows: &[Located<T, O>] = match self {
-            Self::Unlocated(_) => &[],
-            Self::Located(rows) => rows,
+        let rows: &[Located<T, O>] = match &self.0 {
+            ReferenceRunData::Unlocated(_) => &[],
+            ReferenceRunData::Located(rows) => rows,
         };
         rows.iter().map(|row| &row.offset)
     }
 
     #[cfg(test)]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match self {
-            Self::Unlocated(values) => (values, &mut []),
-            Self::Located(values) => (&mut [], values),
+        let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match &mut self.0 {
+            ReferenceRunData::Unlocated(values) => (values, &mut []),
+            ReferenceRunData::Located(values) => (&mut [], values),
         };
         unlocated
             .iter_mut()
@@ -279,16 +285,16 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn len(&self) -> usize {
-        match self {
-            Self::Unlocated(values) => values.len(),
-            Self::Located(values) => values.len(),
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => values.len(),
+            ReferenceRunData::Located(values) => values.len(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Unlocated(values) => values.is_empty(),
-            Self::Located(values) => values.is_empty(),
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => values.is_empty(),
+            ReferenceRunData::Located(values) => values.is_empty(),
         }
     }
 
@@ -305,7 +311,7 @@ impl<T, O> ReferenceRun<T, O> {
                 "{field} offsets must be absent or match every value"
             ));
         }
-        Ok(Self::Located(
+        Ok(Self::located(
             values
                 .into_iter()
                 .zip(offsets)
@@ -315,9 +321,9 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     fn into_wire(self) -> (Vec<T>, Vec<O>) {
-        match self {
-            Self::Unlocated(values) => (values, Vec::new()),
-            Self::Located(values) => values
+        match self.0 {
+            ReferenceRunData::Unlocated(values) => (values, Vec::new()),
+            ReferenceRunData::Located(values) => values
                 .into_iter()
                 .map(|row| (row.value, row.offset))
                 .unzip(),
