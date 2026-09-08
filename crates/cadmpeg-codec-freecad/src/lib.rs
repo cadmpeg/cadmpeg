@@ -397,16 +397,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let invalid_array_count = node.element_count().is_some_and(|count| {
-            count < 0
-                || [
-                    node.element_transforms().len(),
-                    node.element_scales().len(),
-                    node.element_objects().len(),
-                ]
-                .into_iter()
-                .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
-        });
         let non_finite_array = node
             .element_transforms()
             .iter()
@@ -414,7 +404,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .flatten()
             .chain(node.element_scales().iter().flatten())
             .any(|value| !value.is_finite());
-        if invalid_array_count || non_finite_array {
+        if non_finite_array {
             findings.push(finding(
                 Check::Counts,
                 format!("{} has invalid link-array count or values", node.id),

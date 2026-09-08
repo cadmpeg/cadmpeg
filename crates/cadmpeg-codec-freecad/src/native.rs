@@ -47,6 +47,35 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn link_array_wire_rejects_negative_and_mismatched_counts() {
+        let base = serde_json::json!({
+            "id": "link", "object": "object", "kind": "occurrence",
+            "members": [], "element_transforms": [], "element_scales": [],
+            "linked_subelements": [], "element_visibility": [], "element_objects": []
+        });
+        let mut negative = base.clone();
+        negative["element_count"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
+        for field in ["element_transforms", "element_scales", "element_objects"] {
+            let mut wire = base.clone();
+            wire["element_count"] = serde_json::json!(2);
+            wire[field] = match field {
+                "element_transforms" => serde_json::json!([[
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ]]),
+                "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
+                _ => serde_json::json!(["object"]),
+            };
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["element_count"] = serde_json::json!(1);
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
+        }
+    }
+
+    #[test]
     fn copy_on_change_payload_requires_policy_on_wire() {
         for (field, value) in [
             ("copy_on_change_source", serde_json::json!("source")),
@@ -549,14 +578,10 @@ pub struct LinkOccurrence {
     pub local_transform: Option<[[f64; 4]; 4]>,
     /// Property supplying the placement.
     pub placement_property: Option<String>,
-    /// Number of array elements requested by the link.
-    pub element_count: Option<i64>,
+    /// Admitted link-array values.
+    pub array: LinkArray,
     /// Whether the prototype transform participates in occurrence placement.
     pub link_transform: Option<bool>,
-    /// Ordered per-element placements for a link array.
-    pub element_transforms: Vec<[[f64; 4]; 4]>,
-    /// Ordered per-element scale vectors for a link array.
-    pub element_scales: Vec<[f64; 3]>,
     /// Subelement paths selected on the linked prototype.
     pub linked_subelements: Vec<String>,
     /// Whether the link claims its prototype as a tree child.
@@ -565,8 +590,43 @@ pub struct LinkOccurrence {
     pub copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
     pub scale: Option<[f64; 3]>,
-    /// Explicit per-element application objects in array order.
-    pub element_objects: Vec<String>,
+}
+
+/// Independently optional array carriers with a common element count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkArray {
+    count: Option<u64>,
+    transforms: Vec<[[f64; 4]; 4]>,
+    scales: Vec<[f64; 3]>,
+    objects: Vec<String>,
+}
+
+impl LinkArray {
+    pub(crate) fn try_new(
+        count: Option<u64>,
+        transforms: Vec<[[f64; 4]; 4]>,
+        scales: Vec<[f64; 3]>,
+        objects: Vec<String>,
+    ) -> Result<Self, String> {
+        let lengths = [
+            transforms.len() as u64,
+            scales.len() as u64,
+            objects.len() as u64,
+        ];
+        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(1));
+        if lengths
+            .into_iter()
+            .any(|length| length != 0 && length != effective)
+        {
+            return Err("element_count disagrees with link-array carrier lengths".to_owned());
+        }
+        Ok(Self {
+            count,
+            transforms,
+            scales,
+            objects,
+        })
+    }
 }
 
 /// Copy-on-change policy and its dependent payload.
@@ -669,8 +729,8 @@ impl ProductNodeRecord {
     }
 
     /// Number of array elements requested by the link.
-    pub fn element_count(&self) -> Option<i64> {
-        self.occurrence().and_then(|node| node.element_count)
+    pub fn element_count(&self) -> Option<u64> {
+        self.occurrence().and_then(|node| node.array.count)
     }
 
     /// Whether the prototype transform participates in occurrence placement.
@@ -681,13 +741,13 @@ impl ProductNodeRecord {
     /// Ordered per-element placements for a link array.
     pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
         self.occurrence()
-            .map_or(&[], |node| node.element_transforms.as_slice())
+            .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
     pub fn element_scales(&self) -> &[[f64; 3]] {
         self.occurrence()
-            .map_or(&[], |node| node.element_scales.as_slice())
+            .map_or(&[], |node| node.array.scales.as_slice())
     }
 
     /// Subelement paths selected on the linked prototype.
@@ -740,7 +800,7 @@ impl ProductNodeRecord {
             ProductNode::LinkGroup {
                 element_objects, ..
             } => element_objects,
-            ProductNode::Occurrence(node) => &node.element_objects,
+            ProductNode::Occurrence(node) => &node.array.objects,
             ProductNode::Group(_) | ProductNode::Part(_) => &[],
         }
     }
@@ -757,7 +817,7 @@ struct ProductNodeRecordWire {
     external_document_attribute: Option<String>,
     local_transform: Option<[[f64; 4]; 4]>,
     placement_property: Option<String>,
-    element_count: Option<i64>,
+    element_count: Option<u64>,
     link_transform: Option<bool>,
     element_transforms: Vec<[[f64; 4]; 4]>,
     element_scales: Vec<[f64; 3]>,
@@ -864,10 +924,13 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                 )?,
                 local_transform: wire.local_transform,
                 placement_property: wire.placement_property,
-                element_count: wire.element_count,
+                array: LinkArray::try_new(
+                    wire.element_count,
+                    wire.element_transforms,
+                    wire.element_scales,
+                    wire.element_objects,
+                )?,
                 link_transform: wire.link_transform,
-                element_transforms: wire.element_transforms,
-                element_scales: wire.element_scales,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,
                 copy_on_change: CopyOnChange::from_wire(
@@ -877,7 +940,6 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     wire.copy_on_change_touched,
                 )?,
                 scale: wire.scale,
-                element_objects: wire.element_objects,
             }),
             _ => return Err("unknown product node kind".to_owned()),
         };
