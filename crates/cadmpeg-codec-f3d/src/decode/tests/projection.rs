@@ -1630,8 +1630,9 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     successor.history_state_id = Some(9);
     successor.previous_history_state_id = Some(8);
     let scopes = vec![successor, internal, predecessor];
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -1644,12 +1645,12 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(2).unwrap(),
+    )
+    .unwrap();
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {

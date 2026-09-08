@@ -843,11 +843,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     findings
 }
 
-fn act_stream_for_id<'a>(id: &'a str, kind: &str, key: impl std::fmt::Display) -> Option<&'a str> {
-    let stream = ids::native_stream(id)?;
-    (id == format!("{stream}:{kind}#{key}")).then_some(stream)
-}
-
 /// Validate ACT record identity, table/group joins, ordered registries, and the
 /// stored document-root discriminator.
 fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
@@ -855,20 +850,16 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut streams = std::collections::BTreeMap::<&str, &str>::new();
     let mut record_indices = HashSet::new();
     for entity in &native.act_entities {
-        let stream = act_stream_for_id(&entity.id, "act-entity", entity.record_index);
-        if let Some(stream) = stream {
-            streams.entry(stream).or_insert(&entity.id);
-        }
-        let unique_index =
-            stream.is_some_and(|stream| record_indices.insert((stream, entity.record_index)));
-        let valid = stream.is_some() && unique_index;
-        if !valid {
+        let stream = entity.stream();
+        streams.entry(stream).or_insert(entity.id());
+        let unique_index = record_indices.insert((stream, entity.record_index()));
+        if !unique_index {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion ACT entity has an invalid identity, table membership, or change-group frame"
                     .into(),
-                entity: Some(entity.id.clone()),
+                entity: Some(entity.id().clone()),
             });
         }
     }
@@ -876,20 +867,15 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut guid_ordinals = std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
     let mut guid_offsets = HashSet::new();
     for guid in &native.act_guids {
-        let stream = act_stream_for_id(&guid.id, "act-guid", guid.byte_offset());
-        if let Some(stream) = stream {
-            streams.entry(stream).or_insert(&guid.id);
-        }
-        let unique_ordinal = stream.is_some_and(|stream| {
-            guid_ordinals
-                .entry(stream)
-                .or_insert_with(|| (HashSet::new(), &guid.id))
-                .0
-                .insert(guid.ordinal)
-        });
-        let unique_offset =
-            stream.is_some_and(|stream| guid_offsets.insert((stream, guid.byte_offset())));
-        let valid = stream.is_some() && unique_offset && unique_ordinal;
+        let stream = guid.stream();
+        streams.entry(stream).or_insert(guid.id());
+        let unique_ordinal = guid_ordinals
+            .entry(stream)
+            .or_insert_with(|| (HashSet::new(), guid.id()))
+            .0
+            .insert(guid.ordinal);
+        let unique_offset = guid_offsets.insert((stream, guid.byte_offset()));
+        let valid = unique_offset && unique_ordinal;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -897,7 +883,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 message:
                     "Fusion ACT GUID-pool entry has an invalid identity, ordinal, offset, or GUID"
                         .into(),
-                entity: Some(guid.id.clone()),
+                entity: Some(guid.id().clone()),
             });
         }
     }
@@ -906,32 +892,22 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
     let mut table_reference_offsets = HashSet::new();
     for reference in &native.act_table_references {
-        let stream = act_stream_for_id(
-            &reference.id,
-            "act-table-reference",
-            reference.byte_offset(),
-        );
-        if let Some(stream) = stream {
-            streams.entry(stream).or_insert(&reference.id);
-        }
-        let unique_ordinal = stream.is_some_and(|stream| {
-            table_reference_ordinals
-                .entry(stream)
-                .or_insert_with(|| (HashSet::new(), &reference.id))
-                .0
-                .insert(reference.ordinal)
-        });
-        let unique_offset = stream.is_some_and(|stream| {
-            table_reference_offsets.insert((stream, reference.byte_offset()))
-        });
-        let valid = stream.is_some() && unique_ordinal && unique_offset;
+        let stream = reference.stream();
+        streams.entry(stream).or_insert(reference.id());
+        let unique_ordinal = table_reference_ordinals
+            .entry(stream)
+            .or_insert_with(|| (HashSet::new(), reference.id()))
+            .0
+            .insert(reference.ordinal);
+        let unique_offset = table_reference_offsets.insert((stream, reference.byte_offset()));
+        let valid = unique_ordinal && unique_offset;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion ACT table reference has an invalid identity, ordinal, or offset"
                     .into(),
-                entity: Some(reference.id.clone()),
+                entity: Some(reference.id().clone()),
             });
         }
     }
@@ -940,50 +916,40 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut registry_offsets = HashSet::new();
     let mut registry_names = HashSet::new();
     for channel in &native.act_registry_channels {
-        let stream = act_stream_for_id(&channel.id, "act-registry-channel", channel.byte_offset());
-        if let Some(stream) = stream {
-            streams.entry(stream).or_insert(&channel.id);
-        }
-        let unique_ordinal = stream.is_some_and(|stream| {
-            registry_ordinals
-                .entry(stream)
-                .or_insert_with(|| (HashSet::new(), &channel.id))
-                .0
-                .insert(channel.ordinal)
-        });
-        let unique_offset =
-            stream.is_some_and(|stream| registry_offsets.insert((stream, channel.byte_offset())));
-        let unique_name =
-            stream.is_some_and(|stream| registry_names.insert((stream, channel.name())));
-        let valid = stream.is_some() && unique_offset && unique_name && unique_ordinal;
+        let stream = channel.stream();
+        streams.entry(stream).or_insert(channel.id());
+        let unique_ordinal = registry_ordinals
+            .entry(stream)
+            .or_insert_with(|| (HashSet::new(), channel.id()))
+            .0
+            .insert(channel.ordinal);
+        let unique_offset = registry_offsets.insert((stream, channel.byte_offset()));
+        let unique_name = registry_names.insert((stream, channel.name()));
+        let valid = unique_offset && unique_name && unique_ordinal;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion ACT channel-registry entry has an invalid identity, ordinal, offset, name, or GUID"
                     .into(),
-                entity: Some(channel.id.clone()),
+                entity: Some(channel.id().clone()),
             });
         }
     }
 
     let mut root_counts = HashMap::<&str, usize>::new();
     for root in &native.act_root_components {
-        let stream = act_stream_for_id(&root.id, "act-root-component", root.layout.byte_offset());
-        if let Some(stream) = stream {
-            streams.entry(stream).or_insert(&root.id);
-            *root_counts.entry(stream).or_default() += 1;
-        }
-        let unique_record_index =
-            stream.is_some_and(|stream| record_indices.insert((stream, root.record_index)));
-        let valid = stream.is_some() && unique_record_index;
-        if !valid {
+        let stream = root.stream();
+        streams.entry(stream).or_insert(root.id());
+        *root_counts.entry(stream).or_default() += 1;
+        let unique_record_index = record_indices.insert((stream, root.record_index));
+        if !unique_record_index {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference"
                     .into(),
-                entity: Some(root.id.clone()),
+                entity: Some(root.id().clone()),
             });
         }
     }
@@ -1038,20 +1004,19 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for configuration in &ctx.native.design_configurations {
         let valid_name = match configuration.kind {
             records::DesignConfigurationKind::Table => {
-                configuration.entry_name.ends_with(".dsgcfg")
+                configuration.entry_name().ends_with(".dsgcfg")
             }
             records::DesignConfigurationKind::Rule => {
-                configuration.entry_name.ends_with(".dsgcfgrule")
+                configuration.entry_name().ends_with(".dsgcfgrule")
             }
         };
-        let unique_id = configuration_ids.insert(configuration.id.as_str());
-        let unique_entry_name = entry_names.insert(configuration.entry_name.as_str());
+        let unique_id = configuration_ids.insert(configuration.id().as_str());
+        let unique_entry_name = entry_names.insert(configuration.entry_name().as_str());
         let valid = valid_name
-            && configuration.id == ids::configuration_entry_id(&configuration.entry_name)
             && unique_id
             && unique_entry_name
             && crate::design::configurations::validate_configuration_payload(
-                &configuration.entry_name,
+                configuration.entry_name(),
                 configuration.kind,
                 &configuration.payload,
             )
@@ -1065,7 +1030,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 message:
                     "Fusion Design configuration has an invalid identity, payload, or variant order"
                         .into(),
-                entity: Some(configuration.id.clone()),
+                entity: Some(configuration.id().clone()),
             });
         }
     }
@@ -1087,7 +1052,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
             check: Check::NativeLinks,
             severity: Severity::Error,
             message: "Fusion Design configurations have no single authored table order".into(),
-            entity: nonempty_tables.first().map(|table| table.id.clone()),
+            entity: nonempty_tables.first().map(|table| table.id().clone()),
         });
     }
 }
@@ -1161,42 +1126,24 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 
     let mut actual = native.design_feature_timelines.iter().collect::<Vec<_>>();
-    actual.sort_by_key(|timeline| {
-        (
-            ids::design_segment(&timeline.id).unwrap_or_default(),
-            timeline.source_ordinal,
-        )
-    });
+    actual.sort_by_key(|timeline| (timeline.segment(), timeline.source_ordinal));
     let mut actual_records = HashSet::<(&str, u64)>::new();
     let mut item_records = HashSet::<(&str, u64)>::new();
     for timeline in actual {
-        let Some(segment) = ids::design_segment(&timeline.id) else {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design feature timeline has no Design segment identity".into(),
-                entity: Some(timeline.id.clone()),
-            });
-            continue;
-        };
+        let segment = timeline.segment();
         let expected_type = expected.get(&(segment, timeline.record_index.get()));
-        let expected_id = ids::native_design_feature_timeline_id_in_stream(
-            design_stream(&timeline.id),
-            timeline.frame.byte_offset(),
-        );
         let unique_record = actual_records.insert((segment, timeline.record_index.get()));
         let record_valid =
             expected_type.is_some_and(|(class_tag, source_ordinal, valid_type, _)| {
                 *valid_type
                     && timeline.class_tag.as_str() == class_tag
                     && timeline.source_ordinal == *source_ordinal
-            }) && timeline.id == expected_id
-                && entity_type_counts.get(&(segment, timeline.record_index.get())) == Some(&1)
+            }) && entity_type_counts.get(&(segment, timeline.record_index.get())) == Some(&1)
                 && entity_type_counts.get(&(segment, timeline.context_record_index.get()))
                     == Some(&1)
                 && unique_record;
         let mut items_valid = true;
-        for item in timeline.frame.items().iter().map(|item| item.value) {
+        for item in timeline.frame().items().iter().map(|item| item.value) {
             items_valid &= entity_type_counts.get(&(segment, item)) == Some(&1)
                 && item_records.insert((segment, item));
         }
@@ -1205,7 +1152,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Design feature timeline has an invalid typed frame".into(),
-                entity: Some(timeline.id.clone()),
+                entity: Some(timeline.id().clone()),
             });
         }
     }

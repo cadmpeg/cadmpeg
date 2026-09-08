@@ -179,7 +179,7 @@ fn authored_scope_ordinals_for_stream<'a>(
 
     let mut stream_timelines = timelines
         .iter()
-        .filter(|timeline| native_stream(&timeline.id).unwrap_or(ids::DEFAULT_STREAM) == stream)
+        .filter(|timeline| native_stream(timeline.id()).unwrap_or(ids::DEFAULT_STREAM) == stream)
         .collect::<Vec<_>>();
     stream_timelines.sort_by_key(|timeline| timeline.source_ordinal);
     if stream_timelines.is_empty() {
@@ -235,7 +235,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     if stream_timelines
         .iter()
-        .filter(|timeline| !timeline.frame.items().is_empty())
+        .filter(|timeline| !timeline.frame().items().is_empty())
         .count()
         > 1
     {
@@ -246,7 +246,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
     for timeline in stream_timelines {
-        for item in timeline.frame.items().iter().map(|item| item.value) {
+        for item in timeline.frame().items().iter().map(|item| item.value) {
             if item_ordinals.insert(item, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
@@ -551,13 +551,16 @@ pub fn project_parameter_design(
     }
     let timelines = streams
         .into_iter()
-        .map(|(stream, items)| DesignFeatureTimeline {
-            frame: crate::records::DesignTimelineFrame::test_items(0, items),
-            id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
-            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-            record_index: std::num::NonZeroU64::new(1).unwrap(),
-            source_ordinal: 0,
-            context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+        .map(|(stream, items)| {
+            DesignFeatureTimeline::try_new(
+                ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                crate::records::DesignTimelineFrame::test_items(0, items),
+                crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(1).unwrap(),
+                0,
+                std::num::NonZeroU64::new(1).unwrap(),
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     project_parameter_design_with_edge_identities(&ProjectInputs {

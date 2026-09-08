@@ -1061,7 +1061,7 @@ pub(crate) fn validate_act_appearance_bindings(
     }
     let target_entities_by_id = target_entities
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
     for before in &baseline.model.appearance_bindings {
         let after = target_bindings
@@ -1103,7 +1103,7 @@ pub(crate) fn validate_act_appearance_bindings(
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
-                .get(before_entity.id.as_str())
+                .get(before_entity.id().as_str())
                 .copied()
                 .filter(|entity| {
                     after
@@ -1166,7 +1166,7 @@ pub(crate) fn validate_act_appearance_bindings(
         if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
-                before.id
+                before.id()
             )));
         }
         let synchronized = matching_bindings.is_some_and(|bindings| {
@@ -1193,7 +1193,7 @@ pub(crate) fn validate_act_appearance_bindings(
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without a synchronized appearance binding",
-                before.id
+                before.id()
             )));
         }
     }
@@ -1223,11 +1223,11 @@ pub(crate) fn validate_act_entity_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1286,11 +1286,11 @@ pub(crate) fn validate_act_guid_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1340,11 +1340,11 @@ pub(crate) fn validate_act_registry_channel_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1396,11 +1396,11 @@ pub(crate) fn validate_act_root_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1414,11 +1414,10 @@ pub(crate) fn validate_act_root_edits(
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
-        normalized.layout = normalized
-            .layout
-            .with_strings(
-                before.layout.entity_id().into(),
-                before.layout.display_name().into(),
+        normalized
+            .try_set_strings(
+                before.layout().entity_id().into(),
+                before.layout().display_name().into(),
             )
             .map_err(CodecError::NotImplemented)?;
         if &normalized != before {
@@ -1429,10 +1428,10 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if after.layout.entity_id().encode_utf16().count()
-            != before.layout.entity_id().encode_utf16().count()
-            || after.layout.display_name().encode_utf16().count()
-                != before.layout.display_name().encode_utf16().count()
+        if after.layout().entity_id().encode_utf16().count()
+            != before.layout().entity_id().encode_utf16().count()
+            || after.layout().display_name().encode_utf16().count()
+                != before.layout().display_name().encode_utf16().count()
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root strings must retain their UTF-16 lengths: {id}"
@@ -1612,11 +1611,11 @@ pub(crate) fn validate_configuration_edits(
         .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1626,7 +1625,7 @@ pub(crate) fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id != after.id || before.kind != after.kind {
+        if before.id() != after.id() || before.kind != after.kind {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
