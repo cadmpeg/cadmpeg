@@ -48,7 +48,7 @@ struct AppearancePlan {
 struct BodyUpdate {
     id: cadmpeg_ir::ids::BodyId,
     visible: Assignment<Option<bool>>,
-    color: Assignment<Option<Color>>,
+    color: Option<Color>,
 }
 
 enum Assignment<T> {
@@ -63,9 +63,7 @@ impl AppearancePlan {
                 if let Assignment::Set(visible) = update.visible {
                     body.visible = visible;
                 }
-                if let Assignment::Set(color) = update.color {
-                    body.color = color;
-                }
+                body.color = update.color;
             }
         }
         ir.model
@@ -355,9 +353,7 @@ fn transfer_schema_one(
             plan.body_updates.push(BodyUpdate {
                 id: body_id.clone(),
                 visible: Assignment::Set(visibility),
-                color: Assignment::Set(
-                    packed_color.map(|packed| decode_color(packed, transparency)),
-                ),
+                color: packed_color.map(|packed| decode_color(packed, transparency)),
             });
         }
         if let Some(file) = values
@@ -1126,9 +1122,10 @@ fn validate_gui_property(
         "Part::PropertyShapeHistory" | "Part::PropertyShapeCache" => return Ok(()),
         _ => {}
     }
-    let Some(expected_tag) = gui_value_tag(type_name) else {
+    let Some(tag) = gui_value_tag(type_name) else {
         return Ok(());
     };
+    let expected_tag = tag.as_str();
     let roots = property
         .children()
         .filter(roxmltree::Node::is_element)
@@ -1150,15 +1147,15 @@ fn validate_gui_property(
             ))
         })
     };
-    match expected_tag {
-        "Bool" => {
+    match tag {
+        GuiValueTag::Bool => {
             if parse_bool(scalar("value")?).is_none() {
                 return Err(CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid Boolean"
                 )));
             }
         }
-        "Integer" => {
+        GuiValueTag::Integer => {
             scalar("value")?.parse::<i64>().map_err(|_| {
                 CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid integer"
@@ -1172,7 +1169,7 @@ fn validate_gui_property(
                 return Ok(());
             }
         }
-        "Float" => {
+        GuiValueTag::Float => {
             let value = scalar("value")?.parse::<f64>().map_err(|_| {
                 CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid float"
@@ -1187,14 +1184,18 @@ fn validate_gui_property(
                 validate_gui_constraint_attributes(root, property_name, false)?;
             }
         }
-        "String" | "Python" | "ColorList" | "MaterialList" => {
-            let attribute = if matches!(expected_tag, "ColorList" | "MaterialList") {
+        GuiValueTag::String
+        | GuiValueTag::Python
+        | GuiValueTag::ColorList
+        | GuiValueTag::MaterialList => {
+            let attribute = if matches!(tag, GuiValueTag::ColorList | GuiValueTag::MaterialList) {
                 "file"
             } else {
                 "value"
             };
             scalar(attribute)?;
-            if matches!(expected_tag, "ColorList" | "MaterialList") && has_nested_gui_elements(root)
+            if matches!(tag, GuiValueTag::ColorList | GuiValueTag::MaterialList)
+                && has_nested_gui_elements(root)
             {
                 return Err(gui_nested_value_error(property_name, expected_tag));
             }
@@ -1206,7 +1207,7 @@ fn validate_gui_property(
                 }
                 return Ok(());
             }
-            if expected_tag == "MaterialList" {
+            if tag == GuiValueTag::MaterialList {
                 let version = root
                     .attribute("version")
                     .map(str::parse::<u32>)
@@ -1224,14 +1225,14 @@ fn validate_gui_property(
                 }
             }
         }
-        "PropertyColor" => {
+        GuiValueTag::PropertyColor => {
             scalar("value")?.parse::<u32>().map_err(|_| {
                 CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid color"
                 ))
             })?;
         }
-        "PropertyVector" => {
+        GuiValueTag::PropertyVector => {
             for attribute in ["valueX", "valueY", "valueZ"] {
                 let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
                     CodecError::malformed(format_args!(
@@ -1245,8 +1246,8 @@ fn validate_gui_property(
                 }
             }
         }
-        "PropertyMaterial" => validate_gui_material(root, property_name)?,
-        "BoolList" => {
+        GuiValueTag::PropertyMaterial => validate_gui_material(root, property_name)?,
+        GuiValueTag::BoolList => {
             if !scalar("value")?
                 .bytes()
                 .all(|byte| matches!(byte, b'0' | b'1'))
@@ -1259,11 +1260,11 @@ fn validate_gui_property(
                 return Err(gui_nested_value_error(property_name, "BoolList"));
             }
         }
-        "StringList" => validate_gui_string_list(root, property_name)?,
-        "IntegerList" => validate_gui_integer_list(root, property_name, false)?,
-        "IntegerSet" => validate_gui_integer_list(root, property_name, true)?,
-        "Map" => validate_gui_map(root, property_name)?,
-        "PropertyMatrix" => {
+        GuiValueTag::StringList => validate_gui_string_list(root, property_name)?,
+        GuiValueTag::IntegerList => validate_gui_integer_list(root, property_name, false)?,
+        GuiValueTag::IntegerSet => validate_gui_integer_list(root, property_name, true)?,
+        GuiValueTag::Map => validate_gui_map(root, property_name)?,
+        GuiValueTag::PropertyMatrix => {
             for row in 1..=4 {
                 for column in 1..=4 {
                     let attribute = format!("a{row}{column}");
@@ -1280,8 +1281,8 @@ fn validate_gui_property(
                 }
             }
         }
-        "PropertyPlacement" => validate_gui_placement(root, property_name)?,
-        "PropertyRotation" => {
+        GuiValueTag::PropertyPlacement => validate_gui_placement(root, property_name)?,
+        GuiValueTag::PropertyRotation => {
             for attribute in ["A", "Ox", "Oy", "Oz"] {
                 let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
                     CodecError::malformed(format_args!(
@@ -1295,16 +1296,16 @@ fn validate_gui_property(
                 }
             }
         }
-        "Uuid" | "Path" => {
+        GuiValueTag::Uuid | GuiValueTag::Path => {
             scalar("value")?;
         }
-        "FloatList" | "VectorList" | "PlacementList" => {
+        GuiValueTag::FloatList | GuiValueTag::VectorList | GuiValueTag::PlacementList => {
             scalar("file")?;
             if has_nested_gui_elements(root) {
                 return Err(gui_nested_value_error(property_name, expected_tag));
             }
         }
-        "FileIncluded" => {
+        GuiValueTag::FileIncluded => {
             let has_file = root.attribute("file").is_some();
             let has_data = root.attribute("data").is_some();
             if has_file == has_data {
@@ -1317,7 +1318,6 @@ fn validate_gui_property(
                 return Err(gui_nested_value_error(property_name, "FileIncluded"));
             }
         }
-        _ => unreachable!("closed GUI value-tag registry"),
     }
     if roots.len() != 1 {
         return Err(CodecError::malformed(format_args!(
@@ -1589,49 +1589,108 @@ fn validate_gui_enumeration(
     Ok(())
 }
 
-fn gui_value_tag(type_name: &str) -> Option<&'static str> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GuiValueTag {
+    Bool,
+    Integer,
+    Float,
+    String,
+    PropertyColor,
+    ColorList,
+    PropertyMaterial,
+    MaterialList,
+    PropertyVector,
+    BoolList,
+    FloatList,
+    IntegerList,
+    IntegerSet,
+    StringList,
+    Map,
+    PropertyMatrix,
+    Path,
+    PropertyPlacement,
+    PlacementList,
+    Python,
+    PropertyRotation,
+    Uuid,
+    VectorList,
+    FileIncluded,
+}
+
+impl GuiValueTag {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bool => "Bool",
+            Self::Integer => "Integer",
+            Self::Float => "Float",
+            Self::String => "String",
+            Self::PropertyColor => "PropertyColor",
+            Self::ColorList => "ColorList",
+            Self::PropertyMaterial => "PropertyMaterial",
+            Self::MaterialList => "MaterialList",
+            Self::PropertyVector => "PropertyVector",
+            Self::BoolList => "BoolList",
+            Self::FloatList => "FloatList",
+            Self::IntegerList => "IntegerList",
+            Self::IntegerSet => "IntegerSet",
+            Self::StringList => "StringList",
+            Self::Map => "Map",
+            Self::PropertyMatrix => "PropertyMatrix",
+            Self::Path => "Path",
+            Self::PropertyPlacement => "PropertyPlacement",
+            Self::PlacementList => "PlacementList",
+            Self::Python => "Python",
+            Self::PropertyRotation => "PropertyRotation",
+            Self::Uuid => "Uuid",
+            Self::VectorList => "VectorList",
+            Self::FileIncluded => "FileIncluded",
+        }
+    }
+}
+
+fn gui_value_tag(type_name: &str) -> Option<GuiValueTag> {
     if GUI_QUANTITY_TYPES.contains(&type_name) {
-        return Some("Float");
+        return Some(GuiValueTag::Float);
     }
     let tag = match type_name {
-        "App::PropertyBool" => "Bool",
+        "App::PropertyBool" => GuiValueTag::Bool,
         "App::PropertyEnumeration"
         | "App::PropertyInteger"
         | "App::PropertyIntegerConstraint"
-        | "App::PropertyPercent" => "Integer",
+        | "App::PropertyPercent" => GuiValueTag::Integer,
         "App::PropertyAngle"
         | "App::PropertyDistance"
         | "App::PropertyFloat"
         | "App::PropertyFloatConstraint"
         | "App::PropertyLength"
-        | "App::PropertyPrecision" => "Float",
+        | "App::PropertyPrecision" => GuiValueTag::Float,
         "App::PropertyFile"
         | "App::PropertyFont"
         | "App::PropertyPersistentObject"
-        | "App::PropertyString" => "String",
-        "App::PropertyColor" => "PropertyColor",
-        "App::PropertyColorList" => "ColorList",
-        "App::PropertyMaterial" => "PropertyMaterial",
-        "App::PropertyMaterialList" => "MaterialList",
+        | "App::PropertyString" => GuiValueTag::String,
+        "App::PropertyColor" => GuiValueTag::PropertyColor,
+        "App::PropertyColorList" => GuiValueTag::ColorList,
+        "App::PropertyMaterial" => GuiValueTag::PropertyMaterial,
+        "App::PropertyMaterialList" => GuiValueTag::MaterialList,
         "App::PropertyVector"
         | "App::PropertyVectorDistance"
         | "App::PropertyPosition"
-        | "App::PropertyDirection" => "PropertyVector",
-        "App::PropertyBoolList" => "BoolList",
-        "App::PropertyFloatList" => "FloatList",
-        "App::PropertyIntegerList" => "IntegerList",
-        "App::PropertyIntegerSet" => "IntegerSet",
-        "App::PropertyStringList" => "StringList",
-        "App::PropertyMap" => "Map",
-        "App::PropertyMatrix" => "PropertyMatrix",
-        "App::PropertyPath" => "Path",
-        "App::PropertyPlacement" => "PropertyPlacement",
-        "App::PropertyPlacementList" => "PlacementList",
-        "App::PropertyPythonObject" => "Python",
-        "App::PropertyRotation" => "PropertyRotation",
-        "App::PropertyUUID" => "Uuid",
-        "App::PropertyVectorList" => "VectorList",
-        "App::PropertyFileIncluded" => "FileIncluded",
+        | "App::PropertyDirection" => GuiValueTag::PropertyVector,
+        "App::PropertyBoolList" => GuiValueTag::BoolList,
+        "App::PropertyFloatList" => GuiValueTag::FloatList,
+        "App::PropertyIntegerList" => GuiValueTag::IntegerList,
+        "App::PropertyIntegerSet" => GuiValueTag::IntegerSet,
+        "App::PropertyStringList" => GuiValueTag::StringList,
+        "App::PropertyMap" => GuiValueTag::Map,
+        "App::PropertyMatrix" => GuiValueTag::PropertyMatrix,
+        "App::PropertyPath" => GuiValueTag::Path,
+        "App::PropertyPlacement" => GuiValueTag::PropertyPlacement,
+        "App::PropertyPlacementList" => GuiValueTag::PlacementList,
+        "App::PropertyPythonObject" => GuiValueTag::Python,
+        "App::PropertyRotation" => GuiValueTag::PropertyRotation,
+        "App::PropertyUUID" => GuiValueTag::Uuid,
+        "App::PropertyVectorList" => GuiValueTag::VectorList,
+        "App::PropertyFileIncluded" => GuiValueTag::FileIncluded,
         _ => return None,
     };
     Some(tag)
@@ -3560,10 +3619,7 @@ fn transfer_shape_appearances(
                     plan.body_updates.push(BodyUpdate {
                         id: body.clone(),
                         visible: Assignment::Keep,
-                        color: Assignment::Set(Some(decode_color(
-                            material.diffuse,
-                            Some(material.transparency),
-                        ))),
+                        color: Some(decode_color(material.diffuse, Some(material.transparency))),
                     });
                     plan.bindings.push(AppearanceBinding {
                         id: format!(

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less schema-4 document construction.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
@@ -234,7 +234,7 @@ impl FcstdDocumentBuilder {
     }
 
     fn archive_bytes(self) -> Result<Vec<u8>, CodecError> {
-        let document = self.document_xml()?;
+        let document = self.document_xml();
         let mut cursor = Cursor::new(Vec::new());
         {
             let mut archive = zip::ZipWriter::new(&mut cursor);
@@ -258,11 +258,7 @@ impl FcstdDocumentBuilder {
         Ok(cursor.into_inner())
     }
 
-    fn document_xml(&self) -> Result<String, CodecError> {
-        let mut names = HashSet::new();
-        if !self.objects.iter().all(|object| names.insert(&object.name)) {
-            return Err(CodecError::Malformed("duplicate FCStd object name".into()));
-        }
+    fn document_xml(&self) -> String {
         let mut xml = String::from("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
         xml.push_str(
             "<Document SchemaVersion=\"4\" ProgramVersion=\"cadmpeg\" FileVersion=\"1\">\n",
@@ -329,7 +325,7 @@ impl FcstdDocumentBuilder {
             xml.push_str("      </Properties>\n    </Object>\n");
         }
         xml.push_str("  </ObjectData>\n</Document>\n");
-        Ok(xml)
+        xml
     }
 }
 
