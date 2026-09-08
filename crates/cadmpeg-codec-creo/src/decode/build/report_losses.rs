@@ -304,7 +304,7 @@ pub(super) fn push_brep_transfer_note(
         .iter()
         .map(|sample| {
             format!(
-                "{}[faces:{};carriers:{};pair:{};triple:{};valid:{};unique:{}]",
+                "{}[faces:{};carriers:{};pair:{};triple:{};valid:{};unique:0]",
                 sample.vertex_id,
                 sample
                     .incident_face_ids
@@ -321,7 +321,6 @@ pub(super) fn push_brep_transfer_note(
                 sample.pair_intersections,
                 sample.triple_intersections,
                 sample.valid_candidates,
-                sample.unique_solutions,
             )
         })
         .collect::<Vec<_>>()
