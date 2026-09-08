@@ -1034,6 +1034,12 @@ fn spreadsheet_dimensions(
                         ))
                     })?
             };
+            let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} dimension index must be nonzero",
+                    property.id
+                ))
+            })?;
             Ok(SpreadsheetDimension { index, pixels })
         })
         .collect()
