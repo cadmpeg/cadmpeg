@@ -60,33 +60,86 @@ fn resolved_body_binding(
 }
 
 #[test]
-fn protein_patching_reports_schema_rejections() {
+fn protein_rejections_preserve_valid_records_and_report_notes() {
+    let mut instance = Vec::new();
+    for (schema, guid) in [
+        ("KnownSchema", "first-guid"),
+        ("MissingSchema", "rejected-guid"),
+        ("KnownSchema", "third-guid"),
+    ] {
+        let mut logical = RECORD_MARKER.to_vec();
+        for value in [schema, guid, "base", ""] {
+            super::push_lp(&mut logical, value).unwrap();
+        }
+        let paged = super::page_logical(&logical).unwrap();
+        if instance.is_empty() {
+            instance.extend_from_slice(&paged);
+        } else {
+            instance.extend_from_slice(&paged[STREAM_HEADER_LEN..]);
+        }
+    }
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     archive
-        .start_file(
-            "Schemas/KnownSchema.xml",
-            zip::write::SimpleFileOptions::default(),
-        )
+        .start_file("Schemas/KnownSchema.xml", stored)
         .unwrap();
     archive
         .write_all(br#"<Schema><UID val="KnownSchema"/></Schema>"#)
         .unwrap();
+    archive
+        .start_file("AssetData/InstanceProperties.bin", stored)
+        .unwrap();
+    archive.write_all(&instance).unwrap();
     let protein = archive.finish().unwrap().into_inner();
-    let mut logical = RECORD_MARKER.to_vec();
-    for value in ["MissingSchema", "asset-guid", "base", ""] {
-        super::push_lp(&mut logical, value).unwrap();
-    }
-    let mut instance = super::page_logical(&logical).unwrap();
-    let result = super::patch_instance_colors(
-        &protein,
-        &mut instance,
-        &std::collections::BTreeMap::new(),
-        &mut std::collections::BTreeSet::new(),
+    let edits = ["first-guid", "third-guid"]
+        .into_iter()
+        .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
+        .collect();
+    let mut notes = Vec::new();
+    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    assert_eq!(
+        guids.into_iter().collect::<Vec<_>>(),
+        ["first-guid", "third-guid"]
     );
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::Malformed(message))
-        if message.contains("record 0 rejected") && message.contains("MissingSchema"))
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].contains("record 1 rejected") && notes[0].contains("MissingSchema"));
+    let mut patched_archive = zip::ZipArchive::new(Cursor::new(patched)).unwrap();
+    let mut retained = Vec::new();
+    std::io::Read::read_to_end(
+        &mut patched_archive
+            .by_name("AssetData/InstanceProperties.bin")
+            .unwrap(),
+        &mut retained,
+    )
+    .unwrap();
+    assert_eq!(retained, instance);
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(&protein).unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| appearance.asset_guid.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("first-guid"), Some("third-guid")]
     );
+    assert!(decoded.report().notes.iter().any(|note| note
+        .contains("ProteinAsset.0.protein record 1 rejected")
+        && note.contains("MissingSchema")));
 }
 
 #[test]
