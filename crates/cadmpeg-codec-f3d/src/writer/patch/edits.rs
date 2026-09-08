@@ -1055,7 +1055,7 @@ pub(crate) fn validate_act_appearance_bindings(
     let mut baseline_entities_by_source = HashMap::<_, Vec<_>>::new();
     for entity in baseline_entities {
         baseline_entities_by_source
-            .entry(entity.entity_id.as_str())
+            .entry(entity.entity_id())
             .or_default()
             .push(entity);
     }
@@ -1153,7 +1153,7 @@ pub(crate) fn validate_act_appearance_bindings(
         .map(|assignment| assignment.entity_id.as_str())
         .collect::<std::collections::HashSet<_>>();
     for (before, after) in baseline_entities.iter().zip(target_entities) {
-        let matching_bindings = derived_bindings.get(&before.entity_id);
+        let matching_bindings = derived_bindings.get(before.entity_id());
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings.iter().any(|(channels, _)| {
                 channels
@@ -1162,8 +1162,8 @@ pub(crate) fn validate_act_appearance_bindings(
                     .eq(act_channel_values(before))
             })
         });
-        let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
-        if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
+        let assignment_synchronized = assignment_entities.contains(after.entity_id());
+        if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
                 before.id
@@ -1177,7 +1177,7 @@ pub(crate) fn validate_act_appearance_bindings(
                         before_binding.appearance.clone(),
                     ))
                     .is_some_and(|binding| {
-                        binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+                        binding.source_entity_id.as_deref() == Some(after.entity_id())
                             && binding
                                 .channels
                                 .iter()
@@ -1186,7 +1186,7 @@ pub(crate) fn validate_act_appearance_bindings(
                     })
             })
         });
-        if (before.entity_id != after.entity_id
+        if (before.entity_id() != after.entity_id()
             || act_channel_values(before).ne(act_channel_values(after)))
             && derived_binding
             && !synchronized
@@ -1203,8 +1203,8 @@ pub(crate) fn validate_act_appearance_bindings(
 fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
     entity
         .channel_group()
-        .into_iter()
-        .flat_map(|group| &group.channels)
+        .channels()
+        .iter()
         .map(|(name, guid)| (name, guid.value.as_str()))
 }
 
@@ -1238,14 +1238,14 @@ pub(crate) fn validate_act_entity_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.entity_id.clone_from(&before.entity_id);
-        if let Some(group) = normalized.channel_group_mut() {
-            if let Some(before_group) = before.channel_group() {
-                for (name, guid) in &mut group.channels {
-                    if let Some(before_guid) = before_group.channels.get(name) {
-                        guid.value.clone_from(&before_guid.value);
-                    }
-                }
+        normalized
+            .try_set_entity_id(before.entity_id().to_owned())
+            .map_err(CodecError::malformed)?;
+        for (name, guid) in before.channel_group().channels() {
+            if normalized.channel_group().channels().contains_key(name) {
+                normalized
+                    .set_channel_guid(name, guid.value.clone())
+                    .map_err(CodecError::malformed)?;
             }
         }
         if &normalized != before {
@@ -1256,7 +1256,7 @@ pub(crate) fn validate_act_entity_edits(
         if after == before {
             continue;
         }
-        if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count() {
+        if after.entity_id().encode_utf16().count() != before.entity_id().encode_utf16().count() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));

@@ -1370,6 +1370,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
     let wire = serde_json::json!({
         "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
+        "channel_entity_id_offset": 200,
         "channels": {"Appearance": "11111111-2222-3333-4444-555555555555"},
         "channel_guid_offsets": {"Appearance": 120}
     });
@@ -1399,7 +1400,8 @@ fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
         "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
-        "channels": {}, "channel_guid_offsets": {},
+        "channel_entity_id_offset": 200,
+        "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120},
         "channel_class_tail": [0, 1], "channel_class_tail_offset": 300
     });
     let entity: crate::records::ActEntity = serde_json::from_value(wire.clone()).unwrap();
@@ -1423,7 +1425,8 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
     let wire = serde_json::json!({
         "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": true, "table_record_index_offset": 20, "table_entity_id_offset": 34,
-        "channels": {}, "channel_guid_offsets": {}
+        "channel_class_tag": "261", "channel_record_index_offset": 100,
+        "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120}
     });
     let entity: crate::records::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(entity.table_entity_id_offset(), Some(34));
@@ -1949,3 +1952,5 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
     overflow["blob_name_offset"] = u64::MAX.into();
     assert!(serde_json::from_value::<super::DesignBodyBinding>(overflow).is_err());
 }
+
+mod act_entities;

@@ -114,13 +114,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(act_entity.table_entity_id_offset().is_some());
     assert!(act_entity.channel_entity_id_offset().is_some());
     act_entity
-        .channel_group_mut()
-        .unwrap()
-        .channels
-        .get_mut("Appearance")
-        .unwrap()
-        .value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
-        .try_into()
+        .set_channel_guid(
+            "Appearance",
+            String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+                .try_into()
+                .unwrap(),
+        )
         .unwrap();
     let binding = &mut edited.model.appearance_bindings[0];
     binding.channels.insert(
@@ -160,7 +159,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .properties
         .insert("refraction_index".into(), 1.8);
     assert_eq!(
-        native.act_entities[0].entity_id,
+        native.act_entities[0].entity_id(),
         native.design_material_assignments[0].entity_id.as_str()
     );
     native.store(edited.native.namespace_mut("f3d")).unwrap();
@@ -252,11 +251,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee"
     );
     let act_entity = &f3d_native(round_trip.ir()).act_entities[0];
-    assert_eq!(act_entity.entity_id, "0_985");
+    assert_eq!(act_entity.entity_id(), "0_985");
     assert_eq!(
         act_entity
             .channel_group()
-            .and_then(|group| group.channels.get("Appearance"))
+            .channels()
+            .get("Appearance")
             .map(|guid| guid.value.as_str()),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );

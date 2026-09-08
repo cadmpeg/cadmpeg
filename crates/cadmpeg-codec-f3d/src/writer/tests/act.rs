@@ -27,14 +27,30 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.act_entities = vec![ActEntity {
-        id: "f3d:generated:act-entity#0".into(),
-        record_index: 7,
-        entity_id: "0_985".into(),
-        membership: crate::records::ActEntityMembership::TableOnly(
-            crate::records::ActTableRow::new(0).unwrap(),
-        ),
-    }];
+    native.act_entities = vec![ActEntity::try_new(
+        "f3d:generated:act-entity#0".into(),
+        7,
+        "0_985".into(),
+        Some(crate::records::ActTableRow::new(0).unwrap()),
+        crate::records::ActChannelGroup::try_new(
+            100,
+            Some(200),
+            "261".to_owned().try_into().unwrap(),
+            std::collections::BTreeMap::from([(
+                "Appearance".into(),
+                crate::records::Located {
+                    value: "11111111-2222-3333-4444-555555555555"
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    offset: 120,
+                },
+            )]),
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap()];
     drop(native);
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -54,13 +70,12 @@ fn generated_f3d_rejects_act_binding_divergence() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         native.act_entities[0]
-            .channel_group_mut()
-            .unwrap()
-            .channels
-            .get_mut("Appearance")
-            .unwrap()
-            .value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
-            .try_into()
+            .set_channel_guid(
+                "Appearance",
+                String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+                    .try_into()
+                    .unwrap(),
+            )
             .unwrap();
     });
 
