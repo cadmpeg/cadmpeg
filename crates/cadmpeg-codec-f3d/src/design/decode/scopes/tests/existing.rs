@@ -1092,8 +1092,14 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
 
     assert_eq!(selection.record_index, 100);
     assert_eq!(selection.class_tag.as_str(), "333");
-    assert_eq!(selection.asset_id, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
-    assert_eq!(selection.context_id, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    assert_eq!(
+        selection.asset_id.as_str(),
+        "53aa8ab4-194a-434b-bd52-8c6d761dc147"
+    );
+    assert_eq!(
+        selection.context_id.as_str(),
+        "8e685642-4d68-4909-96d0-0dd4437491b6"
+    );
     assert_eq!(selection.identity_record_index, 103);
     assert_eq!(selection.identity_record_offset, identity_at as u64);
     assert_eq!(selection.primary_identity, 246);

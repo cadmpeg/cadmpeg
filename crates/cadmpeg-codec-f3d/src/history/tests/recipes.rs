@@ -1822,9 +1822,15 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 record_index: 100,
                 byte_offset: 0,
                 class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
-                asset_id: "asset".into(),
+                asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 asset_id_offset: 0,
-                context_id: "context".into(),
+                context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
                 context_id_offset: 0,
                 identity_record_index: 103,
                 identity_record_offset: 0,

@@ -65,15 +65,16 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
             "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
         ] {
             let wire = format!("{prefix}{fields}{suffix}").replace(guid, "not-a-guid");
-            if prefix != "{" {
-                let error =
-                    serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(
-                        &wire,
-                    )
+            let error = if prefix == "{" {
+                serde_json::from_str::<crate::records::feature::DesignHoleFaceSelection>(&wire)
+                    .expect_err("non-GUID hole selection identity")
+                    .to_string()
+            } else {
+                serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire)
                     .expect_err("non-GUID entity selection identity")
-                    .to_string();
-                assert!(error.contains("GUID"), "{error}");
-            }
+                    .to_string()
+            };
+            assert!(error.contains("GUID"), "{error}");
         }
     }
 }

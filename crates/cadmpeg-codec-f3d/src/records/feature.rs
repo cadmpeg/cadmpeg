@@ -4986,11 +4986,11 @@ pub struct DesignHoleFaceSelection {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -5022,11 +5022,11 @@ struct DesignHoleFaceSelectionWire {
     /// Source per-file dynamic primary class tag.
     class_tag: String,
     /// Asset UUID qualifying the selection namespace.
-    asset_id: String,
+    asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     asset_id_offset: u64,
     /// UUID of the selection context.
-    context_id: String,
+    context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
