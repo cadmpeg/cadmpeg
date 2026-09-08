@@ -175,9 +175,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| {
-            entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
-        })
+        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
     {
         let Some(source_id) = entry.source_entity_id() else {
             continue;
