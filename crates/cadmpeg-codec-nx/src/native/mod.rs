@@ -38,6 +38,15 @@ pub(crate) use om::{
 pub(crate) use substrate::{topology_streams, ParsedStreams};
 pub(crate) use toggle::has_complete_saved_toggle_stream;
 
+/// Availability of typed native records during container retention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypedNative {
+    /// Typed native extraction is available.
+    Available,
+    /// Only container records are retained.
+    ContainerOnly,
+}
+
 /// Attach a pre-extracted [`NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`NativeModel::extract`].
 pub(crate) fn attach_annotations(
@@ -58,7 +67,7 @@ pub(crate) fn attach_container_layer(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-    typed_native_available: bool,
+    typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native_available)
+    attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
 }

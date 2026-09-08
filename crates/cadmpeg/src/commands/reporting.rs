@@ -10,7 +10,7 @@ use cadmpeg_ir::SourceFidelity;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::artifact_store::{FileDestination, SidecarPersistOutcome};
 use crate::application::refusal::ConversionRefusal;
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
 
@@ -201,12 +201,11 @@ impl Serialize for CommandReportBody<'_> {
 
 pub(super) fn write_command_report(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<()> {
-    write_serialized_report(input, output, force, &body.command_report(command))
+    write_serialized_report(input, output, &body.command_report(command))
 }
 
 pub(super) fn command_body_json(
@@ -352,18 +351,16 @@ pub(crate) fn refused_command_report_json<P: Serialize>(
 
 pub(super) fn write_json_report<P: Serialize>(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     payload: &P,
 ) -> Result<()> {
-    write_serialized_report(input, output, force, &CommandReport::ok(command, payload))
+    write_serialized_report(input, output, &CommandReport::ok(command, payload))
 }
 
 pub(super) fn write_refused_json_report<P: Serialize>(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     payload: &P,
     refusal: &ConversionRefusal,
@@ -371,15 +368,13 @@ pub(super) fn write_refused_json_report<P: Serialize>(
     write_serialized_report(
         input,
         output,
-        force,
         &CommandReport::refused(command, payload, refusal),
     )
 }
 
 fn write_serialized_report(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     report: &impl Serialize,
 ) -> Result<()> {
     let Some(output) = output else {
@@ -387,8 +382,8 @@ fn write_serialized_report(
     };
     let mut bytes = serde_json::to_vec_pretty(report)?;
     bytes.push(b'\n');
-    artifact_store::write_output(input, output, &bytes, force)?;
-    eprintln!("wrote report {}", output.display());
+    output.write(input, &bytes)?;
+    eprintln!("wrote report {}", output.path.display());
     Ok(())
 }
 

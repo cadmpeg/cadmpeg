@@ -443,6 +443,10 @@ impl TryFrom<u8> for CatiaCircleLayout {
 
 /// One complete consolidated `B:19` arc-length circle support.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "CatiaConsolidatedCircleWire",
+    into = "CatiaConsolidatedCircleWire"
+)]
 pub struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     pub id: String,
@@ -460,10 +464,65 @@ pub struct CatiaConsolidatedCircle {
     pub radius: f64,
     /// Arc-length parameter interval.
     pub range: [f64; 2],
-    /// Whether the interval spans one complete circumference.
-    pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+impl CatiaConsolidatedCircle {
+    /// Whether the interval spans one complete circumference.
+    pub fn full_circle(&self) -> bool {
+        crate::families::b2::records::circle_range_is_full_turn(self.radius, self.range)
+    }
+}
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedCircleWire {
+    id: String,
+    byte_offset: u64,
+    layout: CatiaCircleLayout,
+    record_id: u32,
+    frame_token: u8,
+    center_pair: [f64; 2],
+    radius: f64,
+    range: [f64; 2],
+    full_circle: bool,
+    chart_shift: f64,
+}
+impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
+    type Error = String;
+    fn try_from(wire: CatiaConsolidatedCircleWire) -> Result<Self, Self::Error> {
+        let circle = Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            layout: wire.layout,
+            record_id: wire.record_id,
+            frame_token: wire.frame_token,
+            center_pair: wire.center_pair,
+            radius: wire.radius,
+            range: wire.range,
+            chart_shift: wire.chart_shift,
+        };
+        if wire.full_circle != circle.full_circle() {
+            return Err("full_circle does not match radius and range".into());
+        }
+        Ok(circle)
+    }
+}
+impl From<CatiaConsolidatedCircle> for CatiaConsolidatedCircleWire {
+    fn from(circle: CatiaConsolidatedCircle) -> Self {
+        let full_circle = circle.full_circle();
+        Self {
+            full_circle,
+            id: circle.id,
+            byte_offset: circle.byte_offset,
+            layout: circle.layout,
+            record_id: circle.record_id,
+            frame_token: circle.frame_token,
+            center_pair: circle.center_pair,
+            radius: circle.radius,
+            range: circle.range,
+            chart_shift: circle.chart_shift,
+        }
+    }
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
@@ -7024,7 +7083,6 @@ fn consolidated_circles(
             center_pair: circle.center_pair,
             radius: circle.radius,
             range: circle.range,
-            full_circle: circle.full_circle,
             chart_shift: circle.chart_shift,
         })
         .collect()

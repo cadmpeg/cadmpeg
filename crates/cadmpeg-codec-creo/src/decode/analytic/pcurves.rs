@@ -109,31 +109,24 @@ impl TwoChartEndpointSets {
     }
 }
 
-#[derive(Debug, Default)]
-struct TwoChartMappingOutcome {
-    endpoint_sets: Option<TwoChartEndpointSets>,
-    missing_surface_paths: usize,
-    unevaluable_paths: usize,
-    surface_mismatch: bool,
-    no_samples: bool,
+#[derive(Debug)]
+enum TwoChartMapping {
+    NoSamples,
+    Mapped {
+        endpoint_sets: Option<TwoChartEndpointSets>,
+        missing_surface_paths: usize,
+        unevaluable_paths: usize,
+        surface_mismatch: bool,
+    },
 }
 
 fn map_two_chart_endpoint_sets(
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
-) -> TwoChartMappingOutcome {
-    let Some(first) = pcurve.samples.first() else {
-        return TwoChartMappingOutcome {
-            no_samples: true,
-            ..TwoChartMappingOutcome::default()
-        };
-    };
-    let Some(last) = pcurve.samples.last() else {
-        return TwoChartMappingOutcome {
-            no_samples: true,
-            ..TwoChartMappingOutcome::default()
-        };
+) -> TwoChartMapping {
+    let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
+        return TwoChartMapping::NoSamples;
     };
     let surfaces = pcurve
         .faces
@@ -186,12 +179,11 @@ fn map_two_chart_endpoint_sets(
         } else {
             false
         };
-    TwoChartMappingOutcome {
+    TwoChartMapping::Mapped {
         endpoint_sets,
         missing_surface_paths,
         unevaluable_paths,
         surface_mismatch,
-        ..TwoChartMappingOutcome::default()
     }
 }
 
@@ -200,10 +192,18 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
 ) -> Option<TwoChartEndpointSets> {
-    let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
-    (!mapping.surface_mismatch)
-        .then_some(mapping.endpoint_sets)
-        .flatten()
+    match map_two_chart_endpoint_sets(scan, ir, pcurve) {
+        TwoChartMapping::Mapped {
+            endpoint_sets,
+            surface_mismatch: false,
+            ..
+        } => endpoint_sets,
+        TwoChartMapping::NoSamples
+        | TwoChartMapping::Mapped {
+            surface_mismatch: true,
+            ..
+        } => None,
+    }
 }
 
 #[cfg(test)]
@@ -239,7 +239,6 @@ pub struct PcurveMismatchDetail {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct PcurveEndpointDiagnostics {
     pub records: usize,
-    pub paths: usize,
     pub inactive_paths: usize,
     pub inactive_records: usize,
     pub partial_records: usize,
@@ -255,7 +254,6 @@ pub struct PcurveEndpointDiagnostics {
     pub evidence: usize,
     pub complete_evidence: usize,
     pub two_chart_records: usize,
-    pub two_chart_mapped_records: usize,
     pub two_chart_complete_records: usize,
     pub two_chart_partial_records: usize,
     pub two_chart_missing_surface_paths: usize,
@@ -265,7 +263,6 @@ pub struct PcurveEndpointDiagnostics {
     pub two_chart_unmapped_records: usize,
     pub carrier_validated_paths: usize,
     pub carrier_rejected_paths: usize,
-    pub carrier_unknown_paths: usize,
     pub carrier_unknown_missing_surface_paths: usize,
     pub carrier_unknown_missing_carrier_paths: usize,
     pub carrier_unknown_unsupported_pair_paths: usize,
@@ -273,6 +270,27 @@ pub struct PcurveEndpointDiagnostics {
     pub carrier_unknown_unsupported_path_paths: usize,
     pub carrier_rejected_records: usize,
     pub mismatch_samples: Vec<PcurveMismatchDetail>,
+}
+
+impl PcurveEndpointDiagnostics {
+    /// Returns the total number of path outcomes.
+    pub fn paths(&self) -> usize {
+        self.mapped_paths + self.missing_surfaces + self.unevaluable_paths
+    }
+
+    /// Returns the number of records with at least one mapped chart.
+    pub fn two_chart_mapped_records(&self) -> usize {
+        self.two_chart_complete_records + self.two_chart_partial_records
+    }
+
+    /// Returns the number of paths without a carrier decision.
+    pub fn carrier_unknown_paths(&self) -> usize {
+        self.carrier_unknown_missing_surface_paths
+            + self.carrier_unknown_missing_carrier_paths
+            + self.carrier_unknown_unsupported_pair_paths
+            + self.carrier_unknown_parallel_plane_paths
+            + self.carrier_unknown_unsupported_path_paths
+    }
 }
 
 #[derive(Debug, Default)]
@@ -346,7 +364,6 @@ type SupportConePlaneWitness = ([[f64; 2]; 2], PlaneEquation);
 
 struct MappedPcurvePaths {
     mapped: Vec<MappedPcurvePath>,
-    paths: usize,
     missing_surfaces: usize,
     unevaluable_paths: usize,
 }
@@ -610,7 +627,11 @@ pub fn reconcile_support_apex_cone_parameter_branches(
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
         let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
-        let Some(endpoint_sets) = mapping.endpoint_sets else {
+        let TwoChartMapping::Mapped {
+            endpoint_sets: Some(endpoint_sets),
+            ..
+        } = mapping
+        else {
             continue;
         };
         collect_support_cone_plane_witness(&mut witnesses, &planes, faces, endpoint_sets.paths());
@@ -655,12 +676,10 @@ fn map_pcurve_paths(
 ) -> MappedPcurvePaths {
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
-        paths: 0,
         missing_surfaces: 0,
         unevaluable_paths: 0,
     };
     for (face_id, endpoints) in paths {
-        result.paths += 1;
         let Some(face_id) = face_id else {
             result.missing_surfaces += 1;
             continue;
@@ -790,7 +809,6 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
             let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
-            diagnostics.paths += mapped.paths;
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
@@ -810,26 +828,23 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                     carrier_proof_available = true;
                     diagnostics.carrier_rejected_paths += 1;
                 }
-                PcurveCarrierStatus::Unknown(reason) => {
-                    diagnostics.carrier_unknown_paths += 1;
-                    match reason {
-                        PcurveCarrierUnknownReason::MissingSurface => {
-                            diagnostics.carrier_unknown_missing_surface_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::MissingCarrier => {
-                            diagnostics.carrier_unknown_missing_carrier_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPair => {
-                            diagnostics.carrier_unknown_unsupported_pair_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::ParallelPlanePair => {
-                            diagnostics.carrier_unknown_parallel_plane_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPath => {
-                            diagnostics.carrier_unknown_unsupported_path_paths += 1;
-                        }
+                PcurveCarrierStatus::Unknown(reason) => match reason {
+                    PcurveCarrierUnknownReason::MissingSurface => {
+                        diagnostics.carrier_unknown_missing_surface_paths += 1;
                     }
-                }
+                    PcurveCarrierUnknownReason::MissingCarrier => {
+                        diagnostics.carrier_unknown_missing_carrier_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::UnsupportedPair => {
+                        diagnostics.carrier_unknown_unsupported_pair_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::ParallelPlanePair => {
+                        diagnostics.carrier_unknown_parallel_plane_paths += 1;
+                    }
+                    PcurveCarrierUnknownReason::UnsupportedPath => {
+                        diagnostics.carrier_unknown_unsupported_path_paths += 1;
+                    }
+                },
             }
         }
         let selected_paths = if carrier_proof_available {
@@ -909,16 +924,28 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
         let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
-        diagnostics.two_chart_missing_surface_paths += mapping.missing_surface_paths;
-        diagnostics.two_chart_unevaluable_paths += mapping.unevaluable_paths;
-        diagnostics.two_chart_surface_mismatch_records += usize::from(mapping.surface_mismatch);
-        diagnostics.two_chart_no_sample_records += usize::from(mapping.no_samples);
-        let Some(endpoint_sets) = mapping.endpoint_sets else {
+        let (endpoint_sets, surface_mismatch) = match mapping {
+            TwoChartMapping::NoSamples => {
+                diagnostics.two_chart_no_sample_records += 1;
+                (None, false)
+            }
+            TwoChartMapping::Mapped {
+                endpoint_sets,
+                missing_surface_paths,
+                unevaluable_paths,
+                surface_mismatch,
+            } => {
+                diagnostics.two_chart_missing_surface_paths += missing_surface_paths;
+                diagnostics.two_chart_unevaluable_paths += unevaluable_paths;
+                diagnostics.two_chart_surface_mismatch_records += usize::from(surface_mismatch);
+                (endpoint_sets, surface_mismatch)
+            }
+        };
+        let Some(endpoint_sets) = endpoint_sets else {
             diagnostics.two_chart_unmapped_records += 1;
             process_paths(pcurve.curve_id, faces, Vec::new(), true, false);
             continue;
         };
-        diagnostics.two_chart_mapped_records += 1;
         if endpoint_sets.complete() {
             diagnostics.two_chart_complete_records += 1;
         } else {
@@ -950,7 +977,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             faces,
             paths,
             endpoint_sets.complete(),
-            mapping.surface_mismatch,
+            surface_mismatch,
         );
     }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
@@ -1397,7 +1424,7 @@ pub fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Opt
 #[cfg(test)]
 pub fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
 ) -> BTreeMap<u32, [f64; 3]> {
@@ -1419,7 +1446,7 @@ pub fn solve_pcurve_vertex_domains(
 /// inferred geometry is inconsistent.
 pub fn solve_pcurve_vertex_domains_with_authoritative_points(
     constraints: &[PcurveVertexConstraint],
-    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
     authoritative_points: &BTreeMap<u32, [f64; 3]>,
@@ -1475,16 +1502,12 @@ pub fn solve_pcurve_vertex_domains_with_authoritative_points(
     for (vertex, point) in fixed_points {
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(point.iter().copied().collect());
+                entry.insert(vec![*point]);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let Some(point) = point {
-                    entry
-                        .get_mut()
-                        .retain(|candidate| model_points_agree(*candidate, *point));
-                } else {
-                    entry.get_mut().clear();
-                }
+                entry
+                    .get_mut()
+                    .retain(|candidate| model_points_agree(*candidate, *point));
             }
         }
     }
@@ -1945,8 +1968,14 @@ mod tests {
 
         pcurve.samples[1][1][0] = 0.6;
         let mapping = map_two_chart_endpoint_sets(&scan, &ir, &pcurve);
-        assert!(mapping.surface_mismatch);
-        assert!(mapping.endpoint_sets.is_some());
+        assert!(matches!(
+            mapping,
+            TwoChartMapping::Mapped {
+                surface_mismatch: true,
+                endpoint_sets: Some(_),
+                ..
+            }
+        ));
         assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
 
         pcurve.samples[1][1][0] = 0.5;
@@ -2110,7 +2139,7 @@ mod tests {
             Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
         );
         assert_eq!(diagnostics.records, 1);
-        assert_eq!(diagnostics.paths, 2);
+        assert_eq!(diagnostics.paths(), 2);
         assert_eq!(diagnostics.inactive_paths, 1);
         assert_eq!(diagnostics.inactive_records, 0);
         assert_eq!(diagnostics.partial_records, 1);
@@ -2138,12 +2167,7 @@ mod tests {
         for (value, raw) in token_specs {
             let offset = body.len();
             body.extend_from_slice(&raw);
-            scalar_tokens.push(crate::curve::CurveParameterScalar {
-                value,
-                raw,
-                offset,
-                length: body.len() - offset,
-            });
+            scalar_tokens.push(crate::curve::CurveParameterScalar { value, raw, offset });
         }
         body.extend_from_slice(&[0x34, 0xb0, 0x00]);
         let record = crate::curve::CurveParameterRecord {
@@ -2155,12 +2179,10 @@ mod tests {
                 crate::curve::CurveParameterOpaqueSpan {
                     raw: vec![0xfc, 0x02],
                     offset: 0,
-                    length: 2,
                 },
                 crate::curve::CurveParameterOpaqueSpan {
                     raw: vec![0x34, 0xb0, 0x00],
                     offset: body.len() - 3,
-                    length: 3,
                 },
             ],
             body,
@@ -2204,7 +2226,7 @@ mod tests {
             Some(([[-14.5, 0.0, -0.75], [-12.5, 0.0, -0.75]], false,))
         );
         assert_eq!(diagnostics.records, 1);
-        assert_eq!(diagnostics.paths, 1);
+        assert_eq!(diagnostics.paths(), 1);
         assert_eq!(diagnostics.mapped_paths, 1);
         assert_eq!(diagnostics.accepted_records, 1);
         assert_eq!(diagnostics.evidence, 1);

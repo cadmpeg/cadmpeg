@@ -19,7 +19,7 @@ use self::implementation_level::{DeclaredImplementationLevel, ImplementationLeve
 
 pub(crate) mod implementation_level;
 
-use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
+use crate::lex::{BinaryValue, LexError, Lexer, OccurrencePrefix, Token, TokenKind};
 use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
@@ -696,29 +696,26 @@ impl Parser<'_, '_, '_> {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let (name, occurrence_id) = match self.next_kind()? {
-                    TokenKind::Instance(id) => (format!("#{id}"), Some((b'#', id))),
-                    TokenKind::ValueInstance(id) => (format!("@{id}"), Some((b'@', id))),
+                let (name, prefix, id) = match self.next_kind()? {
+                    TokenKind::Instance(id) => (format!("#{id}"), OccurrencePrefix::Entity, id),
+                    TokenKind::ValueInstance(id) => (format!("@{id}"), OccurrencePrefix::Value, id),
                     _ => return self.err("expected reference name"),
                 };
                 self.charge_string_storage(&name, "step_parse_reference_storage")?;
                 if !reference_names.insert(name.clone()) {
                     return self.err("duplicate reference name");
                 }
-                if let Some((prefix, id)) = occurrence_id {
-                    let already_used = external_reference_ids.contains(&id)
-                        || external_value_reference_ids.contains(&id);
-                    if already_used {
-                        return self.err("duplicate external occurrence integer");
+                let already_used = external_reference_ids.contains(&id)
+                    || external_value_reference_ids.contains(&id);
+                if already_used {
+                    return self.err("duplicate external occurrence integer");
+                }
+                match prefix {
+                    OccurrencePrefix::Entity => {
+                        external_reference_ids.insert(id);
                     }
-                    match prefix {
-                        b'#' => {
-                            external_reference_ids.insert(id);
-                        }
-                        b'@' => {
-                            external_value_reference_ids.insert(id);
-                        }
-                        _ => unreachable!("occurrence prefixes are fixed by the parser"),
+                    OccurrencePrefix::Value => {
+                        external_value_reference_ids.insert(id);
                     }
                 }
                 self.punct(&TokenKind::Equals)?;

@@ -13,7 +13,7 @@ use crate::feature::{
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform,
+    PmDcSketchEntityKind, PmDcTransform, PointTail,
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
@@ -468,12 +468,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             PmDcSketchEntityKind::Point {
                 endpoint_of,
                 center_of,
-                associations,
+                tail,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
-                if let Some(associations) = associations {
+                if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
                 }
             }
@@ -1616,7 +1616,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
             sections
                 .entry(record.token.as_str())
                 .or_default()
-                .insert(record.number);
+                .insert(u8::from(record.number));
             sections
         },
     );
@@ -2103,13 +2103,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
     for placement in &data.assembly_placements {
-        if !occurrence_ids.contains(&placement.occurrence_id)
-            || placement.suffix_sha256.len() != 64
-            || placement
-                .transform
-                .iter()
-                .flatten()
-                .any(|value| !value.is_finite())
+        if !occurrence_ids.contains(&placement.occurrence_id) || placement.suffix_sha256.len() != 64
         {
             findings.push(finding(
                 Check::NativeLinks,

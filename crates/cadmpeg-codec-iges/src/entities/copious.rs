@@ -178,7 +178,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        if !presentation_use_flag_valid(entry.form, entry.status.use_flag()) {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
             losses.push(entity_loss(
                 entry,
                 "Type 106 presentation forms require Entity Use Flag 01",

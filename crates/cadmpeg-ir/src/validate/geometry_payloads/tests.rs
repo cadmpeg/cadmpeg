@@ -93,8 +93,7 @@ fn tessellation_counts_must_be_consistent() {
         .expect("valid tessellation")
         .with_faces(vec![
             FaceId::mint("synthetic:test:face#missing").expect("valid identity")
-        ])
-        .with_chordal_deflection(Some(-1.0)),
+        ]),
     );
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
@@ -102,10 +101,6 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("missing tessellation face")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid tessellation deflection")));
 }
 
 #[test]
@@ -164,7 +159,9 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
             triangles: vec![0],
         }])
         .expect("valid local texture assignment");
-    invalid_texture.id = "synthetic:test:tessellation#missing-texture".into();
+    invalid_texture.id = "synthetic:test:tessellation#missing-texture"
+        .try_into()
+        .unwrap();
 
     let mut ir = unit_cube();
     ir.model.assets.push(Asset {

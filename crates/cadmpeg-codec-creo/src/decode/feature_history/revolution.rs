@@ -411,7 +411,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
                     )).expect("identity grammar"),
-                    geometry,
+                    CurveGeometry::from(geometry),
                     transform.offset,
                     format!(
                         "FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"

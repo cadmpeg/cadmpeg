@@ -14,19 +14,20 @@ use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
     Inspected, Selection,
 };
 
-use crate::application::artifact_store;
+use crate::application::artifact_store::{self, FileDestination};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal};
 use crate::application::transcoder::{
@@ -66,10 +67,8 @@ pub struct ConversionArgs {
     pub allow_empty: bool,
     /// CAD output destination and its overwrite policy.
     pub destination: DestinationPolicy,
-    /// Replace an existing command report.
-    pub overwrite_report: bool,
     /// Optional path for the JSON command report.
-    pub report: Option<PathBuf>,
+    pub report: Option<FileDestination>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -79,8 +78,7 @@ pub struct ConversionArgs {
 /// persistence failure remains visible on stderr.
 fn write_refusal_command_report(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     refusal: &ConversionRefusal,
 ) {
@@ -88,7 +86,7 @@ fn write_refusal_command_report(
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) = write_command_report(input, output, force, command, body) {
+    if let Err(error) = write_command_report(input, output, command, body) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -98,8 +96,7 @@ fn write_refusal_command_report(
 
 fn write_refusal_report<P: Serialize>(
     input: &Path,
-    output: Option<&Path>,
-    force: bool,
+    output: Option<&FileDestination>,
     command: &'static str,
     payload: &P,
     refusal: &ConversionRefusal,
@@ -107,7 +104,7 @@ fn write_refusal_report<P: Serialize>(
     if !refusal.may_write_report() {
         return;
     }
-    if let Err(error) = write_refused_json_report(input, output, force, command, payload, refusal) {
+    if let Err(error) = write_refused_json_report(input, output, command, payload, refusal) {
         eprintln!(
             "warning: could not write {command} refusal report: {error:#}; preserving the original {} refusal",
             refusal.code()
@@ -132,11 +129,25 @@ struct InspectPayload<'a> {
     summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
-#[derive(Serialize)]
 struct DiffReportPayload<'a> {
-    different: bool,
     diff: &'a cadmpeg_ir::IrDiff,
     source_fidelity: &'a reporting::FidelitySummary,
+}
+
+impl DiffReportPayload<'_> {
+    fn different(&self) -> bool {
+        !self.diff.is_empty() || fidelity_differs(self.source_fidelity)
+    }
+}
+
+impl Serialize for DiffReportPayload<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DiffReportPayload", 3)?;
+        state.serialize_field("different", &self.different())?;
+        state.serialize_field("diff", self.diff)?;
+        state.serialize_field("source_fidelity", self.source_fidelity)?;
+        state.end()
+    }
 }
 
 /// Inspect a native container and print its entries.
@@ -145,8 +156,7 @@ pub fn inspect(
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
     limits: cadmpeg_core::decode::ResourceLimits,
 ) -> CommandResult<()> {
     if matches!(forced, Some(ForcedInput::Cadir)) {
@@ -176,7 +186,7 @@ pub fn inspect(
                 confidence: selection.confidence(),
                 summary: None,
             };
-            write_refusal_report(path, report_path, force, "inspect", &payload, &refusal);
+            write_refusal_report(path, report_path, "inspect", &payload, &refusal);
             if json {
                 println!(
                     "{}",
@@ -196,7 +206,7 @@ pub fn inspect(
         confidence,
         summary: Some(&summary),
     };
-    write_json_report(path, report_path, force, "inspect", &payload)?;
+    write_json_report(path, report_path, "inspect", &payload)?;
     if json {
         println!("{}", command_report_json("inspect", &payload)?);
         return Ok(());
@@ -256,21 +266,19 @@ fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyh
 pub fn dump(
     inputs: &InputCatalog,
     path: &Path,
-    out: Option<&Path>,
-    force: bool,
-    report_path: Option<&Path>,
+    destination: &DestinationPolicy,
+    report_path: Option<&FileDestination>,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> CommandResult<()> {
-    let destination = DestinationPolicy::new(out.map(Path::to_path_buf), force, false);
     let destination = destination.resolve(path)?;
     if let Some(report_path) = report_path {
-        artifact_store::check_output_path(path, report_path, force)?;
+        report_path.check(path)?;
         if let Some(out) = destination.path() {
             artifact_store::check_distinct_output_paths(
                 out,
                 "CADIR output",
-                report_path,
+                &report_path.path,
                 "command report",
             )?;
         }
@@ -282,7 +290,7 @@ pub fn dump(
                 return Err(error);
             };
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, Some(report_path), force, "dump", refusal);
+                write_refusal_command_report(path, Some(report_path), "dump", refusal);
             }
             return Err(error);
         }
@@ -304,7 +312,6 @@ pub fn dump(
     write_command_report(
         path,
         report_path,
-        force,
         "dump",
         CommandReportBody::Ok {
             decode_report: loaded.decode_report(),
@@ -322,14 +329,13 @@ pub fn check_cmd(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
 ) -> CommandResult<()> {
     let loaded = match loader::load_artifact(inputs, path, args.options(), forced) {
         Ok(loaded) => loaded,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(path, report_path, force, "check", refusal);
+                write_refusal_command_report(path, report_path, "check", refusal);
             }
             return Err(error);
         }
@@ -360,7 +366,7 @@ pub fn check_cmd(
             export: None,
         },
     };
-    write_command_report(path, report_path, force, "check", body)?;
+    write_command_report(path, report_path, "check", body)?;
     if json {
         writeln!(stdout, "{}", command_body_json("check", body)?)?;
     } else {
@@ -390,25 +396,19 @@ pub fn convert(
         Ok(selection) => selection,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
-                write_refusal_command_report(
-                    path,
-                    conversion.report.as_deref(),
-                    conversion.overwrite_report,
-                    "convert",
-                    refusal,
-                );
+                write_refusal_command_report(path, conversion.report.as_ref(), "convert", refusal);
             }
             return Err(error);
         }
     };
     let target = export_target(selection);
-    if let Some(report_path) = conversion.report.as_deref() {
-        artifact_store::check_output_path(path, report_path, conversion.overwrite_report)?;
+    if let Some(report_path) = conversion.report.as_ref() {
+        report_path.check(path)?;
         if let Some(destination) = policy.destination.path() {
             artifact_store::check_distinct_output_paths(
                 destination,
                 "CAD output",
-                report_path,
+                &report_path.path,
                 "command report",
             )?;
         }
@@ -432,13 +432,7 @@ pub fn convert(
         if let Some(validation) = reports.check {
             print_check_report(&mut stderr, validation)?;
         }
-        write_refusal_command_report(
-            path,
-            conversion.report.as_deref(),
-            conversion.overwrite_report,
-            "convert",
-            refusal,
-        );
+        write_refusal_command_report(path, conversion.report.as_ref(), "convert", refusal);
         Ok(())
     };
 
@@ -480,8 +474,7 @@ pub fn convert(
     print_export_emission(&mut io::stderr(), &emission)?;
     if let Err(error) = write_command_report(
         path,
-        conversion.report.as_deref(),
-        conversion.overwrite_report,
+        conversion.report.as_ref(),
         "convert",
         CommandReportBody::Ok {
             decode_report: decode_report.as_ref(),
@@ -503,8 +496,7 @@ pub fn diff(
     b: DiffInput<'_>,
     args: &DecodeArgs,
     json: bool,
-    report_path: Option<&Path>,
-    force: bool,
+    report_path: Option<&FileDestination>,
 ) -> CommandResult<ExitCode> {
     let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
     print_load_notice(&left);
@@ -512,16 +504,14 @@ pub fn diff(
     print_load_notice(&right);
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
-    let different = !result.is_empty() || fidelity_differs(&fidelity);
     let payload = DiffReportPayload {
-        different,
         diff: &result,
         source_fidelity: &fidelity,
     };
-    write_json_report(a.path, report_path, force, "diff", &payload)?;
+    write_json_report(a.path, report_path, "diff", &payload)?;
     if json {
         println!("{}", command_report_json("diff", &payload)?);
-        return Ok(if different {
+        return Ok(if payload.different() {
             ExitCode::from(1)
         } else {
             ExitCode::SUCCESS
@@ -553,7 +543,7 @@ pub fn diff(
         print_id_delta("modified", &modified);
     }
     print_fidelity_summary(&fidelity);
-    if different {
+    if payload.different() {
         Ok(ExitCode::from(1))
     } else {
         println!("  identical");
@@ -575,7 +565,6 @@ mod tests {
             None,
             false,
             None,
-            false,
             ResourceLimits::desktop(),
         )
         .unwrap_err();

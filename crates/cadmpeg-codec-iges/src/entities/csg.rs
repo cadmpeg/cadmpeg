@@ -255,12 +255,12 @@ pub(super) fn project(
         let precision = global.real_precision();
         if x_axis_start.is_some() != x_axis.is_some()
             || z_axis_start.is_some() != z_axis.is_some()
-            || x_axis_start
-                .zip(x_axis)
-                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
-            || z_axis_start
-                .zip(z_axis)
-                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
+            || x_axis_start.zip(x_axis).is_some_and(|(start, axis)| {
+                declared_unit_vector(record, start, axis, precision).is_none()
+            })
+            || z_axis_start.zip(z_axis).is_some_and(|(start, axis)| {
+                declared_unit_vector(record, start, axis, precision).is_none()
+            })
             || x_axis_start
                 .zip(x_axis)
                 .zip(z_axis_start.zip(z_axis))
@@ -318,7 +318,8 @@ pub(super) fn project(
         if origin.is_none_or(|origin| {
             !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite()
         }) || direction.is_none_or(|direction| {
-            !declared_unit_vector(record, direction_start, direction, global.real_precision())
+            declared_unit_vector(record, direction_start, direction, global.real_precision())
+                .is_none()
         }) {
             losses.push(entity_loss(entry, "solid sweep axis is invalid"));
             continue;
@@ -479,7 +480,7 @@ pub(super) fn project(
         let point = (2..=4)
             .map(|index| record.number(index).filter(|value| value.is_finite()))
             .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag() != Some(UseFlag::Other) {
+        if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
             losses.push(entity_loss(
                 entry,
                 "selected-component point or entity-use flag is invalid",

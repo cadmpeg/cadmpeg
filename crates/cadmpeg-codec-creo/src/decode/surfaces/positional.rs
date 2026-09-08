@@ -40,6 +40,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     let associations = unique_surface_prototype_associations(scan)
         .into_iter()
         .filter_map(|(prototype, associated_row, section)| {
+            let prototype = prototype.record();
             let frame = surface_prototype_frame_bounds(scan, section, prototype.offset)?;
             Some((prototype, associated_row, section, frame))
         })
@@ -201,28 +202,28 @@ pub(in super::super) fn transfer_positional_tori(
             "positional_torus_frame",
             Exactness::Derived,
         );
-        let geometry = if frame.major_radius == 0.0 {
+        let geometry = if frame.major_radius() == 0.0 {
             SurfaceGeometry::Sphere {
-                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                center: Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
+                axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                 ref_direction: Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
+                    frame.ref_direction()[0],
+                    frame.ref_direction()[1],
+                    frame.ref_direction()[2],
                 ),
-                radius: frame.minor_radius,
+                radius: frame.minor_radius(),
             }
         } else {
             SurfaceGeometry::Torus {
-                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
-                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                center: Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
+                axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                 ref_direction: Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
+                    frame.ref_direction()[0],
+                    frame.ref_direction()[1],
+                    frame.ref_direction()[2],
                 ),
-                major_radius: frame.major_radius,
-                minor_radius: frame.minor_radius,
+                major_radius: frame.major_radius(),
+                minor_radius: frame.minor_radius(),
             }
         };
         ir.model.surfaces.push(Surface {
