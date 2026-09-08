@@ -6815,10 +6815,22 @@
       "spreadsheets": [
         {
           "cells": [
-            "fcstd:design:parameter#Parameters:cell:A1",
-            "fcstd:design:parameter#Parameters:cell:B1",
-            "fcstd:design:parameter#Parameters:cell:A2",
-            "fcstd:design:parameter#Parameters:cell:B2"
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
+            },
+            {
+              "address": "A2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A2"
+            },
+            {
+              "address": "B2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B2"
+            }
           ],
           "feature": "fcstd:design:feature#Parameters",
           "id": "fcstd:design:spreadsheet#Parameters",
