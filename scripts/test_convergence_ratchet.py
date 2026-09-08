@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -489,7 +490,6 @@ class LedgerRoundTrip(unittest.TestCase):
 
     def test_parse_and_render_keep_targets(self) -> None:
         text = ratchet.render_ledger(
-            "deadbeef",
             "filter with #[path] text",
             _complete_targets(),
             _complete_ceilings(crate_root_tests_rs=12, path_test_includes=23),
@@ -501,49 +501,10 @@ class LedgerRoundTrip(unittest.TestCase):
             parsed = ratchet.parse_ledger(path)
         self.assertEqual(parsed["targets"], _complete_targets())
         self.assertEqual(parsed["kinds"], dict(ratchet.KIND_BY_KEY))
-        self.assertNotIn("from_endian_bytes", parsed["targets"])
+        self.assertEqual(parsed["targets"]["from_endian_bytes"], 0)
         self.assertEqual(parsed["ceilings"]["crate_root_tests_rs"], 12)
         self.assertEqual(parsed["ceilings"]["path_test_includes"], 23)
         self.assertEqual(parsed["filter"], "filter with #[path] text")
-
-    def test_check_rejects_invalid_measured_at(self) -> None:
-        failures = ratchet.check(
-            _zero_counts(),
-            _complete_ceilings(),
-            _complete_targets(),
-            measured_at="not-a-sha",
-        )
-        self.assertEqual(failures, ["ledger measured_at is not a 40-char git SHA"])
-
-    def test_check_accepts_valid_measured_at(self) -> None:
-        failures = ratchet.check(
-            _zero_counts(),
-            _complete_ceilings(),
-            _complete_targets(),
-            measured_at="0123456789abcdef0123456789abcdef01234567",
-        )
-        self.assertEqual(failures, [])
-
-    def test_measured_commit_must_exist_and_be_reachable(self) -> None:
-        sha = "0123456789abcdef0123456789abcdef01234567"
-        with patch.object(ratchet, "git_object_exists", return_value=False):
-            self.assertEqual(
-                ratchet.check_measured_commit(sha),
-                ["ledger measured_at does not identify an existing commit"],
-            )
-        with (
-            patch.object(ratchet, "git_object_exists", return_value=True),
-            patch.object(ratchet, "git_is_ancestor", return_value=False),
-        ):
-            self.assertEqual(
-                ratchet.check_measured_commit(sha),
-                ["ledger measured_at is not an ancestor of HEAD"],
-            )
-        with (
-            patch.object(ratchet, "git_object_exists", return_value=True),
-            patch.object(ratchet, "git_is_ancestor", return_value=True),
-        ):
-            self.assertEqual(ratchet.check_measured_commit(sha), [])
 
     def test_raise_without_reason_fails(self) -> None:
         failures = ratchet.check(
@@ -567,23 +528,26 @@ class LedgerRoundTrip(unittest.TestCase):
         )
         self.assertEqual(failures, [])
 
+    def test_raise_cannot_reuse_previous_reason(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(from_endian_bytes=2),
+            _complete_targets(),
+            previous_ceilings=_complete_ceilings(from_endian_bytes=1),
+            reasons={"from_endian_bytes": "previous exception"},
+            previous_reasons={"from_endian_bytes": "previous exception"},
+        )
+        self.assertEqual(failures, ["from_endian_bytes: ceiling raised without a new reason"])
+
     def test_kinds_must_match_script_classification(self) -> None:
         failures = ratchet.check(
             _zero_counts(),
             _complete_ceilings(),
             _complete_targets(),
-            kinds={"from_endian_bytes": "convergence"},
+            kinds={"from_endian_bytes": "pressure"},
         )
-        self.assertIn("from_endian_bytes: kind 'convergence' != 'pressure'", failures)
+        self.assertIn("from_endian_bytes: kind 'pressure' != 'convergence'", failures)
         self.assertIn("ledger missing kind for codec_error_malformed_format", failures)
-
-    def test_pressure_key_must_not_have_target(self) -> None:
-        targets = _complete_targets()
-        targets["from_endian_bytes"] = 0
-        failures = ratchet.check(_zero_counts(), _complete_ceilings(), targets)
-        self.assertEqual(
-            failures, ["from_endian_bytes: pressure key must not have a [targets] entry"]
-        )
 
     def test_update_refuses_increase(self) -> None:
         repo = TempRepoCase()
@@ -596,7 +560,6 @@ class LedgerRoundTrip(unittest.TestCase):
             repo.write(
                 "docs/convergence-ledger.toml",
                 ratchet.render_ledger(
-                    "0123456789abcdef0123456789abcdef01234567",
                     "filter",
                     _complete_targets(),
                     _complete_ceilings(),
@@ -606,6 +569,68 @@ class LedgerRoundTrip(unittest.TestCase):
             self.assertEqual(ratchet.main(["--update"]), 1)
         finally:
             repo.tearDown()
+
+
+class EndianExceptions(TempRepoCase):
+    def test_exception_does_not_admit_another_call(self) -> None:
+        path = self.write("crates/demo/src/lib.rs", """fn f() {
+    // endian-exception: reconstructed-scalar
+    f64::from_be_bytes(raw);
+    u32::from_le_bytes(raw);
+}
+""")
+        self.assertEqual(ratchet.unapproved_endian_calls(path), 1)
+        self.assertEqual(ratchet.check_endian_exceptions(), [])
+
+    def test_stale_or_unknown_exception_fails(self) -> None:
+        for reason, following in [("reconstructed-scalar", "0;"), ("typo", "f64::from_be_bytes(raw);")]:
+            self.write("crates/demo/src/lib.rs", f"fn f() {{\n// endian-exception: {reason}\n{following}\n}}\n")
+            self.assertEqual(len(ratchet.check_endian_exceptions()), 1)
+
+
+class SquashRatchet(TempRepoCase):
+    def git(self, *args: str) -> str:
+        return subprocess.check_output(
+            ["git", *args], cwd=self.root, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+
+    def ledger(self, count: int, reason: str | None = None) -> None:
+        self.write("docs/convergence-ledger.toml", ratchet.render_ledger(
+            "test", _complete_targets(), _complete_ceilings(from_endian_bytes=count),
+            {"from_endian_bytes": reason} if reason else {},
+        ))
+
+    def test_squash_checks_transition_and_current_measurement(self) -> None:
+        self.git("init", "-b", "main")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "user.name", "Test")
+        self.ledger(1)
+        self.git("add", ".")
+        self.git("commit", "-m", "base")
+        base = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-b", "topic")
+        self.ledger(0)
+        self.git("add", ".")
+        self.git("commit", "-m", "decrease")
+        self.git("checkout", "main")
+        self.git("merge", "--squash", "topic")
+        self.git("commit", "-m", "squashed")
+        self.git("branch", "-D", "topic")
+        with patch.object(ratchet, "measure_all", return_value=(_zero_counts(), {})):
+            self.assertEqual(ratchet.main(["--base", base, "--json"]), 0)
+            self.assertEqual(ratchet.main(["--base", "missing", "--json"]), 1)
+            # A committed increase must be compared with the previous revision.
+            previous = self.git("rev-parse", "HEAD")
+            self.ledger(1)
+            self.git("add", ".")
+            self.git("commit", "-m", "unjustified increase")
+            with patch.object(ratchet, "measure_all", return_value=(_complete_ceilings(from_endian_bytes=1), {})):
+                self.assertEqual(ratchet.main(["--base", previous, "--json"]), 1)
+                self.ledger(1, "New reconstructed representation requires review")
+                self.assertEqual(ratchet.main(["--base", previous, "--json"]), 0)
+            # A stale ceiling must be tightened even without a transition check.
+            self.assertEqual(ratchet.main(["--json"]), 1)
+            self.assertEqual(ratchet.main(["--update", "--json"]), 0)
 
 
 if __name__ == "__main__":

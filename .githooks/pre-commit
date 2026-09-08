@@ -56,6 +56,15 @@ if git diff --cached --name-only \
   python3 scripts/render-format-support.py --check
 fi
 
+# Ratchet inputs include its ledger and checker, even without Rust edits.
+if git diff --cached --name-only | grep -qE '^scripts/(convergence-ratchet\.py|test_convergence_ratchet\.py)$'; then
+  python3 -m unittest -q scripts/test_convergence_ratchet.py
+fi
+if git diff --cached --name-only | grep -qE '\.rs$|^docs/convergence-ledger\.toml$|^scripts/convergence-ratchet\.py$'; then
+  echo "pre-commit: scripts/convergence-ratchet.py"
+  python3 scripts/convergence-ratchet.py
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
@@ -66,9 +75,6 @@ if ! git diff --cached --name-only \
   echo "pre-commit: no Rust/Cargo files staged; skipping the Rust gate"
   exit 0
 fi
-
-echo "pre-commit: scripts/convergence-ratchet.py"
-python3 scripts/convergence-ratchet.py
 
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check

@@ -79,6 +79,17 @@ class ShapeChecks(unittest.TestCase):
 
 
 class SnapshotChecks(unittest.TestCase):
+    def test_squashed_measurement_does_not_require_an_object(self) -> None:
+        baseline = "0" * 40
+        measurement = "1" * 40
+        with mock.patch.object(ledger, "git_is_commit", side_effect=lambda sha: sha == baseline):
+            self.assertEqual(ledger.check_git_objects({
+                "baseline_commit": baseline, "measured_at": measurement,
+            }), [])
+            self.assertEqual(ledger.check_git_objects({
+                "baseline_commit": measurement,
+            }), [f"commit {measurement} is not a known git object"])
+
     def test_requires_generated_at_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

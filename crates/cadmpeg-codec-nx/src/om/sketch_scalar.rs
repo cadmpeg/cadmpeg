@@ -22,6 +22,7 @@ impl SketchScaledAtom {
         let mut encoded = [0_u8; 8];
         encoded[0] = 0x40;
         encoded[1..].copy_from_slice(&self.0);
+        // endian-exception: reconstructed-scalar
         f64::from_be_bytes(encoded) * SKETCH_FIXED_ATOM_SCALE
     }
 

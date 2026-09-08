@@ -4,8 +4,7 @@
 
 Patterns (production filter — see ``docs/convergence-ledger.toml``):
 
-* ``from_le_bytes`` / ``from_be_bytes`` in ``crates/**/src`` (pressure: documented
-  exceptions remain, so the honest end state is not zero)
+* unapproved ``from_le_bytes`` / ``from_be_bytes`` in ``crates/**/src``
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
 * bare scientific-notation tolerance values from ``1e-6`` through ``1e-12``
@@ -23,8 +22,9 @@ Modes:
 
 A deliberate increase is a manual ledger edit: raise the ceiling and record a
 reason under ``[reasons]`` for that key in the same commit. ``check`` compares
-working-tree ceilings to ``HEAD:docs/convergence-ledger.toml`` and fails a
-raise that has no reason.
+working-tree ceilings to ``--base`` (local default: HEAD) and fails a raise
+that has no reason. CI must supply the pre-change revision. Check also requires
+counts to equal ceilings; --update records decreases. Git owns provenance.
 """
 
 from __future__ import annotations
@@ -54,18 +54,9 @@ PLACEMENT_KEYS = (
     "production_line_debt",
 )
 
-# Pressure keys have no zero destination (exceptions remain). Convergence keys
-# have a [targets] completion criterion.
-PRESSURE_KEYS = (
-    "from_endian_bytes",
-)
 METRIC_KEYS = LEGACY_METRIC_KEYS + PLACEMENT_KEYS
-CONVERGENCE_KEYS = tuple(key for key in METRIC_KEYS if key not in PRESSURE_KEYS)
-TARGET_KEYS = CONVERGENCE_KEYS
-KIND_BY_KEY = {
-    key: ("pressure" if key in PRESSURE_KEYS else "convergence") for key in METRIC_KEYS
-}
-MEASURED_AT_SHA = re.compile(r"^[0-9a-f]{40}$")
+TARGET_KEYS = METRIC_KEYS
+KIND_BY_KEY = dict.fromkeys(METRIC_KEYS, "convergence")
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
@@ -108,13 +99,12 @@ FILTER_DESCRIPTION = (
     "initializers are declarations and are excluded. "
     "nonliteral vec repeats exclude literal sizes and sizes derived from an "
     "existing collection's admitted len(). "
-    "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
+    "from_endian_bytes counts unapproved calls in that same crates/**/src glob. A preceding endian-exception comment admits one call for reconstructed-scalar or packed-color-order. "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "
     "golden_tests files stay out of test-line debt. production_line_debt "
     "reuses is_production_rs and elides cfg(test) items without blank placeholders. "
-    "[kinds] marks each key pressure (no zero destination) or convergence "
-    "([targets] is the completion criterion)."
+    "All metrics converge to their [targets]."
 )
 
 
@@ -240,11 +230,41 @@ def metric_source_text(path: Path) -> str:
     return strip_cfg_test_items(masked)
 
 
+ENDIAN_EXCEPTIONS = {"reconstructed-scalar", "packed-color-order"}
+ENDIAN_MARKER = re.compile(r"^\s*// endian-exception: ([a-z-]+)\s*$")
+
+
+def unapproved_endian_calls(path: Path) -> int:
+    """Each exception admits exactly one call on the immediately following line."""
+    raw = path.read_text(encoding="utf-8").splitlines()
+    total = 0
+    for index, line in enumerate(metric_source_text(path).splitlines()):
+        count = len(FROM_ENDIAN.findall(line))
+        marker = ENDIAN_MARKER.fullmatch(raw[index - 1]) if index else None
+        if marker and marker[1] in ENDIAN_EXCEPTIONS:
+            count = max(0, count - 1)
+        total += count
+    return total
+
+
+def check_endian_exceptions() -> list[str]:
+    failures = []
+    for path in iter_src_files("crates/**/src/**/*.rs"):
+        code = metric_source_text(path).splitlines()
+        for index, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+            marker = ENDIAN_MARKER.fullmatch(line)
+            if marker is None:
+                continue
+            following = code[index + 1] if index + 1 < len(code) else ""
+            if marker[1] not in ENDIAN_EXCEPTIONS or len(FROM_ENDIAN.findall(following)) != 1:
+                failures.append(f"{relative_path(path)}:{index + 1}: invalid or stale endian exception")
+    return failures
+
+
 def count_from_endian_bytes() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
-        total += len(FROM_ENDIAN.findall(text))
+        total += unapproved_endian_calls(path)
     return total
 
 
@@ -552,7 +572,7 @@ def collect_legacy_contributors() -> dict[str, list[dict[str, object]]]:
     for path in iter_src_files("crates/**/src/**/*.rs"):
         text = metric_source_text(path)
         counts = {
-            "from_endian_bytes": len(FROM_ENDIAN.findall(text)),
+            "from_endian_bytes": unapproved_endian_calls(path),
             "codec_error_malformed_format": len(MALFORMED_FORMAT.findall(text)),
             "bare_tolerance_literals": count_bare_tolerance_literals(text),
             "nonliteral_vec_repeat": sum(
@@ -900,11 +920,11 @@ def parse_ledger(path: Path) -> dict[str, object]:
     return parse_ledger_text(path.read_text(encoding="utf-8"))
 
 
-def head_ledger() -> dict[str, object] | None:
-    """Parse the committed ledger, or None when HEAD has no copy."""
+def committed_ledger(revision: str) -> dict[str, object] | None:
+    """Parse the ledger at a comparison revision, or None when unavailable."""
     try:
         raw = subprocess.check_output(
-            ["git", "show", "HEAD:docs/convergence-ledger.toml"],
+            ["git", "show", f"{revision}:docs/convergence-ledger.toml"],
             cwd=ROOT,
             stderr=subprocess.DEVNULL,
         )
@@ -914,7 +934,6 @@ def head_ledger() -> dict[str, object] | None:
 
 
 def render_ledger(
-    measured_at: str,
     filter_description: str,
     targets: dict[str, int],
     ceilings: dict[str, int],
@@ -924,8 +943,7 @@ def render_ledger(
         "# Convergence ratchet ceilings. Counts may only fall.",
         "# A decrease updates this file in the same commit. A deliberate increase",
         "# requires a reason under [reasons] for every raised key.",
-        "# [kinds] is pressure (no zero destination) or convergence ([targets]).",
-        f'measured_at = "{measured_at}"',
+        "# All metrics converge to [targets]. Git records measurement provenance.",
         f'filter = "{filter_description}"',
         "",
         "[kinds]",
@@ -949,49 +967,6 @@ def render_ledger(
     return "\n".join(lines)
 
 
-def git_head() -> str:
-    return (
-        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT)
-        .decode()
-        .strip()
-    )
-
-
-def git_object_exists(revision: str) -> bool:
-    """Return whether ``revision`` names a commit in this repository."""
-    result = subprocess.run(
-        ["git", "cat-file", "-e", f"{revision}^{{commit}}"],
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def git_is_ancestor(revision: str, descendant: str = "HEAD") -> bool:
-    """Return whether ``revision`` is an ancestor of ``descendant``."""
-    result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", revision, descendant],
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def check_measured_commit(measured_at: object | None) -> list[str]:
-    """Validate that the measurement provenance is a reachable commit."""
-    if not (isinstance(measured_at, str) and MEASURED_AT_SHA.fullmatch(measured_at)):
-        return ["ledger measured_at is not a 40-char git SHA"]
-    if not git_object_exists(measured_at):
-        return ["ledger measured_at does not identify an existing commit"]
-    if not git_is_ancestor(measured_at):
-        return ["ledger measured_at is not an ancestor of HEAD"]
-    return []
-
-
 def check(
     counts: dict[str, int],
     ceilings: dict[str, int],
@@ -999,13 +974,9 @@ def check(
     kinds: dict[str, str] | None = None,
     reasons: dict[str, str] | None = None,
     previous_ceilings: dict[str, int] | None = None,
-    measured_at: object | None = None,
+    previous_reasons: dict[str, str] | None = None,
 ) -> list[str]:
     failures: list[str] = []
-    if measured_at is not None and not (
-        isinstance(measured_at, str) and MEASURED_AT_SHA.fullmatch(measured_at)
-    ):
-        failures.append("ledger measured_at is not a 40-char git SHA")
     for key in METRIC_KEYS:
         if key not in ceilings:
             failures.append(f"ledger missing ceiling for {key}")
@@ -1017,9 +988,6 @@ def check(
     for key in TARGET_KEYS:
         if key not in targets:
             failures.append(f"ledger missing target for {key}")
-    for key in PRESSURE_KEYS:
-        if key in targets:
-            failures.append(f"{key}: pressure key must not have a [targets] entry")
     if kinds is not None:
         for key in METRIC_KEYS:
             kind = kinds.get(key)
@@ -1038,6 +1006,8 @@ def check(
             if old is None or new > old:
                 if not str(recorded.get(key, "")).strip():
                     failures.append(f"{key}: ceiling raised without [reasons].{key}")
+                elif previous_reasons is not None and recorded[key] == previous_reasons.get(key):
+                    failures.append(f"{key}: ceiling raised without a new reason")
     return failures
 
 
@@ -1049,7 +1019,10 @@ def main(argv: list[str] | None = None) -> int:
         help="rewrite the ledger when every count is ≤ its ceiling",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON on stdout")
+    parser.add_argument("--base", help="compare ceilings with this pre-change revision")
     args = parser.parse_args(argv)
+    if args.base is not None and not args.base.strip():
+        parser.error("--base must name the pre-change revision")
 
     if not LEDGER.is_file():
         print(f"error: missing ledger {LEDGER}", file=sys.stderr)
@@ -1078,7 +1051,10 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(kinds_raw, dict)
         else {}
     )
-    previous = head_ledger()
+    previous = committed_ledger(args.base or "HEAD")
+    if args.base and previous is None:
+        print(f"error: cannot read baseline ledger at {args.base}", file=sys.stderr)
+        return 1
     previous_ceilings: dict[str, int] | None = None
     if previous is not None:
         previous_raw = previous.get("ceilings")
@@ -1095,35 +1071,35 @@ def main(argv: list[str] | None = None) -> int:
         kinds=kinds,
         reasons=reasons,
         previous_ceilings=previous_ceilings,
-        measured_at=ledger.get("measured_at"),
+        previous_reasons=previous.get("reasons", {}) if previous is not None else None,
     )
-    failures.extend(check_measured_commit(ledger.get("measured_at")))
+    failures.extend(check_endian_exceptions())
+    if not args.update:
+        failures.extend(
+            f"{key}: count {counts[key]} < ledger {ceilings[key]}; run --update"
+            for key in METRIC_KEYS
+            if key in ceilings and counts[key] < ceilings[key]
+        )
 
     if args.update:
         if failures:
             print(
-                "error: --update refuses increases; raise the ceiling and add "
+                "error: cannot update invalid ledger; raise the ceiling and add "
                 "[reasons] manually for a deliberate increase",
                 file=sys.stderr,
             )
             for failure in failures:
                 print(f"error: {failure}", file=sys.stderr)
             return 1
-        # Drop reasons for keys that are no longer above any prior justification
-        # need — keep only keys still listed whose ceiling was previously raised.
-        kept_reasons = {
-            key: reasons[key]
-            for key in METRIC_KEYS
-            if key in reasons and counts[key] >= ceilings.get(key, counts[key])
-        }
         # After a decrease, clear reasons that applied to the old higher ceiling.
         kept_reasons = {
             key: reason
-            for key, reason in kept_reasons.items()
+            for key, reason in reasons.items()
+            if key in counts
             if counts[key] == ceilings.get(key)
         }
         LEDGER.write_text(
-            render_ledger(git_head(), FILTER_DESCRIPTION, targets, counts, kept_reasons),
+            render_ledger(FILTER_DESCRIPTION, targets, counts, kept_reasons),
             encoding="utf-8",
         )
         if args.json:

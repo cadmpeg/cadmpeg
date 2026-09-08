@@ -1,6 +1,6 @@
 # Public API baselines
 
-Any commit that intentionally changes a crate's public surface regenerates that crate's snapshot in the same commit. `git diff docs/api-baseline/` is the API change record; the snapshot commit hash is recorded at the top of each file. `docs/public-api-ledger.toml` holds only the header (`baseline_commit`, `api_baseline_dir`, `measured_at`); it carries no per-change rows.
+Any commit that intentionally changes a crate's public surface regenerates that crate's snapshot in the same commit. `git diff docs/api-baseline/` is the API change record; the snapshot commit hash is recorded at the top of each file. `docs/public-api-ledger.toml` holds only the header (`baseline_commit`, `api_baseline_dir`, `measured_at`); it carries no per-change rows. Measurement hashes are informational: squash merges can replace those branch commits. Baseline references remain subject to object checks; API content is checked by regenerating the snapshots.
 
 Regenerate a crate snapshot with nightly rustc and `cargo-public-api`. CI installs nightly and pins `cargo-public-api` 0.52.0. `-sss` omits blanket impls, auto-trait impls, and auto-derived impls.
 

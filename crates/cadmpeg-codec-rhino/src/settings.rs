@@ -897,12 +897,16 @@ fn parse_layer_extensions(
             .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
             .then_with(|| {
                 a.color
+                    // endian-exception: packed-color-order
                     .map(u32::from_le_bytes)
+                    // endian-exception: packed-color-order
                     .cmp(&b.color.map(u32::from_le_bytes))
             })
             .then_with(|| {
                 a.plot_color
+                    // endian-exception: packed-color-order
                     .map(u32::from_le_bytes)
+                    // endian-exception: packed-color-order
                     .cmp(&b.plot_color.map(u32::from_le_bytes))
             })
             .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {

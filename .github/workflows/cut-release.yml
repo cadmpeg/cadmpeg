@@ -58,8 +58,6 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: main
-          # The convergence ledger verifies that its measured commit exists
-          # and is an ancestor of the checked revision.
           fetch-depth: 0
           # Check out with the App token so the later commit and tag pushes are
           # authenticated as the App and therefore trigger release.yml.

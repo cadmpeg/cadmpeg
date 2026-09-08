@@ -3,8 +3,8 @@
 """Validate ``docs/public-api-ledger.toml`` and its API snapshots.
 
 This checker confirms the ledger TOML parses, required fields are present,
-every ``commit`` is a 40-character SHA and a known git object when history is
-available, and each snapshot file under ``docs/api-baseline/`` exists and
+commit fields are 40-character SHAs, baseline/change commits are known git
+objects when history is available, and each snapshot file under ``docs/api-baseline/`` exists and
 starts with ``# generated at``.
 
 Regenerate snapshots with ``cargo +nightly public-api`` as documented in
@@ -155,7 +155,10 @@ def check_snapshots(data: dict[str, object], root: Path) -> list[str]:
 def check_git_objects(data: dict[str, object]) -> list[str]:
     failures: list[str] = []
     seen: set[str] = set()
-    for sha in collect_commit_fields(data):
+    # Measurement metadata can name a branch commit replaced by a squash.
+    # Baseline and change references still identify actual comparison objects.
+    references = {key: value for key, value in data.items() if key != "measured_at"}
+    for sha in collect_commit_fields(references):
         if sha in seen or not SHA.fullmatch(sha):
             continue
         seen.add(sha)
