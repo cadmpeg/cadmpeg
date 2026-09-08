@@ -1535,9 +1535,12 @@ mod tests {
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
             "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": ""
         });
-        let placement: super::AssemblyPlacementRecord =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+        let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
+            .expect("assembly matrix fixture agrees with its masks");
+        assert_eq!(
+            serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
+            wire
+        );
         wire["transform"][0][0] = serde_json::json!(2.0);
         assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
         wire["transform_encoding"] = serde_json::json!([0, 0]);

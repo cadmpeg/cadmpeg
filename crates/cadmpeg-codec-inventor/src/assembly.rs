@@ -541,7 +541,8 @@ mod tests {
         let mut rows = placement.transform.rows();
         rows[0][3] = 1.25;
         rows[1][3] = -2.0;
-        placement.transform = CompactMatrix::try_from_rows(0, 0, rows).unwrap();
+        placement.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
 
@@ -569,11 +570,13 @@ mod tests {
         let mut first = assembly_placement(7);
         let mut rows = first.transform.rows();
         rows[0][3] = 1.0;
-        first.transform = CompactMatrix::try_from_rows(0, 0, rows).unwrap();
+        first.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
         let mut rows = second.transform.rows();
         rows[0][3] = 2.0;
-        second.transform = CompactMatrix::try_from_rows(0, 0, rows).unwrap();
+        second.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
 
@@ -717,7 +720,8 @@ mod tests {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform: CompactMatrix::try_from_rows(0, 0, Transform::identity().rows()).unwrap(),
+            transform: CompactMatrix::try_from_rows(0, 0, Transform::identity().rows())
+                .expect("finite explicit matrix fixture"),
             branch: 0,
             graphics_state: 0,
             occurrence_id,

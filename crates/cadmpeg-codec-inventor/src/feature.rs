@@ -2379,7 +2379,7 @@ mod tests {
                         [0.0, 0.0, 0.0, 1.0],
                     ],
                 )
-                .unwrap(),
+                .expect("finite explicit matrix fixture"),
             },
             "184d8790d011f8d10008cabc0663dc09".into(),
             SEGMENT,
