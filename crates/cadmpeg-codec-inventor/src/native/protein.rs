@@ -295,7 +295,7 @@ mod tests {
             super::ZipCompression::Zstd,
         ] {
             let entry = ProteinEntryRecord {
-                id: "entry".into(),
+                id: "inventor:protein:entry#0".into(),
                 ordinal: 0,
                 name: "asset.bin".into(),
                 compression,
