@@ -5583,18 +5583,16 @@ pub(crate) fn exact_copy_paste_bodies_operation(
             },
         });
     }
-    Some(
-        DesignCopyPasteBodiesOperation::try_new(
-            bodies,
-            body_group_record_index,
-            body_group_class_tag.try_into().ok()?,
-            u64::try_from(body_group_at).ok()?,
-            relation_record_index,
-            relation_class_tag.try_into().ok()?,
-            u64::try_from(relation_at).ok()?,
-        )
-        .ok()?,
+    DesignCopyPasteBodiesOperation::try_new(
+        bodies,
+        body_group_record_index,
+        body_group_class_tag.try_into().ok()?,
+        u64::try_from(body_group_at).ok()?,
+        relation_record_index,
+        relation_class_tag.try_into().ok()?,
+        u64::try_from(relation_at).ok()?,
     )
+    .ok()
 }
 
 pub(crate) fn exact_base_feature_construction(
