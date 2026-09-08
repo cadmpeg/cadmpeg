@@ -56,7 +56,7 @@ use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
-use super::has_complete_saved_toggle_stream;
+use super::{has_complete_saved_toggle_stream, TypedNative};
 use cadmpeg_ir::native::catalogue::NotePhase;
 
 pub(crate) fn attach_container_layer(
@@ -65,9 +65,9 @@ pub(crate) fn attach_container_layer(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-    typed_native_available: bool,
+    typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    attach_container_payloads(ctx, ir, scan, annotations, unknowns, typed_native_available)?;
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, typed_native)?;
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     Ok(())
 }
@@ -78,13 +78,13 @@ fn attach_container_payloads(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-    typed_native_available: bool,
+    typed_native: TypedNative,
 ) -> Result<(), CodecError> {
     let annotation_stream = annotations.stream("nx:container");
     for (ordinal, entry) in scan.container.entries.iter().enumerate() {
         let content = entry.content();
         if !content.retains_opaque_payload()
-            || (typed_native_available
+            || (typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
                 && has_complete_saved_toggle_stream(&scan.container))
         {
@@ -194,7 +194,7 @@ pub(crate) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    attach_container_payloads(ctx, ir, scan, annotations, unknowns, true)?;
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = annotations.stream("nx:container");
     if model.is_empty() && !has_object_sections {
