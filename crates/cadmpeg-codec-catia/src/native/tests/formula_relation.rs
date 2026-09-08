@@ -45,9 +45,8 @@ fn native_namespace_types_and_validates_formula_relations() {
         [crate::native::CatiaRelationParameterDependency {
             source_offset: 0,
             symbol: "#1_ /2".to_string(),
-            candidates: vec![crate::native::CatiaEntityReference::from_parts(
+            candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
                 parameter_entity.entity_id,
-                false,
                 Some(parameter_entity.id.clone()),
                 native
                     .object_graphs
@@ -199,9 +198,8 @@ fn formula_relation_resolves_bare_expression_symbols() {
         [crate::native::CatiaRelationParameterDependency {
             source_offset: 0,
             symbol: "#1_".to_string(),
-            candidates: vec![crate::native::CatiaEntityReference::from_parts(
+            candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
                 native.entity_records[2].entity_id,
-                false,
                 Some(native.entity_records[2].id.clone()),
                 native.object_graphs[0]
                     .records

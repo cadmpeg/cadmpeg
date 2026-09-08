@@ -273,9 +273,8 @@ mod tests {
         };
         range.incoming_references = vec![CatiaEntityIncomingReference {
             object_record: "catia:object#owner".to_string(),
-            source_entity: Some(CatiaEntityReference::from_parts(
+            source_entity: Some(CatiaEntityReference::resolved_or_unresolved(
                 2,
-                false,
                 Some("catia:entity#owner".to_string()),
                 None,
             )),

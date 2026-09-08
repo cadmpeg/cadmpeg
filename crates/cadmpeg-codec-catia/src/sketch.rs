@@ -1019,12 +1019,13 @@ mod tests {
                 .incoming_storage_references
                 .push(crate::native::CatiaEntityIncomingStorageReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
-                        11,
-                        false,
-                        Some("catia:outer:entity-record#source".to_string()),
-                        Some("ConstraintField".to_string()),
-                    )),
+                    source_entity: Some(
+                        crate::native::CatiaEntityReference::resolved_or_unresolved(
+                            11,
+                            Some("catia:outer:entity-record#source".to_string()),
+                            Some("ConstraintField".to_string()),
+                        ),
+                    ),
                 });
             source_record.storage = Some(crate::native::CatiaObjectStorage {
                 storage_ref: 10,
@@ -1038,12 +1039,13 @@ mod tests {
                 .incoming_references
                 .push(CatiaEntityIncomingReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
-                        11,
-                        false,
-                        Some("catia:outer:entity-record#source".to_string()),
-                        Some("ConstraintField".to_string()),
-                    )),
+                    source_entity: Some(
+                        crate::native::CatiaEntityReference::resolved_or_unresolved(
+                            11,
+                            Some("catia:outer:entity-record#source".to_string()),
+                            Some("ConstraintField".to_string()),
+                        ),
+                    ),
                     payload_offset: 9,
                     source: CatiaObjectRecordReferenceSource::Field,
                 });
