@@ -320,7 +320,7 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
                     -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
                 )
             }
-            _ => start[0].mul_add(end[1], -(start[1] * end[0])),
+            ProfileGeometry::Line { .. } => start[0].mul_add(end[1], -(start[1] * end[0])),
         };
         area_twice += contribution;
     }
