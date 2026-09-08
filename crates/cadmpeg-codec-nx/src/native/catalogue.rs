@@ -13,7 +13,7 @@ use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use std::collections::BTreeMap;
@@ -2078,7 +2078,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             let groups =
                 m.om.operation_state_groups
                     .iter()
-                    .flat_map(|table| table.groups())
+                    .flat_map(OmRollForwardStateTable::groups)
                     .collect::<Vec<_>>();
             emit_arena(&groups, r, ns)
         },
