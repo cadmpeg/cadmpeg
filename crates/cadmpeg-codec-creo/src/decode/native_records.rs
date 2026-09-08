@@ -575,12 +575,11 @@ pub(crate) struct CreoFc05CircleRecord {
     pub(crate) center_row_frame: [f64; 2],
     pub(crate) radius_mm: f64,
     pub(crate) sample_direction_row_frame: [f64; 2],
-    pub(crate) reference_direction_row_frame: Option<[f64; 2]>,
-    pub(crate) parameter_sign: Option<i8>,
+    #[serde(flatten, serialize_with = "serialize_angle_parameter")]
+    pub(crate) angle_parameter: crate::curve::Fc05AngleParameterRelation,
     pub(crate) cap_ordinate_row_frame: Option<f64>,
     pub(crate) point_count: usize,
     pub(crate) max_residual: f64,
-    pub(crate) angle_parameter_consistent: bool,
     pub(crate) offset: usize,
     pub(crate) source_section: String,
 }
@@ -699,4 +698,24 @@ pub(crate) struct CreoCurveParameterOpaqueSpan {
     pub(crate) raw: Vec<u8>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
+}
+
+fn serialize_angle_parameter<S: serde::Serializer>(
+    relation: &crate::curve::Fc05AngleParameterRelation,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::curve::Fc05AngleParameterRelation;
+    use serde::ser::SerializeMap;
+    let (direction, sign) = match relation {
+        Fc05AngleParameterRelation::Inconsistent => (None, None),
+        Fc05AngleParameterRelation::Consistent {
+            sense,
+            reference_direction_row_frame,
+        } => (Some(reference_direction_row_frame), Some(sense.as_i8())),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("reference_direction_row_frame", &direction)?;
+    map.serialize_entry("parameter_sign", &sign)?;
+    map.serialize_entry("angle_parameter_consistent", &sign.is_some())?;
+    map.end()
 }
