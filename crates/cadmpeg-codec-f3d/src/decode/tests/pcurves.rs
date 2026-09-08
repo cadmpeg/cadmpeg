@@ -349,12 +349,16 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
-                cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0)
-                    .unit()
-                    .unwrap(),
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
+                    cadmpeg_ir::math::Point3::new(5.0, 2.0, 4.0),
+                ],
+                None,
+                false,
             )
             .unwrap(),
         );

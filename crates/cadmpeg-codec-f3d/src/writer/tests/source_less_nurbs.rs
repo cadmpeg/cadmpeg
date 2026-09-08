@@ -891,12 +891,16 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .iter_mut()
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            cadmpeg_ir::math::Point3::new(5.0, 10.0, -5.0),
-            cadmpeg_ir::math::Vector3::new(2.0, -4.0, 1.0)
-                .unit()
-                .unwrap(),
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.25, 0.25, 0.75, 0.75],
+            vec![
+                cadmpeg_ir::math::Point3::new(5.5, 9.0, -4.75),
+                cadmpeg_ir::math::Point3::new(6.5, 7.0, -4.25),
+            ],
+            None,
+            false,
         )
         .unwrap(),
     );
@@ -1341,12 +1345,16 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .iter_mut()
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(3.0, -1.0, 2.0)
-                .unit()
-                .unwrap(),
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
+                cadmpeg_ir::math::Point3::new(1.0, 3.0, 3.0),
+            ],
+            None,
+            false,
         )
         .unwrap(),
     );
