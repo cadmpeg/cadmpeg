@@ -38,7 +38,10 @@ pub(crate) fn plan(
             Preservation::Written { bytes, write_path } => {
                 Ok(preserved_body(input.ir, write_path, bytes))
             }
-            Preservation::Declined(reason) => Err(target.unavailable(reason.unavailable_message())),
+            Preservation::SourceImageUnavailable => Err(target.unavailable(
+                "its retained source image is unavailable for preservation and the generator \
+                 cannot synthesize it",
+            )),
         };
     }
     if target.preserves_source() {
@@ -46,8 +49,8 @@ pub(crate) fn plan(
             Preservation::Written { bytes, write_path } => {
                 Ok(preserved_body(input.ir, write_path, bytes))
             }
-            Preservation::Declined(reason) => {
-                synthesized_body(input, SynthesisCause::PreservationDeclined(reason))
+            Preservation::SourceImageUnavailable => {
+                synthesized_body(input, SynthesisCause::SourceImageUnavailable)
             }
         };
     }
@@ -59,39 +62,11 @@ pub(crate) fn plan(
             .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
             .is_none()
     {
-        SynthesisCause::PreservationDeclined(PreservationDecline::SourceImageUnavailable)
+        SynthesisCause::SourceImageUnavailable
     } else {
         SynthesisCause::Fresh
     };
     synthesized_body(input, cause)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PreservationDecline {
-    SourceImageUnavailable,
-}
-
-impl PreservationDecline {
-    fn into_fidelity(self) -> (Consumption, cadmpeg_ir::LossNote) {
-        match self {
-            Self::SourceImageUnavailable => (
-                Consumption::Degraded {
-                    reason: "preserved F3D source image is unavailable".into(),
-                },
-                F3dLossCode::SourcePreservedImageUnavailable
-                    .note("preserved F3D source image is unavailable; regenerated from IR"),
-            ),
-        }
-    }
-
-    fn unavailable_message(self) -> &'static str {
-        match self {
-            Self::SourceImageUnavailable => {
-                "its retained source image is unavailable for preservation and the generator \
-                 cannot synthesize it"
-            }
-        }
-    }
 }
 
 enum Preservation {
@@ -99,7 +74,8 @@ enum Preservation {
         bytes: Vec<u8>,
         write_path: PreservedWritePath,
     },
-    Declined(PreservationDecline),
+    /// The only reason preservation is ever declined.
+    SourceImageUnavailable,
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
@@ -107,9 +83,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         .fidelity
         .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
     else {
-        return Ok(Preservation::Declined(
-            PreservationDecline::SourceImageUnavailable,
-        ));
+        return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
@@ -134,7 +108,7 @@ fn preserved_body(ir: &CadIr, write_path: PreservedWritePath, bytes: Vec<u8>) ->
 enum SynthesisCause {
     Fresh,
     Displaced(String),
-    PreservationDeclined(PreservationDecline),
+    SourceImageUnavailable,
 }
 
 impl SynthesisCause {
@@ -145,10 +119,15 @@ impl SynthesisCause {
                 Consumption::NotConsumed,
                 Some(F3dLossCode::SourceDialectDisplaced.note(message)),
             ),
-            Self::PreservationDeclined(reason) => {
-                let (consumption, loss) = reason.into_fidelity();
-                (consumption, Some(loss))
-            }
+            Self::SourceImageUnavailable => (
+                Consumption::Degraded {
+                    reason: "preserved F3D source image is unavailable".into(),
+                },
+                Some(
+                    F3dLossCode::SourcePreservedImageUnavailable
+                        .note("preserved F3D source image is unavailable; regenerated from IR"),
+                ),
+            ),
         }
     }
 }
