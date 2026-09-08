@@ -25,7 +25,7 @@ pub(crate) struct TypeDescriptor {
     pub(crate) fields: [(u16, u32); 2],
 }
 
-/// An RSe metadata section number from 1 through 11.
+/// An `RSe` metadata section number from 1 through 11.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub(crate) enum MetaSectionNumber {
