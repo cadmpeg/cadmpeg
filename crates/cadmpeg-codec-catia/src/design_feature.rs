@@ -396,9 +396,7 @@ fn normalize_parameter_names(ir: &mut CadIr) {
     let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &mut ir.model.parameters {
         let scope = parameter.owner.clone();
-        let reserved = reserved_by_scope
-            .get(&scope)
-            .expect("every parameter scope has a reserved-name set");
+        let reserved = reserved_by_scope.entry(scope.clone()).or_default();
         let used = used_by_scope.entry(scope).or_default();
         let source_name = parameter.name.clone();
         if !source_name.is_empty() && used.insert(source_name.clone()) {
