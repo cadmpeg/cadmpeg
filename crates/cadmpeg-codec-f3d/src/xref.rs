@@ -681,14 +681,17 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
 /// Parse the placement generation that repeats the target identity after the
 /// standard path and stores the identity flag beside that repeated target.
 fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
-    repeated_target_occurrence_placement_details(body).map(|details| details.placement)
+    repeated_target_occurrence_placement_details(body).map(|details| OccurrencePlacement {
+        link_names: details.link_names,
+        transform: details.transform.map(|(_, matrix)| matrix),
+    })
 }
 
 struct RepeatedTargetPlacementDetails {
-    placement: OccurrencePlacement,
+    link_names: Vec<String>,
     role: String,
     role_offset: usize,
-    transform_offset: Option<usize>,
+    transform: Option<(usize, [[f64; 4]; 4])>,
 }
 
 fn repeated_target_occurrence_placement_details(
@@ -736,7 +739,6 @@ fn repeated_target_occurrence_placement_details(
         return None;
     }
     at += 1;
-    let mut transform_offset = None;
     let transform = match *body.get(at)? {
         1 => {
             at += 1;
@@ -744,10 +746,10 @@ fn repeated_target_occurrence_placement_details(
         }
         0 => {
             at += 1;
-            transform_offset = Some(at);
+            let offset = at;
             let matrix = decode_rigid_matrix(body, at)?;
             at = at.checked_add(128)?;
-            Some(matrix)
+            Some((offset, matrix))
         }
         _ => return None,
     };
@@ -766,14 +768,10 @@ fn repeated_target_occurrence_placement_details(
     at += 1;
     take_reference(body, &mut at)?;
     (at == body.len()).then_some(RepeatedTargetPlacementDetails {
-        placement: OccurrencePlacement {
-            link_names,
-
-            transform,
-        },
+        link_names,
+        transform,
         role,
         role_offset: role_offset + 4,
-        transform_offset,
     })
 }
 
@@ -791,7 +789,7 @@ pub(crate) fn repeated_target_component_insert(
         return None;
     }
     let details = repeated_target_occurrence_placement_details(body)?;
-    let transform = details.placement.transform.unwrap_or([
+    let transform = details.transform.map(|(_, matrix)| matrix).unwrap_or([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -803,7 +801,7 @@ pub(crate) fn repeated_target_component_insert(
     Some((
         details.role,
         carrier_at + details.role_offset,
-        details.transform_offset.map(|offset| carrier_at + offset),
+        details.transform.map(|(offset, _)| carrier_at + offset),
     ))
 }
 
