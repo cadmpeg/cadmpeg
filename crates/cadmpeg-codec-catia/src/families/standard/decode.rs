@@ -4621,7 +4621,7 @@ fn attach_standard_topology(
                     .iter()
                     .zip(line_constraint.flexible_edge_mask())
                     .zip(&face_domain_edges)
-                    .map(|((circle, line), face)| *circle || *line || *face)
+                    .map(|((circle, line), face)| *circle || line || *face)
                     .collect::<Vec<_>>();
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -8410,10 +8410,16 @@ struct StandardLineSelection {
 
 type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeLineRole {
+    NotLine,
+    FixedLine,
+    FlexibleLine,
+}
+
 struct StandardLinePairConstraint {
     points: Vec<Point3>,
-    line_edges: Vec<bool>,
-    flexible_edges: Vec<bool>,
+    edge_roles: Vec<EdgeLineRole>,
     edges_by_face: HashMap<usize, Vec<usize>>,
     simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
 }
@@ -8428,27 +8434,31 @@ impl StandardLinePairConstraint {
             .iter()
             .map(|point| point.position)
             .collect::<Vec<_>>();
-        let line_edges = supports
+        let edge_roles = supports
             .iter()
-            .map(|support| {
-                matches!(
+            .enumerate()
+            .map(|(edge, support)| {
+                if !matches!(
                     support.geometry,
                     crate::families::standard::records::StandardCurveGeometry::Line
-                )
+                ) {
+                    EdgeLineRole::NotLine
+                } else if endpoint_options
+                    .get(edge)
+                    .is_some_and(|options| options.len() > 1)
+                {
+                    EdgeLineRole::FlexibleLine
+                } else {
+                    EdgeLineRole::FixedLine
+                }
             })
             .collect::<Vec<_>>();
-        let mut flexible_edges = vec![false; supports.len()];
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
 
-        for (edge, (support, options)) in supports.iter().zip(endpoint_options).enumerate() {
-            if !matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-            ) || options.len() <= 1
-            {
+        for (edge, support) in supports.iter().enumerate() {
+            if edge_roles[edge] != EdgeLineRole::FlexibleLine {
                 continue;
             }
-            flexible_edges[edge] = true;
             for &face in &support.faces {
                 let edges = edges_by_face.entry(face).or_default();
                 if !edges.contains(&edge) {
@@ -8459,20 +8469,21 @@ impl StandardLinePairConstraint {
 
         Self {
             points,
-            line_edges,
-            flexible_edges,
+            edge_roles,
             edges_by_face,
             simplicity_cache: RefCell::new(HashMap::new()),
         }
     }
 
-    fn flexible_edge_mask(&self) -> &[bool] {
-        &self.flexible_edges
+    fn flexible_edge_mask(&self) -> impl Iterator<Item = bool> + '_ {
+        self.edge_roles
+            .iter()
+            .map(|role| *role == EdgeLineRole::FlexibleLine)
     }
 
     fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
         pairs.iter().enumerate().all(|(edge, pair)| {
-            if !self.line_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] == EdgeLineRole::NotLine {
                 return true;
             }
             let Some(pair) = pair else {
@@ -8489,9 +8500,9 @@ impl StandardLinePairConstraint {
         if !self.is_valid(pairs) {
             return false;
         }
-        let mut selected = vec![None; self.flexible_edges.len()];
+        let mut selected = vec![None; self.edge_roles.len()];
         for (edge, pair) in pairs.iter().enumerate() {
-            if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] != EdgeLineRole::FlexibleLine {
                 continue;
             }
             let Some(pair) = pair else {
