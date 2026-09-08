@@ -45,7 +45,7 @@ fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObje
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
-        id: FeatureId::mint(id).expect("identity grammar"),
+        id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -169,13 +169,13 @@ fn entity_record(
 
 #[test]
 fn compact_self_owned_operation_root_remains_an_identity_anchor() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -223,13 +223,13 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
 
 #[test]
 fn malformed_compact_root_does_not_promote_an_operation() {
-    let mut object = design_object("operation-object", None);
+    let mut object = design_object("synthetic:test:object#operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
 
     let mut record = object_record(
         "operation-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(1),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -278,7 +278,7 @@ fn malformed_compact_root_does_not_promote_an_operation() {
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
-        id: ParameterId::mint(id.to_string()).expect("identity grammar"),
+        id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
         ordinal: 99,
         name: id.to_string(),
@@ -296,30 +296,42 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
 
 #[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
-    let mut source = design_object("source-object", None);
+    let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
     unresolved.target_design_object = None;
     source.relations = vec![
-        payload_relation("first-object", 0),
-        payload_relation("first-object", 1),
-        payload_relation("second-child", 2),
-        payload_relation("forward-object", 3),
-        storage_relation("storage-object"),
-        payload_relation("source-object", 5),
+        payload_relation("synthetic:test:object#first-object", 0),
+        payload_relation("synthetic:test:object#first-object", 1),
+        payload_relation("synthetic:test:object#second-child", 2),
+        payload_relation("synthetic:test:object#forward-object", 3),
+        storage_relation("synthetic:test:object#storage-object"),
+        payload_relation("synthetic:test:object#source-object", 5),
         unresolved,
-        payload_relation("broken-object", 7),
-        payload_relation("cycle-first", 8),
+        payload_relation("synthetic:test:object#broken-object", 7),
+        payload_relation("synthetic:test:object#cycle-first", 8),
     ];
-    let broken = design_object("broken-object", Some("missing-object"));
-    let cycle_first = design_object("cycle-first", Some("cycle-second"));
-    let cycle_second = design_object("cycle-second", Some("cycle-first"));
+    let broken = design_object(
+        "synthetic:test:object#broken-object",
+        Some("missing-object"),
+    );
+    let cycle_first = design_object(
+        "synthetic:test:object#cycle-first",
+        Some("synthetic:test:object#cycle-second"),
+    );
+    let cycle_second = design_object(
+        "synthetic:test:object#cycle-second",
+        Some("synthetic:test:object#cycle-first"),
+    );
     let native = CatiaNative {
         design_objects: vec![
-            design_object("first-object", None),
-            design_object("second-object", None),
-            design_object("second-child", Some("second-object")),
-            design_object("forward-object", None),
-            design_object("storage-object", None),
+            design_object("synthetic:test:object#first-object", None),
+            design_object("synthetic:test:object#second-object", None),
+            design_object(
+                "synthetic:test:object#second-child",
+                Some("synthetic:test:object#second-object"),
+            ),
+            design_object("synthetic:test:object#forward-object", None),
+            design_object("synthetic:test:object#storage-object", None),
             broken,
             cycle_first,
             cycle_second,
@@ -329,11 +341,15 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     };
     let mut ir = CadIr::empty();
     for (id, native_ref, ordinal) in [
-        ("first-feature", "first-object", 10),
-        ("second-feature", "second-object", 15),
-        ("source-feature", "source-object", 20),
-        ("forward-feature", "forward-object", 30),
-        ("storage-feature", "storage-object", 5),
+        ("first-feature", "synthetic:test:object#first-object", 10),
+        ("second-feature", "synthetic:test:object#second-object", 15),
+        ("source-feature", "synthetic:test:object#source-object", 20),
+        (
+            "forward-feature",
+            "synthetic:test:object#forward-object",
+            30,
+        ),
+        ("storage-feature", "synthetic:test:object#storage-object", 5),
     ] {
         let mut item = feature(id, native_ref);
         item.ordinal = ordinal;
@@ -342,23 +358,23 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
             (
-                "first-object".to_string(),
+                "synthetic:test:object#first-object".to_string(),
                 FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
             ),
             (
-                "second-object".to_string(),
+                "synthetic:test:object#second-object".to_string(),
                 FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar"),
             ),
             (
-                "source-object".to_string(),
+                "synthetic:test:object#source-object".to_string(),
                 FeatureId::mint("synthetic:test:id#source-feature").expect("identity grammar"),
             ),
             (
-                "forward-object".to_string(),
+                "synthetic:test:object#forward-object".to_string(),
                 FeatureId::mint("synthetic:test:id#forward-feature").expect("identity grammar"),
             ),
             (
-                "storage-object".to_string(),
+                "synthetic:test:object#storage-object".to_string(),
                 FeatureId::mint("synthetic:test:id#storage-feature").expect("identity grammar"),
             ),
         ]),
@@ -395,7 +411,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
 #[test]
 fn transfers_admitted_native_operations_with_exact_parentage() {
     let mut parent = native_operation_object(
-        "parent-object",
+        "synthetic:test:object#parent-object",
         None,
         1,
         "parent-record",
@@ -404,8 +420,8 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-object",
-        Some("parent-object"),
+        "synthetic:test:object#child-object",
+        Some("synthetic:test:object#parent-object"),
         2,
         "child-record",
         "EdgeFillet",
@@ -433,7 +449,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
                 ),
                 object_record(
                     "child-record",
-                    Some("parent-object"),
+                    Some("synthetic:test:object#parent-object"),
                     Some(2),
                     Some(1),
                     Some("EdgeFillet"),
@@ -452,9 +468,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(
-            &FeatureId::mint("synthetic:test:id#parent-object:feature").expect("identity grammar")
-        )
+        Some(&FeatureId::mint("synthetic:test:feature#parent-object").expect("identity grammar"))
     );
     assert!(matches!(
         ir.model.features[0].definition,
@@ -486,19 +500,44 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
 #[test]
 fn maps_each_admitted_operation_class_to_its_neutral_family() {
     let cases = [
-        ("prism-one", "Prism_ThickThin1", "prism-one-record", 1_u32),
-        ("prism-two", "Prism_ThickThin2", "prism-two-record", 2_u32),
         (
-            "end-limit",
+            "synthetic:test:object#prism-one",
+            "Prism_ThickThin1",
+            "prism-one-record",
+            1_u32,
+        ),
+        (
+            "synthetic:test:object#prism-two",
+            "Prism_ThickThin2",
+            "prism-two-record",
+            2_u32,
+        ),
+        (
+            "synthetic:test:object#end-limit",
             "Prism_EndLimit_Length",
             "end-limit-record",
             3_u32,
         ),
-        ("revolution", "Revol_ThickThin1", "revolution-record", 4_u32),
-        ("sweep", "Sweep_ThickThin1", "sweep-record", 5_u32),
-        ("fillet", "EdgeFillet", "fillet-record", 6_u32),
         (
-            "circular-pattern",
+            "synthetic:test:object#revolution",
+            "Revol_ThickThin1",
+            "revolution-record",
+            4_u32,
+        ),
+        (
+            "synthetic:test:object#sweep",
+            "Sweep_ThickThin1",
+            "sweep-record",
+            5_u32,
+        ),
+        (
+            "synthetic:test:object#fillet",
+            "EdgeFillet",
+            "fillet-record",
+            6_u32,
+        ),
+        (
+            "synthetic:test:object#circular-pattern",
             "CircPattern_RadialNumber",
             "circular-pattern-record",
             7_u32,
@@ -616,7 +655,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
 #[test]
 fn transfers_exact_definition_values_as_typed_feature_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -669,7 +708,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
                 ),
                 object_record(
                     "definition-record",
-                    Some("operation-object"),
+                    Some("synthetic:test:object#operation-object"),
                     Some(1),
                     Some(1),
                     None,
@@ -752,7 +791,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
 #[test]
 fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -810,7 +849,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
                 ),
                 object_record(
                     "definition-chain-record",
-                    Some("operation-object"),
+                    Some("synthetic:test:object#operation-object"),
                     Some(1),
                     Some(1),
                     None,
@@ -905,7 +944,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
 #[test]
 fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -913,7 +952,10 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         "operation-entry",
     );
     operation.first_field_byte_offset = 10;
-    let mut descendant = design_object("descendant-object", Some("operation-object"));
+    let mut descendant = design_object(
+        "synthetic:test:object#descendant-object",
+        Some("synthetic:test:object#operation-object"),
+    );
     descendant.first_field_byte_offset = 20;
     descendant
         .definition_chain_values
@@ -1026,7 +1068,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
 #[test]
 fn orders_exact_feature_parameters_by_serialized_field_position() {
     let operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -1043,7 +1085,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     );
     let mut late_parameter_record = object_record(
         "late-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(3),
         Some(1),
         None,
@@ -1055,7 +1097,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     }
     let mut early_parameter_record = object_record(
         "early-parameter-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(2),
         Some(1),
         None,
@@ -1116,7 +1158,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
                 ParameterId::mint("synthetic:test:id#late-parameter".to_string())
                     .expect("identity grammar"),
                 Some(
-                    FeatureId::mint("synthetic:test:id#operation-object:feature")
+                    FeatureId::mint("synthetic:test:feature#operation-object")
                         .expect("identity grammar")
                 ),
                 1,
@@ -1125,7 +1167,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
                 ParameterId::mint("synthetic:test:id#early-parameter".to_string())
                     .expect("identity grammar"),
                 Some(
-                    FeatureId::mint("synthetic:test:id#operation-object:feature")
+                    FeatureId::mint("synthetic:test:feature#operation-object")
                         .expect("identity grammar")
                 ),
                 0,
@@ -1156,7 +1198,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
 #[test]
 fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let mut parent = native_operation_object(
-        "parent-operation",
+        "synthetic:test:object#parent-operation",
         None,
         1,
         "parent-record",
@@ -1165,8 +1207,8 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     parent.first_field_byte_offset = 10;
     let mut child = native_operation_object(
-        "child-operation",
-        Some("parent-operation"),
+        "synthetic:test:object#child-operation",
+        Some("synthetic:test:object#parent-operation"),
         2,
         "child-record",
         "Prism_ThickThin2",
@@ -1183,7 +1225,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let child_record = object_record(
         "child-record",
-        Some("parent-operation"),
+        Some("synthetic:test:object#parent-operation"),
         Some(2),
         Some(1),
         Some("Prism_ThickThin2"),
@@ -1191,7 +1233,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     );
     let mut parameter_record = object_record(
         "parameter-record",
-        Some("child-operation"),
+        Some("synthetic:test:object#child-operation"),
         Some(3),
         Some(2),
         None,
@@ -1224,13 +1266,12 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     transfer.assign_parameter_owners(&mut ir, &native);
 
     let child_feature =
-        FeatureId::mint("synthetic:test:id#child-operation:feature").expect("identity grammar");
+        FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
         Some(
-            &FeatureId::mint("synthetic:test:id#parent-operation:feature")
-                .expect("identity grammar")
+            &FeatureId::mint("synthetic:test:feature#parent-operation").expect("identity grammar")
         )
     );
     assert_eq!(
@@ -1379,7 +1420,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
 #[test]
 fn does_not_promote_an_unadmitted_helper_owner_class() {
     let object = native_operation_object(
-        "helper-object",
+        "synthetic:test:object#helper-object",
         None,
         1,
         "helper-record",
