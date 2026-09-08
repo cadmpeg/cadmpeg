@@ -2359,21 +2359,17 @@ pub(crate) fn validate_sketch_point_edits(
     for point in target {
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
-        normalized.coordinates = before.coordinates;
+        normalized
+            .try_set_coordinates(before.coordinates())
+            .map_err(CodecError::Malformed)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
         }
-        if point.coordinates == before.coordinates {
+        if point.coordinates() == before.coordinates() {
             continue;
-        }
-        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {} has non-finite coordinates",
-                point.id
-            )));
         }
         let stream = point
             .id
@@ -2386,7 +2382,7 @@ pub(crate) fn validate_sketch_point_edits(
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
-            coordinates: point.coordinates,
+            coordinates: point.coordinates(),
         });
     }
     Ok(edits)

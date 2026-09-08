@@ -3067,7 +3067,7 @@ fn decode_scanned_document<'a>(
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
             selected_body_keys
-                .entry(binding.blob_name.clone())
+                .entry(binding.blob_name().to_owned())
                 .or_default()
                 .insert(binding.asm_body_key);
         }
@@ -4352,7 +4352,7 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             group
-                .members
+                .members()
                 .iter()
                 .map(move |record_index| (stream.clone(), record_index.value))
         })
@@ -4366,13 +4366,13 @@ fn extend_related_design_records(
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
                 group
-                    .members
+                    .members()
                     .iter()
                     .map(|member| member.value)
                     .chain(
                         group
                             .frame
-                            .trailing_records
+                            .trailing_records()
                             .iter()
                             .map(|record| &record.value)
                             .flat_map(|record_index| {
@@ -4518,7 +4518,7 @@ fn extend_related_design_records(
                     let stream = crate::ids::native_stream(&group.id)?.to_owned();
                     Some(
                         group
-                            .members
+                            .members()
                             .iter()
                             .map(|member| member.value)
                             .map(move |record_index| (stream.clone(), record_index)),
@@ -5179,7 +5179,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             }
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
-                if !materials::visual_tokens_match(&existing.visual_guid, &assignment.visual_guid) {
+                if !existing.visual_guid.matches(&assignment.visual_guid) {
                     return Err(CodecError::malformed(format_args!(
                         "F3D face material GUID {} carries conflicting visual tokens",
                         assignment.face_guid

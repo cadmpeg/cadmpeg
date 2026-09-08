@@ -1286,10 +1286,11 @@ pub(crate) fn decode_pattern_definition(
             }
             let angle_at = reference_end(1)? + 6;
             let evaluated_angle = f64_at(angle_at)?;
-            let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
-            if !(1..=100_000).contains(&evaluated_count) {
-                return None;
-            }
+            let evaluated_count = crate::records::SketchPatternCount::try_from(View::u32_le_at(
+                payload,
+                angle_at + 8,
+            )?)
+            .ok()?;
             return Some(SketchPatternDefinition::Circular {
                 angle_parameter: parsed.auxiliary_references[0].value,
                 count_parameter: parsed.auxiliary_references[1].value,
@@ -1308,10 +1309,10 @@ pub(crate) fn decode_pattern_definition(
                 (second_count, second_distance),
             ] {
                 let count_at = count.offset.checked_sub(5)?;
-                let evaluated_count = View::u32_le_at(payload, count_at)?;
-                if !(1..=100_000).contains(&evaluated_count) {
-                    return None;
-                }
+                let evaluated_count = crate::records::SketchPatternCount::try_from(
+                    View::u32_le_at(payload, count_at)?,
+                )
+                .ok()?;
                 let direction_at = count.offset + 4 + 6;
                 let direction = [
                     f64_at(direction_at)?,
@@ -1412,23 +1413,14 @@ pub(crate) fn decode_sketch_points_from_stream(
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let mut decoded = decode_sketch_point_record(payload, frame.design_type.version)
-            .ok_or_else(|| {
+        let decoded =
+            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
                 ))
             })?;
-        let (u, v, depth) = (
-            decoded.coordinates[0] * 10.0,
-            decoded.coordinates[1] * 10.0,
-            decoded.record_form.depth(),
-        );
-        if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {record_index} has a non-finite coordinate"
-            )));
-        }
+        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
             decoded.trailing_reference(),
@@ -1472,21 +1464,21 @@ pub(crate) fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-        decoded
-            .record_form
-            .set_companion(companion)
-            .map_err(CodecError::Malformed)?;
-        out.push(SketchPoint {
-            id: ids::native_sketch_point_id(stream, frame.start),
-            record_index,
-            owner_reference: decoded.owner_reference,
-            class_tag: frame.class_tag.clone(),
-            byte_offset: frame.start as u64,
-            coordinate_offset: decoded.coordinate_offset,
-            record_form: decoded.record_form,
-            paired_reference: decoded.paired_reference,
-            coordinates: Point2::new(u, v),
-        });
+        out.push(
+            SketchPoint::try_from(crate::records::SketchPointDraft {
+                id: ids::native_sketch_point_id(stream, frame.start),
+                record_index,
+                owner_reference: decoded.owner_reference,
+                class_tag: frame.class_tag.clone(),
+                byte_offset: frame.start as u64,
+                coordinate_offset: decoded.coordinate_offset,
+                record_form: decoded.record_form,
+                companion,
+                paired_reference: decoded.paired_reference,
+                coordinates: Point2::new(u, v),
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(out)
 }
@@ -2316,10 +2308,7 @@ fn decode_version_zero_sketch_point(
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
-        record_form: SketchPointRecordForm::Version0 {
-            flag: flag == 1,
-            companion: None,
-        },
+        record_form: SketchPointRecordForm::Version0 { flag: flag == 1 },
         paired_reference,
         coordinates: [x, y],
     })
@@ -2347,6 +2336,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         }
         _ => return None,
     };
+    let persistent_id = std::num::NonZeroU64::new(persistent_id)?;
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
     let inline_typed = match (class_version, paired_type_guid.as_deref()) {
         (8 | 10 | 11, None) => false,
@@ -2411,7 +2401,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version8 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2423,7 +2412,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version10 {
-                        companion: None,
                         depth,
                         persistent_id,
                         flags: seven.map(|flag| flag == 1),
@@ -2442,7 +2430,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version10InlineTyped {
-                        companion: None,
                         depth,
                         trailing_reference,
                         persistent_id,
@@ -2462,7 +2449,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 }
                 (
                     SketchPointRecordForm::Version11InlineTyped {
-                        companion: None,
                         depth,
                         entity_genesis,
                         trailing_reference,
@@ -2485,7 +2471,6 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
                 (
                     SketchPointRecordForm::Version11 {
-                        companion: None,
                         depth,
                         entity_genesis,
                         padded_paired_reference,
@@ -2661,6 +2646,9 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
         else {
             continue;
         };
+        let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
+            continue;
+        };
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
         let curve_class = SketchCurveClass::of(
@@ -2719,7 +2707,7 @@ pub fn decode_sketch_curve_identities(
 
 pub(crate) struct ParsedSketchSurface {
     pub(crate) entity_genesis: Option<u64>,
-    pub(crate) persistent_id: u64,
+    pub(crate) persistent_id: std::num::NonZeroU64,
     pub(crate) u_degree: u32,
     pub(crate) v_degree: u32,
     pub(crate) u_knots: Vec<f64>,
@@ -2742,7 +2730,7 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
-    let persistent_id = View::u64_le_at(payload, 119)?;
+    let persistent_id = std::num::NonZeroU64::new(View::u64_le_at(payload, 119)?)?;
     let point_count = usize::try_from(View::u32_le_at(payload, 127)?).ok()?;
     if point_count == 0 || point_count > 100_000 {
         return None;
@@ -3015,7 +3003,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&curve.id)?, curve.record_index),
                 SketchRelationOperand::Curve {
                     record_index: curve.record_index,
-                    primary_id: curve.primary_id,
+                    primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
                 },
             ))
@@ -3025,7 +3013,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&surface.id)?, surface.record_index),
                 SketchRelationOperand::Surface {
                     record_index: surface.record_index,
-                    persistent_id: surface.persistent_id,
+                    persistent_id: surface.persistent_id.get(),
                 },
             ))
         }))

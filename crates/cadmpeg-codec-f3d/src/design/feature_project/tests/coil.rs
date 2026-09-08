@@ -21,7 +21,7 @@ fn parameter(
     unit: Option<&str>,
     value: f64,
 ) -> DesignParameter {
-    DesignParameter {
+    crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
         id: format!("f3d:Design/BulkStream.dat:parameter#{record_index}"),
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -30,18 +30,19 @@ fn parameter(
         source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
             .unwrap(),
         expression: value.to_string(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+        expression_offset: 40,
+        source_kind_offset: 60,
 
         unit: unit.map(|value| crate::records::RecordedValue {
             value: value.to_owned(),
-            offset: None,
+            offset: Some(70),
         }),
         name: source_kind.into(),
-        name_offset: 0,
+        name_offset: 80,
         evaluated_value: value,
-        evaluated_value_offset: 0,
-    }
+        evaluated_value_offset: 90,
+    })
+    .unwrap()
 }
 
 #[test]
