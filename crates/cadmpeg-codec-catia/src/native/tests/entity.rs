@@ -966,7 +966,8 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         &native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
     assert_eq!(relation_transfer.relation_program_parameter_count, 1);
     assert_eq!(relation_ir.model.parameters.len(), 1);

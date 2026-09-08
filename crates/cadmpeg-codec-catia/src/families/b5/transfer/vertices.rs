@@ -101,7 +101,9 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -135,7 +137,9 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,

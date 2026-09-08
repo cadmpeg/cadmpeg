@@ -370,7 +370,8 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
         0,
         annotations,
         geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
 }
 
 pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
@@ -380,7 +381,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
     procedural_start: usize,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let loop_faces = ir
         .model
         .loops
@@ -595,9 +596,12 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
             edge.param_range = Some(range);
-            annotations.derived(&edge.id, "param_range");
+            annotations
+                .derived(&edge.id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1293,7 +1297,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
         0,
         &transfer_budget,
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
 }
 
 pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
@@ -1302,7 +1307,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let vertex_points = vertex_point_positions(ir);
     let edges_by_curve = edge_indices_by_curve(ir);
@@ -1520,9 +1525,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.param_range = Some(range);
-            annotations.derived(&edge.id, "param_range");
+            annotations
+                .derived(&edge.id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn curve_is_cache_backed_with_index(
@@ -3242,7 +3250,8 @@ pub(crate) fn attach_tolerant_edge_intersections(
         source_stream,
         annotations,
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
 }
 
 pub(crate) fn attach_tolerant_edge_intersections_with_budget(
@@ -3253,7 +3262,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let candidates = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut endpoint_surface_fits = BTreeMap::<(SurfaceId, [u64; 3], u64), bool>::new();
@@ -3398,7 +3407,9 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             continue;
         };
         edge.curve = Some(curve_id.clone());
-        annotations.derived(&edge_id, "curve");
+        annotations
+            .derived(&edge_id, "curve")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             annotations
                 .note(&curve_id, source_stream, node.pos as u64)
@@ -3407,8 +3418,12 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                 .note(&procedural_id, source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");
         }
-        annotations.derived(&curve_id, "geometry");
-        annotations.derived(&procedural_id, "definition");
+        annotations
+            .derived(&curve_id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&procedural_id, "definition")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
@@ -3430,6 +3445,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             ),
         );
     }
+    Ok(())
 }
 
 #[cfg(test)]

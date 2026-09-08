@@ -20,7 +20,7 @@ use super::sketch_edges::{circle_contains_point, ellipse_contains_point};
 pub fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
-) -> (Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>) {
+) -> Result<(Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>), cadmpeg_core::CodecError> {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
@@ -36,7 +36,7 @@ pub fn sketches(
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep = crate::brep::decode(&stream.payload, &stream.header, section);
+            let brep = crate::brep::decode(&stream.payload, &stream.header, section)?;
             project_brep(
                 &brep,
                 source.ordinal(),
@@ -53,7 +53,7 @@ pub fn sketches(
             );
         }
     }
-    (sketches, entities, constraints)
+    Ok((sketches, entities, constraints))
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -320,7 +320,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         procedural_start,
         &transfer_budget,
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization, ..
     } = ir.model.procedural_curves[0].definition()
@@ -334,7 +335,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         0,
         &transfer_budget,
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
         parameterization: Some(parameterization),

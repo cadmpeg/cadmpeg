@@ -639,7 +639,7 @@ pub(crate) fn link_payload_carriers(
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let links = ir
         .model
         .surfaces
@@ -653,13 +653,16 @@ pub(crate) fn link_payload_carriers(
         )
         .collect::<Vec<_>>();
     if links.is_empty() {
-        return;
+        return Ok(());
     }
     let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
     *payload.links_mut() = links;
-    annotations.derived(payload.id(), "links");
+    annotations
+        .derived(payload.id(), "links")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
 pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {

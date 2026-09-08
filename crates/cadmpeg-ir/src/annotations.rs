@@ -167,6 +167,11 @@ impl<'de> Deserialize<'de> for ExactnessNote {
         D: serde::Deserializer<'de>,
     {
         let wire = ExactnessNoteWire::deserialize(deserializer)?;
+        if wire.fields.contains_key("") {
+            return Err(D::Error::custom(
+                "ExactnessNote.fields keys must not be empty",
+            ));
+        }
         if wire.entity == Exactness::ByteExact && wire.fields.is_empty() {
             return Err(D::Error::custom(
                 "ExactnessNote cannot store the implicit byte-exact default",
@@ -298,7 +303,11 @@ impl AnnotationBuilder {
     }
 
     /// Mark one serialized field as deterministically derived.
-    pub fn derived(&mut self, id: impl Display, field: impl Into<String>) -> &mut Self {
+    pub fn derived(
+        &mut self,
+        id: impl Display,
+        field: impl Into<String>,
+    ) -> Result<&mut Self, &'static str> {
         self.field_exactness(id, field, Exactness::Derived)
     }
 
@@ -311,9 +320,12 @@ impl AnnotationBuilder {
         id: impl Display,
         field: impl Into<String>,
         exactness: Exactness,
-    ) -> &mut Self {
+    ) -> Result<&mut Self, &'static str> {
         let id = id.to_string();
         let field = field.into();
+        if field.is_empty() {
+            return Err("ExactnessNote.fields keys must not be empty");
+        }
         if exactness == Exactness::ByteExact {
             if let Some(note) = self.annotations.exactness.get_mut(&id) {
                 if note.entity == Exactness::ByteExact {
@@ -339,7 +351,7 @@ impl AnnotationBuilder {
                 }
             }
         }
-        self
+        Ok(self)
     }
 
     /// Remove every sparse exactness annotation.
@@ -502,8 +514,11 @@ mod tests {
 
         builder
             .derived("f3d:edge#0", "param_range")
+            .expect("nonempty exactness field")
             .exactness("f3d:edge#0", Exactness::Inferred);
-        builder.field_exactness("f3d:edge#0", "param_range", Exactness::ByteExact);
+        builder
+            .field_exactness("f3d:edge#0", "param_range", Exactness::ByteExact)
+            .expect("nonempty exactness field");
 
         let expected_fields = BTreeMap::from([("param_range".to_string(), Exactness::ByteExact)]);
         assert_eq!(
@@ -544,7 +559,9 @@ mod tests {
             if entity_first {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
-            builder.derived("nx:model:surface#1", "geometry");
+            builder
+                .derived("nx:model:surface#1", "geometry")
+                .expect("nonempty exactness field");
             if !entity_first {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
@@ -565,7 +582,9 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
         let stream = builder.stream("catia:e5_0d_03");
         builder.note("catia:e5:curve#0", stream, 42).tag("circle");
-        builder.derived("catia:e5:curve#0", "geometry");
+        builder
+            .derived("catia:e5:curve#0", "geometry")
+            .expect("nonempty exactness field");
 
         builder.remove_entity("catia:e5:curve#0");
 
@@ -577,5 +596,46 @@ mod tests {
             .annotations()
             .exactness
             .contains_key("catia:e5:curve#0"));
+    }
+
+    #[test]
+    fn exactness_field_admission_rejects_empty_keys_without_mutation() {
+        let id = "test:model:point#0";
+        let mut builder = AnnotationBuilder::new();
+        builder.exactness(id, Exactness::Inferred);
+        builder.derived(id, "position.x").expect("nonempty path");
+        let before = serde_json::to_value(builder.annotations()).expect("serialize annotations");
+        for exactness in [
+            Exactness::ByteExact,
+            Exactness::Derived,
+            Exactness::Inferred,
+        ] {
+            let error = builder
+                .field_exactness(id, "", exactness)
+                .expect_err("empty path");
+            assert!(error.contains("fields"));
+            assert_eq!(
+                serde_json::to_value(builder.annotations()).expect("serialize annotations"),
+                before
+            );
+        }
+        assert!(builder.derived(id, "").is_err());
+        assert_eq!(
+            serde_json::to_value(builder.annotations()).expect("serialize annotations"),
+            before
+        );
+        for entity in ["byte_exact", "derived"] {
+            let error = serde_json::from_value::<ExactnessNote>(
+                serde_json::json!({"entity": entity, "fields": {"": "derived"}}),
+            )
+            .expect_err("empty field key");
+            assert!(error.to_string().contains("fields"));
+        }
+        let wire = serde_json::json!({"entity": "derived", "fields": {"position.x": "byte_exact"}});
+        let admitted: ExactnessNote = serde_json::from_value(wire.clone()).expect("nonempty path");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("serialize note"),
+            wire
+        );
     }
 }

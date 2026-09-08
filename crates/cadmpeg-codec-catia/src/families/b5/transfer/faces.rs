@@ -377,9 +377,13 @@ pub(super) fn emit_faces(
         "single_body",
         Exactness::Inferred,
     );
-    annotations
+    if annotations
         .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
+        .and_then(|builder| builder.derived(&body_id, "regions"))
+        .is_err()
+    {
+        return false;
+    }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
@@ -400,9 +404,13 @@ pub(super) fn emit_faces(
             "derived_region",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&region_id, "body")
-            .derived(&region_id, "shells");
+            .and_then(|builder| builder.derived(&region_id, "shells"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -415,9 +423,13 @@ pub(super) fn emit_faces(
             "derived_shell",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
+            .and_then(|builder| builder.derived(&shell_id, "faces"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.shells.push(Shell {
             id: shell_id,
             region: region_id,
@@ -454,10 +466,14 @@ pub(super) fn emit_faces(
             "5f_face",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&face_id, "shell")
-            .derived(&face_id, "surface")
-            .derived(&face_id, "loops");
+            .and_then(|builder| builder.derived(&face_id, "surface"))
+            .and_then(|builder| builder.derived(&face_id, "loops"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -511,16 +527,22 @@ pub(super) fn emit_faces(
                 "62_loop",
                 Exactness::ByteExact,
             );
-            annotations
+            if annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges")
-                .derived(&loop_id, "vertex_uses");
+                .and_then(|builder| builder.derived(&loop_id, "coedges"))
+                .and_then(|builder| builder.derived(&loop_id, "vertex_uses"))
+                .is_err()
+            {
+                return false;
+            }
             let boundary_role = boundary_roles
                 .get(loop_position)
                 .copied()
                 .unwrap_or_default();
             if boundary_role != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role");
+                if annotations.derived(&loop_id, "boundary_role").is_err() {
+                    return false;
+                }
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
             else {
@@ -551,7 +573,9 @@ pub(super) fn emit_faces(
                     "sense",
                     "pcurves",
                 ] {
-                    annotations.derived(&id, field);
+                    if annotations.derived(&id, field).is_err() {
+                        return false;
+                    }
                 }
                 let arena_index = ir.model.coedges.len();
                 coedges_by_edge.entry(edge).or_default().push(arena_index);

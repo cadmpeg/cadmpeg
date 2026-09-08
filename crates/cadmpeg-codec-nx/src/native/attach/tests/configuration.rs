@@ -343,7 +343,8 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+    super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
@@ -415,7 +416,8 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+            .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
     }
@@ -477,7 +479,8 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     )];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_feature_states(&mut ir, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -539,7 +542,8 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_current_feature_states(&mut ir, &mut annotations);
+    super::attach_current_feature_states(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -611,7 +615,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ]),
     )];
     let mut annotations = AnnotationBuilder::new();
-    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
         .feature_states
@@ -625,7 +630,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         true,
         ConfigurationBodies::Unresolved,
     )];
-    super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
     assert!(unresolved_bodies.model.configurations[0]
         .feature_states
@@ -642,7 +648,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             BodyId::mint("test:model:entity#body").expect("identity grammar")
         ]),
     )];
-    super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
     assert!(contradicted.model.configurations[0]
         .feature_states
@@ -667,7 +674,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ]),
         ),
     ];
-    super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(ambiguous.model.features[0].suppressed, None);
     assert!(ambiguous
         .model
@@ -1231,7 +1239,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+        .expect("valid exactness fields");
     let parameter_owners = ir
         .model
         .parameters
@@ -1257,7 +1266,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations);
+    super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
         assert_eq!(
@@ -1292,7 +1302,8 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.parameters[0].value,
@@ -1333,7 +1344,8 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.parameters[0].value, None);
     assert_eq!(

@@ -1412,7 +1412,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .note(&record.id, stream, record.offset)
             .tag(record.tag.as_str());
         for field in record.derived_fields {
-            annotations.derived(&record.id, field);
+            annotations
+                .derived(&record.id, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     source_fidelity.annotations = annotations.build();

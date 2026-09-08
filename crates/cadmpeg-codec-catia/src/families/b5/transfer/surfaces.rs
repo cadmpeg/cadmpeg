@@ -506,7 +506,9 @@ pub(super) fn emit_surfaces(
             },
         );
         if revolution_cache {
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.surfaces.push(Surface {
             id: id.clone(),
@@ -527,7 +529,9 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&directrix_id, "geometry");
+                annotations
+                    .derived(&directrix_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(revolution.directrix),

@@ -1976,7 +1976,7 @@ fn try_decode_brep(
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
-        let decoded = brep::decode_bodies(&bodies, &name);
+        let decoded = brep::decode_bodies(&bodies, &name).ok()?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
@@ -2265,7 +2265,7 @@ fn build_geometry_ir(
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
-        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
+        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -2878,7 +2878,11 @@ fn build_geometry_ir(
     ));
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder.derived(&id, "body").derived(id, "faces");
+        annotation_builder
+            .derived(&id, "body")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(id, "faces")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &scan.blocks {
@@ -3220,7 +3224,7 @@ fn build_metadata_ir(
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let (sketches, sketch_entities, sketch_constraints) =
-        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
+        crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
     model_attributes.extend(crate::history::custom_property_attributes(&histories));
     ir.model.attributes = model_attributes;

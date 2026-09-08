@@ -738,7 +738,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         &mut annotations,
         &std::collections::BTreeMap::new(),
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
     assert!(!ir
         .model
         .pcurves
@@ -757,7 +758,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         &mut annotations,
         &std::collections::BTreeMap::new(),
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
 
     let completed = ir
         .model
