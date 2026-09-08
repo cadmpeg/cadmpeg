@@ -1210,8 +1210,6 @@ enum MeshFaceAssignmentDomain {
 #[derive(Debug, Clone)]
 pub(crate) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
-    edge_rows: Vec<EdgeRow>,
-    fixed_complete_row_spans: bool,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
     edge_runs: Vec<MeshEdgeRun>,
@@ -1241,12 +1239,8 @@ impl StandardMeshBoundaryContext {
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
-        let edge_rows = analysis.edge_rows.clone();
-        let fixed_complete_row_spans = analysis.fixed_complete_row_spans;
         Some(Self {
             analysis,
-            edge_rows,
-            fixed_complete_row_spans,
             coverage,
             edge_ports,
             edge_runs,
@@ -1258,8 +1252,6 @@ impl StandardMeshBoundaryContext {
         let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
         Some(Self {
             analysis: Arc::clone(&self.analysis),
-            edge_rows: self.edge_rows.clone(),
-            fixed_complete_row_spans: self.fixed_complete_row_spans,
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
@@ -2167,7 +2159,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         )
     }
 
-    let edge_rows = &context.edge_rows;
+    let edge_rows = &context.analysis.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return None;
     }
@@ -2305,7 +2297,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (
                         placement_ports,
                         &corner_ports,
@@ -2323,7 +2315,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), endpoint_constraints, &corner_points),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2336,7 +2328,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
-                    context.fixed_complete_row_spans,
+                    context.analysis.fixed_complete_row_spans,
                     (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -2458,7 +2450,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                 for run in runs.iter().filter(|run| run.face == face) {
                     let length = cycles[run.cycle].length;
                     let fixed_direction = edge_candidates.is_none()
-                        || context.edge_rows[run.edge].boundary_layout
+                        || context.analysis.edge_rows[run.edge].boundary_layout
                             == EdgeBoundaryLayout::CompleteBoundaryRun;
                     cycles[run.cycle].exact_uses.push((
                         MeshBoundaryEdgeCandidate {
@@ -2493,7 +2485,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
                         let fixed_direction = edge_candidates.is_none()
-                            || context.edge_rows[run.edge].boundary_layout
+                            || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
