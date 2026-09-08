@@ -948,11 +948,11 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         uses[0].id,
         "nx:feature-history:datum-csys-block-use#0-3-0-1"
     );
-    assert_eq!(uses[0].reference_ordinal, 3);
+    assert_eq!(u8::from(uses[0].reference_ordinal), 3);
     assert_eq!(uses[0].input_operation_label, "operation#0");
-    assert_eq!(uses[1].reference_ordinal, 4);
+    assert_eq!(u8::from(uses[1].reference_ordinal), 4);
     assert_eq!(uses[1].input_operation_label, "operation#6");
-    assert_eq!(uses[2].reference_ordinal, 4);
+    assert_eq!(u8::from(uses[2].reference_ordinal), 4);
     assert_eq!(uses[2].input_operation_label, "operation#7");
 }
 
@@ -1408,9 +1408,9 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
     assert_eq!(uses[0].column_row, "row#3");
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 108);
-    assert_eq!(uses[1].row_slot, 1);
+    assert_eq!(u8::from(uses[1].row_slot), 1);
     assert_eq!(uses[1].source_offset, 109);
 }
 
@@ -1482,9 +1482,9 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
     assert_eq!(uses[0].column_row, "linked-row#3");
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 107);
-    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 114);
     let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
     assert_eq!(targets.len(), 1);
@@ -1575,9 +1575,9 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
     assert_eq!(uses[0].column_row, "target-row#3");
     assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 105);
-    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 112);
     let targets = feature_input_column_targets(
         std::slice::from_ref(&input),
@@ -1668,7 +1668,7 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
     assert_eq!(uses.len(), 4);
     assert_eq!(
         uses.iter()
-            .map(|use_| (use_.construction_slot, use_.row_slot))
+            .map(|use_| (u8::from(use_.construction_slot), u8::from(use_.row_slot)))
             .collect::<Vec<_>>(),
         [(5, 0), (5, 3), (6, 1), (7, 2)]
     );
