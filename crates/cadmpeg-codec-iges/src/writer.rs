@@ -4506,7 +4506,7 @@ fn extrusion_surface_entities(
         end,
     };
     let mut entities = Vec::new();
-    let directrix_local_index = append_curve_entity_with_reference_offset(
+    let directrix_local_index = append_curve_entity(
         &mut entities,
         ir,
         CurveEntityRequest {
@@ -5064,14 +5064,6 @@ struct CurveEntityRequest<'a> {
 }
 
 fn append_curve_entity(
-    entities: &mut Vec<Entity>,
-    ir: &CadIr,
-    request: CurveEntityRequest<'_>,
-) -> Result<usize, CodecError> {
-    append_curve_entity_with_reference_offset(entities, ir, request)
-}
-
-fn append_curve_entity_with_reference_offset(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
     request: CurveEntityRequest<'_>,
