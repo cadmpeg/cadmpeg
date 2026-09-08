@@ -542,7 +542,8 @@ mod tests {
     fn registry_framing_reads_the_last_object_count_without_requiring_agreement() {
         let bytes = registry_fixture(&[7, 2]);
         with_context(&bytes, |ctx| {
-            let registry = parse_registry(ctx, &bytes).unwrap();
+            let registry = parse_registry(ctx, &bytes)
+                .expect("registry fixture follows current count framing");
             assert_eq!(registry.entries[0].objects.len(), 2);
             assert_eq!(registry.entries[0].objects[0].node_count, 7);
             assert_eq!(registry.entries[0].objects[1].node_count, 2);
@@ -559,7 +560,9 @@ mod tests {
         let mut bytes = registry_fixture(&[2]);
         bytes.extend_from_slice(&[0; 22]);
         with_context(&bytes, |ctx| {
-            let error = parse_registry(ctx, &bytes).unwrap_err().to_string();
+            let error = parse_registry(ctx, &bytes)
+                .expect_err("trailing node bytes must be rejected")
+                .to_string();
             assert!(error.contains("22 trailing bytes"), "{error}");
         });
     }
