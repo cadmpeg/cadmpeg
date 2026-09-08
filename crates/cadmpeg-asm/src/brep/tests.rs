@@ -308,7 +308,11 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     };
     supports[0] = Some(plane(
         Point3::new(0.0, 0.0, -1.0),
-        Vector3::new(0.0, 1.0, 1.0),
+        Vector3::new(
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            std::f64::consts::FRAC_1_SQRT_2,
+        ),
         Vector3::new(1.0, 0.0, 0.0),
     ));
     assert!(analytic_procedural_surface(&definition).is_none());
