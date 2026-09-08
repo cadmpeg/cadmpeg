@@ -15,9 +15,7 @@ use crate::surface::{
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{
-    FeatureRelationTable, ReferencePlanes, ScalarLane, VariableType,
-};
+use crate::feature::definitions::{FeatureRelationTable, VariableType};
 use crate::feature::schema::SchemaClass;
 
 use super::coverage::{
@@ -37,7 +35,7 @@ use super::native_records::{
     CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
     CreoSketchDimension, CreoSketchDimensionReference, CreoSketchDimensionReferenceTable,
     CreoSketchEquation, CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
-    CreoSketchReferenceLineSegment, CreoSketchReferencePlane, CreoSketchRelation,
+    CreoSketchPointState, CreoSketchReferenceLineSegment, CreoSketchRelation,
     CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
     CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
     CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
@@ -166,7 +164,7 @@ pub(super) struct CreoFeatureEntityReferenceRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureEntityTableRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: Option<u32>,
+    pub(super) owner_feature_id: u32,
     pub(super) table_class_id: u32,
     pub(super) entry_ids: Vec<u32>,
     pub(super) entries: Vec<CreoFeatureEntityTableEntryRecord>,
@@ -191,12 +189,32 @@ pub(super) struct CreoFeatureEntityTableEntryRecord {
 pub(super) struct CreoFeatureGeometryTableRecord {
     pub(super) id: String,
     pub(super) owner_feature_id: u32,
-    pub(super) kind: &'static str,
+    #[serde(flatten, serialize_with = "serialize_geometry_table_kind")]
+    pub(super) kind: crate::feature::FeatureGeometryTableKind,
     pub(super) declared_count: u32,
     pub(super) entity_class_id: u32,
-    pub(super) entry_ids: Option<Vec<u32>>,
     pub(super) offset: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_geometry_table_kind<S: serde::Serializer>(
+    kind: &crate::feature::FeatureGeometryTableKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::feature::FeatureGeometryTableKind;
+    use serde::ser::SerializeMap;
+    let name = match kind {
+        FeatureGeometryTableKind::EdgeIds => "edge_ids",
+        FeatureGeometryTableKind::LoopIds => "loop_ids",
+        FeatureGeometryTableKind::Boundaries => "boundaries",
+        FeatureGeometryTableKind::UsedBodies => "used_bodies",
+        FeatureGeometryTableKind::GeometryLists => "geometry_lists",
+        FeatureGeometryTableKind::DatumIds(_) => "datum_ids",
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("kind", name)?;
+    map.serialize_entry("entry_ids", &kind.datum_ids())?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -206,11 +224,33 @@ pub(super) struct CreoFeatureLoopHistoryEntryRecord {
     pub(super) ordinal: u32,
     pub(super) loop_id: u32,
     pub(super) field_bytes: Vec<Vec<u8>>,
-    pub(super) boundary: &'static str,
-    pub(super) boundary_reference: Option<u32>,
+    #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
+    pub(super) boundary: crate::feature::FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_loop_history_boundary<S: serde::Serializer>(
+    boundary: &crate::feature::FeatureLoopHistoryBoundary,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::feature::FeatureLoopHistoryBoundary;
+    use serde::ser::SerializeMap;
+    let (boundary, reference) = match boundary {
+        FeatureLoopHistoryBoundary::CompoundClose => ("compound_close", None),
+        FeatureLoopHistoryBoundary::ReferenceContinue(reference) => {
+            ("reference_continue", Some(*reference))
+        }
+        FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
+            ("reference_final", Some(*reference))
+        }
+        FeatureLoopHistoryBoundary::NamedRecord { .. } => ("named_record", None),
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("boundary", &boundary)?;
+    map.serialize_entry("boundary_reference", &reference)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -330,12 +370,28 @@ pub(super) struct CreoLoopArrayFrameRecord {
     pub(super) variant: Option<crate::loop_array::LayoutMarker>,
     pub(super) declared_count: u32,
     pub(super) class_id: u32,
-    pub(super) materialized_count: usize,
-    pub(super) overfull: bool,
+    #[serde(flatten, serialize_with = "serialize_loop_array_rows")]
+    pub(super) rows: crate::loop_array::LoopArrayFrameRows,
     pub(super) offset: usize,
     pub(super) prototype_end: usize,
     pub(super) end: usize,
     pub(super) source_section: String,
+}
+
+fn serialize_loop_array_rows<S: serde::Serializer>(
+    rows: &crate::loop_array::LoopArrayFrameRows,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::loop_array::LoopArrayFrameRows;
+    use serde::ser::SerializeMap;
+    let (count, overfull) = match rows {
+        LoopArrayFrameRows::Materialized(count) => (*count, false),
+        LoopArrayFrameRows::Overfull => (0, true),
+    };
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("materialized_count", &count)?;
+    map.serialize_entry("overfull", &overfull)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -409,12 +465,31 @@ pub(super) struct CreoPrimitiveScalarArrayRecord {
 #[derive(Debug, Serialize)]
 pub(super) struct CreoReferenceLineRecord {
     pub(super) id: String,
-    pub(super) family: &'static str,
-    pub(super) entity_id: Option<u32>,
+    #[serde(flatten, serialize_with = "serialize_reference_line_kind")]
+    pub(super) kind: crate::reference::ReferenceLineKind,
     pub(super) start: [f64; 3],
     pub(super) end: [f64; 3],
-    pub(super) original_length: Option<f64>,
     pub(super) offset: usize,
+}
+
+fn serialize_reference_line_kind<S: serde::Serializer>(
+    kind: &crate::reference::ReferenceLineKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::reference::ReferenceLineKind;
+    use serde::ser::SerializeMap;
+    let (family, entity_id, original_length) = match kind {
+        ReferenceLineKind::Line => ("line", None, None),
+        ReferenceLineKind::Line3d {
+            entity_id,
+            original_length,
+        } => ("line3d", Some(*entity_id), Some(*original_length)),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("family", &family)?;
+    map.serialize_entry("entity_id", &entity_id)?;
+    map.serialize_entry("original_length", &original_length)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -470,19 +545,9 @@ pub(super) fn reference_line_records(scan: &ContainerScan) -> Vec<CreoReferenceL
                 family(&line.kind),
                 line.offset
             ),
-            family: family(&line.kind),
-            entity_id: match &line.kind {
-                crate::reference::ReferenceLineKind::Line => None,
-                crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => Some(*entity_id),
-            },
+            kind: line.kind.clone(),
             start: line.start,
             end: line.end,
-            original_length: match &line.kind {
-                crate::reference::ReferenceLineKind::Line => None,
-                crate::reference::ReferenceLineKind::Line3d {
-                    original_length, ..
-                } => Some(*original_length),
-            },
             offset: line.offset,
         })
         .collect()
@@ -741,7 +806,7 @@ pub(super) fn feature_entity_table_records(
         .iter()
         .map(|table| CreoFeatureEntityTableRecord {
             id: format!("creo:allfeatur:entity_table#{}", table.offset),
-            owner_feature_id: Some(table.feature_id),
+            owner_feature_id: table.feature_id,
             table_class_id: table.table_class_id,
             entry_ids: table.entry_ids(),
             entries: table
@@ -774,17 +839,9 @@ pub(super) fn feature_geometry_table_records(
         .map(|table| CreoFeatureGeometryTableRecord {
             id: format!("creo:feature:geometry_table#{}", table.offset),
             owner_feature_id: table.feature_id,
-            kind: match &table.kind {
-                crate::feature::FeatureGeometryTableKind::EdgeIds => "edge_ids",
-                crate::feature::FeatureGeometryTableKind::LoopIds => "loop_ids",
-                crate::feature::FeatureGeometryTableKind::Boundaries => "boundaries",
-                crate::feature::FeatureGeometryTableKind::UsedBodies => "used_bodies",
-                crate::feature::FeatureGeometryTableKind::GeometryLists => "geometry_lists",
-                crate::feature::FeatureGeometryTableKind::DatumIds(_) => "datum_ids",
-            },
+            kind: table.kind.clone(),
             declared_count: table.count,
             entity_class_id: table.entity_class,
-            entry_ids: table.kind.datum_ids().map(<[u32]>::to_vec),
             offset: table.offset,
             source_section: source_section(scan, table.offset),
         })
@@ -803,22 +860,7 @@ pub(super) fn feature_loop_history_entry_records(
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
             field_bytes: entry.fields().map(<[u8]>::to_vec).collect(),
-            boundary: match &entry.boundary {
-                crate::feature::FeatureLoopHistoryBoundary::CompoundClose => "compound_close",
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(_) => {
-                    "reference_continue"
-                }
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(_) => "reference_final",
-                crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => "named_record",
-            },
-            boundary_reference: match &entry.boundary {
-                crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(reference)
-                | crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
-                    Some(*reference)
-                }
-                crate::feature::FeatureLoopHistoryBoundary::CompoundClose
-                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => None,
-            },
+            boundary: entry.boundary.clone(),
             offset: entry.offset,
             end_offset: entry.end_offset,
             source_section: source_section(scan, entry.offset),
@@ -947,10 +989,10 @@ pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRec
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:allfeatur:feature_row#{}", row.offset),
             owner_feature_id: row.feature_id,
-            header: [row.body[0], row.body[1]],
+            header: row.body.header(),
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.clone(),
+            body: row.body.to_vec(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -968,7 +1010,7 @@ pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureR
             header: [0; 2],
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.clone(),
+            body: row.body.to_vec(),
             body_offset: row.body_offset,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -1076,23 +1118,16 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
     scan.loop_arrays
         .frames
         .iter()
-        .map(|frame| {
-            let (materialized_count, overfull) = match frame.rows {
-                crate::loop_array::LoopArrayFrameRows::Materialized(count) => (count, false),
-                crate::loop_array::LoopArrayFrameRows::Overfull => (0, true),
-            };
-            CreoLoopArrayFrameRecord {
-                id: format!("creo:loop_array:frame#{}", frame.offset),
-                variant: frame.variant,
-                declared_count: frame.declared_count,
-                class_id: frame.class_id,
-                materialized_count,
-                overfull,
-                offset: frame.offset,
-                prototype_end: frame.prototype_end,
-                end: frame.end,
-                source_section: source_section(scan, frame.offset),
-            }
+        .map(|frame| CreoLoopArrayFrameRecord {
+            id: format!("creo:loop_array:frame#{}", frame.offset),
+            variant: frame.variant,
+            declared_count: frame.declared_count,
+            class_id: frame.class_id,
+            rows: frame.rows,
+            offset: frame.offset,
+            prototype_end: frame.prototype_end,
+            end: frame.end,
+            source_section: source_section(scan, frame.offset),
         })
         .collect()
 }
@@ -1353,11 +1388,11 @@ pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylin
             datum_id: record.id,
             owner_feature_id: record.feature_id,
             reversed: record.reversed,
-            origin: record.frame.origin,
-            axis: record.frame.axis,
-            ref_direction: record.frame.ref_direction,
-            radius: record.frame.radius,
-            length: record.frame.length,
+            origin: record.frame.origin(),
+            axis: record.frame.axis(),
+            ref_direction: record.frame.ref_direction(),
+            radius: record.frame.radius(),
+            length: record.frame.length(),
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })
@@ -1496,16 +1531,118 @@ pub(super) struct CreoSurfacePrototypeRecord {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceNamedParameterRecord {
     pub(super) name: String,
-    pub(super) value_kind: &'static str,
-    pub(super) compact_values: Vec<u32>,
-    pub(super) scalar_dimensions: Option<u32>,
-    pub(super) scalar_count: Option<u32>,
-    pub(super) scalar_values: Vec<Option<f64>>,
-    pub(super) scalar_tokens: Vec<Vec<u8>>,
-    pub(super) opaque: Vec<u8>,
+    #[serde(flatten, serialize_with = "serialize_surface_named_value")]
+    pub(super) value: crate::surface::SurfaceNamedValue,
     pub(super) body: Vec<u8>,
     pub(super) offset: usize,
     pub(super) value_offset: usize,
+}
+
+fn serialize_surface_named_value<S: serde::Serializer>(
+    value: &crate::surface::SurfaceNamedValue,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (
+        value_kind,
+        compact_values,
+        scalar_dimensions,
+        scalar_count,
+        scalar_values,
+        scalar_tokens,
+        opaque,
+    ) = match value {
+        crate::surface::SurfaceNamedValue::Empty => (
+            "empty",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CompactInt(value) => (
+            "compact_int",
+            vec![*value],
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
+            "compact_int_array",
+            values.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
+            "contiguous_entity_references",
+            entity_ids.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarArray {
+            dimensions,
+            count,
+            values,
+            tokens,
+        } => (
+            "scalar_array",
+            Vec::new(),
+            Some(*dimensions),
+            Some(*count),
+            values.clone(),
+            tokens.clone().unwrap_or_default(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CountedScalarArray {
+            count,
+            values,
+            tokens,
+        } => (
+            "counted_scalar_array",
+            Vec::new(),
+            None,
+            Some(*count),
+            values.clone(),
+            tokens.clone(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
+            "scalar_sequence",
+            Vec::new(),
+            None,
+            None,
+            values.iter().copied().map(Some).collect(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::Opaque(value) => (
+            "opaque",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            value.clone(),
+        ),
+    };
+    let mut map = serializer.serialize_map(Some(7))?;
+    map.serialize_entry("value_kind", &value_kind)?;
+    map.serialize_entry("compact_values", &compact_values)?;
+    map.serialize_entry("scalar_dimensions", &scalar_dimensions)?;
+    map.serialize_entry("scalar_count", &scalar_count)?;
+    map.serialize_entry("scalar_values", &scalar_values)?;
+    map.serialize_entry("scalar_tokens", &scalar_tokens)?;
+    map.serialize_entry("opaque", &opaque)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -1884,29 +2021,29 @@ pub(super) fn surface_parameter_records(
                 }),
                 positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
                     CreoPositionalCylinderFrame {
-                        origin: frame.origin,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        radius: frame.radius,
-                        length: frame.length,
+                        origin: frame.origin(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        radius: frame.radius(),
+                        length: frame.length(),
                     }
                 }),
                 split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
                 positional_cone_frame: record.positional_cone_frame().map(|frame| {
                     CreoPositionalConeFrame {
-                        apex: frame.apex,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        half_angle: frame.half_angle,
+                        apex: frame.apex(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        half_angle: frame.half_angle(),
                     }
                 }),
                 positional_torus_frame: record.positional_torus_frame().map(|frame| {
                     CreoPositionalTorusFrame {
-                        center: frame.center,
-                        axis: frame.axis,
-                        ref_direction: frame.ref_direction,
-                        major_radius: frame.major_radius,
-                        minor_radius: frame.minor_radius,
+                        center: frame.center(),
+                        axis: frame.axis(),
+                        ref_direction: frame.ref_direction(),
+                        major_radius: frame.major_radius(),
+                        minor_radius: frame.minor_radius(),
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame().map(|frame| {
@@ -1983,13 +2120,7 @@ pub(super) fn feature_operation_state_records(
                 current: !state.display_state_conflict
                     && current_offsets.get(&state.feature_id) == Some(&state.offset),
                 family: state.kind.as_str().to_string(),
-                display_name_stored: state.display_name_stored(),
-                stored_name: state.stored_name(),
-                stored_name_bytes: state.stored_name_bytes().map(ToOwned::to_owned),
-                identifier_keyword: state.identifier_keyword().map(str::to_string),
-                stored_name_prefix: state
-                    .stored_name_prefix()
-                    .map(|prefix| char::from(prefix).to_string()),
+                name: state.name.clone(),
                 recipe: state
                     .recipe
                     .candidate()
@@ -2174,21 +2305,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|section| CreoSketchSection3d {
                     sketch_plane_entity_id: section.sketch_plane_entity_id,
                     sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                    reference_plane_entity_ids: section.reference_planes.entity_ids().collect(),
-                    reference_plane_rows: match &section.reference_planes {
-                        ReferencePlanes::Named(_) => &[][..],
-                        ReferencePlanes::Positional(rows) => rows.as_slice(),
-                    }
-                    .iter()
-                    .map(|row| CreoSketchReferencePlane {
-                        plane_entity_id: row.plane_entity_id,
-                        reference_type: row.reference_type,
-                        external_reference_id: row.external_reference_id,
-                        segment_id: row.segment_id,
-                        sub_index: row.sub_index,
-                        reference_flip: row.reference_flip.map(binary_flag_value),
-                    })
-                    .collect(),
+                    reference_planes: section.reference_planes.clone(),
                     reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
                     orientation: CreoSketchSectionOrientation {
                         section_flip: section.orientation.section_flip.map(binary_flag_value),
@@ -2216,15 +2333,13 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     .map(|row| CreoSketchVariable {
                         variable_type: row.variable_type.code(),
                         key: row.key,
-                        value: row.value.value(),
+                        value: row.value,
                         value_body: row.value_body.clone(),
-                        guess: row.guess.value(),
+                        guess: row.guess,
                         guess_body: row.guess_body.clone(),
-                        guess_dimension_driven: row.guess == ScalarLane::DimensionDriven,
                         known: row.known,
                         homogeneity: row.homogeneity,
                         uvar_id: row.uvar_id,
-                        dimension_driven: row.value == ScalarLane::DimensionDriven,
                         resolved_value: match row.variable_type {
                             VariableType::U => resolved_coordinates
                                 .get(&row.key)
@@ -2572,20 +2687,16 @@ pub(super) fn sketch_section_point_records(
         .map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
             let state = if ambiguous.contains(&point_id) {
-                "conflicting"
+                CreoSketchPointState::Conflicting
             } else {
-                match (u.is_some(), v.is_some()) {
-                    (true, true) => "resolved",
-                    (true, false) | (false, true) => "partial",
-                    (false, false) => "unresolved",
+                match (u, v) {
+                    (Some(u), Some(v)) => CreoSketchPointState::Resolved([u, v]),
+                    (Some(u), None) => CreoSketchPointState::PartialU(u),
+                    (None, Some(v)) => CreoSketchPointState::PartialV(v),
+                    (None, None) => CreoSketchPointState::Unresolved,
                 }
             };
-            CreoSketchSectionPoint {
-                point_id,
-                u,
-                v,
-                state,
-            }
+            CreoSketchSectionPoint { point_id, state }
         })
         .collect()
 }
@@ -2646,4 +2757,21 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
         pointer: record.pointer,
         offset: record.offset,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_feature_candidates_do_not_expose_short_headers() {
+        let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.features.rows = crate::feature::rows(&payload, &BTreeSet::from([1, 2]), 0);
+        let records = feature_row_records(&scan);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].owner_feature_id, 2);
+        assert_eq!(records[0].header, [0, 0]);
+        assert_eq!(records[0].body, payload[3..]);
+    }
 }

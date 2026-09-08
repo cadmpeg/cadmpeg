@@ -14,6 +14,7 @@ use super::markers::{
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
     sketch_marker_prefix_at,
 };
+use super::names::checked_nonempty_name;
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
@@ -22,7 +23,9 @@ use super::relation_loci::{
 };
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
-use super::transforms::{locus_entity, locus_key, marker_entities, sketch_entity_loci};
+use super::transforms::{
+    locus_entity, locus_key, marker_entities, sketch_entity_loci, ProfileAxis,
+};
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
@@ -128,8 +131,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .links()
             .iter()
             .map(|link| SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-local-id")
-                    .expect("source operand kind is nonempty"),
+                native_kind: checked_nonempty_name("sldprt:marker-local-id"),
                 field: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
@@ -137,10 +139,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().filter_map(|owner| {
             Some(SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                    "sldprt:marker-constraint-owner",
-                )
-                .expect("source operand kind is nonempty"),
+                native_kind: checked_nonempty_name("sldprt:marker-constraint-owner"),
                 field: None,
                 object_index: owner.object_index.or(owner.local_id)?,
                 native_ref: Some(owner.id.clone()),
@@ -390,7 +389,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             sketch_entities,
                             markers_by_id,
                             loci_by_marker,
-                            kind == Horizontal,
+                            if kind == Horizontal {
+                                ProfileAxis::U
+                            } else {
+                                ProfileAxis::V
+                            },
                         )
                     });
                 let Some(loci) = loci else {
@@ -1171,7 +1174,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    horizontal: bool,
+    axis: ProfileAxis,
 ) -> Option<Vec<SketchLocus>> {
     let links = marker
         .links()
@@ -1200,7 +1203,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     let mut candidates = canonical_profile_loci(sketch, sketch_entities)
         .into_iter()
         .filter_map(|(candidate_point, candidate)| {
-            let aligned = if horizontal {
+            let aligned = if axis == ProfileAxis::U {
                 same_dimension_length(candidate_point.v, known_point.v)
             } else {
                 same_dimension_length(candidate_point.u, known_point.u)

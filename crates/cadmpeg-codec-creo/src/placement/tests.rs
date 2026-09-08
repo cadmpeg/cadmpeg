@@ -986,13 +986,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: PositionalCylinderFrame {
+                frame: PositionalCylinderFrame::new(
                     origin,
-                    axis: [0.0, 1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 0.75,
-                    length: Some(34.0),
-                },
+                    [0.0, 1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    0.75,
+                    Some(34.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -1052,7 +1053,16 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         else {
             panic!("cylinder frame");
         };
-        frame.origin[0] += 1.0e12;
+        let mut origin = frame.origin();
+        origin[0] += 1.0e12;
+        *frame = PositionalCylinderFrame::new(
+            origin,
+            frame.axis(),
+            frame.ref_direction(),
+            frame.radius(),
+            frame.length(),
+        )
+        .expect("valid positional cylinder frame");
     }
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1060,7 +1070,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     else {
         panic!("second cylinder frame");
     };
-    frame.axis = [0.1, 0.99_f64.sqrt(), 0.0];
+    *frame = PositionalCylinderFrame::new(
+        frame.origin(),
+        [0.1, 0.99_f64.sqrt(), 0.0],
+        [0.99_f64.sqrt(), -0.1, 0.0],
+        frame.radius(),
+        frame.length(),
+    )
+    .expect("valid positional cylinder frame");
     let divergent_sources = PlacementSources {
         surface_parameters: &far_divergent,
         ..sources

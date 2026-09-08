@@ -380,11 +380,26 @@ fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid:
     })
 }
 
+#[derive(Clone, Copy)]
+enum ReferencePadding {
+    None,
+    TwoZeros,
+}
+
+impl ReferencePadding {
+    fn trailing_zeros(self) -> usize {
+        match self {
+            Self::None => 0,
+            Self::TwoZeros => 2,
+        }
+    }
+}
+
 struct LocalReferenceCandidate {
     target: u64,
     end: usize,
     inline_type_guid: Option<String>,
-    trailing_zeros: usize,
+    padding: ReferencePadding,
 }
 
 fn local_reference_candidates(
@@ -400,14 +415,14 @@ fn local_reference_candidates(
                 target,
                 end,
                 inline_type_guid: inline_type_guid.clone(),
-                trailing_zeros: 2,
+                padding: ReferencePadding::TwoZeros,
             });
             if allow_extra_zero && bytes.get(end) == Some(&0) {
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end: end + 1,
                     inline_type_guid,
-                    trailing_zeros: 2,
+                    padding: ReferencePadding::TwoZeros,
                 });
             }
         }
@@ -419,14 +434,14 @@ fn local_reference_candidates(
                     target,
                     end,
                     inline_type_guid: None,
-                    trailing_zeros: 0,
+                    padding: ReferencePadding::None,
                 });
                 if allow_extra_zero && bytes.get(end) == Some(&0) {
                     candidates.push(LocalReferenceCandidate {
                         target,
                         end: end + 1,
                         inline_type_guid: None,
-                        trailing_zeros: 0,
+                        padding: ReferencePadding::None,
                     });
                 }
             }
@@ -544,9 +559,7 @@ fn parse_snapshot_body_map_frame(
         return Ok(None);
     };
     for companion in local_reference_candidates(bytes, companion_at, true) {
-        let Some(reserved_count) = 2usize.checked_sub(companion.trailing_zeros) else {
-            continue;
-        };
+        let reserved_count = 2 - companion.padding.trailing_zeros();
         let Some(reserved_end) = companion.end.checked_add(reserved_count) else {
             continue;
         };
@@ -577,11 +590,11 @@ fn parse_snapshot_body_map_frame(
         else {
             continue;
         };
-        if bytes.get(pairs_start..pairs_end).is_none() {
+        let Some(pairs) = bytes.get(pairs_start..pairs_end) else {
             continue;
-        }
-        if (0..count).any(|pair| {
-            View::u64_le_at(bytes, pairs_start + pair * 16 + 8).is_none_or(|body_entity| {
+        };
+        if pairs.chunks_exact(16).any(|pair| {
+            View::u64_le_at(pair, 8).is_none_or(|body_entity| {
                 !entity_has_type(
                     meta,
                     body_entity,
@@ -592,9 +605,7 @@ fn parse_snapshot_body_map_frame(
             continue;
         }
         for container in local_reference_candidates(bytes, pairs_end, false) {
-            let Some(reserved_count) = 3usize.checked_sub(container.trailing_zeros) else {
-                continue;
-            };
+            let reserved_count = 3 - container.padding.trailing_zeros();
             let Some(reserved_end) = container.end.checked_add(reserved_count) else {
                 continue;
             };
@@ -633,12 +644,12 @@ fn parse_snapshot_body_map_frame(
             bindings.try_reserve(count).map_err(|_| {
                 crate::error::malformed("F3D snapshot body-map count exceeds capacity")
             })?;
-            for pair in 0..count {
-                let at = pairs_start + pair * 16;
+            for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
+                let mut pair = View::over_retained(pair);
                 bindings.push(BodyBinding {
-                    asm_key: View::u64_le_at(bytes, at).expect("validated pair extent"),
-                    asm_key_offset: at,
-                    entity_suffix: View::u64_le_at(bytes, at + 8).expect("validated pair extent"),
+                    asm_key: pair.req_u64_le()?,
+                    asm_key_offset: pairs_start + ordinal * 16,
+                    entity_suffix: pair.req_u64_le()?,
                 });
             }
             return Ok(Some(BodyMapRecord {

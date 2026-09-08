@@ -180,7 +180,7 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                 vec![ReferenceEdge {
                     origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
-                    target: Some(format!("iges:entity:directory#{target}")),
+                    target: Some(target),
                     resolution: Resolution::Resolved,
                     expected: ReferenceExpectation::Type {
                         entity_type: 124,
@@ -250,4 +250,24 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
     assert!(cycle_losses
         .iter()
         .all(|loss| loss.message.contains("Cyclic resolution")));
+}
+
+#[test]
+fn zero_pointer_absence_creates_no_reference_edge() {
+    let directory = [directory_entry(1, 116)];
+    let mut graph = build(&directory);
+    assert!(graph[&1].is_empty());
+    let resolver = ParameterResolver::new(&directory);
+    let expectation = ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry);
+    assert_eq!(
+        resolver.resolve(1, 1, 0, expectation.clone(), |_| panic!("absent target")),
+        None
+    );
+    assert_eq!(
+        resolver.resolve_negative(1, 2, 0, expectation, |_| panic!("absent target")),
+        None
+    );
+    resolver.append_to(&mut graph);
+    assert!(graph[&1].is_empty());
+    assert!(super::summary_notes(&graph).is_empty());
 }

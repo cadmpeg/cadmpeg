@@ -1322,7 +1322,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         feature_id: 6,
         root_schema_class: Some(crate::feature::schema::SchemaClass::from(schema_class)),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: offset + 1,
         offset,
     };

@@ -182,6 +182,14 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
         .collect()
 }
 
+struct RelationGroup<'a> {
+    feature_ref: String,
+    family: FeatureInputRelationFamily,
+    class_ref: String,
+    operands: Vec<FeatureInputOperand>,
+    scalars: Vec<(usize, &'a FeatureInputScalar)>,
+}
+
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -213,14 +221,7 @@ pub(super) fn relation_instances(
         .into_iter()
         .filter_map(|(scalar, count)| (count > 1).then_some(scalar))
         .collect::<HashSet<_>>();
-    let mut groups = Vec::<(
-        String,
-        FeatureInputRelationFamily,
-        String,
-        Vec<FeatureInputOperand>,
-        Vec<&FeatureInputScalar>,
-        usize,
-    )>::new();
+    let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
         let Some(feature_ref) = scalar
             .feature_ref
@@ -234,22 +235,21 @@ pub(super) fn relation_instances(
             if ambiguous_scalars.contains(scalar.id.as_str()) {
                 continue;
             }
-            let Some((owner, family, class_ref, operands, group_scalars, last_index)) =
-                groups.last()
-            else {
+            let Some(group) = groups.last_mut() else {
                 continue;
             };
-            let Some(last_scalar) = group_scalars.last() else {
+            let Some((last_index, last_scalar)) = group.scalars.last() else {
                 continue;
             };
-            let same_scope = owner == feature_ref
+            let same_scope = group.feature_ref == feature_ref
                 && *last_index + 1 == scalar_index
                 && !lane.classes.iter().any(|class| {
                     class.offset > last_scalar.offset
                         && class.offset < scalar.offset
                         && relation_family(&class.name).is_some()
                 });
-            let same_operands = operands
+            let same_operands = group
+                .operands
                 .iter()
                 .map(|operand| (operand.kind, operand.entity_index))
                 .eq(scalar
@@ -257,43 +257,37 @@ pub(super) fn relation_instances(
                     .iter()
                     .map(|operand| (operand.kind, operand.entity_index)));
             let repeated_circle_display = same_scope
-                && *family == FeatureInputRelationFamily::CircleDiameter
+                && group.family == FeatureInputRelationFamily::CircleDiameter
                 && scalar.role == FeatureInputScalarRole::Display
-                && group_scalars
+                && group
+                    .scalars
                     .iter()
-                    .all(|candidate| candidate.role == FeatureInputScalarRole::Display)
+                    .all(|(_, candidate)| candidate.role == FeatureInputScalarRole::Display)
                 && scalar.operands.len() == 1
-                && group_scalars
+                && group
+                    .scalars
                     .iter()
-                    .all(|candidate| candidate.operands.len() == 1)
-                && group_scalars.iter().all(|candidate| {
+                    .all(|(_, candidate)| candidate.operands.len() == 1)
+                && group.scalars.iter().all(|(_, candidate)| {
                     candidate.operands[0].kind == scalar.operands[0].kind
                         && candidate.operands[0].entity_index != scalar.operands[0].entity_index
                         && same_scalar_name(candidate, scalar, &lane.names)
                 });
             if repeated_circle_display {
-                let (_, _, _, _, scalars, last_index) = groups
-                    .last_mut()
-                    .expect("a repeated display run requires an existing relation group");
-                scalars.push(scalar);
-                *last_index = scalar_index;
+                group.scalars.push((scalar_index, scalar));
             } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
             {
-                if group_scalars.len() == 1 {
-                    let (_, _, _, _, scalars, last_index) = groups
-                        .last_mut()
-                        .expect("a continuation requires an existing relation group");
-                    scalars.push(scalar);
-                    *last_index = scalar_index;
+                if group.scalars.len() == 1 {
+                    group.scalars.push((scalar_index, scalar));
                 } else {
-                    groups.push((
-                        owner.clone(),
-                        *family,
-                        class_ref.clone(),
-                        scalar.operands.clone(),
-                        vec![scalar],
-                        scalar_index,
-                    ));
+                    let next = RelationGroup {
+                        feature_ref: group.feature_ref.clone(),
+                        family: group.family,
+                        class_ref: group.class_ref.clone(),
+                        operands: scalar.operands.clone(),
+                        scalars: vec![(scalar_index, scalar)],
+                    };
+                    groups.push(next);
                 }
             }
             continue;
@@ -301,79 +295,68 @@ pub(super) fn relation_instances(
         // A display scalar can precede the declaration selected by its adjacent
         // driving scalar. The driving scalar's declaration is authoritative for
         // that pair; display-only scalars still stop at a class declaration.
-        let promote_class = groups
-            .last()
-            .is_some_and(|(_, _, group_class, _, scalars, _)| {
-                group_class != class_ref
-                    && scalars.len() == 1
-                    && scalars[0].role == FeatureInputScalarRole::Display
-                    && scalar.role == FeatureInputScalarRole::Driving
-                    && *class_offset > scalars[0].offset
-                    && *class_offset < scalar.offset
-            });
-        let append = groups.last().is_some_and(
-            |(owner, candidate, group_class, operands, scalars, last_index)| {
-                owner == feature_ref
-                    && (candidate == family || promote_class)
-                    && (group_class == class_ref || promote_class)
-                    && *last_index + 1 == scalar_index
-                    && scalars.len() == 1
-                    && operands
+        let promote_class = groups.last().is_some_and(|group| {
+            group.class_ref != *class_ref
+                && group.scalars.len() == 1
+                && group.scalars[0].1.role == FeatureInputScalarRole::Display
+                && scalar.role == FeatureInputScalarRole::Driving
+                && *class_offset > group.scalars[0].1.offset
+                && *class_offset < scalar.offset
+        });
+        let append = groups.last_mut().filter(|group| {
+            group.feature_ref == feature_ref
+                && (group.family == *family || promote_class)
+                && (group.class_ref == *class_ref || promote_class)
+                && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
+                && group
+                    .operands
+                    .iter()
+                    .map(|operand| (operand.kind, operand.entity_index))
+                    .eq(scalar
+                        .operands
                         .iter()
-                        .map(|operand| (operand.kind, operand.entity_index))
-                        .eq(scalar
-                            .operands
-                            .iter()
-                            .map(|operand| (operand.kind, operand.entity_index)))
-            },
-        );
-        if append {
-            let (_, candidate, group_class, _, scalars, last_index) = groups
-                .last_mut()
-                .expect("append requires an existing relation group");
+                        .map(|operand| (operand.kind, operand.entity_index)))
+        });
+        if let Some(group) = append {
             if promote_class {
-                *candidate = *family;
-                *group_class = (*class_ref).to_string();
+                group.family = *family;
+                group.class_ref = (*class_ref).to_string();
             }
-            scalars.push(scalar);
-            *last_index = scalar_index;
+            group.scalars.push((scalar_index, scalar));
         } else {
-            groups.push((
-                feature_ref.to_string(),
-                *family,
-                (*class_ref).to_string(),
-                scalar.operands.clone(),
-                vec![scalar],
-                scalar_index,
-            ));
+            groups.push(RelationGroup {
+                feature_ref: feature_ref.to_string(),
+                family: *family,
+                class_ref: (*class_ref).to_string(),
+                operands: scalar.operands.clone(),
+                scalars: vec![(scalar_index, scalar)],
+            });
         }
     }
     let mut instances = groups
         .into_iter()
         .enumerate()
-        .map(
-            |(ordinal, (feature_ref, family, class_ref, operands, scalars, _))| {
-                let offset = scalars[0].offset;
-                FeatureInputRelationInstance {
-                    id: format!(
-                        "sldprt:feature-input:relation-instance#{}:{offset}",
-                        lane.id
-                            .rsplit_once('#')
-                            .map_or(lane.id.as_str(), |(_, key)| key)
-                    ),
-                    parent: lane.id.clone(),
-                    ordinal: ordinal as u32,
-                    offset,
-                    family,
-                    class_ref,
-                    feature_ref,
-                    scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
-                        scalars,
-                    ),
-                    operands,
-                }
-            },
-        )
+        .map(|(ordinal, group)| {
+            let offset = group.scalars[0].1.offset;
+            FeatureInputRelationInstance {
+                id: format!(
+                    "sldprt:feature-input:relation-instance#{}:{offset}",
+                    lane.id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key)
+                ),
+                parent: lane.id.clone(),
+                ordinal: ordinal as u32,
+                offset,
+                family: group.family,
+                class_ref: group.class_ref,
+                feature_ref: group.feature_ref,
+                scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
+                    group.scalars.into_iter().map(|(_, scalar)| scalar),
+                ),
+                operands: group.operands,
+            }
+        })
         .collect::<Vec<_>>();
     // A class can declare more than one scalar relation. The ordinary
     // instance grouper joins a display scalar to its adjacent driving scalar
@@ -1753,18 +1736,9 @@ pub(super) fn relation_signature(
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
-    if family == CircleDiameter {
-        return matches!(
-            operands,
-            [operand]
-                if matches!(operand.kind, Native(_))
-        );
-    }
-    let [first, second] = operands else {
-        return false;
-    };
-    match family {
-        PointPointDistance => {
+    match (family, operands) {
+        (CircleDiameter, [operand]) => matches!(operand.kind, Native(_)),
+        (PointPointDistance, [first, second]) => {
             (first.kind == D6 && second.kind == D6)
                 || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
                 || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
@@ -1777,29 +1751,29 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x8100) && second.kind == Native(0x8100))
                 || (first.kind == Native(0x820f) && second.kind == Native(0x820f))
         }
-        LineLineDistance => {
+        (LineLineDistance, [first, second]) => {
             (first.kind == E1 && second.kind == E1)
                 || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
                 || (first.kind == Native(0x810f) && second.kind == Native(0x810f))
                 || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
                 || (first.kind == Native(0x81e7) && second.kind == Native(0x81e7))
         }
-        PointLineDistance => {
+        (PointLineDistance, [first, second]) => {
             (first.kind == D6 && second.kind == E1)
                 || (first.kind == Native(0x837b) && second.kind == Native(0x8386))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
                 || (first.kind == Native(0x81dd) && second.kind == Native(0x81e7))
         }
-        PointPointHorizontalDistance | PointPointVerticalDistance => {
+        (PointPointHorizontalDistance | PointPointVerticalDistance, [first, second]) => {
             (first.kind == Native(0x8152) && second.kind == Native(0x8152))
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
                 || (first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb))
         }
-        Angle => {
+        (Angle, [first, second]) => {
             (first.kind == Native(0x8dda) && second.kind == Native(0x8dda))
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
         }
-        CircleDiameter => unreachable!("handled as a unary relation"),
+        _ => false,
     }
 }
 
@@ -1831,8 +1805,9 @@ fn dynamic_relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
-    !matches!(family, FeatureInputRelationFamily::CircleDiameter)
-        && matches!(
+    match family {
+        FeatureInputRelationFamily::CircleDiameter => false,
+        _ => matches!(
             operands,
             [
                 FeatureInputOperand {
@@ -1844,7 +1819,8 @@ fn dynamic_relation_signature(
                     ..
                 }
             ]
-        )
+        ),
+    }
 }
 
 /// Returns whether a relation uses a lane-local operand tag whose meaning is
@@ -2310,6 +2286,33 @@ fn bind_relation_geometry_operands(
                 .iter()
                 .all(|operand| operand.entity_ref.is_none()))
     }) {
+        let bind: fn(
+            &mut FeatureInputRelationInstance,
+            &[&crate::records::SketchInputEntity],
+            f64,
+        ) = match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => |relation, entities, target| {
+                bind_dynamic_point_relation(relation, entities, target, None);
+            },
+            FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                |relation, entities, target| {
+                    bind_dynamic_point_relation(relation, entities, target, Some(true));
+                }
+            }
+            FeatureInputRelationFamily::PointPointVerticalDistance => {
+                |relation, entities, target| {
+                    bind_dynamic_point_relation(relation, entities, target, Some(false));
+                }
+            }
+            FeatureInputRelationFamily::PointLineDistance => bind_dynamic_point_line_relation,
+            FeatureInputRelationFamily::LineLineDistance => |relation, entities, target| {
+                bind_dynamic_line_relation(relation, entities, target, false);
+            },
+            FeatureInputRelationFamily::Angle => |relation, entities, target| {
+                bind_dynamic_line_relation(relation, entities, target, true);
+            },
+            FeatureInputRelationFamily::CircleDiameter => continue,
+        };
         let dynamic = relation_uses_dynamic_operands(relation);
         let Some(target) = relation_target_value(relation, lane) else {
             if dynamic {
@@ -2327,29 +2330,7 @@ fn bind_relation_geometry_operands(
             continue;
         }
         let entities = feature_entities(lane, relation.feature_ref.as_str());
-        match relation.family {
-            FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, None);
-            }
-            FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, Some(true));
-            }
-            FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target, Some(false));
-            }
-            FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(relation, &entities, target);
-            }
-            FeatureInputRelationFamily::LineLineDistance => {
-                bind_dynamic_line_relation(relation, &entities, target, false);
-            }
-            FeatureInputRelationFamily::Angle => {
-                bind_dynamic_line_relation(relation, &entities, target, true);
-            }
-            FeatureInputRelationFamily::CircleDiameter => {
-                unreachable!("circle dimensions do not use dynamic two-cell relation operands")
-            }
-        }
+        bind(relation, &entities, target);
     }
 }
 
