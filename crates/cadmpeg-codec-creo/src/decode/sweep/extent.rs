@@ -182,25 +182,30 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
+    enum CylinderExtentSurface {
+        Plane,
+        Carrier,
+    }
     let rows = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()
-        && rows.iter().all(|row| {
-            matches!(
-                row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Cylinder
-            )
-        }))
-    .then_some(())?;
+        .map(|row| {
+            let kind = match row.kind {
+                crate::surface::SurfaceKind::Plane => CylinderExtentSurface::Plane,
+                crate::surface::SurfaceKind::Cylinder => CylinderExtentSurface::Carrier,
+                _ => return None,
+            };
+            Some((row, kind))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!rows.is_empty()).then_some(())?;
 
     let local_planes = placed_planes(scan);
     let mut frames = Vec::new();
     let mut planes = Vec::new();
-    for row in rows {
+    for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -211,8 +216,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        match row.kind {
-            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+        match kind {
+            CylinderExtentSurface::Plane => match surfaces.as_slice() {
                 [] => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         planes.push((plane.origin, plane.normal));
@@ -235,7 +240,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                 }
                 _ => return None,
             },
-            crate::surface::SurfaceKind::Cylinder => {
+            CylinderExtentSurface::Carrier => {
                 match surfaces.as_slice() {
                     [Surface {
                         geometry: SurfaceGeometry::Unknown { .. },
@@ -274,7 +279,6 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     _ => return None,
                 }
             }
-            _ => unreachable!("surface family checked above"),
         }
     }
     let carriers = frames
@@ -428,24 +432,30 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
+    enum TranslationExtentSurface {
+        Plane,
+        Carrier,
+    }
     let rows = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()
-        && rows.iter().all(|row| {
-            matches!(
-                row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion(_)
-            )
-        }))
-    .then_some(())?;
+        .map(|row| {
+            let kind = match row.kind {
+                crate::surface::SurfaceKind::Plane => TranslationExtentSurface::Plane,
+                crate::surface::SurfaceKind::Extrusion(_) => TranslationExtentSurface::Carrier,
+                _ => return None,
+            };
+            Some((row, kind))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!rows.is_empty()).then_some(())?;
+
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
     let local_planes = placed_planes(scan);
-    for row in rows {
+    for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -456,8 +466,8 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        match row.kind {
-            crate::surface::SurfaceKind::Plane => {
+        match kind {
+            TranslationExtentSurface::Plane => {
                 let plane = match surfaces.as_slice() {
                     []
                     | [Surface {
@@ -474,7 +484,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     planes.push((plane.origin, plane.normal));
                 }
             }
-            crate::surface::SurfaceKind::Extrusion(_) => match surfaces.as_slice() {
+            TranslationExtentSurface::Carrier => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
                     geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -486,7 +496,6 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                 }] => {}
                 _ => return None,
             },
-            _ => unreachable!("surface family checked above"),
         }
     }
     blind_extrusion_from_carriers(&carriers, &planes, transform)

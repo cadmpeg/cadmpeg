@@ -304,7 +304,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     .expect("arc-bounded hole");
     assert!(matches!(
         profiles[1].entities()[0].geometry(),
-        SketchGeometry::Arc { .. }
+        crate::decode::sweep::profiles::ProfileGeometry::Arc { .. }
     ));
 }
 

@@ -20,7 +20,7 @@ use crate::decode::sketch_transfer::recipe::{
 };
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -95,7 +95,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let geometry = entity.geometry();
                 let reversed = entity.reversed();
 
-                revolved_brep_surface(transform, geometry, reversed, &axis)
+                revolved_brep_surface(transform, &geometry.to_sketch(), reversed, &axis)
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
@@ -158,15 +158,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let Some(curve_geometry) = curve_geometry else {
                 continue;
             };
-            let CurveGeometry::Circle {
-                center,
-                axis: curve_axis,
-                ref_direction,
-                radius,
-            } = curve_geometry
-            else {
-                unreachable!();
-            };
             let curve_id =
                 CurveId::mint(format!("{prefix}:curve:vertex:{index}")).expect("identity grammar");
             let point_id =
@@ -178,12 +169,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let position = section_point_in_model(transform, entity.start());
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: CurveGeometry::Circle {
-                    center,
-                    axis: curve_axis,
-                    ref_direction,
-                    radius,
-                },
+                geometry: curve_geometry.into(),
                 source_object: None,
             });
             ir.model.points.push(Point {

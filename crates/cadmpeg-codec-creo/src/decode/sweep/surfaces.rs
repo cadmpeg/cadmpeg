@@ -381,11 +381,29 @@ pub(in super::super) fn revolved_nurbs_surface(
     .ok()
 }
 
+pub(in super::super) struct RevolvedSectionCircle {
+    pub center: Point3,
+    pub axis: Vector3,
+    pub ref_direction: Vector3,
+    pub radius: f64,
+}
+
+impl From<RevolvedSectionCircle> for CurveGeometry {
+    fn from(circle: RevolvedSectionCircle) -> Self {
+        Self::Circle {
+            center: circle.center,
+            axis: circle.axis,
+            ref_direction: circle.ref_direction,
+            radius: circle.radius,
+        }
+    }
+}
+
 pub(in super::super) fn revolved_section_circle(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
     axis: &RevolutionAxis,
-) -> Option<CurveGeometry> {
+) -> Option<RevolvedSectionCircle> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let point = section_point_in_model(transform, point);
@@ -404,7 +422,7 @@ pub(in super::super) fn revolved_section_circle(
         .fold(1.0, f64::max);
     (radius > EPS_RADIUS_NONZERO * scale).then_some(())?;
     let reference = radial.map(|component| component / radius);
-    Some(CurveGeometry::Circle {
+    Some(RevolvedSectionCircle {
         center: Point3::new(center[0], center[1], center[2]),
         axis: Vector3::new(axis_direction[0], axis_direction[1], axis_direction[2]),
         ref_direction: Vector3::new(reference[0], reference[1], reference[2]),

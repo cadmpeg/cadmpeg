@@ -289,8 +289,10 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
     } in profile
     {
         let contribution = match geometry {
-            SketchGeometry::Nurbs { .. } => nurbs_profile_signed_area_twice(geometry, *reversed)?,
-            SketchGeometry::Arc {
+            ProfileGeometry::Nurbs { .. } => {
+                nurbs_profile_signed_area_twice(&geometry.to_sketch(), *reversed)?
+            }
+            ProfileGeometry::Arc {
                 center,
                 radius,
                 start_angle,
@@ -307,7 +309,7 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
                     -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
                 )
             }
-            SketchGeometry::Circle { center, radius } => {
+            ProfileGeometry::Circle { center, radius } => {
                 let sweep = if *reversed {
                     -std::f64::consts::TAU
                 } else {
@@ -331,8 +333,70 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(in super::super) enum ProfileGeometry {
+    Line {
+        start: Point2,
+        end: Point2,
+    },
+    Arc {
+        center: Point2,
+        radius: cadmpeg_ir::features::Length,
+        start_angle: cadmpeg_ir::features::Angle,
+        end_angle: cadmpeg_ir::features::Angle,
+    },
+    Circle {
+        center: Point2,
+        radius: cadmpeg_ir::features::Length,
+    },
+    Nurbs {
+        curve: cadmpeg_ir::geometry::PcurveNurbs,
+    },
+}
+
+impl ProfileGeometry {
+    fn from_sketch(geometry: SketchGeometry) -> Option<Self> {
+        Some(match geometry {
+            SketchGeometry::Line { start, end } => Self::Line { start, end },
+            SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            SketchGeometry::Circle { center, radius } => Self::Circle { center, radius },
+            SketchGeometry::Nurbs { curve } => Self::Nurbs { curve },
+            _ => return None,
+        })
+    }
+
+    pub(in super::super) fn to_sketch(&self) -> SketchGeometry {
+        match self.clone() {
+            Self::Line { start, end } => SketchGeometry::Line { start, end },
+            Self::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            Self::Circle { center, radius } => SketchGeometry::Circle { center, radius },
+            Self::Nurbs { curve } => SketchGeometry::Nurbs { curve },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(in super::super) struct ProfileEntity {
-    geometry: SketchGeometry,
+    geometry: ProfileGeometry,
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
@@ -345,14 +409,14 @@ impl ProfileEntity {
             std::mem::swap(&mut start, &mut end);
         }
         Some(Self {
-            geometry,
+            geometry: ProfileGeometry::from_sketch(geometry)?,
             reversed,
             start,
             end,
         })
     }
 
-    pub(in super::super) fn geometry(&self) -> &SketchGeometry {
+    pub(in super::super) fn geometry(&self) -> &ProfileGeometry {
         &self.geometry
     }
     pub(in super::super) fn reversed(&self) -> bool {
@@ -436,7 +500,7 @@ mod tests;
 
 pub(in super::super) fn profile_arc(segment: &ProfileEntity) -> Option<([f64; 2], f64, f64, f64)> {
     let (center, radius, start, forward_delta) = match &segment.geometry {
-        SketchGeometry::Arc {
+        ProfileGeometry::Arc {
             center,
             radius,
             start_angle,
@@ -447,7 +511,7 @@ pub(in super::super) fn profile_arc(segment: &ProfileEntity) -> Option<([f64; 2]
             (segment.start[1] - center.v).atan2(segment.start[0] - center.u),
             forward_arc_sweep(start_angle.0, end_angle.0),
         ),
-        SketchGeometry::Circle { center, radius } => {
+        ProfileGeometry::Circle { center, radius } => {
             ([center.u, center.v], radius.0, 0.0, std::f64::consts::TAU)
         }
         _ => return None,
@@ -762,7 +826,7 @@ pub(in super::super) fn profile_nurbs_polyline(
     segment: &ProfileEntity,
     tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
-    let nurbs = oriented_sketch_nurbs_curve(&segment.geometry, segment.reversed)?;
+    let nurbs = oriented_sketch_nurbs_curve(&segment.geometry.to_sketch(), segment.reversed)?;
     nurbs_profile_polyline(&nurbs, tolerance)
 }
 
@@ -816,8 +880,8 @@ pub(in super::super) fn profile_segments_intersect(
     second: &ProfileEntity,
     tolerance: f64,
 ) -> bool {
-    let first_nurbs = matches!(first.geometry, SketchGeometry::Nurbs { .. });
-    let second_nurbs = matches!(second.geometry, SketchGeometry::Nurbs { .. });
+    let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
+    let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
         if first_nurbs {
             if let Some(arc) = profile_arc(second) {
@@ -884,7 +948,7 @@ pub(in super::super) fn profile_strictly_contains(
                 .mul_add(second[1], -(first[1] * second[0]))
                 .atan2(first[0].mul_add(second[0], first[1] * second[1]));
         };
-        if matches!(segment.geometry, SketchGeometry::Nurbs { .. }) {
+        if matches!(segment.geometry, ProfileGeometry::Nurbs { .. }) {
             let Some(polyline) = profile_nurbs_polyline(segment, tolerance) else {
                 return false;
             };
