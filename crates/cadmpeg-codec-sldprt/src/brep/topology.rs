@@ -540,7 +540,29 @@ impl Candidate for Coedge {
         self.offset
     }
 }
-type CoedgeEvidence = [bool; 7];
+#[derive(Clone, Copy)]
+struct CoedgeEvidence {
+    owner_valid: bool,
+    start_valid: bool,
+    edge_valid: bool,
+    next_owner_valid: Option<bool>,
+    previous_valid: bool,
+    loop_head_valid: bool,
+}
+
+impl CoedgeEvidence {
+    fn flags(self) -> [bool; 7] {
+        [
+            self.owner_valid,
+            self.start_valid,
+            self.edge_valid,
+            self.next_owner_valid == Some(true),
+            self.next_owner_valid.is_some(),
+            self.previous_valid,
+            self.loop_head_valid,
+        ]
+    }
+}
 
 /// Keep the latest record occurrence for each attribute while retaining all
 /// frame readings at that occurrence. A stream can contain overlapping payload
@@ -602,13 +624,14 @@ fn coedge_evidence(
     let edge = candidate.refs[6];
     let edge_valid = edge != 0 && edge_candidates.contains_key(&edge);
     let next = candidate.refs[3];
-    let next_candidates = coedge_candidates.get(&next);
-    let next_valid = next != 0 && next_candidates.is_some();
-    let next_owner_valid = next_candidates.is_some_and(|candidates| {
-        candidates
-            .iter()
-            .any(|next_candidate| next_candidate.refs[1] == owner)
-    });
+    let next_owner_valid = coedge_candidates
+        .get(&next)
+        .filter(|_| next != 0)
+        .map(|candidates| {
+            candidates
+                .iter()
+                .any(|next_candidate| next_candidate.refs[1] == owner)
+        });
     let previous = candidate.refs[2];
     let previous_valid = previous == 0
         || coedge_candidates.get(&previous).is_some_and(|candidates| {
@@ -619,18 +642,19 @@ fn coedge_evidence(
     let loop_head_valid = loops.iter().rev().any(|loop_| {
         loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
     });
-    [
+    CoedgeEvidence {
         owner_valid,
         start_valid,
         edge_valid,
-        next_valid && next_owner_valid,
-        next_valid,
+        next_owner_valid,
         previous_valid,
         loop_head_valid,
-    ]
+    }
 }
 
 fn evidence_dominates(left: CoedgeEvidence, right: CoedgeEvidence) -> bool {
+    let left = left.flags();
+    let right = right.flags();
     let at_least_as_supported = left.iter().zip(right).all(|(left, right)| *left || !right);
     let strictly_more_supported = left.iter().zip(right).any(|(left, right)| *left && !right);
     at_least_as_supported && strictly_more_supported
