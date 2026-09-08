@@ -7,6 +7,42 @@ use std::ops::Add;
 
 pub(crate) mod scan;
 
+/// Position in the four-reference column-row lane.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub(crate) enum ColumnRowSlot {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+    Three = 3,
+}
+
+impl ColumnRowSlot {
+    pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
+}
+
+impl From<ColumnRowSlot> for u8 {
+    fn from(value: ColumnRowSlot) -> Self {
+        value as u8
+    }
+}
+
+impl TryFrom<u8> for ColumnRowSlot {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Three),
+            _ => Err("ColumnRowSlot: expected 0..=3"),
+        }
+    }
+}
+
 const INDEX_PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];
 const INDEX_MIDDLE: [u8; 2] = [0x93, 0x8a];
 const INDEX_SUFFIX: [u8; 9] = [0x00, 0x47, 0x04, 0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
