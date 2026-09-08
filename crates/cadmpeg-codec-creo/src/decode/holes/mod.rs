@@ -3,7 +3,7 @@
 
 mod counterbore;
 mod drilled;
-mod placement;
+pub(super) mod placement;
 mod sweep;
 
 #[allow(clippy::wildcard_imports)]

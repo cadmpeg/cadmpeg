@@ -892,13 +892,13 @@ pub(crate) fn fc05_cylinder_model_witness(
     let Some(frame) = fc05_reference_circle_frame(&circles) else {
         return legacy;
     };
-    if (frame.radius - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
-        || dot(frame.axis, legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
+    if (frame.radius() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
+        || dot(frame.axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
     {
         return legacy;
     }
     let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
-    let mut reference_origin = frame.origin;
+    let mut reference_origin = frame.origin();
     if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
     {
         reference_origin[axis_index] = legacy.origin[axis_index];
@@ -949,14 +949,13 @@ fn fc05_reference_circle_frame(
     {
         return None;
     }
-    Some(crate::surface::PositionalCylinderFrame {
-        origin: circle.center,
+    crate::surface::PositionalCylinderFrame::new(
+        circle.center,
         axis,
-        ref_direction: radial.map(|value| value / radial_length),
-        radius: circle.radius,
-        length: None,
-    })
-    .filter(crate::surface::PositionalCylinderFrame::is_valid)
+        radial.map(|value| value / radial_length),
+        circle.radius,
+        None,
+    )
 }
 
 fn fc05_tangent_plane_score(
@@ -1037,10 +1036,10 @@ fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, Ca
             Some((
                 row.id,
                 CarrierEquation::Cylinder(super::equations::CylinderEquation {
-                    origin: frame.origin,
-                    axis: frame.axis,
-                    ref_direction: frame.ref_direction,
-                    radius: frame.radius,
+                    origin: frame.origin(),
+                    axis: frame.axis(),
+                    ref_direction: frame.ref_direction(),
+                    radius: frame.radius(),
                 }),
             ))
         })

@@ -3650,9 +3650,7 @@ fn displayed_shape_group<'a>(
             )));
         }
     };
-    let Some(root) = map.maps.last() else {
-        return Ok(None);
-    };
+    let root = map.maps.root();
     let groups = root
         .groups
         .iter()
@@ -4022,11 +4020,12 @@ mod shape_association_tests {
             map_id: 1,
             declared_count: 0,
             postfixes: Vec::new(),
-            maps: vec![ElementMapNode {
+            maps: ElementMapNode {
                 index: 1,
                 map_id: 1,
                 groups,
-            }],
+            }
+            .into(),
         }
     }
 

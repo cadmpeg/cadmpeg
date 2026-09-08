@@ -3,8 +3,8 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, DeclaredInterval,
-    ProjectionOutcome,
+    declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    DeclaredInterval, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -86,17 +86,12 @@ fn tabulated_directrix_type_allowed(
     )
 }
 
-fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let length = vector.norm();
-    (length.is_finite() && length > 0.0).then(|| vector.scale(1.0 / length))
-}
-
 fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     let column = |index| {
         Vector3::new(
-            transform.rows[0][index],
-            transform.rows[1][index],
-            transform.rows[2][index],
+            transform.rows()[0][index],
+            transform.rows()[1][index],
+            transform.rows()[2][index],
         )
     };
     let [x, y, z] = [column(0), column(1), column(2)];
@@ -2401,11 +2396,11 @@ pub(super) fn project(
             continue;
         };
         let indicator = Vector3::new(x, y, z);
-        if !declared_unit_vector(record, 1, indicator, global.real_precision()) {
+        let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
+        else {
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
-        }
-        let indicator = unit_vector(indicator).expect("validated nonzero finite offset indicator");
+        };
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
