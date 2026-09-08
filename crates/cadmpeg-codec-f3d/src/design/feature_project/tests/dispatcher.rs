@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -205,7 +204,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
 fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     use crate::records::feature::{
         DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
-        DesignWorkPointPlaneSelection, DesignWorkPointRule,
+        DesignWorkPointPlaneSelection,
     };
     use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
 
@@ -293,7 +292,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     use crate::records::feature::{
         DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
-        DesignWorkPointInputCarrier, DesignWorkPointRule,
+        DesignWorkPointInputCarrier,
     };
     use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
 

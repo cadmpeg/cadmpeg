@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,

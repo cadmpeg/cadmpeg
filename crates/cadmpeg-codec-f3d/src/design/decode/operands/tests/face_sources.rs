@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, clippy::default_trait_access, clippy::wildcard_imports)]
+#![allow(clippy::default_trait_access, clippy::wildcard_imports)]
 
-use super::prelude::*;
 use crate::design::decode::operands::{
     face_source_carrier_layout, parse_face_source_carrier_prefix,
 };

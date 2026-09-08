@@ -12,7 +12,7 @@ use crate::records::feature::DesignPathFeatureConstruction;
 #[test]
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     use crate::records::topology::DesignConstructionOperandGroupFrame;
-    use crate::records::DesignParameterKind;
+
     use cadmpeg_ir::features::{
         FeatureDefinition, GeneratedSweepSection, Length, PathRef, SweepSection,
     };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SurfaceStitch` history-selection tests.
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,

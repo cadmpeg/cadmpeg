@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 use super::{
     exact_coil_placement, exact_hole_construction, exact_hole_face_selection,
@@ -21,7 +19,7 @@ use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::records::feature::{
     DesignCoilExtent, DesignCoilSelection, DesignExtrudeOperation, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignWorkPointInputCarrier, DesignWorkPointRule,
+    DesignPathFeatureConstruction, DesignWorkPointRule,
 };
 use crate::records::{ConstructionRecipe, ConstructionRecipeKind, DesignRecordHeader};
 use std::collections::HashMap;

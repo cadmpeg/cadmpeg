@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -9,26 +8,18 @@
 )]
 
 use super::{
-    bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
-    find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
-    following_dimension_companion_record_index, indexed_record_containing,
-    is_grouped_recipe_reference_frame, is_paired_recipe_reference_frame,
-    parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-    parse_dimension_null_locus_pair, parse_dimension_presentation_frame, recipe_record_prefix,
+    contiguous_i32_program, find_dimension_locus_groups, find_dimension_locus_pair,
+    find_dimension_null_locus_pair, indexed_record_containing, parse_dimension_annotation_frame,
+    parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
+    parse_dimension_presentation_frame, recipe_record_prefix,
 };
 use crate::design::decode::parameters::parse_design_parameter;
 use crate::design::dimensions::{
-    bind_dimension_loci, null_locus_dimension_definition, remove_dimension_frame_relations,
+    null_locus_dimension_definition, remove_dimension_frame_relations,
 };
 use crate::design::test_support::{parameter_record, push_genesis_block, push_reference};
-use crate::records::{
-    DesignDimensionLocus, DesignParameterOwner, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint,
-};
-use crate::records::{
-    SketchConstraintKind, SketchRelation, SketchRelationKind, SketchRelationMember,
-    SketchRelationReturnMember,
-};
+use crate::records::{DesignParameterOwner, PersistentSubentityTag};
+use crate::records::{SketchRelation, SketchRelationKind};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;

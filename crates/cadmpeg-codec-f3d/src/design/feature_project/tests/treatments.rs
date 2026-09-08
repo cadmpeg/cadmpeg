@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -591,7 +590,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
 
 #[test]
 fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
-    use crate::records::feature::{DesignDraftOperation, DesignParameterScope, DesignScopePayload};
+    use crate::records::feature::{DesignDraftOperation, DesignParameterScope};
     use crate::records::topology::{
         AsmHistoricalEntityKind, DesignConstructionOperandGroup,
         DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,

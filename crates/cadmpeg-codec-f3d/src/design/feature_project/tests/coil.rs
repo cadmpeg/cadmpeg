@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 use super::project_coil;
 use crate::records::feature::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCoilTransform,
     DesignExtrudeOperation, DesignParameterScope,
 };
-use crate::records::{DesignParameter, DesignParameterKind};
+use crate::records::DesignParameter;
 use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition};
 
 fn parameter(
