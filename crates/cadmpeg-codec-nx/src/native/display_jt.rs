@@ -4651,7 +4651,7 @@ mod tests {
         let container = Container {
             data: data.clone().into(),
             physical_size,
-            layout: crate::container::test_modern_layout(6, 0),
+            layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
@@ -4769,7 +4769,7 @@ mod tests {
         let container = Container {
             data: data.into(),
             physical_size,
-            layout: crate::container::test_modern_layout(6, 0),
+            layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -4876,7 +4876,7 @@ mod tests {
         let container = Container {
             data: data.into(),
             physical_size,
-            layout: crate::container::test_modern_layout(6, 0),
+            layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -5817,7 +5817,7 @@ mod tests {
         let container = crate::container::Container {
             data: data.into(),
             physical_size,
-            layout: crate::container::test_modern_layout(1, 0),
+            layout: crate::container::test_modern_layout(1),
             entries: vec![crate::container::DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: crate::container::Region::Header,

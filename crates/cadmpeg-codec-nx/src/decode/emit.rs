@@ -1318,17 +1318,12 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     );
     attributes.insert(
         "header_entry_count".to_string(),
-        match scan.container.layout {
-            crate::container::ContainerLayout::Modern {
-                header_entry_count, ..
-            } => header_entry_count,
-            crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => entry_count,
-        }
-        .to_string(),
+        scan.container
+            .entry_count(crate::container::Region::Header)
+            .to_string(),
     );
     if let crate::container::ContainerLayout::Modern {
         footer_offset,
-        footer_entry_count,
         footer_fingerprint,
         ..
     } = scan.container.layout
@@ -1336,7 +1331,9 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         attributes.insert("footer_offset".to_string(), footer_offset.to_string());
         attributes.insert(
             "footer_entry_count".to_string(),
-            footer_entry_count.to_string(),
+            scan.container
+                .entry_count(crate::container::Region::Footer)
+                .to_string(),
         );
         attributes.insert(
             "footer_fingerprint".to_string(),

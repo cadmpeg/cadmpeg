@@ -34,18 +34,16 @@ fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.layout.version(), 0x06);
     let ContainerLayout::Modern {
-        header_entry_count,
         file_tag,
-        footer_entry_count,
         footer_fingerprint,
         ..
     } = c.layout
     else {
         panic!("SPLMSSTR input must have modern layout facts");
     };
-    assert_eq!(header_entry_count, 1);
+    assert_eq!(c.entry_count(Region::Header), 1);
     assert_eq!(file_tag, 0x33_22_11);
-    assert_eq!(footer_entry_count, 0);
+    assert_eq!(c.entry_count(Region::Footer), 0);
     assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
@@ -59,10 +57,7 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let container = Container {
         data: payload.as_slice().into(),
         physical_size: payload.len() as u64,
-        layout: ContainerLayout::LegacyCfb {
-            version: 0,
-            entry_count: 2,
-        },
+        layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![
             DirEntry {
                 name: "/Root/first".into(),
@@ -92,7 +87,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let container = Container {
         data: payload.as_slice().into(),
         physical_size: payload.len() as u64,
-        layout: test_modern_layout(0, 1),
+        layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
@@ -135,7 +130,7 @@ fn container_caches_owned_section_layouts() {
     let container = Container {
         data: file.into(),
         physical_size,
-        layout: test_modern_layout(0, 1),
+        layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
@@ -211,6 +206,21 @@ fn container_reuses_borrowed_offset_store_block_index() {
     assert!(!first.is_empty());
     assert!(first.contains_key("nx:om-data-blocks-0:block#0"));
     assert!(std::ptr::eq(first, second));
+}
+
+#[test]
+fn container_counts_admitted_entries_in_each_region() {
+    let mut file = single_part_prt();
+    file.truncate(file.len() - 8);
+    file.extend_from_slice(&1_u32.to_le_bytes());
+    file.extend_from_slice(&6_u32.to_le_bytes());
+    file.extend_from_slice(b"/Root/");
+    file.extend_from_slice(&[0; 16]);
+    file.extend_from_slice(&[0; 4]);
+    let container = container::scan_bytes(file).expect("one entry in each counted region");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
+    assert_eq!(container.entries.len(), 2);
 }
 
 #[test]

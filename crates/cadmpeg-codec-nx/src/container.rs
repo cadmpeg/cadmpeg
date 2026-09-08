@@ -223,6 +223,14 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
+    /// Number of directory entries in a region.
+    pub(crate) fn entry_count(&self, region: Region) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| entry.region == region)
+            .count()
+    }
+
     /// Return an absolute source span only when it is wholly owned by one
     /// catalogued directory entry.
     pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
@@ -761,14 +769,10 @@ pub enum ContainerLayout {
     Modern {
         /// Version byte at file offset 8.
         version: u8,
-        /// Declared HEADER directory entry count.
-        header_entry_count: u32,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
         /// `FOOTER` region offset.
         footer_offset: u64,
-        /// Declared FOOTER directory entry count.
-        footer_entry_count: u32,
         /// Exact four-byte value following the counted FOOTER directory.
         footer_fingerprint: [u8; 4],
     },
@@ -776,8 +780,6 @@ pub enum ContainerLayout {
     LegacyCfb {
         /// Version byte in the UGII payload.
         version: u8,
-        /// Number of entries in the CFB directory.
-        entry_count: u32,
     },
 }
 
@@ -791,13 +793,11 @@ impl ContainerLayout {
 }
 
 #[cfg(test)]
-pub(crate) fn test_modern_layout(version: u8, header_entry_count: u32) -> ContainerLayout {
+pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
     ContainerLayout::Modern {
         version,
-        header_entry_count,
         file_tag: 0,
         footer_offset: 0,
-        footer_entry_count: 0,
         footer_fingerprint: [0; 4],
     }
 }
@@ -992,14 +992,14 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .checked_sub(4)
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let (header_entry_count, mut entries, header_end) = directory_region(
+    let (mut entries, header_end) = directory_region(
         &data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
-    let (footer_entry_count, footer_entries, footer_end) =
+    let (footer_entries, footer_end) =
         directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
     if header_end > fo {
@@ -1038,10 +1038,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         physical_size,
         layout: ContainerLayout::Modern {
             version,
-            header_entry_count,
             file_tag,
             footer_offset,
-            footer_entry_count,
             footer_fingerprint,
         },
         entries,
@@ -1122,15 +1120,10 @@ pub fn scan_legacy<'a>(
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
-    let header_entry_count = u32::try_from(entries.len())
-        .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
     let container = Container {
         data: Cow::Borrowed(logical_data.window()),
         physical_size: root.window().len() as u64,
-        layout: ContainerLayout::LegacyCfb {
-            version,
-            entry_count: header_entry_count,
-        },
+        layout: ContainerLayout::LegacyCfb { version },
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
@@ -1144,7 +1137,7 @@ fn directory_region(
     marker: [u8; 6],
     region: Region,
     region_end: usize,
-) -> Result<(u32, Vec<DirEntry>, usize), CodecError> {
+) -> Result<(Vec<DirEntry>, usize), CodecError> {
     let count_offset = marker_offset
         .checked_add(marker.len())
         .ok_or_else(|| CodecError::Malformed("directory marker offset overflow".to_string()))?;
@@ -1185,7 +1178,7 @@ fn directory_region(
         entries.push(entry);
         at = next;
     }
-    Ok((count, entries, at))
+    Ok((entries, at))
 }
 
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes
