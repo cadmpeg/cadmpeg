@@ -8,9 +8,36 @@ use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes,
 #[derive(Serialize)]
 pub(crate) struct CreoSketchSectionPoint {
     pub(crate) point_id: u32,
-    pub(crate) u: Option<f64>,
-    pub(crate) v: Option<f64>,
-    pub(crate) state: &'static str,
+    #[serde(flatten, serialize_with = "serialize_section_point_state")]
+    pub(crate) state: CreoSketchPointState,
+}
+
+/// Reconciled section-point coordinate state.
+pub(crate) enum CreoSketchPointState {
+    Conflicting,
+    Resolved([f64; 2]),
+    PartialU(f64),
+    PartialV(f64),
+    Unresolved,
+}
+
+fn serialize_section_point_state<S: serde::Serializer>(
+    state: &CreoSketchPointState,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (state, u, v) = match state {
+        CreoSketchPointState::Conflicting => ("conflicting", None, None),
+        CreoSketchPointState::Resolved([u, v]) => ("resolved", Some(*u), Some(*v)),
+        CreoSketchPointState::PartialU(u) => ("partial", Some(*u), None),
+        CreoSketchPointState::PartialV(v) => ("partial", None, Some(*v)),
+        CreoSketchPointState::Unresolved => ("unresolved", None, None),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("state", state)?;
+    map.serialize_entry("u", &u)?;
+    map.serialize_entry("v", &v)?;
+    map.end()
 }
 
 #[derive(Serialize)]
