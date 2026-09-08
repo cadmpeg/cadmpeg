@@ -58,28 +58,30 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 .iter_mut()
                 .find(|procedural| procedural.id == *procedural_id)
                 .unwrap();
-            procedural.edit_definition(|definition| {
-                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                    panic!("typed intersection");
-                };
-                context
-                    .edit(|context_sides, _, _| {
-                        let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
-                            panic!("NURBS support lane");
-                        };
-                        let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                            panic!("NURBS support lane");
-                        };
-                        nurbs
-                            .edit_control_points(|points| {
-                                for point in points {
-                                    point.u += 100.0;
-                                }
-                            })
-                            .unwrap();
-                    })
-                    .unwrap()
-            });
+            procedural
+                .edit_definition(|definition| {
+                    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                        panic!("typed intersection");
+                    };
+                    context
+                        .edit(|context_sides, _, _| {
+                            let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                                panic!("NURBS support lane");
+                            };
+                            let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                                panic!("NURBS support lane");
+                            };
+                            nurbs
+                                .edit_control_points(|points| {
+                                    for point in points {
+                                        point.u += 100.0;
+                                    }
+                                })
+                                .unwrap();
+                        })
+                        .unwrap()
+                })
+                .unwrap();
         }
     }
     let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)];
@@ -404,7 +406,8 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];

@@ -1486,12 +1486,13 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model
-        .procedural_curves
-        .push(cadmpeg_ir::geometry::ProceduralCurve::new(
+    ir.model.procedural_curves.push(
+        cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
-        ));
+        )
+        .unwrap(),
+    );
 
     let report = write_step(
         &ir,

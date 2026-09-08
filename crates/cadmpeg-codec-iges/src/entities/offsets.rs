@@ -812,6 +812,30 @@ pub(super) fn project(
             .expect("identity grammar");
         let edge_id =
             EdgeId::mint(format!("iges:model:edge#D{}", entry.sequence)).expect("identity grammar");
+        let procedural = match ProceduralCurve::new(
+            ProceduralCurveId::mint(format!("iges:model:procedural-curve#D{}", entry.sequence))
+                .expect("identity grammar"),
+            ProceduralCurveDefinition::Offset {
+                source: offset_source_id.clone(),
+                distance,
+                side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+                range: Some(match distance_law {
+                    Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+                        parameter_range: [start, end],
+                        distance_law,
+                    },
+                    None => cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                        parameter_range: [start, end],
+                    },
+                }),
+            },
+        ) {
+            Ok(procedural) => procedural,
+            Err(error) => {
+                losses.push(entity_loss(entry, &error.to_string()));
+                continue;
+            }
+        };
         if offset_source_id != source_id {
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
@@ -856,27 +880,7 @@ pub(super) fn project(
             param_range: Some([start, end]),
             tolerance: None,
         });
-        let _attached = ir.model.add_procedural_curve(
-            curve_id,
-            ProceduralCurve::new(
-                ProceduralCurveId::mint(format!("iges:model:procedural-curve#D{}", entry.sequence))
-                    .expect("identity grammar"),
-                ProceduralCurveDefinition::Offset {
-                    source: offset_source_id,
-                    distance,
-                    side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
-                    range: Some(match distance_law {
-                        Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                            parameter_range: [start, end],
-                            distance_law,
-                        },
-                        None => cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                            parameter_range: [start, end],
-                        },
-                    }),
-                },
-            ),
-        );
+        let _attached = ir.model.add_procedural_curve(curve_id, procedural);
         wire_edges.push(edge_id);
         decoded.insert(entry.sequence);
     }

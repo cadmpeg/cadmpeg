@@ -245,7 +245,7 @@ pub(crate) fn transfer_curve_expression_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     dimension_parameters: &BTreeMap<String, ParameterId>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let ordinal_base = ir
         .model
         .features
@@ -538,7 +538,8 @@ pub(crate) fn transfer_curve_expression_features(
             });
             let _attached = ir.model.add_procedural_curve(
                 curve_id,
-                ProceduralCurve::new(procedural_id, procedural_definition),
+                ProceduralCurve::new(procedural_id, procedural_definition)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
         let definition = match helix {
@@ -583,7 +584,7 @@ pub(crate) fn transfer_curve_expression_features(
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
-    transferred_parameter_count
+    Ok(transferred_parameter_count)
 }
 
 #[cfg(test)]

@@ -123,19 +123,21 @@ fn mapped_surface_offset() -> CadIr {
         unreachable!();
     };
     let context = family.context().clone();
-    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset {
-        context,
-        discontinuity_flag: false,
-        base_u_range: [0.0, 1.0],
-        base_v_range: [0.0, 1.0],
-        base,
-        base_range: [2.0, 3.0],
-        base_endpoints: [Some(2.0), Some(3.0)],
-        cache_first: None,
-        distance: 25.0,
-        shift: 0.0,
-        scale: 1.0,
-    });
+    ir.model.procedural_curves[0]
+        .replace_definition(ProceduralCurveDefinition::SurfaceOffset {
+            context,
+            discontinuity_flag: false,
+            base_u_range: [0.0, 1.0],
+            base_v_range: [0.0, 1.0],
+            base,
+            base_range: [2.0, 3.0],
+            base_endpoints: [Some(2.0), Some(3.0)],
+            cache_first: None,
+            distance: 25.0,
+            shift: 0.0,
+            scale: 1.0,
+        })
+        .unwrap();
     ir
 }
 
@@ -296,12 +298,14 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
-    context_first.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::SurfaceOffset { base_endpoints, .. } = definition else {
-            unreachable!();
-        };
-        *base_endpoints = [None, None];
-    });
+    context_first.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::SurfaceOffset { base_endpoints, .. } = definition else {
+                unreachable!();
+            };
+            *base_endpoints = [None, None];
+        })
+        .unwrap();
     check_procedural_support_consistency(&context_first, &mut findings);
     assert!(findings.is_empty());
 

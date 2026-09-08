@@ -1561,7 +1561,8 @@ fn emit_e5_curves_and_edges(
                     context: context.clone(),
                     discontinuity_flag: false,
                 },
-            ),
+            )
+            .ok()?,
         );
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
@@ -1604,7 +1605,8 @@ fn emit_e5_curves_and_edges(
                         tail: None,
                     },
                 },
-            ),
+            )
+            .ok()?,
         );
     }
     for (&record_id, edge) in &topology.edges {

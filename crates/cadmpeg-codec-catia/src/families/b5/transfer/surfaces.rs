@@ -803,7 +803,8 @@ fn emit_extrusion_procedure(
                             parameter_range: source_parameter_range,
                         }),
                     },
-                ),
+                )
+                .ok()?,
             );
         }
     }

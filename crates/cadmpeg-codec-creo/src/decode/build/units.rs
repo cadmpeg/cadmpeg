@@ -59,6 +59,7 @@ pub(super) fn normalize_model_lengths(
             .edit_definition(|definition| {
                 scale_procedural_curve_definition(definition, length_scale_mm)
             })
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
