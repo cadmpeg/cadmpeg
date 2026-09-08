@@ -7,7 +7,7 @@ mod extrusion_brep;
 mod nurbs;
 pub(super) mod pcurves;
 mod planes;
-mod profiles;
+pub(super) mod profiles;
 mod revolution_brep;
 mod surfaces;
 
