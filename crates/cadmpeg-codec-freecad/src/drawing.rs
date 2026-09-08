@@ -582,7 +582,7 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "drawing property {} has invalid XML: {error}",
             property.id

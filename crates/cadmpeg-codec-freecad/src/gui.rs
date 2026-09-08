@@ -201,7 +201,7 @@ fn transfer_schema_one(
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
         .map(|(order, node)| gui_state(text, order, node))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
         schema_version: schema_declaration.map(str::to_owned),
@@ -570,7 +570,8 @@ fn transfer_neutral_presentation(
             states: document
                 .states
                 .iter()
-                .map(|state| PresentationState {
+                .enumerate()
+                .map(|(order, state)| PresentationState {
                     kind: if state.kind == "Camera" {
                         PresentationStateKind::Camera(camera.clone().unwrap_or(CameraState {
                             position: None,
@@ -580,7 +581,7 @@ fn transfer_neutral_presentation(
                     } else {
                         PresentationStateKind::Native(state.kind.clone())
                     },
-                    order: state.order as u32,
+                    order: order as u32,
                     attributes: state.attributes.clone(),
                     assets: state
                         .side_entries
@@ -632,7 +633,10 @@ fn transfer_neutral_presentation(
                 "state",
             ))
             .expect("identity grammar"),
-            object: provider.object.clone(),
+            object: provider
+                .object
+                .as_ref()
+                .map(|object| object.as_str().to_owned()),
             order: provider.order as u32,
             expanded: provider.expanded,
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
@@ -648,7 +652,7 @@ fn transfer_neutral_presentation(
                     (
                         property.name.clone(),
                         gui_property_value(property)
-                            .map_or_else(|| property.raw_xml.clone(), str::to_owned),
+                            .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
                     )
                 })
                 .collect(),
@@ -889,7 +893,11 @@ fn transfer_vertex_appearance(
     }
 }
 
-fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStateRecord {
+fn gui_state(
+    text: &str,
+    order: usize,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<GuiStateRecord, CodecError> {
     let values = node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
@@ -918,20 +926,21 @@ fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStat
         .map(|(_, value)| value)
         .filter(|value| !value.is_empty())
         .collect();
-    GuiStateRecord {
+    Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
         kind: node.tag_name().name().to_owned(),
-        order,
         attributes: node
             .attributes()
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
             .collect(),
         values,
         side_entries,
-        raw_xml: text[node.range()].to_owned(),
-        byte_start: node.range().start as u64,
-        byte_end: node.range().end as u64,
-    }
+        xml: crate::native::RetainedXml::from_text(
+            text[node.range()].to_owned(),
+            node.range().start as u64,
+        )
+        .map_err(CodecError::Malformed)?,
+    })
 }
 
 fn unique_child<'a, 'input>(
@@ -966,7 +975,13 @@ fn append_native_provider(
     let id = crate::native::native_id("gui-view-provider", name);
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
-        object: object.map(str::to_owned),
+        object: object
+            .map(|object| {
+                cadmpeg_ir::products::NonEmptyString::new(object).ok_or_else(|| {
+                    CodecError::Malformed("GUI provider object must not be empty".into())
+                })
+            })
+            .transpose()?,
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
@@ -1047,9 +1062,11 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            raw_xml: text[property.range()].to_owned(),
-            byte_start: property.range().start as u64,
-            byte_end: property.range().end as u64,
+            xml: crate::native::RetainedXml::from_text(
+                text[property.range()].to_owned(),
+                property.range().start as u64,
+            )
+            .map_err(CodecError::Malformed)?,
         });
     }
     Ok(())
@@ -3468,7 +3485,11 @@ fn transfer_shape_appearances(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
-        let Some(object_id) = provider.object.as_deref() else {
+        let Some(object_id) = provider
+            .object
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str)
+        else {
             continue;
         };
         let Some(property) = graph.properties.iter().find(|property| {
@@ -3513,7 +3534,7 @@ fn transfer_shape_appearances(
                     SourceProvenance::in_stream(
                         "fcstd",
                         "GuiDocument.xml",
-                        property.byte_start,
+                        property.xml.start(),
                     )
                     .with_tag(property.id.clone()),
                 ),
@@ -3995,9 +4016,7 @@ mod shape_association_tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: "<Property/>".into(),
-            byte_start: 0,
-            byte_end: 11,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
         }
     }
 
