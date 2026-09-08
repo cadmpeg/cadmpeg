@@ -50,6 +50,22 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn design_census_neutral_is_derived_and_checked_on_the_wire() {
+        for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
+            let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
+            let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
+            assert_eq!(record.neutral(), neutral);
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let mut invalid = wire;
+            invalid["neutral"] = serde_json::json!(!neutral);
+            assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("neutral"));
+        }
+    }
+
+    #[test]
     fn string_table_admission_requires_distinct_backward_references() {
         let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
         for (entries, valid) in [
@@ -311,6 +327,7 @@ mod tests {
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DesignCensusRecordWire", into = "DesignCensusRecordWire")]
 pub struct DesignCensusRecord {
     /// Stable census identity derived from the native object.
     pub id: String,
@@ -322,10 +339,60 @@ pub struct DesignCensusRecord {
     pub feature: String,
     /// Stable CADIR feature-definition family name.
     pub semantic_kind: String,
-    /// Whether the operation has neutral semantics instead of only native retention.
-    pub neutral: bool,
     /// Whether topology post-processing composition wraps the operation.
     pub post_processed: bool,
+}
+
+impl DesignCensusRecord {
+    /// Whether the operation has neutral semantics.
+    pub fn neutral(&self) -> bool {
+        self.semantic_kind != "native"
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DesignCensusRecordWire {
+    id: String,
+    object: String,
+    type_name: String,
+    feature: String,
+    semantic_kind: String,
+    neutral: bool,
+    post_processed: bool,
+}
+
+impl From<DesignCensusRecord> for DesignCensusRecordWire {
+    fn from(value: DesignCensusRecord) -> Self {
+        let neutral = value.neutral();
+        Self {
+            id: value.id,
+            object: value.object,
+            type_name: value.type_name,
+            feature: value.feature,
+            semantic_kind: value.semantic_kind,
+            neutral,
+            post_processed: value.post_processed,
+        }
+    }
+}
+
+impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
+    type Error = String;
+
+    fn try_from(wire: DesignCensusRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            type_name: wire.type_name,
+            feature: wire.feature,
+            semantic_kind: wire.semantic_kind,
+            post_processed: wire.post_processed,
+        };
+        if wire.neutral != record.neutral() {
+            return Err("neutral disagrees with semantic_kind".to_owned());
+        }
+        Ok(record)
+    }
 }
 
 /// Carrier grammar counted by a census record. Empty payloads have no census.

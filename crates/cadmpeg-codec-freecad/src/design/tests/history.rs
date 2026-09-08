@@ -76,7 +76,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
     assert_eq!(census.len(), 2);
-    assert!(census.iter().all(|record| record.neutral));
+    assert!(census.iter().all(|record| record.neutral()));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
@@ -392,7 +392,7 @@ fn transfers_stored_and_external_part_feature_families() {
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
     assert_eq!(census.len(), 8);
-    assert!(census.iter().all(|record| record.neutral));
+    assert!(census.iter().all(|record| record.neutral()));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
 }
