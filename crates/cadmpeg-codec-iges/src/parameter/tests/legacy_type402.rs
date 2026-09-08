@@ -19,7 +19,17 @@ fn type430_entity_table_boundary_follows_solid_pointer_for_both_forms() {
             &integer_parameter_record(9, &[430, 5, 1, 1, 1, 7]),
             &directory,
         );
-        assert_eq!(analysis.candidate_count(), 1, "Form {form}");
+        assert_eq!(
+            analysis.candidate_count(
+                &integer_parameter_record(9, &[430, 5, 1, 1, 1, 7]),
+                entity_primary_end(
+                    &integer_parameter_record(9, &[430, 5, 1, 1, 1, 7]),
+                    &directory
+                )
+            ),
+            1,
+            "Form {form}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 1, "Form {form}");
         let groups = analysis.groups().expect("Type 430 table boundary");
         assert_eq!(groups.token_start, 2, "Form {form}");
@@ -62,7 +72,10 @@ fn type430_entity_table_boundary_suppresses_generic_recovery_for_malformed_span(
         .fully_valid());
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -103,7 +116,10 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     );
     for record in [wrong_fields, omitted_pointer] {
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         assert_eq!(
             analysis
@@ -119,7 +135,10 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         integer_parameter_record(9, &[430, 5, 1, 1]),
     ] {
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0
+        );
         assert_eq!(analysis.valid_candidate_count(), 0);
         assert!(analysis.groups().is_none());
     }
