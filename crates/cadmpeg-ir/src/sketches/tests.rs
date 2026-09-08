@@ -1224,9 +1224,9 @@ fn text_placement_keeps_the_paired_wire_fields() {
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition, TextPlacement};
 
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Text {
-        text: "cadmpeg".into(),
-        font_family: "sans".into(),
-        font_weight: 400,
+        text: crate::products::NonEmptyString::new("cadmpeg").unwrap(),
+        font_family: crate::products::NonEmptyString::new("sans").unwrap(),
+        font_weight: crate::sketches::SketchFontWeight::Regular,
         height: Length(4.0),
         width_factor: None,
         placement: Some(TextPlacement {
@@ -1775,5 +1775,36 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
             _ => placement.rotation.0 = f64::NAN,
         }
         assert!(SketchGeometry::try_from(definition).is_err());
+    }
+}
+
+#[test]
+fn sketch_text_style_admits_only_nonempty_names_and_three_integer_weights() {
+    use crate::sketches::{SketchFontWeight, SketchGeometry};
+
+    for (raw, weight) in [
+        (400, SketchFontWeight::Regular),
+        (500, SketchFontWeight::Medium),
+        (750, SketchFontWeight::Bold),
+    ] {
+        assert_eq!(SketchFontWeight::try_from(raw).unwrap(), weight);
+        assert_eq!(i32::from(weight), raw);
+        assert_eq!(serde_json::to_value(weight).unwrap(), raw);
+        assert_eq!(
+            serde_json::from_value::<SketchFontWeight>(serde_json::json!(raw)).unwrap(),
+            weight
+        );
+    }
+    for raw in [-1, 0, 399, 401, 499, 501, 700, 749, 751, i32::MAX] {
+        assert!(SketchFontWeight::try_from(raw).is_err());
+        assert!(serde_json::from_value::<SketchFontWeight>(serde_json::json!(raw)).is_err());
+    }
+    let wire = serde_json::json!({"kind":"text", "text":" ", "font_family":" ", "font_weight":500, "height":1.0});
+    let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for field in ["text", "font_family"] {
+        let mut invalid = wire.clone();
+        invalid[field] = serde_json::json!("");
+        assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
     }
 }

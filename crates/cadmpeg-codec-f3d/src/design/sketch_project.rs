@@ -326,9 +326,11 @@ pub fn project_sketch_design(
                 )?,
                 sketch,
                 SketchGeometry::try_from(SketchGeometryDefinition::Text {
-                    text: text.text.clone(),
-                    font_family: text.font_family.clone(),
-                    font_weight: text.font_weight,
+                    text: cadmpeg_ir::products::NonEmptyString::new(text.text.clone())?,
+                    font_family: cadmpeg_ir::products::NonEmptyString::new(
+                        text.font_family.clone(),
+                    )?,
+                    font_weight: text.font_weight.try_into().ok()?,
                     height: Length(text.height),
                     // The record's `0` does not scale glyph advance to zero, so it
                     // is not a neutral horizontal scale of zero; only a positive
