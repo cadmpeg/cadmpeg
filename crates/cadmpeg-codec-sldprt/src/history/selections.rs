@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind native topology selections to decoded B-rep identities.
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
@@ -18,7 +19,7 @@ const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
 pub(crate) type SurfaceSelectionFaceBindings =
-    HashMap<(String, String), Option<Vec<cadmpeg_ir::ids::FaceId>>>;
+    HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
 
 pub(crate) struct FaceSelectionContext<'a> {
     pub(crate) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
@@ -72,10 +73,11 @@ pub(crate) fn offset_plane_support_origin(
 
 fn surface_selection_face_bindings<'a>(
     selections: impl IntoIterator<Item = &'a FeatureInputSurfaceSelection>,
-    feature_sources: &HashMap<String, Option<u32>>,
+    feature_sources: &HashMap<String, Option<FeatureSourceId>>,
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> SurfaceSelectionFaceBindings {
-    let mut faces_by_identity = HashMap::<(u32, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
+    let mut faces_by_identity =
+        HashMap::<(FeatureSourceId, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
     for (target, identity) in face_identities {
         let candidate = target.clone();
         let entry = faces_by_identity
@@ -94,7 +96,8 @@ fn surface_selection_face_bindings<'a>(
         let candidate = selection.components.last().and_then(|component| {
             let feature_source_id = match selection.terminal_feature_ref.as_deref() {
                 Some(terminal_feature) => feature_sources.get(terminal_feature).copied().flatten(),
-                None => View::u32_le_at(&component.type_signature, 4),
+                None => View::u32_le_at(&component.type_signature, 4)
+                    .and_then(|source| FeatureSourceId::try_from(source).ok()),
             }?;
             let local_face_id = component.local_id?;
             faces_by_identity
@@ -106,7 +109,6 @@ fn surface_selection_face_bindings<'a>(
             &selection.components,
         );
         let key = (selection.feature_ref.clone(), native);
-        let candidate = candidate.map(|face| vec![face]);
         match bindings.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
@@ -128,7 +130,7 @@ pub(crate) fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut E
     }
 }
 
-pub fn bind_topology_selections(
+pub(crate) fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     inputs: &TopologySelectionInputs<'_>,
@@ -571,6 +573,7 @@ pub(crate) fn resolve_face_selection(
                 .get(&(feature_ref.to_string(), native.clone()))
                 .cloned()
                 .flatten()
+                .map(|face| vec![face])
         });
         if let Some(faces) = faces {
             *selection = FaceSelection::Resolved {
@@ -584,7 +587,7 @@ pub(crate) fn resolve_face_selection(
 fn history_feature_sources(
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-) -> HashMap<String, Option<u32>> {
+) -> HashMap<String, Option<FeatureSourceId>> {
     let mut features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -596,7 +599,8 @@ fn history_feature_sources(
         let source = feature
             .source_id
             .as_deref()
-            .and_then(|value| value.parse::<u32>().ok());
+            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(|value| FeatureSourceId::try_from(value).ok());
         match sources.entry(feature.id.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(source);
@@ -685,7 +689,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 47,
+                        feature_source_id: 47_u32.try_into().unwrap(),
                         local_id: 8,
                         trailing_fields: Vec::new(),
                     },
@@ -694,7 +698,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -707,10 +711,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#terminal-face"
-            )
-            .expect("identity grammar")]))
+            Some(Some(
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                    .expect("identity grammar")
+            ))
         );
     }
 
@@ -726,7 +730,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#first-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -735,7 +739,7 @@ mod tests {
                     cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
                         .expect("identity grammar"),
                     crate::brep::PersistentFaceIdentity {
-                        feature_source_id: 50,
+                        feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
                         trailing_fields: Vec::new(),
                     },
@@ -753,7 +757,8 @@ mod tests {
     fn explicit_terminal_owner_overrides_component_source() {
         let mut selection = surface_selection("feature", vec![component(47, 8), component(99, 5)]);
         selection.terminal_feature_ref = Some("terminal".into());
-        let feature_sources = HashMap::from([(String::from("terminal"), Some(50))]);
+        let feature_sources =
+            HashMap::from([(String::from("terminal"), Some(50_u32.try_into().unwrap()))]);
         let bindings = surface_selection_face_bindings(
             std::iter::once(&selection),
             &feature_sources,
@@ -761,7 +766,7 @@ mod tests {
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 50,
+                    feature_source_id: 50_u32.try_into().unwrap(),
                     local_id: 5,
                     trailing_fields: Vec::new(),
                 },
@@ -773,10 +778,10 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#terminal-face"
-            )
-            .expect("identity grammar")]))
+            Some(Some(
+                cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
+                    .expect("identity grammar")
+            ))
         );
     }
 }

@@ -59,12 +59,13 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
-    let crate::native::DrawingRole::Page {
+    let crate::native::TechDrawKind::Page {
         views,
         template: page_template,
-    } = &page.role
+        ..
+    } = &page.kind
     else {
-        panic!("page record is not DrawingRole::Page");
+        panic!("page record is not TechDrawKind::Page");
     };
     assert_eq!(
         page_template.as_deref(),
@@ -558,4 +559,61 @@ fn rejects_invalid_drawing_numeric_admission() {
             ))
         ));
     }
+}
+
+#[test]
+fn decodes_python_page_kind_with_views_and_template() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+<Object type="TechDraw::DrawPagePython" name="Page"/>
+<Object type="TechDraw::DrawView" name="View"/>
+<Object type="TechDraw::DrawTemplate" name="Template"/>
+</Objects>
+<ObjectData Count="3">
+<Object name="Page"><Properties Count="2">
+<Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="View"/></LinkList></Property>
+<Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+</Properties></Object>
+<Object name="View"><Properties Count="0"/></Object>
+<Object name="Template"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Python page archive");
+    let drawings = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawing records");
+    let page = drawings
+        .iter()
+        .find(|record| record.object == "fcstd:native:object#Page")
+        .expect("Python page");
+    assert_eq!(
+        page.kind,
+        crate::native::TechDrawKind::Page {
+            runtime: crate::native::TechDrawPageKind::Python,
+            views: vec!["fcstd:native:object#View".to_owned()],
+            template: Some("fcstd:native:object#Template".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn drawing_wire_rejects_non_page_views() {
+    let wire = serde_json::json!({
+        "id": "view", "object": "view", "kind": "TechDraw::DrawView",
+        "views": ["a"], "template": null, "sources": [],
+        "relationships": {}, "parameters": {}, "side_entries": []
+    });
+    let error = serde_json::from_value::<crate::native::DrawingRecord>(wire)
+        .expect_err("non-page payload must reject page views");
+    assert!(error
+        .to_string()
+        .contains("non-page drawing record cannot carry views or a template"));
 }

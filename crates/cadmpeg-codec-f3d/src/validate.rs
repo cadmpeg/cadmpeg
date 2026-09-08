@@ -1002,7 +1002,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut configuration_ids = HashSet::new();
     let mut entry_names = HashSet::new();
     for configuration in &ctx.native.design_configurations {
-        let valid_name = match configuration.kind {
+        let valid_name = match configuration.kind() {
             records::DesignConfigurationKind::Table => {
                 configuration.entry_name().ends_with(".dsgcfg")
             }
@@ -1012,17 +1012,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         };
         let unique_id = configuration_ids.insert(configuration.id().as_str());
         let unique_entry_name = entry_names.insert(configuration.entry_name().as_str());
-        let valid = valid_name
-            && unique_id
-            && unique_entry_name
-            && crate::design::configurations::validate_configuration_payload(
-                configuration.entry_name(),
-                configuration.kind,
-                &configuration.payload,
-            )
-            .is_ok()
-            && crate::design::configurations::validate_configuration_variant_order(configuration)
-                .is_ok();
+        let valid = valid_name && unique_id && unique_entry_name;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -1038,10 +1028,10 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| configuration.kind == records::DesignConfigurationKind::Table)
+        .filter(|configuration| configuration.kind() == records::DesignConfigurationKind::Table)
         .filter(|configuration| {
             configuration
-                .payload
+                .payload()
                 .get("configurations")
                 .and_then(serde_json::Value::as_object)
                 .is_some_and(|variants| !variants.is_empty())
@@ -1990,11 +1980,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         alignment.offset()[2],
                     ]
                 };
-                let operand_frame_variant = design::assembly::operand_frame_variant(
+                let generation = design::assembly::AssemblyScopeGeneration::new(
                     scope.frame_length,
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 );
+                let operand_frame_variant = generation.operand_frame_variant();
                 let variable_reference = design::assembly::variable_reference_assembly_generation(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
@@ -2039,12 +2030,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && owner.scope_record_index() == scope.record_index
                     })
                     .count();
-                let alignment_lane_bounds = design::assembly::alignment_lane_bounds(
-                    scope.frame_length,
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    assembly_owner_count,
-                );
+                let alignment_lane_bounds = generation.alignment_lane_bounds(assembly_owner_count);
                 let operand_frames_link =
                     if let Some(records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                         carriers,
@@ -2149,11 +2135,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     })
                             } else {
                                 let locator_offsets =
-                                    design::assembly::operand_path_locator_offsets(
-                                        scope.frame_length,
-                                        scope.class_tag.as_str(),
-                                        scope.paired_class_tag.as_str(),
-                                    );
+                                    generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {

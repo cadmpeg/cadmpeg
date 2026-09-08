@@ -482,10 +482,6 @@ pub(crate) fn grouped_surface_alias_stream(lead: u32, tag: u32, group_id: u32) -
     bytes
 }
 
-pub(crate) fn marker_7cd9_stream() -> Vec<u8> {
-    vec![0xaa, 0x7c, 0xd9, 1, 2, 3, 0x7c, 0xd9, 4, 5]
-}
-
 pub(crate) fn finjpl_stream() -> Vec<u8> {
     let mut bytes = vec![0xaa, 0xbb];
     bytes.extend_from_slice(b"FINJPL  ");

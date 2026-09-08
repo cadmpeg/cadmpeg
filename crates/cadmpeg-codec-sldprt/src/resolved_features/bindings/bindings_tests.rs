@@ -122,18 +122,18 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![SketchInputEntity {
-            id: "sketch-marker".into(),
-            parent: "lane".into(),
-            feature_ref: None,
-            ordinal: 0,
-            offset: 370,
-            object_index: Some(1),
-            local_id: None,
-            kind: SketchInputKind::Point,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.0, 0.0]),
-            links: None,
+        sketch_entities: vec![{
+            let marker_id: String = "sketch-marker".into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker =
+                SketchInputEntity::new(marker_id, marker_parent, 0, 370, SketchInputKind::Point);
+            constructed_marker.feature_ref = None;
+            constructed_marker.object_index = Some(1);
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some([0.0, 0.0]);
+            constructed_marker.links = None;
+            constructed_marker
         }],
     };
 
@@ -270,7 +270,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 45,
+                feature_source_id: 45_u32.try_into().unwrap(),
                 local_id: 7,
                 trailing_fields: Vec::new(),
             },
@@ -310,7 +310,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 45,
+                feature_source_id: 45_u32.try_into().unwrap(),
                 local_id: 7,
                 trailing_fields: Vec::new(),
             },
@@ -336,7 +336,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             (
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 45,
+                    feature_source_id: 45_u32.try_into().unwrap(),
                     local_id: 7,
                     trailing_fields: Vec::new(),
                 },
@@ -345,7 +345,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#other-face")
                     .expect("identity grammar"),
                 crate::brep::PersistentFaceIdentity {
-                    feature_source_id: 45,
+                    feature_source_id: 45_u32.try_into().unwrap(),
                     local_id: 7,
                     trailing_fields: Vec::new(),
                 },
@@ -652,18 +652,18 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         payload[start..start + 4].copy_from_slice(&(-2i32).to_le_bytes());
     }
     payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -724,18 +724,18 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
     payload[90..94].fill(0xff);
     payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
     payload[152..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, local_id, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = local_id;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -827,18 +827,18 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
 
         operands: Vec::new(),
     };
-    let entity = |id: &str, offset| SketchInputEntity {
-        id: id.into(),
-        parent: "sldprt:feature-input:config-objects#1".into(),
-        feature_ref: None,
-        ordinal: 0,
-        offset,
-        object_index: Some(1),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let entity = |id: &str, offset| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "sldprt:feature-input:config-objects#1".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
+        constructed_marker.feature_ref = None;
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),

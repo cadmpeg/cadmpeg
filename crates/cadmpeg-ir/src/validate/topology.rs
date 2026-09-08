@@ -6228,108 +6228,83 @@ fn check_feature_sketch_references(
             _ => {}
         }
         for profile in profiles {
-            if let ProfileRef::SpatialSketchProfiles { sketch, .. }
-            | ProfileRef::SpatialSketchSelection { sketch, .. } = profile
-            {
-                if !matches!(
-                    feature.definition,
-                    FeatureDefinition::Extrude { .. } | FeatureDefinition::Loft { .. }
-                ) {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "spatial sketch profiles are only supported by extrude and loft features",
-                    );
-                }
-                if !spatial_sketches.contains(sketch.0.as_str()) {
-                    ref_error(
-                        findings,
-                        feature.id.as_str(),
-                        "spatial sketch profile",
-                        &sketch.0,
-                    );
-                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
-                    if *ordinal >= feature.ordinal {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "spatial sketch owner `{owner}` does not precede its profile consumer"
-                            ),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        });
-                    }
-                }
-                match profile {
-                    ProfileRef::SpatialSketchProfiles { profiles, .. } => {
-                        let profile_count = ir
-                            .model
-                            .spatial_sketches
-                            .iter()
-                            .find(|candidate| candidate.id == *sketch)
-                            .map_or(0, |sketch| sketch.profiles.len());
-                        let unique = profiles.iter().copied().collect::<HashSet<_>>();
-                        if profiles.is_empty()
-                            || unique.len() != profiles.len()
-                            || profiles
-                                .iter()
-                                .any(|index| *index as usize >= profile_count)
-                        {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "spatial sketch profile indices are empty, repeated, or out of range",
-                            );
-                        }
-                    }
-                    ProfileRef::SpatialSketchSelection { selections, .. }
-                        if selections.is_empty()
-                            || selections.iter().any(String::is_empty)
-                            || selections.iter().collect::<HashSet<_>>().len()
-                                != selections.len() =>
-                    {
+            let (sketch, sketch_kind, defined_sketches) = match profile {
+                ProfileRef::SpatialSketchProfiles { sketch, .. }
+                | ProfileRef::SpatialSketchSelection { sketch, .. } => {
+                    if !matches!(
+                        feature.definition,
+                        FeatureDefinition::Extrude { .. } | FeatureDefinition::Loft { .. }
+                    ) {
                         feature_geometry_error(
                             findings,
                             feature,
-                            "native spatial sketch profile selections are empty or repeated",
+                            "spatial sketch profiles are only supported by extrude and loft features",
                         );
                     }
-                    ProfileRef::SpatialSketchSelection { .. } => {}
-                    _ => unreachable!(),
+                    (sketch.0.as_str(), "spatial sketch", &spatial_sketches)
                 }
-                continue;
-            }
-            let sketch = match profile {
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
                 | ProfileRef::SketchEntities { sketch, .. }
-                | ProfileRef::SketchSelection { sketch, .. } => sketch,
-                ProfileRef::Native(_)
-                | ProfileRef::Unresolved(_)
-                | ProfileRef::Feature(_)
-                | ProfileRef::Generated { .. }
-                | ProfileRef::SpatialSketchProfiles { .. }
-                | ProfileRef::SpatialSketchSelection { .. }
-                | ProfileRef::HistoricalFaces { .. }
-                | ProfileRef::Faces(_) => continue,
+                | ProfileRef::SketchSelection { sketch, .. } => {
+                    (sketch.0.as_str(), "sketch", sketches)
+                }
+                _ => continue,
             };
-            if !sketches.contains(sketch.0.as_str()) {
-                ref_error(findings, feature.id.as_str(), "sketch profile", &sketch.0);
-            } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+            if !defined_sketches.contains(sketch) {
+                ref_error(
+                    findings,
+                    feature.id.as_str(),
+                    &format!("{sketch_kind} profile"),
+                    sketch,
+                );
+            } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(
-                            "sketch owner `{owner}` does not precede its profile consumer"
+                            "{sketch_kind} owner `{owner}` does not precede its profile consumer"
                         ),
                         entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }
             match profile {
-                ProfileRef::SketchProfiles { profiles, .. } => {
+                ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+                    let profile_count = ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .map_or(0, |sketch| sketch.profiles.len());
+                    let unique = profiles.iter().copied().collect::<HashSet<_>>();
+                    if profiles.is_empty()
+                        || unique.len() != profiles.len()
+                        || profiles
+                            .iter()
+                            .any(|index| *index as usize >= profile_count)
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "spatial sketch profile indices are empty, repeated, or out of range",
+                        );
+                    }
+                }
+                ProfileRef::SpatialSketchSelection { selections, .. }
+                    if selections.is_empty()
+                        || selections.iter().any(String::is_empty)
+                        || selections.iter().collect::<HashSet<_>>().len() != selections.len() =>
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "native spatial sketch profile selections are empty or repeated",
+                    );
+                }
+                ProfileRef::SketchProfiles { sketch, profiles } => {
                     let sketch_profile_count = ir
                         .model
                         .sketches
@@ -6350,7 +6325,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchRegions { regions, .. } => {
+                ProfileRef::SketchRegions { sketch, regions } => {
                     let selected_sketch = ir
                         .model
                         .sketches
@@ -6405,7 +6380,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchEntities { entities, .. } => {
+                ProfileRef::SketchEntities { sketch, entities } => {
                     let unique = entities.iter().collect::<HashSet<_>>();
                     if entities.is_empty()
                         || unique.len() != entities.len()
@@ -6439,7 +6414,6 @@ fn check_feature_sketch_references(
                 | ProfileRef::Generated { .. }
                 | ProfileRef::Sketch(_)
                 | ProfileRef::SketchSelection { .. }
-                | ProfileRef::SpatialSketchProfiles { .. }
                 | ProfileRef::SpatialSketchSelection { .. }
                 | ProfileRef::HistoricalFaces { .. }
                 | ProfileRef::Faces(_) => {}

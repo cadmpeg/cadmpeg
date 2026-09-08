@@ -140,8 +140,8 @@ type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
 pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
     let object_ids = object_id_index(&persistence.objects);
     let children = child_index(&persistence.objects);
-    let integer_fields = integer_field_index(&persistence.integer_values);
-    let real_fields = real_field_index(&persistence.real_values);
+    let integer_fields = integer_field_index(&persistence.integer_values.rows);
+    let real_fields = real_field_index(&persistence.real_values.rows);
     let (rows, mut carriers) = namespace(
         &persistence.objects,
         &object_ids,
@@ -834,7 +834,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             })
             .collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -924,8 +924,14 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             ));
         }
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -984,7 +990,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         )];
         if with_angle {
             real_values.push(ValueRecord {
-                kind: crate::legacy::ValueKind::Real,
+                kind: crate::legacy::ValueKind::REAL,
                 name: "half_angle".to_string(),
                 attribute_id: 0,
                 scope_offset: 0,
@@ -997,8 +1003,14 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             });
         }
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -1006,7 +1018,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     fn real_scalar(parent: &str, name: &str, value: f64, offset: usize) -> RealRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1075,8 +1087,14 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             real_scalar(primitive, "radius2", minor_radius, 22),
         ];
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -1309,7 +1327,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1327,7 +1345,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| Real::from_bits(value.to_bits()));
         let runs = values.map(|value| RealRun { count: 1, value }).collect();
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: "crv_pnt_arr".to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -1435,8 +1453,14 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             810,
         )];
         Persistence {
-            real_values,
-            integer_values,
+            real_values: crate::legacy::TypedValues {
+                rows: real_values,
+                unresolved_count: 0,
+            },
+            integer_values: crate::legacy::TypedValues {
+                rows: integer_values,
+                unresolved_count: 0,
+            },
             objects,
             ..Persistence::default()
         }
@@ -1466,7 +1490,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn incomplete_legacy_curve_fields_withhold_topology() {
         let mut persistence = topology_persistence();
-        persistence.integer_values.retain(|record| {
+        persistence.integer_values.rows.retain(|record| {
             !(record.parent == Some(fixture_offset("curve_11"))
                 && record.name == "next_crv_hdr_ptr[1]")
         });

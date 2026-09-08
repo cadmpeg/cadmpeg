@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -58,7 +59,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .map(|(index, marker)| FeatureInputOperand {
                 offset: index as u64,
                 reference_ref: format!("reference-{index}"),
-                kind: FeatureInputOperandKind::Native(0xbc7c),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
                 entity_index: index as u16,
                 entity_ref: Some(marker.into()),
             })
@@ -250,15 +251,15 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
 #[test]
 fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     let mut first = marker("arc", Some([0.0, 0.0]));
-    first.offset = 10;
+    first = first.with_test_position(first.ordinal(), 10);
     first.kind = SketchInputKind::Arc;
     let mut second = marker("point", Some([1.0, 0.0]));
-    second.offset = 20;
+    second = second.with_test_position(second.ordinal(), 20);
     let mut third = marker("line", Some([2.0, 0.0]));
-    third.offset = 30;
+    third = third.with_test_position(third.ordinal(), 30);
     third.kind = SketchInputKind::LineOrCircle;
     let mut fourth = marker("constrained-point", Some([3.0, 0.0]));
-    fourth.offset = 40;
+    fourth = fourth.with_test_position(fourth.ordinal(), 40);
     fourth.kind = SketchInputKind::ConstrainedPoint;
     let markers = HashMap::from([
         (first.id.as_str(), &first),
@@ -405,23 +406,23 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut curve = marker("curve", Some([0.003, 0.004]));
     curve.feature_ref = Some("sketch-native".into());
-    curve.ordinal = 1;
-    curve.offset = 200;
+    curve = curve.with_test_position(1, curve.offset());
+    curve = curve.with_test_position(curve.ordinal(), 200);
     curve.kind = SketchInputKind::LineOrCircle;
     let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
     endpoint.feature_ref = Some("sketch-native".into());
-    endpoint.ordinal = 2;
-    endpoint.offset = 2;
+    endpoint = endpoint.with_test_position(2, endpoint.offset());
+    endpoint = endpoint.with_test_position(endpoint.ordinal(), 2);
     endpoint.links = point.links.clone();
     let mut arc = marker("arc", None);
     arc.feature_ref = Some("sketch-native".into());
-    arc.ordinal = 3;
-    arc.offset = 3;
+    arc = arc.with_test_position(3, arc.offset());
+    arc = arc.with_test_position(arc.ordinal(), 3);
     arc.kind = SketchInputKind::Arc;
     let mut arc_start = marker("arc-start", Some([0.001, 0.0]));
     arc_start.feature_ref = Some("sketch-native".into());
-    arc_start.ordinal = 4;
-    arc_start.offset = 4;
+    arc_start = arc_start.with_test_position(4, arc_start.offset());
+    arc_start = arc_start.with_test_position(arc_start.ordinal(), 4);
     arc_start.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -431,18 +432,18 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
     arc_end.feature_ref = Some("sketch-native".into());
-    arc_end.ordinal = 5;
-    arc_end.offset = 5;
+    arc_end = arc_end.with_test_position(5, arc_end.offset());
+    arc_end = arc_end.with_test_position(arc_end.ordinal(), 5);
     arc_end.links = arc_start.links.clone();
     let mut arc_center = marker("arc-center", Some([0.0, 0.0]));
     arc_center.feature_ref = Some("sketch-native".into());
-    arc_center.ordinal = 6;
-    arc_center.offset = 6;
+    arc_center = arc_center.with_test_position(6, arc_center.offset());
+    arc_center = arc_center.with_test_position(arc_center.ordinal(), 6);
     let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
         let mut point = marker(id, Some(coordinates_m));
         point.feature_ref = Some("sketch-native".into());
-        point.ordinal = ordinal;
-        point.offset = offset;
+        point = point.with_test_position(ordinal, point.offset());
+        point = point.with_test_position(point.ordinal(), offset);
         point
     };
     let triangle_points = [
@@ -453,8 +454,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
         let mut line = marker(id, Some([0.0, 0.0]));
         line.feature_ref = Some("sketch-native".into());
-        line.ordinal = ordinal;
-        line.offset = offset;
+        line = line.with_test_position(ordinal, line.offset());
+        line = line.with_test_position(line.ordinal(), offset);
         line.kind = SketchInputKind::LineOrCircle;
         line.links = crate::records::SketchInputLinks::new(
             0,
@@ -478,8 +479,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     ];
     let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
     display_handle.feature_ref = Some("sketch-native".into());
-    display_handle.ordinal = 13;
-    display_handle.offset = 300;
+    display_handle = display_handle.with_test_position(13, display_handle.offset());
+    display_handle = display_handle.with_test_position(display_handle.ordinal(), 300);
     display_handle.kind = SketchInputKind::Arc;
     payload.resize(400, 0);
     let axis = 200;
@@ -882,9 +883,9 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     };
     let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
-    first.offset = 100;
+    first = first.with_test_position(first.ordinal(), 100);
     let mut second = marker("second", Some([0.0, 0.008]));
-    second.offset = 200;
+    second = second.with_test_position(second.ordinal(), 200);
     let mut native_payload = vec![0; 102];
     native_payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -951,7 +952,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
 
     let mut invalid_lane = lane.clone();
     let mut extra = marker("unowned-radial", Some([0.011, 0.0]));
-    extra.offset = 300;
+    extra = extra.with_test_position(extra.ordinal(), 300);
     invalid_lane.sketch_entities.push(extra);
     let mut invalid_entities = entities.clone();
     let mut invalid_sketches = sketches.clone();

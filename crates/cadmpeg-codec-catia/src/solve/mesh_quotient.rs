@@ -94,7 +94,6 @@ pub(crate) enum MeshCandidateAmbiguity {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeshCandidateExhaustion {
-    QuotientPreparation,
     IncidenceEnumeration,
     EndpointResolution,
     PreferredSolutionSearch,
@@ -363,9 +362,9 @@ fn enforce_sparse_endpoint_membership(
 
 #[derive(Clone)]
 pub(crate) struct MeshQuotient {
-    pub(crate) union: UnionFind,
-    pub(crate) domains: Vec<Arc<HashSet<usize>>>,
-    pub(crate) members: Vec<Vec<usize>>,
+    union: UnionFind,
+    domains: Vec<Arc<HashSet<usize>>>,
+    members: Vec<Vec<usize>>,
 }
 
 #[derive(Clone)]
@@ -866,13 +865,7 @@ pub(crate) fn initial_mesh_quotient(
         domains.push(domain.clone());
         domains.push(domain);
     }
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(edge_candidates.len() * 2),
-        domains,
-        members: (0..edge_candidates.len() * 2)
-            .map(|node| vec![node])
-            .collect(),
-    };
+    let mut quotient = MeshQuotient::new(domains);
     let mut node_by_identity = HashMap::new();
     for (edge, ports) in port_identities.iter().enumerate() {
         for (port, identity) in ports.iter().copied().enumerate() {
@@ -956,6 +949,30 @@ pub(crate) fn complete_mesh_endpoint_candidates_from_quotient(
 }
 
 impl MeshQuotient {
+    pub(crate) fn new(domains: Vec<Arc<HashSet<usize>>>) -> Self {
+        Self {
+            union: UnionFind::new(domains.len()),
+            members: (0..domains.len()).map(|node| vec![node]).collect(),
+            domains,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.domains.len()
+    }
+
+    pub(crate) fn find(&mut self, node: usize) -> usize {
+        self.union.find(node)
+    }
+
+    pub(crate) fn domains(&self) -> &[Arc<HashSet<usize>>] {
+        &self.domains
+    }
+
+    fn members(&self, root: usize) -> &[usize] {
+        &self.members[root]
+    }
+
     pub(crate) fn coordinate_domain_preparation_limit(
         &mut self,
         point_count: usize,
@@ -2021,7 +2038,7 @@ impl MeshQuotient {
                     .into_iter()
                     .flat_map(|node| {
                         let root = quotient.union.find(node);
-                        quotient.members[root].clone()
+                        quotient.members(root).to_vec()
                     })
                     .map(|node| node / 2)
                     .filter(|edge| !edge_candidates[*edge].is_empty())
@@ -2834,14 +2851,12 @@ fn deferred_face_quotient_options_limited(
             ]
         })
         .collect::<Vec<_>>();
-    let local_quotient = MeshQuotient {
-        union: UnionFind::new(base_nodes.len()),
-        domains: base_nodes
+    let local_quotient = MeshQuotient::new(
+        base_nodes
             .iter()
             .map(|root| quotient.domains[*root].clone())
             .collect(),
-        members: (0..base_nodes.len()).map(|node| vec![node]).collect(),
-    };
+    );
     gaps.sort_unstable_by_key(|gap| {
         let single_edge_options = if gap.capacity == 1 {
             domain
@@ -2928,7 +2943,7 @@ fn propagate_common_deferred_quotients(
         .into_iter()
         .flat_map(|node| {
             let root = quotient.union.find(node);
-            quotient.members[root].clone()
+            quotient.members(root).to_vec()
         })
         .map(|node| node / 2)
         .filter(|edge| !edge_candidates[*edge].is_empty())
@@ -3135,7 +3150,7 @@ fn propagate_common_full_quotients(
         }
     }
     for root in roots {
-        let representative = quotient.members[root][0];
+        let representative = quotient.members(root)[0];
         let mut allowed = HashSet::new();
         for alternative in &mut alternatives {
             let alternative_root = alternative.union.find(representative);
@@ -3210,7 +3225,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
                     .into_iter()
                     .flat_map(|node| {
                         let root = quotient.union.find(node);
-                        quotient.members[root].clone()
+                        quotient.members(root).to_vec()
                     })
                     .map(|node| node / 2)
                     .filter(|edge| !edge_candidates[*edge].is_empty())
@@ -3253,7 +3268,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
                     .into_iter()
                     .flat_map(|node| {
                         let root = quotient.union.find(node);
-                        quotient.members[root].clone()
+                        quotient.members(root).to_vec()
                     })
                     .map(|node| node / 2)
                     .filter(|edge| !edge_candidates[*edge].is_empty())
@@ -3791,7 +3806,7 @@ fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<
             let left_root = left.union.find(node);
             let right_root = right.union.find(node);
             (left_root != right_root
-                || left.members[left_root] != right.members[right_root]
+                || left.members(left_root) != right.members(right_root)
                 || left.domains[left_root] != right.domains[right_root])
                 .then_some(node / 2)
         })
@@ -6630,7 +6645,7 @@ impl MeshSelectionSearch<'_> {
             .map(|root| {
                 let mut domain = quotient.domains[root].iter().copied().collect::<Vec<_>>();
                 domain.sort_unstable();
-                (quotient.members[root].clone(), domain)
+                (quotient.members(root).to_vec(), domain)
             })
             .collect::<Vec<_>>();
         signature.sort_unstable();
@@ -9587,14 +9602,10 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
 
 #[test]
 fn coordinate_root_closure_distinguishes_symmetric_assignments() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: vec![
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([0, 1])),
-        ],
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([0, 1])),
+    ]);
     let outcome = quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, None);
 
     assert_eq!(
@@ -9605,14 +9616,10 @@ fn coordinate_root_closure_distinguishes_symmetric_assignments() {
 
 #[test]
 fn coordinate_root_closure_rejects_a_single_prefix_after_budget_refusal() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: vec![
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([0, 1])),
-        ],
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([0, 1])),
+    ]);
     let budget = WorkBudget::new(2);
 
     assert_eq!(
@@ -9640,13 +9647,11 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         MeshFaceBoundaryDomain::Ordered(vec![boundary]),
     ];
     let make_quotient = || {
-        let mut quotient = MeshQuotient {
-            union: UnionFind::new(4),
-            domains: (0..4)
+        let mut quotient = MeshQuotient::new(
+            (0..4)
                 .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
                 .collect(),
-            members: (0..4).map(|node| vec![node]).collect(),
-        };
+        );
         quotient.merge(0, 2).expect("shared left endpoint");
         quotient.merge(1, 3).expect("shared right endpoint");
         quotient
@@ -9677,16 +9682,14 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
 #[test]
 fn coordinate_root_preparation_budgets_independent_components_separately() {
     const COMPONENT_COUNT: usize = 8;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(COMPONENT_COUNT * 6),
-        domains: (0..COMPONENT_COUNT)
+    let mut quotient = MeshQuotient::new(
+        (0..COMPONENT_COUNT)
             .flat_map(|component| {
                 let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
                 std::iter::repeat_n(points, 6)
             })
             .collect(),
-        members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
-    };
+    );
     let mut candidates = Vec::new();
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;

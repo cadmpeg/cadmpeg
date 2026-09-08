@@ -5,6 +5,7 @@ use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
@@ -444,7 +445,7 @@ mod relation_records_tests {
             .map(|(ordinal, entity_index)| FeatureInputOperand {
                 offset: offset + ordinal as u64,
                 reference_ref: format!("reference-{offset}-{ordinal}"),
-                kind: FeatureInputOperandKind::Native(0x8152),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
                 entity_index,
                 entity_ref: None,
             })
@@ -484,7 +485,7 @@ mod relation_records_tests {
             operands: vec![FeatureInputOperand {
                 offset: offset + 1,
                 reference_ref: format!("reference-{offset}"),
-                kind: FeatureInputOperandKind::Native(0x1234),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_1234),
                 entity_index: 0,
                 entity_ref: entity_ref.map(str::to_owned),
             }],
@@ -552,10 +553,13 @@ mod relation_records_tests {
                 })
                 .collect::<Vec<_>>()
         };
-        let point_tagged = operand_pair(FeatureInputOperandKind::Native(0x80d5));
-        let line_tagged = operand_pair(FeatureInputOperandKind::Native(0x810f));
-        let roster_point_tagged = operand_pair(FeatureInputOperandKind::Native(0x81dd));
-        let roster_line_tagged = operand_pair(FeatureInputOperandKind::Native(0x81e7));
+        let point_tagged =
+            operand_pair(FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5));
+        let line_tagged = operand_pair(FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F));
+        let roster_point_tagged =
+            operand_pair(FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD));
+        let roster_line_tagged =
+            operand_pair(FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7));
 
         assert!(relation_signature(
             FeatureInputRelationFamily::PointPointDistance,
@@ -589,18 +593,19 @@ mod relation_records_tests {
             FeatureInputRelationFamily::PointLineDistance,
             &[
                 FeatureInputOperand {
-                    kind: FeatureInputOperandKind::Native(0x81dd),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                     ..roster_point_tagged[0].clone()
                 },
                 FeatureInputOperand {
-                    kind: FeatureInputOperandKind::Native(0x81e7),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                     ..roster_line_tagged[1].clone()
                 },
             ]
         ));
 
         for tag in [0x8138, 0x80ac] {
-            let point_distance_tagged = operand_pair(FeatureInputOperandKind::Native(tag));
+            let point_distance_tagged =
+                operand_pair(FeatureInputOperandKind::Native(tag.try_into().unwrap()));
             assert!(relation_signature(
                 FeatureInputRelationFamily::PointPointDistance,
                 &point_distance_tagged
@@ -633,7 +638,8 @@ mod relation_records_tests {
         ));
 
         for tag in [0x8100, 0x820f] {
-            let solver_point_tagged = operand_pair(FeatureInputOperandKind::Native(tag));
+            let solver_point_tagged =
+                operand_pair(FeatureInputOperandKind::Native(tag.try_into().unwrap()));
             assert!(relation_signature(
                 FeatureInputRelationFamily::PointPointDistance,
                 &solver_point_tagged
@@ -894,7 +900,12 @@ mod relation_records_tests {
 
     #[test]
     fn unclaimed_relation_binding_scalar_becomes_an_instance() {
-        let dynamic = dynamic_scalar(20, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let dynamic = dynamic_scalar(
+            20,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[1, 2],
+            2.0,
+        );
         let mut bound = dynamic_scalar(30, FeatureInputOperandKind::E1, &[3, 4], 3.0);
         bound.role = FeatureInputScalarRole::Display;
         let mut lane = lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
@@ -1129,7 +1140,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(0x812a),
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                 &[0, 1],
                 2.0,
             )],
@@ -1152,7 +1163,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(0x812a),
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                 &[1, 2],
                 2.0,
             )],
@@ -1175,7 +1186,12 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_point_relation_preserves_explicit_driving_operand_reference() {
-        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let mut driving = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[1, 2],
+            2.0,
+        );
         driving.operands[0].entity_ref = Some("p1".into());
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = dynamic_point_markers();
@@ -1196,7 +1212,12 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_point_relation_falls_back_to_unique_geometry_after_address_miss() {
-        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[3, 1], 1.0);
+        let mut driving = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[3, 1],
+            1.0,
+        );
         driving.operands[0].entity_ref = Some("p0".into());
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = vec![
@@ -1248,10 +1269,20 @@ mod relation_records_tests {
 
     #[test]
     fn relation_instance_keeps_first_scalar_operands_when_grouping_display_and_driver() {
-        let mut display = dynamic_scalar(20, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let mut display = dynamic_scalar(
+            20,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[1, 2],
+            2.0,
+        );
         display.role = FeatureInputScalarRole::Display;
         display.operands[0].entity_ref = Some("p1".into());
-        let mut driving = dynamic_scalar(30, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let mut driving = dynamic_scalar(
+            30,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[1, 2],
+            2.0,
+        );
         driving.operands[0].entity_ref = Some("p0".into());
         let mut lane = lane(
             vec![class(10, "sgPntPntDist")],
@@ -1279,7 +1310,12 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_display_relation_uses_display_value_without_driver() {
-        let mut display = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let mut display = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[1, 2],
+            2.0,
+        );
         display.role = FeatureInputScalarRole::Display;
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
         lane.sketch_entities = dynamic_point_markers();
@@ -1305,7 +1341,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(0x812a),
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                 &[1, 2],
                 1.0,
             )],
@@ -1325,7 +1361,12 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_point_line_relation_resolves_solver_line_by_exact_distance() {
-        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[0, 1], 1.0);
+        let mut driving = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[0, 1],
+            1.0,
+        );
         driving.operands[1].entity_ref = Some("p0".into());
         let mut lane = lane(vec![class(10, "sgPntLineDist")], vec![driving]);
         lane.sketch_entities = vec![
@@ -1378,7 +1419,12 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_line_relation_validates_solver_line_pair() {
-        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[0, 1], 1.0);
+        let mut driving = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            &[0, 1],
+            1.0,
+        );
         driving.operands[0].entity_ref = Some("p0".into());
         let mut lane = lane(vec![class(10, "sgLLDist")], vec![driving]);
         lane.sketch_entities = vec![
@@ -1426,7 +1472,7 @@ mod relation_records_tests {
     fn dynamic_angle_accepts_reversed_solver_line_direction() {
         let driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(0x812a),
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
             &[0, 1],
             std::f64::consts::FRAC_PI_4,
         );
@@ -1718,7 +1764,7 @@ pub(super) fn bind_detached_relation_drivers(
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
-    match native_object_class(name).kind {
+    match native_object_class(name) {
         NativeClassKind::SketchRelation(family) => Some(family),
         _ => None,
     }
@@ -1740,45 +1786,70 @@ pub(super) fn relation_signature(
         (CircleDiameter, [operand]) => matches!(operand.kind, Native(_)),
         (PointPointDistance, [first, second]) => {
             (first.kind == D6 && second.kind == D6)
-                || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
-                || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
-                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
-                || (first.kind == Native(0x8138) && second.kind == Native(0x8138))
-                || (first.kind == Native(0x80ac) && second.kind == Native(0x80ac))
-                || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
-                || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
-                || (first.kind == Native(0x81dd) && second.kind == Native(0x81dd))
-                || (first.kind == Native(0x8100) && second.kind == Native(0x8100))
-                || (first.kind == Native(0x820f) && second.kind == Native(0x820f))
+                || (first.kind == Native(NativeOperandTag::TAG_81B2)
+                    && second.kind == Native(NativeOperandTag::TAG_81B2))
+                || (first.kind == Native(NativeOperandTag::TAG_8152)
+                    && second.kind == Native(NativeOperandTag::TAG_8152))
+                || (first.kind == Native(NativeOperandTag::TAG_80D5)
+                    && second.kind == Native(NativeOperandTag::TAG_80D5))
+                || (first.kind == Native(NativeOperandTag::TAG_8138)
+                    && second.kind == Native(NativeOperandTag::TAG_8138))
+                || (first.kind == Native(NativeOperandTag::TAG_80AC)
+                    && second.kind == Native(NativeOperandTag::TAG_80AC))
+                || (first.kind == Native(NativeOperandTag::TAG_837B)
+                    && second.kind == Native(NativeOperandTag::TAG_837B))
+                || (first.kind == Native(NativeOperandTag::TAG_BC7C)
+                    && second.kind == Native(NativeOperandTag::TAG_BC7C))
+                || (first.kind == Native(NativeOperandTag::TAG_81DD)
+                    && second.kind == Native(NativeOperandTag::TAG_81DD))
+                || (first.kind == Native(NativeOperandTag::TAG_8100)
+                    && second.kind == Native(NativeOperandTag::TAG_8100))
+                || (first.kind == Native(NativeOperandTag::TAG_820F)
+                    && second.kind == Native(NativeOperandTag::TAG_820F))
         }
         (LineLineDistance, [first, second]) => {
             (first.kind == E1 && second.kind == E1)
-                || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
-                || (first.kind == Native(0x810f) && second.kind == Native(0x810f))
-                || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
-                || (first.kind == Native(0x81e7) && second.kind == Native(0x81e7))
+                || (first.kind == Native(NativeOperandTag::TAG_8386)
+                    && second.kind == Native(NativeOperandTag::TAG_8386))
+                || (first.kind == Native(NativeOperandTag::TAG_810F)
+                    && second.kind == Native(NativeOperandTag::TAG_810F))
+                || (first.kind == Native(NativeOperandTag::TAG_BC87)
+                    && second.kind == Native(NativeOperandTag::TAG_BC87))
+                || (first.kind == Native(NativeOperandTag::TAG_81E7)
+                    && second.kind == Native(NativeOperandTag::TAG_81E7))
         }
         (PointLineDistance, [first, second]) => {
             (first.kind == D6 && second.kind == E1)
-                || (first.kind == Native(0x837b) && second.kind == Native(0x8386))
-                || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
-                || (first.kind == Native(0x81dd) && second.kind == Native(0x81e7))
+                || (first.kind == Native(NativeOperandTag::TAG_837B)
+                    && second.kind == Native(NativeOperandTag::TAG_8386))
+                || (first.kind == Native(NativeOperandTag::TAG_BC7C)
+                    && second.kind == Native(NativeOperandTag::TAG_BC87))
+                || (first.kind == Native(NativeOperandTag::TAG_81DD)
+                    && second.kind == Native(NativeOperandTag::TAG_81E7))
         }
         (PointPointHorizontalDistance | PointPointVerticalDistance, [first, second]) => {
-            (first.kind == Native(0x8152) && second.kind == Native(0x8152))
-                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
-                || (first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb))
+            (first.kind == Native(NativeOperandTag::TAG_8152)
+                && second.kind == Native(NativeOperandTag::TAG_8152))
+                || (first.kind == Native(NativeOperandTag::TAG_80D5)
+                    && second.kind == Native(NativeOperandTag::TAG_80D5))
+                || (first.kind == Native(NativeOperandTag::TAG_8DCB)
+                    && second.kind == Native(NativeOperandTag::TAG_8DCB))
         }
         (Angle, [first, second]) => {
-            (first.kind == Native(0x8dda) && second.kind == Native(0x8dda))
-                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
+            (first.kind == Native(NativeOperandTag::TAG_8DDA)
+                && second.kind == Native(NativeOperandTag::TAG_8DDA))
+                || (first.kind == Native(NativeOperandTag::TAG_80D5)
+                    && second.kind == Native(NativeOperandTag::TAG_80D5))
         }
         _ => false,
     }
 }
 
 pub(super) fn is_solver_point_operand(kind: FeatureInputOperandKind) -> bool {
-    matches!(kind, FeatureInputOperandKind::Native(0x8100 | 0x820f))
+    matches!(
+        kind,
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100 | NativeOperandTag::TAG_820F)
+    )
 }
 
 pub(super) fn relation_uses_solver_points(relation: &FeatureInputRelationInstance) -> bool {
@@ -1836,11 +1907,11 @@ pub(super) fn relation_uses_dynamic_operands(relation: &FeatureInputRelationInst
                     relation.operands.as_slice(),
                     [
                         FeatureInputOperand {
-                            kind: FeatureInputOperandKind::Native(0x8dda),
+                            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                             ..
                         },
                         FeatureInputOperand {
-                            kind: FeatureInputOperandKind::Native(0x8dda),
+                            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
                             ..
                         }
                     ]
@@ -1874,7 +1945,7 @@ fn feature_entities<'a>(
         .iter()
         .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
         .collect::<Vec<_>>();
-    entities.sort_unstable_by_key(|entity| (entity.offset, entity.ordinal));
+    entities.sort_unstable_by_key(|entity| (entity.offset(), entity.ordinal()));
     entities
 }
 

@@ -415,9 +415,14 @@ fn edge_representation_selection_follows_family_rules() {
     ));
 
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
-    let selected = first_edge_representation(&matching_pcurves, |candidate| {
-        matches!(candidate, TextEdgeRepresentation::Pcurve { .. })
-    })
+    let selected = select_pcurve_representation(
+        &matching_pcurves,
+        &tables,
+        Transform::identity(),
+        0,
+        Transform::identity(),
+    )
+    .unwrap()
     .expect("first matching pcurve");
     assert_eq!(selected.0, 0);
 
@@ -926,13 +931,16 @@ Co 1001000 +2 0 *
         .expect("GUI properties");
     assert_eq!(gui_providers.len(), 1);
     assert_eq!(
-        gui_providers[0].object.as_deref(),
+        gui_providers[0]
+            .object
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
-        .all(|property| property.raw_xml.starts_with("<Property")));
+        .all(|property| property.xml.text().starts_with("<Property")));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

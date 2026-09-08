@@ -9,9 +9,15 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
+use crate::nurbs::proc_curve::HelixDefinition;
 use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{self, Record};
+use cadmpeg_ir::geometry::{
+    CompoundComponent, IntcurveSupportContext, ProjectionTail, SilhouetteKind, SpringLayout,
+    SurfaceCurveFamily,
+};
+use cadmpeg_ir::ids::CurveId;
 
 /// Framing and fixed-width write context for one ASM record stream.
 ///
@@ -21,7 +27,7 @@ use crate::sab::{self, Record};
 pub struct AsmEditSet {
     records: Vec<Record>,
     ref_width: RefWidth,
-    header_scale: f64,
+    header_scale: Option<f64>,
 }
 
 /// Writable values for one solved NURBS surface cache.
@@ -31,6 +37,15 @@ pub struct NurbsSurfaceEdit<'a> {
     pub surface: &'a NurbsSurface,
     /// Optional native periodic flags in U/V order.
     pub periodic: Option<[bool; 2]>,
+}
+
+/// The solved NURBS curve cache selected for patching.
+#[derive(Clone, Copy)]
+pub enum CacheTarget {
+    /// The final curve cache.
+    Final,
+    /// The first curve cache.
+    First,
 }
 
 /// Writable values for one solved NURBS curve cache.
@@ -94,11 +109,7 @@ impl AsmEditSet {
             CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
         })?;
         let header_scale = header.scale.unwrap_or(1.0);
-        Ok(Self {
-            records,
-            ref_width,
-            header_scale,
-        })
+        Ok(Self::from_framed(records, ref_width, header_scale))
     }
 
     /// Build a context from an already framed record partition.
@@ -106,7 +117,7 @@ impl AsmEditSet {
         Self {
             records,
             ref_width,
-            header_scale,
+            header_scale: Some(header_scale).filter(|scale| scale.is_finite() && *scale > 0.0),
         }
     }
 
@@ -125,8 +136,8 @@ impl AsmEditSet {
         self.ref_width
     }
 
-    /// ASM header length scale, or `1.0` when the header omits it.
-    pub const fn header_scale(&self) -> f64 {
+    /// Positive finite ASM length scale, absent when the native scale is invalid.
+    pub const fn header_scale(&self) -> Option<f64> {
         self.header_scale
     }
 
@@ -246,8 +257,7 @@ impl AsmEditSet {
                 "ASM boolean token carrier is missing".into(),
             ));
         }
-        bytes[offset] = if value { 0x0a } else { 0x0b };
-        Ok(())
+        Self::patch_native_bool(bytes, offset, value)
     }
 
     /// Replace one fixed-width ASCII token payload.
@@ -453,6 +463,19 @@ impl AsmEditSet {
         Ok(())
     }
 
+    /// Replace one native boolean byte at a checked offset.
+    pub fn patch_native_bool(
+        bytes: &mut [u8],
+        offset: usize,
+        value: bool,
+    ) -> Result<(), CodecError> {
+        let target = bytes
+            .get_mut(offset)
+            .ok_or_else(|| CodecError::Malformed("native boolean payload is truncated".into()))?;
+        *target = native_bool(value);
+        Ok(())
+    }
+
     /// Replace little-endian `f64` payloads relative to one record offset.
     pub fn patch_f64_payloads(
         bytes: &mut [u8],
@@ -545,48 +568,145 @@ impl AsmEditSet {
         definition: &ProceduralCurveDefinition,
     ) -> Result<(), CodecError> {
         match definition {
-            ProceduralCurveDefinition::Helix { .. } => {
-                patch_helix_definition(bytes, self.ref_width, record, definition)
+            ProceduralCurveDefinition::Helix {
+                angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                axis,
+                ..
+            } => patch_helix_definition(
+                bytes,
+                self.ref_width,
+                record,
+                &HelixDefinition {
+                    angle_range: *angle_range,
+                    center: *center,
+                    major: *major,
+                    minor: *minor,
+                    pitch: *pitch,
+                    apex_factor: *apex_factor,
+                    axis: *axis,
+                },
+            ),
+            ProceduralCurveDefinition::VectorOffset {
+                parameter_range,
+                offset,
+                ..
+            } => patch_vector_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                *parameter_range,
+                *offset,
+            ),
+            ProceduralCurveDefinition::Subset {
+                parameter_range, ..
+            } => patch_subset_definition(bytes, self.ref_width, record, *parameter_range),
+            ProceduralCurveDefinition::Compound {
+                parameters,
+                components,
+                ..
+            } => patch_compound_definition(bytes, self.ref_width, record, parameters, components),
+            ProceduralCurveDefinition::TwoSidedOffset {
+                context,
+                discontinuity_flag,
+                offsets,
+                ..
+            } => patch_two_sided_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+                *offsets,
+            ),
+            ProceduralCurveDefinition::SurfaceOffset {
+                context,
+                discontinuity_flag,
+                base_u_range,
+                base_v_range,
+                base_range,
+                distance,
+                shift,
+                scale,
+                ..
+            } => patch_surface_offset_definition(
+                bytes,
+                self.ref_width,
+                record,
+                SurfaceOffsetFields {
+                    context,
+                    discontinuity_flag,
+                    base_u_range,
+                    base_v_range,
+                    base_range,
+                    distance,
+                    shift,
+                    scale,
+                },
+            ),
+            ProceduralCurveDefinition::Spring {
+                layout, direction, ..
+            } => patch_spring_definition(bytes, self.ref_width, record, layout, *direction),
+            ProceduralCurveDefinition::Projection {
+                context,
+                discontinuity_flag,
+                tail,
+                ..
+            } => patch_projection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+                tail,
+            ),
+            ProceduralCurveDefinition::Intersection {
+                context,
+                discontinuity_flag,
+                ..
+            } => patch_intersection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *discontinuity_flag,
+            ),
+            ProceduralCurveDefinition::ThreeSurfaceIntersection {
+                context, selector, ..
+            } => patch_three_surface_intersection_definition(
+                bytes,
+                self.ref_width,
+                record,
+                context,
+                *selector,
+            ),
+            ProceduralCurveDefinition::SurfaceCurve { family, .. } => {
+                patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }
-            ProceduralCurveDefinition::VectorOffset { .. } => {
-                patch_vector_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Subset { .. } => {
-                patch_subset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Compound { .. } => {
-                patch_compound_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::TwoSidedOffset { .. } => {
-                patch_two_sided_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::SurfaceOffset { .. } => {
-                patch_surface_offset_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Spring { .. } => {
-                patch_spring_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Projection { .. } => {
-                patch_projection_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Intersection { .. } => {
-                patch_intersection_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::ThreeSurfaceIntersection { .. } => {
-                patch_three_surface_intersection_definition(
-                    bytes,
-                    self.ref_width,
-                    record,
-                    definition,
-                )
-            }
-            ProceduralCurveDefinition::SurfaceCurve { .. } => {
-                patch_surface_curve_definition(bytes, self.ref_width, record, definition)
-            }
-            ProceduralCurveDefinition::Silhouette { .. } => {
-                patch_silhouette_definition(bytes, self.ref_width, record, definition)
-            }
-            _ => Err(CodecError::NotImplemented(
+            ProceduralCurveDefinition::Silhouette {
+                silhouette,
+                light_direction,
+                ..
+            } => patch_silhouette_definition(
+                bytes,
+                self.ref_width,
+                record,
+                silhouette,
+                *light_direction,
+            ),
+            ProceduralCurveDefinition::Exact
+            | ProceduralCurveDefinition::Law { .. }
+            | ProceduralCurveDefinition::TolerantIntersection { .. }
+            | ProceduralCurveDefinition::Deformable { .. }
+            | ProceduralCurveDefinition::Offset { .. }
+            | ProceduralCurveDefinition::SpatialOffset { .. }
+            | ProceduralCurveDefinition::Replica { .. }
+            | ProceduralCurveDefinition::BlendSpine { .. }
+            | ProceduralCurveDefinition::Unknown { .. } => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
         }
@@ -730,12 +850,12 @@ impl AsmEditSet {
         record: &Record,
         transform: Transform,
     ) -> Result<(), CodecError> {
-        if self.header_scale == 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "transform record {} has zero header scale",
+        let header_scale = self.header_scale.ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "transform record {} requires a positive finite header scale",
                 record.index
-            )));
-        }
+            ))
+        })?;
         let vectors = [
             [
                 transform.rows()[0][0],
@@ -753,9 +873,9 @@ impl AsmEditSet {
                 transform.rows()[2][2],
             ],
             [
-                transform.rows()[0][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows()[1][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows()[2][3] / (self.header_scale * LEN_TO_MM),
+                transform.rows()[0][3] / (header_scale * LEN_TO_MM),
+                transform.rows()[1][3] / (header_scale * LEN_TO_MM),
+                transform.rows()[2][3] / (header_scale * LEN_TO_MM),
             ],
         ];
         for (index, vector) in vectors.into_iter().enumerate() {
@@ -785,7 +905,17 @@ impl AsmEditSet {
         edit: NurbsCurveEdit<'_>,
         final_cache: bool,
     ) -> Result<(), CodecError> {
-        patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, final_cache)
+        patch_nurbs_curve_record(
+            bytes,
+            self.ref_width,
+            record,
+            &edit,
+            if final_cache {
+                CacheTarget::Final
+            } else {
+                CacheTarget::First
+            },
+        )
     }
 
     /// Apply the fields selected by an inline cache or reference wrapper edit.
@@ -817,28 +947,6 @@ fn record_slice<'a>(bytes: &'a [u8], record: &Record, label: &str) -> Result<&'a
         .ok_or_else(|| CodecError::malformed(format_args!("{label} record is truncated")))
 }
 
-fn apply_f64_patches(
-    bytes: &mut [u8],
-    record_offset: usize,
-    patches: impl IntoIterator<Item = (usize, f64)>,
-) {
-    for (offset, value) in patches {
-        let at = record_offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-}
-
-fn apply_vector_payload(bytes: &mut [u8], base_at: usize, components: [f64; 3]) {
-    apply_f64_patches(
-        bytes,
-        base_at,
-        components
-            .into_iter()
-            .enumerate()
-            .map(|(component, value)| (component * 8, value)),
-    );
-}
-
 const fn native_bool(value: bool) -> u8 {
     if value {
         0x0a
@@ -855,9 +963,9 @@ fn patch_helix_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    definition: &HelixDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+    let HelixDefinition {
         angle_range,
         center,
         major,
@@ -865,12 +973,8 @@ fn patch_helix_definition(
         pitch,
         apex_factor,
         axis,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "helix patch received a non-helix definition".into(),
-        ));
-    };
+    } = definition;
+
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -879,11 +983,11 @@ fn patch_helix_definition(
                 record.index
             ))
         })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout.angle_range.into_iter().zip(*angle_range),
-    );
+    )?;
     for (offset, value) in layout.frame_vectors.into_iter().zip([
         [
             center.x / LEN_TO_MM,
@@ -906,11 +1010,11 @@ fn patch_helix_definition(
             pitch.z / LEN_TO_MM,
         ],
     ]) {
-        apply_vector_payload(bytes, record.offset + offset, value);
+        AsmEditSet::patch_vector_payload(bytes, record.offset + offset, value)?;
     }
     let apex_at = record.offset + layout.apex_factor;
-    bytes[apex_at..apex_at + 8].copy_from_slice(&apex_factor.to_le_bytes());
-    apply_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z]);
+    AsmEditSet::patch_f64_payload(bytes, apex_at, *apex_factor)?;
+    AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
     Ok(())
 }
 
@@ -918,18 +1022,9 @@ fn patch_vector_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameter_range: [f64; 2],
+    offset: Vector3,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-        parameter_range,
-        offset,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "vector-offset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "vector-offset")?;
     let layout = crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -938,12 +1033,12 @@ fn patch_vector_offset_definition(
             record.index
         ))
     })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
-        layout.parameter_range.into_iter().zip(*parameter_range),
-    );
-    apply_vector_payload(
+        layout.parameter_range.into_iter().zip(parameter_range),
+    )?;
+    AsmEditSet::patch_vector_payload(
         bytes,
         record.offset + layout.offset,
         [
@@ -951,7 +1046,7 @@ fn patch_vector_offset_definition(
             offset.y / LEN_TO_MM,
             offset.z / LEN_TO_MM,
         ],
-    );
+    )?;
     Ok(())
 }
 
@@ -959,16 +1054,8 @@ fn patch_subset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameter_range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-        parameter_range, ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "subset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "subset")?;
     let layout = crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -977,11 +1064,11 @@ fn patch_subset_definition(
                 record.index
             ))
         })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
-        layout.parameter_range.into_iter().zip(*parameter_range),
-    );
+        layout.parameter_range.into_iter().zip(parameter_range),
+    )?;
     Ok(())
 }
 
@@ -989,18 +1076,9 @@ fn patch_compound_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    parameters: &[f64],
+    components: &[CompoundComponent<CurveId>],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "compound patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "compound")?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
@@ -1016,7 +1094,7 @@ fn patch_compound_definition(
             "compound edit changes native parameter cardinality".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1029,7 +1107,7 @@ fn patch_compound_definition(
                     .copied()
                     .chain(components.iter().map(|item| item.parameter)),
             ),
-    );
+    )?;
     Ok(())
 }
 
@@ -1037,18 +1115,10 @@ fn patch_two_sided_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
+    offsets: [f64; 2],
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-        context,
-        discontinuity_flag,
-        offsets,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "two-sided offset patch received another definition".into(),
-        ));
-    };
     let record_bytes = record_slice(bytes, record, "two-sided offset")?;
     let layout =
         crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, stream_width)
@@ -1072,20 +1142,36 @@ fn patch_two_sided_offset_definition(
             AsmEditSet::patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
     }
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     for (at, value) in layout.offsets.into_iter().zip(offsets) {
-        AsmEditSet::patch_f64_payload(bytes, record.offset + at, *value / LEN_TO_MM)?;
+        AsmEditSet::patch_f64_payload(bytes, record.offset + at, value / LEN_TO_MM)?;
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct SurfaceOffsetFields<'a> {
+    context: &'a IntcurveSupportContext,
+    discontinuity_flag: &'a bool,
+    base_u_range: &'a [f64; 2],
+    base_v_range: &'a [f64; 2],
+    base_range: &'a [f64; 2],
+    distance: &'a f64,
+    shift: &'a f64,
+    scale: &'a f64,
 }
 
 fn patch_surface_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    fields: SurfaceOffsetFields<'_>,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
+    let SurfaceOffsetFields {
         context,
         discontinuity_flag,
         base_u_range,
@@ -1094,13 +1180,8 @@ fn patch_surface_offset_definition(
         distance,
         shift,
         scale,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "surface-offset patch received another definition".into(),
-        ));
-    };
+    } = fields;
+
     if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
         return Err(CodecError::Malformed(
             "surface-offset scalars must be finite".into(),
@@ -1138,7 +1219,7 @@ fn patch_surface_offset_definition(
             "surface-offset context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1162,8 +1243,12 @@ fn patch_surface_offset_definition(
                         *scale,
                     ])),
             ),
-    );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    )?;
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        *discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1171,16 +1256,9 @@ fn patch_spring_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    layout: &SpringLayout,
+    direction: i64,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-        layout, direction, ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "spring patch received another definition".into(),
-        ));
-    };
     let context = layout.support_context();
     let discontinuity_flag = match layout {
         cadmpeg_ir::geometry::SpringLayout::ContextFirst {
@@ -1210,7 +1288,7 @@ fn patch_spring_definition(
     {
         return Err(CodecError::Malformed("spring context is incomplete".into()));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1223,13 +1301,17 @@ fn patch_spring_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
+    )?;
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.direction,
         int_width,
-        *direction,
+        direction,
     )?;
     Ok(())
 }
@@ -1238,19 +1320,10 @@ fn patch_projection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
+    tail: &ProjectionTail,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-        context,
-        discontinuity_flag,
-        tail,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "projection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1278,7 +1351,7 @@ fn patch_projection_definition(
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
-        ) => bytes[record.offset + offset] = native_bool(*flag),
+        ) => AsmEditSet::patch_native_bool(bytes, record.offset + offset, *flag)?,
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
                 flag: flag_offset,
@@ -1296,15 +1369,16 @@ fn patch_projection_definition(
                     "projection tail range must be finite".into(),
                 ));
             }
-            bytes[record.offset + flag_offset] = native_bool(*flag);
-            apply_f64_patches(
+            AsmEditSet::patch_native_bool(bytes, record.offset + flag_offset, *flag)?;
+            AsmEditSet::patch_f64_payloads(
                 bytes,
                 record.offset,
                 range_offsets
                     .iter()
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
-            );
+            )?;
+            let role_range = role_range.range();
             let role_target = record.offset + role_range.start..record.offset + role_range.end;
             bytes[role_target].copy_from_slice(role.as_str().as_bytes());
         }
@@ -1314,7 +1388,7 @@ fn patch_projection_definition(
             ));
         }
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1327,8 +1401,12 @@ fn patch_projection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    )?;
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1336,17 +1414,9 @@ fn patch_intersection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    discontinuity_flag: bool,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-        context,
-        discontinuity_flag,
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "intersection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1370,7 +1440,7 @@ fn patch_intersection_definition(
             "intersection context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1383,8 +1453,12 @@ fn patch_intersection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    )?;
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1392,18 +1466,9 @@ fn patch_three_surface_intersection_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    context: &IntcurveSupportContext,
+    selector: i64,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-        context,
-        selector,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "three-surface intersection patch received another definition".into(),
-        ));
-    };
     if context
         .parameter_range
         .into_iter()
@@ -1428,7 +1493,7 @@ fn patch_three_surface_intersection_definition(
             "three-surface intersection context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1441,12 +1506,12 @@ fn patch_three_surface_intersection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.selector,
         int_width,
-        *selector,
+        selector,
     )?;
     Ok(())
 }
@@ -1455,14 +1520,8 @@ fn patch_surface_curve_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    family: &SurfaceCurveFamily,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "surface-curve patch received another definition".into(),
-        ));
-    };
     let context = family.context();
     if context
         .parameter_range
@@ -1491,7 +1550,7 @@ fn patch_surface_curve_definition(
             "surface-curve context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1504,7 +1563,7 @@ fn patch_surface_curve_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     Ok(())
 }
 
@@ -1512,19 +1571,10 @@ fn patch_silhouette_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    silhouette: &SilhouetteKind,
+    light_direction: Vector3,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-        silhouette,
-        light_direction,
-        ..
-    } = definition
-    else {
-        return Err(CodecError::Malformed(
-            "silhouette patch received another definition".into(),
-        ));
-    };
-    if !finite_vector(*light_direction) {
+    if !finite_vector(light_direction) {
         return Err(CodecError::Malformed(
             "silhouette light direction must be finite".into(),
         ));
@@ -1545,17 +1595,17 @@ fn patch_silhouette_definition(
     let layout =
         crate::nurbs::proc_curve::silhouette_patch_layout(record_bytes, stream_width, silhouette)
             .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
-    apply_vector_payload(
+    AsmEditSet::patch_vector_payload(
         bytes,
         record.offset + layout.light_direction,
         [light_direction.x, light_direction.y, light_direction.z],
-    );
+    )?;
     if let Some(draft_factor) = draft_factor {
         let draft_offset = layout
             .draft_factor
             .ok_or_else(|| CodecError::Malformed("silhouette draft factor is missing".into()))?;
         let draft_offset = record.offset + draft_offset;
-        bytes[draft_offset..draft_offset + 8].copy_from_slice(&draft_factor.to_le_bytes());
+        AsmEditSet::patch_f64_payload(bytes, draft_offset, draft_factor)?;
     }
     Ok(())
 }
@@ -1654,15 +1704,14 @@ fn patch_nurbs_curve_record(
     stream_width: RefWidth,
     record: &sab::Record,
     edit: &NurbsCurveEdit<'_>,
-    final_cache: bool,
+    target: CacheTarget,
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
     let int_width = stream_width;
-    let layout = if final_cache {
-        crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width)
-    } else {
-        crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width)
+    let layout = match target {
+        CacheTarget::Final => crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width),
+        CacheTarget::First => crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width),
     }
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1723,6 +1772,70 @@ fn patch_nurbs_curve_record(
     Ok(())
 }
 
+enum PcurvePatchCarrier {
+    Pcurve {
+        scope: std::ops::Range<usize>,
+        wrapper_reversed: Option<bool>,
+        native_tail_flags: Option<[bool; 4]>,
+        parameter_range: Option<[f64; 2]>,
+    },
+    Intcurve(std::ops::Range<usize>),
+}
+
+impl PcurvePatchCarrier {
+    fn admit(
+        bytes: &[u8],
+        record: &Record,
+        ref_width: RefWidth,
+        edit: &InlinePcurveEdit<'_>,
+    ) -> Result<Self, CodecError> {
+        match record.head() {
+            "pcurve" => {
+                let scope = sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur")
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "pcurve record {} has no exp_par_cur payload",
+                            record.index
+                        ))
+                    })?;
+                Ok(Self::Pcurve {
+                    scope,
+                    wrapper_reversed: edit.wrapper_reversed,
+                    native_tail_flags: edit.native_tail_flags,
+                    parameter_range: edit.parameter_range,
+                })
+            }
+            "intcurve" => match (
+                edit.wrapper_reversed,
+                edit.native_tail_flags,
+                edit.parameter_range,
+            ) {
+                (None, None, None) => {
+                    let end = record.offset.checked_add(record.len).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "NURBS pcurve record extent overflows address space".into(),
+                        )
+                    })?;
+                    Ok(Self::Intcurve(record.offset..end))
+                }
+                _ => Err(CodecError::NotImplemented(
+                    "intcurve UV caches have no pcurve wrapper fields".into(),
+                )),
+            },
+            _ => Err(CodecError::malformed(format_args!(
+                "record {} is not a pcurve carrier",
+                record.index
+            ))),
+        }
+    }
+
+    fn scope(&self) -> &std::ops::Range<usize> {
+        match self {
+            Self::Pcurve { scope, .. } | Self::Intcurve(scope) => scope,
+        }
+    }
+}
+
 fn patch_nurbs_pcurve_record(
     bytes: &mut [u8],
     stream_width: RefWidth,
@@ -1737,23 +1850,8 @@ fn patch_nurbs_pcurve_record(
         )));
     };
     let ref_width = stream_width;
-    let scope = if record.head() == "pcurve" {
-        sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "pcurve record {} has no exp_par_cur payload",
-                record.index
-            ))
-        })?
-    } else if record.head() == "intcurve" {
-        record.offset..record.offset.checked_add(record.len).ok_or_else(|| {
-            CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
-        })?
-    } else {
-        return Err(CodecError::malformed(format_args!(
-            "record {} is not a pcurve carrier",
-            record.index
-        )));
-    };
+    let carrier = PcurvePatchCarrier::admit(bytes, record, ref_width, edit)?;
+    let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
         bytes.get(scope.clone()).ok_or_else(|| {
             CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
@@ -1788,8 +1886,14 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
-    if record.head() == "pcurve" {
-        if let Some(reversed) = edit.wrapper_reversed {
+    if let PcurvePatchCarrier::Pcurve {
+        wrapper_reversed,
+        native_tail_flags,
+        parameter_range,
+        ..
+    } = &carrier
+    {
+        if let Some(reversed) = *wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1828,7 +1932,7 @@ fn patch_nurbs_pcurve_record(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(flags) = edit.native_tail_flags {
+        if let Some(flags) = *native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
                     return Err(CodecError::malformed(format_args!(
@@ -1848,7 +1952,7 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = edit.parameter_range {
+        if let Some(range) = *parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
@@ -1922,6 +2026,138 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn native_bool_patch_rejects_a_truncated_record_without_writing() {
+        let original = b"\x0d\x08intcurve\x0b\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let offset =
+            AsmEditSet::required_payload_field_at(original, &records[0], RefWidth::Eight, 0, 0x0b)
+                .unwrap();
+        let mut truncated = original[..offset].to_vec();
+        let before = truncated.clone();
+        let error = AsmEditSet::patch_native_bool(&mut truncated, offset, true).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(error.to_string().contains("truncated"));
+        assert_eq!(truncated, before);
+    }
+
+    #[test]
+    fn procedural_writer_returns_malformed_for_a_truncated_framed_record() {
+        let original = b"\x0d\x08intcurve\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let mut truncated = original[..original.len() - 1].to_vec();
+        let before = truncated.clone();
+        let error = super::patch_subset_definition(
+            &mut truncated,
+            RefWidth::Eight,
+            &records[0],
+            [0.0, 1.0],
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(error.to_string().contains("truncated"));
+        assert_eq!(truncated, before);
+    }
+
+    #[test]
+    fn intcurve_uv_cache_rejects_pcurve_wrapper_edits() {
+        use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
+        use cadmpeg_ir::math::Point2;
+        let mut original = vec![0x0d, 8];
+        original.extend_from_slice(b"intcurve");
+        original.extend_from_slice(crate::nurbs::reader::NUBS_MARKER);
+        for (tag, value) in [(0x04, 1i64), (0x15, 0), (0x04, 2)] {
+            original.push(tag);
+            original.extend_from_slice(&value.to_le_bytes());
+        }
+        for knot in [0.0f64, 1.0] {
+            original.push(0x06);
+            original.extend_from_slice(&knot.to_le_bytes());
+            original.push(0x04);
+            original.extend_from_slice(&1i64.to_le_bytes());
+        }
+        for component in [0.0f64, 0.0, 1.0, 1.0] {
+            original.push(0x06);
+            original.extend_from_slice(&component.to_le_bytes());
+        }
+        original.push(0x11);
+        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        let geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        };
+        let base = super::InlinePcurveEdit {
+            native_geometry: &geometry,
+            periodic: None,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        };
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        edits
+            .patch_pcurve(
+                &mut original.clone(),
+                &records[0],
+                super::PcurveEdit::Inline(base),
+            )
+            .unwrap();
+        for edit in [
+            super::InlinePcurveEdit {
+                wrapper_reversed: Some(true),
+                ..base
+            },
+            super::InlinePcurveEdit {
+                native_tail_flags: Some([true; 4]),
+                ..base
+            },
+            super::InlinePcurveEdit {
+                parameter_range: Some([2.0, 3.0]),
+                ..base
+            },
+        ] {
+            let mut bytes = original.clone();
+            assert!(matches!(
+                edits.patch_pcurve(&mut bytes, &records[0], super::PcurveEdit::Inline(edit)),
+                Err(cadmpeg_core::CodecError::NotImplemented(_))
+            ));
+            assert_eq!(bytes, original);
+        }
+    }
+
+    #[test]
+    fn transform_rejects_nonpositive_and_nonfinite_header_scales() {
+        let mut original = vec![0x0d, 9];
+        original.extend_from_slice(b"transform");
+        for _ in 0..4 {
+            original.push(0x14);
+            original.extend_from_slice(&[0; 24]);
+        }
+        original.push(0x06);
+        original.extend_from_slice(&1.0f64.to_le_bytes());
+        original.push(0x11);
+        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut bytes = original.clone();
+            let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, scale);
+            assert!(matches!(
+                edits.patch_transform(
+                    &mut bytes,
+                    &records[0],
+                    cadmpeg_ir::transform::Transform::identity()
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            assert_eq!(bytes, original);
+        }
+    }
 
     #[test]
     fn tagged_i64_replaces_only_the_selected_payload() {

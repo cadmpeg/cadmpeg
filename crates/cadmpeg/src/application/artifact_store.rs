@@ -410,11 +410,21 @@ mod tests {
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);
-        let library_candidates = identify(&mut source, &InspectOptions::default())
-            .unwrap()
-            .into_iter()
-            .map(|identified| (identified.format(), identified.confidence()))
-            .collect::<Vec<_>>();
+        let library_candidates = match identify(&mut source, &InspectOptions::default()).unwrap() {
+            cadmpeg_registry::Identification::Native {
+                format, confidence, ..
+            } => vec![(format, confidence)],
+            cadmpeg_registry::Identification::Ambiguous {
+                confidence,
+                candidates,
+            } => candidates
+                .into_iter()
+                .map(|format| (format, confidence))
+                .collect(),
+            cadmpeg_registry::Identification::None | cadmpeg_registry::Identification::Cadir => {
+                Vec::new()
+            }
+        };
 
         assert!(cli_candidates
             .iter()

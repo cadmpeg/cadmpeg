@@ -283,7 +283,7 @@ pub struct ConsolidatedRawFrame<Offset = usize> {
 impl ConsolidatedRawFrame {
     pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Self {
         Self {
-            pos: record.range.start,
+            pos: record.byte_offset(),
             width: record.width,
             flag: record.flag,
             header_token: record.header_token,
@@ -328,8 +328,8 @@ pub struct ConsolidatedRecord {
     pub source_index: usize,
     /// Byte range in the reconstructed logical record source.
     pub source_range: Range<usize>,
-    /// Whether the complete frame occupies one physical extent.
-    pub physically_contiguous: bool,
+    /// Physical placement of the frame.
+    pub placement: ConsolidatedPlacement,
     /// Record family.
     pub family: ConsolidatedFamily,
     /// Header-token width in bytes.
@@ -340,10 +340,46 @@ pub struct ConsolidatedRecord {
     pub class: u8,
     /// Little-endian width-coded header token.
     pub header_token: u32,
-    /// Complete record byte range.
-    pub range: Range<usize>,
-    /// Payload byte range.
-    pub payload: Range<usize>,
+}
+
+/// Physical placement of a consolidated frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsolidatedPlacement {
+    /// A frame contained in one physical extent.
+    Contiguous {
+        /// Complete physical frame range.
+        range: Range<usize>,
+        /// Physical payload range.
+        payload: Range<usize>,
+    },
+    /// A frame crossing physical extents.
+    Spanning {
+        /// Physical start offset.
+        byte_offset: usize,
+    },
+}
+
+impl ConsolidatedRecord {
+    pub(crate) fn byte_offset(&self) -> usize {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { range, .. } => range.start,
+            ConsolidatedPlacement::Spanning { byte_offset } => *byte_offset,
+        }
+    }
+
+    pub(crate) fn range(&self) -> Option<Range<usize>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { range, .. } => Some(range.clone()),
+            ConsolidatedPlacement::Spanning { .. } => None,
+        }
+    }
+
+    pub(crate) fn payload(&self) -> Option<Range<usize>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { payload, .. } => Some(payload.clone()),
+            ConsolidatedPlacement::Spanning { .. } => None,
+        }
+    }
 }
 
 /// Return whether a record slice is one logically contiguous frame run.
@@ -422,15 +458,16 @@ where
                     continue;
                 };
                 record.source_index = source_index;
-                let Some(source_start) = source_offset.checked_add(record.range.start - start)
+                let Some(source_start) = source_offset.checked_add(record.byte_offset() - start)
                 else {
                     return records;
                 };
-                let Some(source_end) = source_offset.checked_add(record.range.end - start) else {
+                let Some(source_end) = source_offset.checked_add(record.source_range.end - start)
+                else {
                     return records;
                 };
+                pos = record.source_range.end;
                 record.source_range = source_start..source_end;
-                pos = record.range.end;
                 source_records.push(record);
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
@@ -569,14 +606,12 @@ fn parse_spanning_consolidated_record(
     Some(ConsolidatedRecord {
         source_index,
         source_range: source_start..source_end,
-        physically_contiguous: false,
+        placement: ConsolidatedPlacement::Spanning { byte_offset },
         family,
         width,
         flag,
         class,
         header_token,
-        range: byte_offset..byte_offset,
-        payload: byte_offset..byte_offset,
     })
 }
 
@@ -627,14 +662,15 @@ fn parse_consolidated_record(
     Some(ConsolidatedRecord {
         source_index: 0,
         source_range: pos..end,
-        physically_contiguous: true,
         family,
         width,
         flag,
         class,
         header_token,
-        range: pos..end,
-        payload: payload_start..end,
+        placement: ConsolidatedPlacement::Contiguous {
+            range: pos..end,
+            payload: payload_start..end,
+        },
     })
 }
 
@@ -644,16 +680,14 @@ pub(crate) fn a_family_frames_from_records(
 ) -> Vec<ConsolidatedFrame> {
     records
         .iter()
-        .filter(|record| {
-            record.physically_contiguous
-                && record.family == ConsolidatedFamily::A
-                && record.class == class
-        })
-        .map(|record| ConsolidatedFrame {
-            pos: record.range.start,
-            payload: record.payload.start,
-            end: record.range.end,
-            header_token: record.header_token,
+        .filter(|record| record.family == ConsolidatedFamily::A && record.class == class)
+        .filter_map(|record| {
+            Some(ConsolidatedFrame {
+                pos: record.byte_offset(),
+                payload: record.payload()?.start,
+                end: record.range()?.end,
+                header_token: record.header_token,
+            })
         })
         .collect()
 }
@@ -664,16 +698,14 @@ pub(crate) fn b_family_frames_from_records(
 ) -> Vec<ConsolidatedFrame> {
     records
         .iter()
-        .filter(|record| {
-            record.physically_contiguous
-                && record.family == ConsolidatedFamily::B
-                && record.class == class
-        })
-        .map(|record| ConsolidatedFrame {
-            pos: record.range.start,
-            payload: record.payload.start,
-            end: record.range.end,
-            header_token: record.header_token,
+        .filter(|record| record.family == ConsolidatedFamily::B && record.class == class)
+        .filter_map(|record| {
+            Some(ConsolidatedFrame {
+                pos: record.byte_offset(),
+                payload: record.payload()?.start,
+                end: record.range()?.end,
+                header_token: record.header_token,
+            })
         })
         .collect()
 }
@@ -761,7 +793,7 @@ mod tests {
         let records = consolidated_records(&bytes);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].family, ConsolidatedFamily::A);
-        assert_eq!(records[0].range, 0..18);
+        assert_eq!(records[0].range(), Some(0..18));
     }
 
     #[test]
@@ -773,7 +805,7 @@ mod tests {
 
         let records = consolidated_records_in_ranges(&bytes, [0..12, 12..bytes.len()]);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].range, 15..21);
+        assert_eq!(records[0].range(), Some(15..21));
         assert_eq!(records[0].source_index, 1);
         assert_eq!(records[0].family, ConsolidatedFamily::B);
     }
@@ -789,7 +821,7 @@ mod tests {
 
         let records = consolidated_records_in_ranges(&bytes, std::iter::once(9..bytes.len()));
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].range, 9..18);
+        assert_eq!(records[0].range(), Some(9..18));
     }
 
     #[test]
@@ -807,7 +839,7 @@ mod tests {
         assert_eq!(records[1].family, ConsolidatedFamily::A);
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
-        assert!(!records[1].physically_contiguous);
+        assert!(records[1].range().is_none());
         assert!(a_family_frames_from_records(&records, 0x34).is_empty());
     }
 
@@ -816,29 +848,39 @@ mod tests {
         let first = ConsolidatedRecord {
             source_index: 0,
             source_range: 0..4,
-            physically_contiguous: true,
             family: ConsolidatedFamily::A,
             width: ConsolidatedFrameWidth::One,
             flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
             header_token: 0,
-            range: 0..4,
-            payload: 3..4,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 0..4,
+                payload: 3..4,
+            },
         };
         let adjacent = ConsolidatedRecord {
             source_range: 4..8,
-            range: 4..8,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 4..8,
+                payload: 7..8,
+            },
             ..first.clone()
         };
         let separated = ConsolidatedRecord {
             source_range: 5..9,
-            range: 5..9,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 5..9,
+                payload: 7..8,
+            },
             ..first.clone()
         };
         let adjacent_other_source = ConsolidatedRecord {
             source_index: 1,
             source_range: 4..8,
-            range: 4..8,
+            placement: ConsolidatedPlacement::Contiguous {
+                range: 4..8,
+                payload: 7..8,
+            },
             ..first.clone()
         };
 

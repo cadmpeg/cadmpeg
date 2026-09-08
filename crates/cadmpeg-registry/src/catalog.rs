@@ -141,6 +141,9 @@ pub enum ResolvedSource<'a> {
 /// a CLI names its own override flag, and an embedder has no flag to name.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveSourceError {
+    /// The forced native descriptor is absent from this catalog.
+    #[error("forced input format {0} is not in this catalog")]
+    Unregistered(FormatId),
     /// Multiple codecs tied at the strongest confidence.
     #[error(
         "ambiguous {confidence}-confidence input format: {names}",
@@ -265,7 +268,7 @@ impl InputCatalog {
                         } if std::ptr::eq(*candidate, native) => Some(codec.as_ref()),
                         InputKind::Neutral { .. } | InputKind::Native { .. } => None,
                     })
-                    .expect("forced native descriptors come from this built-in catalog");
+                    .ok_or(ResolveSourceError::Unregistered(native.id()))?;
                 Ok(ResolvedSource::Native {
                     codec,
                     selection: Selection::Forced,
@@ -390,6 +393,17 @@ mod tests {
             assert_eq!(codec.id(), FormatId::new("step"));
             assert_eq!(selection, Selection::Forced);
         }
+    }
+
+    #[cfg(feature = "step")]
+    #[test]
+    fn forced_descriptor_absent_from_catalog_returns_an_error() {
+        let catalog = InputCatalog {
+            descriptors: Vec::new(),
+        };
+        let forced = crate::forced_input("step").expect("step is registered");
+        assert!(matches!(catalog.resolve_source(b"", Some(forced)),
+            Err(ResolveSourceError::Unregistered(id)) if id == FormatId::new("step")));
     }
 
     #[test]

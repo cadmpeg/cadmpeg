@@ -15,7 +15,7 @@ use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
 pub(crate) fn project_local_components(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
-) -> (Vec<ProductDefinition>, Vec<Occurrence>) {
+) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), cadmpeg_core::CodecError> {
     let mut components = BTreeMap::new();
     let mut occurrences = BTreeMap::new();
     let mut native_by_guid = BTreeMap::new();
@@ -59,7 +59,7 @@ pub(crate) fn project_local_components(
                         ],
                         |frame| frame.value.into(),
                     ),
-                );
+                )?;
             }
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
@@ -69,16 +69,16 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 operation.component_guid.as_str(),
                 operation.source_occurrence_guid.as_str(),
-                operation.source_transform.into(),
-            );
+                operation.source_transform,
+            )?;
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
                 operation.component_guid.as_str(),
                 operation.copied_occurrence_guid.as_str(),
-                operation.copied_transform.into(),
-            );
+                operation.copied_transform,
+            )?;
         }
         if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
@@ -87,8 +87,8 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 construction.component_guid.as_str(),
                 construction.occurrence_guid.as_str(),
-                construction.transform.into(),
-            );
+                construction.transform,
+            )?;
         }
         let Some(crate::records::feature::DesignRectangularPatternInstances::Components {
             component_guid,
@@ -107,8 +107,8 @@ pub(crate) fn project_local_components(
                 &native_by_guid,
                 component_guid.as_str(),
                 occurrence.occurrence_guid.as_str(),
-                occurrence.instance.transform.value.into(),
-            );
+                occurrence.instance.transform.value,
+            )?;
         }
     }
 
@@ -116,7 +116,7 @@ pub(crate) fn project_local_components(
     for (ordinal, occurrence) in occurrences.iter_mut().enumerate() {
         occurrence.ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
     }
-    (components.into_values().collect(), occurrences)
+    Ok((components.into_values().collect(), occurrences))
 }
 
 /// Project a proven local occurrence into a `DerivedInstance` feature.
@@ -157,7 +157,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     ordinal_start: usize,
-) -> Vec<Occurrence> {
+) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
     for scope in scopes {
         let Some(construction) = scope.component_insert_construction() else {
@@ -183,7 +183,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             parent: OccurrenceParent::Root,
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
                 .unwrap_or(u32::MAX),
-            transform: neutral_transform((*construction.transform()).into()),
+            transform: neutral_transform(*construction.transform())?,
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),
@@ -192,7 +192,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             native_ref: Some(scope.id.clone()),
         });
     }
-    occurrences
+    Ok(occurrences)
 }
 
 fn project_occurrence(
@@ -201,10 +201,10 @@ fn project_occurrence(
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
     component_guid: &str,
     occurrence_guid: &str,
-    transform: [[f64; 4]; 4],
-) {
+    transform: impl Into<[[f64; 4]; 4]>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
-    let transform = neutral_transform(transform);
+    let transform = neutral_transform(transform)?;
     project_component(components, component_guid);
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     occurrences
@@ -228,6 +228,7 @@ fn project_occurrence(
                 .flatten()
                 .map(|occurrence| occurrence.id.clone()),
         });
+    Ok(())
 }
 
 fn project_component(components: &mut BTreeMap<String, ProductDefinition>, component_guid: &str) {
@@ -247,11 +248,19 @@ fn project_component(components: &mut BTreeMap<String, ProductDefinition>, compo
         });
 }
 
-fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Transform {
+/// A millimetre placement projected from source centimetres.
+pub(crate) fn neutral_transform(
+    transform: impl Into<[[f64; 4]; 4]>,
+) -> Result<cadmpeg_ir::transform::Transform, cadmpeg_core::CodecError> {
+    let mut transform = transform.into();
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    cadmpeg_ir::transform::Transform::from_rows(transform).expect("affine transform")
+    cadmpeg_ir::transform::Transform::from_rows(transform).ok_or_else(|| {
+        cadmpeg_core::CodecError::NotImplemented(
+            "F3D placement must project to a finite affine transform".into(),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -272,7 +281,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform).rows(),
+            super::neutral_transform(transform).unwrap().rows(),
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],
@@ -323,7 +332,7 @@ mod tests {
         }
 
         let (definitions, occurrences) =
-            super::project_local_components(&[scope], &native_occurrences);
+            super::project_local_components(&[scope], &native_occurrences).unwrap();
 
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 2);
@@ -375,7 +384,7 @@ mod tests {
             },
         };
         let (definitions, occurrences) =
-            super::project_local_components(&[scope.clone()], &[native_occurrence]);
+            super::project_local_components(&[scope.clone()], &[native_occurrence]).unwrap();
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 1);
         assert_eq!(

@@ -577,36 +577,6 @@ impl SurfaceAlias {
     }
 }
 
-/// Literal unresolved `7C D9` marker occurrence and bounded source context.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Marker7cd9 {
-    /// Marker byte offset.
-    pub pos: usize,
-    /// Bytes from the marker through the requested context bound or input end.
-    pub context: Vec<u8>,
-    /// Distance to the next literal marker occurrence.
-    pub next_delta: Option<usize>,
-}
-
-/// Expose literal `7C D9` occurrences without assigning record framing or semantics.
-#[must_use]
-pub fn markers_7cd9(data: &[u8], context_len: usize) -> Vec<Marker7cd9> {
-    let positions: Vec<usize> = data
-        .windows(2)
-        .enumerate()
-        .filter_map(|(pos, bytes)| (bytes == [0x7c, 0xd9]).then_some(pos))
-        .collect();
-    positions
-        .iter()
-        .enumerate()
-        .map(|(index, &pos)| Marker7cd9 {
-            pos,
-            context: data[pos..pos.saturating_add(context_len).min(data.len())].to_vec(),
-            next_delta: positions.get(index + 1).map(|next| next - pos),
-        })
-        .collect()
-}
-
 /// Decode fixed surface-alias row cores from an outer body.
 #[must_use]
 pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {

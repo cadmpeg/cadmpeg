@@ -61,6 +61,94 @@ fn resolved_body_binding(
 }
 
 #[test]
+fn protein_rejections_preserve_valid_records_and_report_notes() {
+    let mut instance = Vec::new();
+    for (schema, guid) in [
+        ("KnownSchema", "first-guid"),
+        ("MissingSchema", "rejected-guid"),
+        ("KnownSchema", "third-guid"),
+    ] {
+        let mut logical = RECORD_MARKER.to_vec();
+        for value in [schema, guid, "base", ""] {
+            super::push_lp(&mut logical, value).unwrap();
+        }
+        if instance.is_empty() {
+            instance.extend_from_slice(&(super::PAGE_SIZE as u32).to_le_bytes());
+            instance.extend_from_slice(&[0; STREAM_HEADER_LEN - 4]);
+        }
+        let body = &logical[RECORD_MARKER.len()..];
+        let mut page = super::TERMINAL_MARKER.to_vec();
+        page.extend_from_slice(&u16::try_from(body.len()).unwrap().to_le_bytes());
+        page.extend_from_slice(&[0; 2]);
+        page.extend_from_slice(body);
+        page.resize(super::PAGE_SIZE, 0);
+        instance.extend_from_slice(&page);
+    }
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .start_file("Schemas/KnownSchema.xml", stored)
+        .unwrap();
+    archive
+        .write_all(br#"<Schema><UID val="KnownSchema"/></Schema>"#)
+        .unwrap();
+    archive
+        .start_file("AssetData/InstanceProperties.bin", stored)
+        .unwrap();
+    archive.write_all(&instance).unwrap();
+    let protein = archive.finish().unwrap().into_inner();
+    let edits = ["first-guid", "third-guid"]
+        .into_iter()
+        .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
+        .collect();
+    let mut notes = Vec::new();
+    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    assert_eq!(
+        guids.into_iter().collect::<Vec<_>>(),
+        ["first-guid", "third-guid"]
+    );
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].contains("record 1 rejected") && notes[0].contains("MissingSchema"));
+    let mut patched_archive = zip::ZipArchive::new(Cursor::new(patched)).unwrap();
+    let mut retained = Vec::new();
+    std::io::Read::read_to_end(
+        &mut patched_archive
+            .by_name("AssetData/InstanceProperties.bin")
+            .unwrap(),
+        &mut retained,
+    )
+    .unwrap();
+    assert_eq!(retained, instance);
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(&protein).unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| appearance.asset_guid.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("first-guid"), Some("third-guid")]
+    );
+    assert!(decoded.report().notes.iter().any(|note| note
+        .contains("ProteinAsset.0.protein record 1 rejected")
+        && note.contains("MissingSchema")));
+}
+
+#[test]
 fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker() {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -82,11 +170,11 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     lp(&mut logical, "");
 
     let paged = super::page_logical(&logical).expect("page catalog record");
-    let frames = cadmpeg_protein::record_frames(&paged).expect("frame catalog pages");
+    let frames = cadmpeg_protein::framing::record_frames(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
-    let decoded = super::decode_definition_catalog_record(&frame.bytes)
+    let decoded = super::decode_definition_catalog_record(frame.bytes())
         .expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
@@ -1936,7 +2024,7 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        geometry_transferred: false,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \

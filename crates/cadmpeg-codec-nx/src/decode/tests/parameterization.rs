@@ -734,7 +734,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         "nx:s0",
         target_index + 1,
         0,
-        source_stream,
+        source_stream.clone(),
         &mut annotations,
         &std::collections::BTreeMap::new(),
         &geometry_budget,

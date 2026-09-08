@@ -2,11 +2,12 @@
 //! Extrusion and revolution pcurves.
 
 use super::super::native::annotate;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::nurbs::{oriented_sketch_nurbs_curve, placed_section_nurbs};
 use super::profiles::{circular_pcurve, line_pcurve, profile_arc};
 use super::surfaces::{revolved_nurbs_surface, revolved_section_surface};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
@@ -63,7 +64,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
     point: [f64; 3],
     axis: &RevolutionAxis,
 ) -> Option<PcurveGeometry> {
-    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let point_from = |origin: Point3| {
         [
@@ -314,8 +315,8 @@ pub(in super::super) fn revolution_face_sense(
     } else {
         [-tangent[1], tangent[0]]
     };
-    let outward = normalized(std::array::from_fn(|index| {
-        outward[0] * transform.u_axis[index] + outward[1] * transform.v_axis[index]
+    let outward = normalize(std::array::from_fn(|index| {
+        outward[0] * transform.u_axis()[index] + outward[1] * transform.v_axis()[index]
     }))?;
     let model_point = section_point_in_model(transform, point);
     let pcurve = if is_nurbs {
@@ -344,7 +345,7 @@ pub(in super::super) fn revolution_face_sense(
         after_v.y - before_v.y,
         after_v.z - before_v.z,
     ];
-    let carrier_normal = normalized(cross(du, dv))?;
+    let carrier_normal = normalize(cross(du, dv))?;
     let alignment = dot(carrier_normal, outward);
     (alignment.abs() > EPS_SENSE_ALIGN).then_some(())?;
     Some(if alignment.is_sign_positive() {

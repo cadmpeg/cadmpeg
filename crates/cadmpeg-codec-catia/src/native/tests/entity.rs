@@ -950,9 +950,8 @@ fn typed_definition_chain_values_transfer_as_parameters() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "Real".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         parameter_entity.entity_id,
-                        false,
                         Some(parameter_entity.id.clone()),
                         Some("param".to_string()),
                     ),

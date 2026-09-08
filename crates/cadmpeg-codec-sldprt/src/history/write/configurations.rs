@@ -26,7 +26,7 @@ use crate::resolved_features::relation_geometry::is_reference_relation_parameter
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_configurations_for_write(
+pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
@@ -386,10 +386,7 @@ pub(crate) fn sync_neutral_configurations(
     if configurations.is_empty() && native.is_none() {
         return;
     }
-    if native.is_none() {
-        *native = Some(crate::native::SldprtNative::default());
-    }
-    let native = native.as_mut().expect("initialized above");
+    let native = native.get_or_insert_with(crate::native::SldprtNative::default);
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),

@@ -646,9 +646,9 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
 
     let record =
         crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3).expect("three-byte packet");
-    assert_eq!(record.handles, handles);
-    assert_eq!(record.strip_lengths, [3, 3]);
-    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.packet.handles(), handles);
+    assert_eq!(record.packet.strip_lengths(), [3, 3]);
+    assert!(record.packet.fan_lengths().is_empty());
 }
 
 #[test]
@@ -664,9 +664,9 @@ fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
 
     let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
         .expect("raw 0xff strip length");
-    assert_eq!(record.handles.len(), handle_count as usize);
-    assert_eq!(record.strip_lengths, [255, 1]);
-    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.packet.handles().len(), handle_count as usize);
+    assert_eq!(record.packet.strip_lengths(), [255, 1]);
+    assert!(record.packet.fan_lengths().is_empty());
 }
 
 #[test]

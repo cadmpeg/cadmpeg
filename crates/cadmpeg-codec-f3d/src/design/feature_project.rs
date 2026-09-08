@@ -2097,185 +2097,56 @@ fn project_fillet_arm(
         }
     }
 
-    let &ProjectInputs {
-        native,
-        construction_groups,
-        fillet_radius_groups,
-        edge_operands,
-        edge_identity_operands,
-        edge_treatment_vertex_operands,
-        histories,
-        ..
-    } = inputs;
-
-    if let Some(definition) = project_variable_fillet(
-        scope,
-        parameters,
-        construction_groups,
-        edge_operands,
-        edge_identity_operands,
-        edge_treatment_vertex_operands,
-        histories,
-    ) {
-        definition
-    } else if let Some(definition) = parameters
-        .is_empty()
-        .then(|| {
-            project_fixed_fillet_with_corners(
-                scope,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                edge_treatment_vertex_operands,
-                histories,
-            )
+    let mut assignments = inputs
+        .fillet_radius_groups
+        .iter()
+        .filter(|assignment| {
+            native_stream(&assignment.id) == Some(native_scope)
+                && assignment.scope_record_index == scope.record_index
         })
-        .flatten()
-    {
-        definition
-    } else {
-        let mut assignments = fillet_radius_groups
+        .collect::<Vec<_>>();
+    assignments.sort_by_key(|assignment| assignment.group_ordinal);
+    let native = || FeatureDefinition::Native {
+        kind: scope.kind_name().into(),
+        parameters: parameters
             .iter()
-            .filter(|assignment| {
-                native_stream(&assignment.id) == Some(native_scope)
-                    && assignment.scope_record_index == scope.record_index
+            .map(|(_, parameter)| {
+                (
+                    parameter.name().to_owned(),
+                    parameter.expression().to_owned(),
+                )
             })
-            .collect::<Vec<_>>();
-        assignments.sort_by_key(|assignment| assignment.group_ordinal);
-        let assigned_parameter_records = assignments
-            .iter()
-            .flat_map(|assignment| {
-                fillet_law_parameter_records(&assignment.law)
-                    .into_iter()
-                    .chain(assignment.tangency_weight_parameter_record_index)
-            })
-            .collect::<Vec<_>>();
-        let incomplete_assignment = if assignments.is_empty() {
-            let radii = parameters
-                .iter()
-                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
-                .map(|(_, parameter)| *parameter)
-                .collect::<Vec<_>>();
-            radii.len() != 1
-                || radii
-                    .iter()
-                    .any(|parameter| design_length(parameter).is_none_or(|value| value.0 <= 0.0))
-                || parameters
-                    .iter()
-                    .any(|(_, parameter)| parameter.source_kind() != "Radius")
-        } else {
-            assigned_parameter_records.len() != parameters.len()
-                || parameters.iter().any(|(_, parameter)| {
-                    !matches!(
-                        parameter.source_kind(),
-                        "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2" | "TangencyWeight"
-                    ) || assigned_parameter_records
-                        .iter()
-                        .filter(|record_index| **record_index == parameter.record_index)
-                        .count()
-                        != 1
-                })
-                || parameters.iter().any(|(_, parameter)| {
-                    matches!(
-                        parameter.source_kind(),
-                        "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2"
-                    ) && design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                })
+            .collect(),
+    };
+    if !assignments.is_empty() {
+        let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
+            return native();
         };
-        if incomplete_assignment {
-            FeatureDefinition::Native {
-                kind: scope.kind_name().into(),
-                parameters: parameters
-                    .iter()
-                    .map(|(_, parameter)| {
-                        (
-                            parameter.name().to_owned(),
-                            parameter.expression().to_owned(),
-                        )
-                    })
-                    .collect(),
-            }
-        } else {
-            let groups = assignments
+        return FeatureDefinition::Fillet {
+            groups: assignments
                 .into_iter()
-                .map(|assignment| {
-                    let (radius, edge_radius) = match assignment.law {
-                        DesignFilletRadiusLaw::Constant {
-                            radius_parameter_record_index,
-                        } => {
-                            let radius = parameters
-                                .iter()
-                                .find(|(_, parameter)| {
-                                    parameter.record_index == radius_parameter_record_index
-                                })
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .expect("complete Fillet assignment has a positive radius");
-                            (RadiusSpec::Constant { radius }, Some(radius.0))
-                        }
-                        DesignFilletRadiusLaw::Chordal {
-                            chord_length_parameter_record_index,
-                        } => {
-                            let chord_length = parameters
-                                .iter()
-                                .find(|(_, parameter)| {
-                                    parameter.record_index == chord_length_parameter_record_index
-                                })
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .expect("complete chordal Fillet has a positive chord length");
-                            (RadiusSpec::Chordal { chord_length }, None)
-                        }
-                        DesignFilletRadiusLaw::Asymmetric {
-                            offset_one_parameter_record_index,
-                            offset_two_parameter_record_index,
-                        } => {
-                            let offset = |record_index| {
-                                parameters
-                                    .iter()
-                                    .find(|(_, parameter)| parameter.record_index == record_index)
-                                    .and_then(|(_, parameter)| design_length(parameter))
-                                    .filter(|offset| offset.0 > 0.0)
-                            };
-                            let offset_one = offset(offset_one_parameter_record_index)
-                                .expect("complete asymmetric Fillet has a positive first offset");
-                            let offset_two = offset(offset_two_parameter_record_index)
-                                .expect("complete asymmetric Fillet has a positive second offset");
-                            (
-                                RadiusSpec::Asymmetric {
-                                    offset_one,
-                                    offset_two,
-                                },
-                                None,
-                            )
-                        }
-                        DesignFilletRadiusLaw::Variable { .. } => {
-                            unreachable!("variable Fillet projected before constants")
-                        }
+                .map(|resolved| {
+                    let edge_radius = match &resolved.radius {
+                        RadiusSpec::Constant { radius } => Some(radius.0),
+                        _ => None,
                     };
-                    let tangency_weight = assignment
-                        .tangency_weight_parameter_record_index
-                        .and_then(|record_index| {
-                            native.iter().find(|parameter| {
-                                native_stream(&parameter.id) == Some(native_scope)
-                                    && parameter.record_index == record_index
-                            })
-                        })
-                        .map(crate::records::DesignParameter::evaluated_value);
-                    let edges = construction_groups
+                    let edges = inputs
+                        .construction_groups
                         .iter()
                         .find(|group| {
                             native_stream(&group.id) == Some(native_scope)
-                                && group.record_index == assignment.group_record_index
+                                && group.record_index == resolved.assignment.group_record_index
                         })
                         .map_or_else(
-                            || EdgeSelection::Native(assignment.id.clone()),
+                            || EdgeSelection::Native(resolved.assignment.id.clone()),
                             |group| {
                                 resolved_edge_treatment_group_with_corners(
                                     group,
-                                    construction_groups,
-                                    edge_operands,
-                                    edge_identity_operands,
-                                    edge_treatment_vertex_operands,
-                                    histories,
+                                    inputs.construction_groups,
+                                    inputs.edge_operands,
+                                    inputs.edge_identity_operands,
+                                    inputs.edge_treatment_vertex_operands,
+                                    inputs.histories,
                                     scope.previous_history_state_id,
                                     &neutral_feature_id(scope),
                                     edge_radius,
@@ -2284,30 +2155,157 @@ fn project_fillet_arm(
                         );
                     FilletGroup {
                         edges,
-                        radius,
-                        tangency_weight,
+                        radius: resolved.radius,
+                        tangency_weight: resolved.tangency_weight,
                     }
                 })
-                .collect::<Vec<_>>();
-            FeatureDefinition::Fillet {
-                groups: if groups.is_empty() {
-                    vec![FilletGroup {
-                        edges: EdgeSelection::Native(scope.id.clone()),
-                        radius: RadiusSpec::Constant {
-                            radius: parameters
-                                .iter()
-                                .filter(|(_, parameter)| parameter.source_kind() == "Radius")
-                                .find_map(|(_, parameter)| design_length(parameter))
-                                .expect("complete ungrouped Fillet has one positive radius"),
-                        },
-                        tangency_weight: None,
-                    }]
-                } else {
-                    groups
-                },
-            }
+                .collect(),
+        };
+    }
+    if let Some(definition) = project_variable_fillet(
+        scope,
+        parameters,
+        inputs.construction_groups,
+        inputs.edge_operands,
+        inputs.edge_identity_operands,
+        inputs.edge_treatment_vertex_operands,
+        inputs.histories,
+    ) {
+        return definition;
+    }
+    if parameters.is_empty() {
+        if let Some(definition) = project_fixed_fillet_with_corners(
+            scope,
+            inputs.construction_groups,
+            inputs.edge_operands,
+            inputs.edge_identity_operands,
+            inputs.edge_treatment_vertex_operands,
+            inputs.histories,
+        ) {
+            return definition;
         }
     }
+    let [(_, parameter)] = parameters else {
+        return native();
+    };
+    let Some(radius) = (parameter.source_kind() == "Radius")
+        .then(|| design_length(parameter))
+        .flatten()
+        .filter(|radius| radius.0 > 0.0)
+    else {
+        return native();
+    };
+    FeatureDefinition::Fillet {
+        groups: vec![FilletGroup {
+            edges: EdgeSelection::Native(scope.id.clone()),
+            radius: RadiusSpec::Constant { radius },
+            tangency_weight: None,
+        }],
+    }
+}
+
+struct ResolvedFilletAssignment<'a> {
+    assignment: &'a DesignFilletRadiusGroup,
+    radius: cadmpeg_ir::features::RadiusSpec,
+    tangency_weight: Option<f64>,
+}
+
+fn resolved_fillet_assignments<'a>(
+    assignments: &[&'a DesignFilletRadiusGroup],
+    parameters: &[(u32, &DesignParameter)],
+) -> Option<Vec<ResolvedFilletAssignment<'a>>> {
+    use cadmpeg_ir::features::RadiusSpec;
+    let by_record = parameters
+        .iter()
+        .map(|(_, parameter)| (parameter.record_index, *parameter))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    if by_record.len() != parameters.len() {
+        return None;
+    }
+    let mut assigned = assignments
+        .iter()
+        .flat_map(|assignment| {
+            fillet_law_parameter_records(&assignment.law)
+                .into_iter()
+                .chain(assignment.tangency_weight_parameter_record_index)
+        })
+        .collect::<Vec<_>>();
+    assigned.sort_unstable();
+    if !assigned.iter().copied().eq(by_record.keys().copied()) {
+        return None;
+    }
+    let parameter = |record, kind| {
+        by_record
+            .get(&record)
+            .copied()
+            .filter(|parameter| parameter.source_kind() == kind)
+    };
+    let length =
+        |record, kind| design_length(parameter(record, kind)?).filter(|value| value.0 > 0.0);
+    assignments
+        .iter()
+        .map(|&assignment| {
+            let tangency_weight = assignment
+                .tangency_weight_parameter_record_index
+                .map(|record| {
+                    parameter(record, "TangencyWeight")
+                        .map(crate::records::DesignParameter::evaluated_value)
+                        .filter(|value| value.is_finite())
+                })
+                .map_or(Some(None), |value| value.map(Some))?;
+            let radius = match &assignment.law {
+                DesignFilletRadiusLaw::Constant {
+                    radius_parameter_record_index,
+                } => RadiusSpec::Constant {
+                    radius: length(*radius_parameter_record_index, "Radius")?,
+                },
+                DesignFilletRadiusLaw::Chordal {
+                    chord_length_parameter_record_index,
+                } => RadiusSpec::Chordal {
+                    chord_length: length(*chord_length_parameter_record_index, "ChordLen")?,
+                },
+                DesignFilletRadiusLaw::Asymmetric {
+                    offset_one_parameter_record_index,
+                    offset_two_parameter_record_index,
+                } => RadiusSpec::Asymmetric {
+                    offset_one: length(*offset_one_parameter_record_index, "EdgeOffset1")?,
+                    offset_two: length(*offset_two_parameter_record_index, "EdgeOffset2")?,
+                },
+                DesignFilletRadiusLaw::Variable {
+                    start_radius_parameter_record_index,
+                    end_radius_parameter_record_index,
+                    middle,
+                } => {
+                    let mut controls = vec![
+                        (
+                            0,
+                            parameter(*start_radius_parameter_record_index, "StartRadius")?,
+                        ),
+                        (
+                            1,
+                            parameter(*end_radius_parameter_record_index, "EndRadius")?,
+                        ),
+                    ];
+                    for (ordinal, row) in middle.iter().enumerate() {
+                        let ordinal = u32::try_from(ordinal).ok()?;
+                        controls.push((
+                            ordinal,
+                            parameter(row.radius_parameter_record_index, "MidRadius")?,
+                        ));
+                        controls
+                            .push((ordinal, parameter(row.parameter_record_index, "MidParams")?));
+                    }
+                    let (points, _) = variable_fillet_law(&controls)?;
+                    RadiusSpec::Variable { points }
+                }
+            };
+            Some(ResolvedFilletAssignment {
+                assignment,
+                radius,
+                tangency_weight,
+            })
+        })
+        .collect()
 }
 
 fn project_thread_face_selection(
@@ -4283,7 +4281,7 @@ pub(crate) fn bind_form_cages(
             let mut resolved = Vec::with_capacity(serializers.ordered.len());
             let mut valid = true;
             for (_, entry_name) in &serializers.ordered {
-                let Some(entry_name) = entry_name else {
+                let FormCageEntry::Unique(entry_name) = entry_name else {
                     valid = false;
                     break;
                 };
@@ -5001,13 +4999,20 @@ fn form_cage_surface(
 }
 
 struct FormCageSerializers {
-    index: HashMap<u32, usize>,
-    ordered: Vec<(u32, Option<String>)>,
+    ordered: Vec<(u32, FormCageEntry)>,
+}
+
+enum FormCageEntry {
+    Unique(String),
+    Duplicate,
 }
 
 impl FormCageSerializers {
     fn entry_name(&self, surface: u32) -> Option<&str> {
-        self.ordered[*self.index.get(&surface)?].1.as_deref()
+        match &self.ordered.iter().find(|(key, _)| *key == surface)?.1 {
+            FormCageEntry::Unique(name) => Some(name),
+            FormCageEntry::Duplicate => None,
+        }
     }
 }
 
@@ -5017,8 +5022,7 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         .flat_map(|(_, offsets)| offsets.iter().copied())
         .collect::<Vec<_>>();
     offsets.sort_unstable();
-    let mut ordered = Vec::<(u32, Option<String>)>::new();
-    let mut index = HashMap::<u32, usize>::new();
+    let mut ordered = Vec::<(u32, FormCageEntry)>::new();
     for offset in offsets {
         let is_class_335 = bytes.get(offset + 4..offset + 7) == Some(b"335");
         if !matches!(
@@ -5070,14 +5074,13 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         if !is_class_335 && after_name + 11 != offset + form_serializer::LEN {
             continue;
         }
-        if let Some(position) = index.get(&surface).copied() {
-            ordered[position].1 = None;
+        if let Some((_, entry)) = ordered.iter_mut().find(|(key, _)| *key == surface) {
+            *entry = FormCageEntry::Duplicate;
         } else {
-            index.insert(surface, ordered.len());
-            ordered.push((surface, Some(entry_name)));
+            ordered.push((surface, FormCageEntry::Unique(entry_name)));
         }
     }
-    FormCageSerializers { index, ordered }
+    FormCageSerializers { ordered }
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
@@ -5144,13 +5147,13 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 }
 
 pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
+    let value = parameter.evaluated_value() * 10.0;
     (parameter
         .unit()
         .map(|field| field.value.as_str())
-        .is_some_and(design_length_unit))
-    .then_some(cadmpeg_ir::features::Length(
-        parameter.evaluated_value() * 10.0,
-    ))
+        .is_some_and(design_length_unit)
+        && value.is_finite())
+    .then_some(cadmpeg_ir::features::Length(value))
 }
 
 pub(crate) fn design_length_unit(unit: &str) -> bool {
@@ -6251,20 +6254,26 @@ fn resolved_loft_path(
     loft_path_from_edge_selection(&group.id, selection)
 }
 
+#[derive(Clone, Copy)]
+enum SurfacePatchRecipe {
+    Grouped,
+    Direct,
+}
+
 fn resolved_surface_patch_path(
     groups: &[&DesignConstructionOperandGroup],
     all_groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     scope: &DesignParameterScope,
-    grouped_recipe: bool,
+    recipe: SurfacePatchRecipe,
 ) -> cadmpeg_ir::features::PathRef {
     use cadmpeg_ir::features::PathRef;
 
     let paths = groups
         .iter()
         .map(|group| {
-            let selection = if grouped_recipe {
+            let selection = if matches!(recipe, SurfacePatchRecipe::Grouped) {
                 resolved_surface_patch_edge_group(
                     group,
                     all_groups,
@@ -6286,7 +6295,7 @@ fn resolved_surface_patch_path(
             loft_path_from_edge_selection(&group.id, selection)
         })
         .collect::<Vec<_>>();
-    if grouped_recipe {
+    if matches!(recipe, SurfacePatchRecipe::Grouped) {
         if let [path] = paths.as_slice() {
             return path.clone();
         }
@@ -7082,7 +7091,7 @@ pub(crate) fn project_surface_patch(
                 edge_operands,
                 edge_identity_operands,
                 scope,
-                true,
+                SurfacePatchRecipe::Grouped,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
@@ -7176,7 +7185,7 @@ pub(crate) fn project_surface_patch(
             edge_operands,
             edge_identity_operands,
             scope,
-            false,
+            SurfacePatchRecipe::Direct,
         )
     };
     Some(FeatureDefinition::FilledSurface {

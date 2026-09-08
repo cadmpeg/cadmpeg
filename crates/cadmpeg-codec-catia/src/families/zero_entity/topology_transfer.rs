@@ -20,7 +20,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::assemble::annotate;
 use crate::nurbs::canonical_model_curve_range;
 
-use super::records::{ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
+use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
 use super::topology::{
     endpoint_locus_candidates_with_budget, zero_entity_endpoint_pair_candidates_with_budget,
 };
@@ -312,9 +312,9 @@ pub(crate) fn transfer_closed_face_topology(
     let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
     for (vertex_index, locus) in endpoint_loci.iter().enumerate() {
         for &(edge_index, endpoint_index) in &locus.incident_endpoint_pair_endpoints {
-            let endpoint_index = usize::from(endpoint_index);
+            let edge_index = edge_index.ordinal();
+            let endpoint_index = usize::from(u8::from(endpoint_index));
             if edge_index >= edge_candidates.len()
-                || endpoint_index >= 2
                 || vertex_for_endpoint
                     .insert((edge_index, endpoint_index), vertex_index)
                     .is_some()
@@ -513,9 +513,9 @@ pub(crate) fn transfer_closed_face_topology(
             .and_then(|loops| loops.first())?
             .loop_class
         {
-            0x41 => Sense::Forward,
-            0xc1 => Sense::Reversed,
-            _ => return None,
+            ZeroEntityLoopClass::Outer41 => Sense::Forward,
+            ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
+            ZeroEntityLoopClass::Bound50 => return None,
         };
         annotate(
             annotations,
@@ -904,12 +904,16 @@ mod tests {
                     pos: face_ordinal as usize + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
-                    member_ids: vec![6, 5, 4],
+                    members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(
+                        7,
+                        1,
+                        std::num::NonZeroUsize::new(3).expect("nonzero loop member count"),
+                    )
+                    .expect("admitted loop member run"),
                     typed_references: vec![1, 2, 3],
                     support_record_ordinals,
-                    terminal_id: 7,
-                    gap: 1,
-                    loop_class: 0x41,
+
+                    loop_class: ZeroEntityLoopClass::Outer41,
                     forward_senses: vec![true, true, true],
                     oriented_model_endpoints: order
                         .into_iter()

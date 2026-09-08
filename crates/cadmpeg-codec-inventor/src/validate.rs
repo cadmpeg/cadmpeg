@@ -888,8 +888,6 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             label.identity.segment_token.as_str(),
             label.identity.record_ordinal,
         )) != Some(&label.identity.type_id.as_str())
-            || label.name.is_empty()
-            || label.class_id.len() != 32
             || references
                 .into_iter()
                 .any(|reference| !resolves(&label.identity.segment_token, reference))
@@ -997,7 +995,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     raw_feature.identity.segment_token.as_str(),
                     raw_feature.identity.record_ordinal,
                 ))
-                .is_none_or(|label| label.class_id != expected_class)
+                .is_none_or(|label| label.class_id() != expected_class)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1325,18 +1323,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
-    if data.active_carrier.len() != 1 {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor native data has {} active-carrier state records",
-                data.active_carrier.len()
-            ),
-            None,
-        ));
-        return;
-    }
-    let carrier = &data.active_carrier[0];
+    let carrier = &data.active_carrier;
     if let ActiveCarrierRecord::Selected {
         id,
         segment_token,
@@ -1410,7 +1397,7 @@ struct NativeData {
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     feature_record_issues: Vec<RecordIssue>,
-    active_carrier: Vec<ActiveCarrierRecord>,
+    active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
 }
 
@@ -1470,7 +1457,7 @@ impl NativeData {
             pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,
             pm_dc_entity_style_links: namespace.arena_as("pm_dc_entity_style_links")?,
             feature_record_issues: namespace.arena_as("feature_record_issues")?,
-            active_carrier: namespace.arena_as("active_carrier")?,
+            active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as("unknowns")?,
         })
     }
@@ -1813,7 +1800,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         findings,
         data.protein_assets
             .iter()
-            .map(|record| (record.entry_name.as_str(), record.ordinal)),
+            .map(|record| (record.entry_name.as_str(), record.ordinal())),
         "Protein decoded-record position",
     );
     let entry_names = data
@@ -1823,10 +1810,7 @@ fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
     for asset in &data.protein_assets {
-        if asset.ordinal != asset.asset.ordinal
-            || !asset.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(asset.entry_name.as_str())
-        {
+        if !entry_names.contains(asset.entry_name.as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor Protein asset position is inconsistent or does not resolve to a package entry"
@@ -1861,12 +1845,10 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
     let accepted_positions = data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .collect::<HashSet<_>>();
     for rejection in &data.protein_rejections {
-        if rejection.detail.is_empty()
-            || !rejection.entry_name.ends_with("InstanceProperties.bin")
-            || !entry_names.contains(rejection.entry_name.as_str())
+        if !entry_names.contains(rejection.entry_name.as_str())
             || accepted_positions.contains(&(rejection.entry_name.as_str(), rejection.ordinal))
         {
             findings.push(finding(
@@ -1884,7 +1866,7 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()
-        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .map(|record| (record.entry_name.as_str(), record.ordinal()))
         .chain(
             data.protein_rejections
                 .iter()
@@ -1949,15 +1931,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         .iter()
         .map(|state| state.ordinal)
         .collect::<HashSet<_>>();
-    for state in data.ufrx.model_states() {
-        if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor UFRxDoc model-state framing is inconsistent".into(),
-                Some(state.id.clone()),
-            ));
-        }
-    }
     if model_state_ordinals.len() != data.ufrx.model_states().len()
         || model_state_ordinals
             != (0..data.ufrx.model_states().len() as u32).collect::<HashSet<_>>()
@@ -1975,37 +1948,16 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     } = record
     {
         let representation_pair_present = representation.active_representation.is_some();
-        let empty_representation = representation
-            .active_representation
-            .as_ref()
-            .is_some_and(|(name, kind)| name.is_empty() || kind.is_empty());
         let expected_pair = document_kind(ir).and_then(|kind| match kind {
             "assembly" => Some(true),
             "part" => Some(false),
             _ => None,
         });
-        if empty_representation
-            || expected_pair.is_some_and(|expected| representation_pair_present != expected)
-            || representation.active_model_state.is_empty()
-        {
+        if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc representation state is inconsistent".into(),
                 Some(id.clone()),
-            ));
-        }
-    }
-    for reference in data.ufrx.external_references() {
-        if reference.path.is_empty()
-            && reference
-                .document_id
-                .chars()
-                .all(|character| character == '0')
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor external reference has neither a path nor a document id".into(),
-                Some(reference.id.clone()),
             ));
         }
     }
@@ -2017,15 +1969,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| record.ordinal),
         "embedded reference ordinal",
     );
-    for reference in data.ufrx.embedded_references() {
-        if reference.record_len == 0 || reference.record_sha256.len() != 64 {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor embedded-reference framing is inconsistent".into(),
-                Some(reference.id.clone()),
-            ));
-        }
-    }
     unique(
         findings,
         data.ufrx
@@ -2051,10 +1994,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         *actual_counts
             .entry(occurrence.file_reference_id)
             .or_default() += 1;
-        if occurrence.record_len == 0
-            || occurrence.record_sha256.len() != 64
-            || occurrence.header_padding_words > 8
-            || !reference_ids.contains(&occurrence.file_reference_id)
+        if !reference_ids.contains(&occurrence.file_reference_id)
             || (assembly_document && !assembly_ids.contains(&occurrence.occurrence_id))
         {
             findings.push(finding(
@@ -2103,8 +2043,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
     for placement in &data.assembly_placements {
-        if !occurrence_ids.contains(&placement.occurrence_id) || placement.suffix_sha256.len() != 64
-        {
+        if !occurrence_ids.contains(&placement.occurrence_id) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor assembly placement does not resolve to a finite occurrence".into(),

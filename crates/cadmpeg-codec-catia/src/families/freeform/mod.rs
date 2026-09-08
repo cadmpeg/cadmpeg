@@ -25,6 +25,9 @@ use crate::assemble::{
 };
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
+use crate::families::b5::graph::controls::{
+    B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl,
+};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 
@@ -211,26 +214,21 @@ pub(crate) fn append_consolidated_revolutions(
 
 fn typed_face_counts(
     records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
-    resolved_count: usize,
+    resolved_faces: &[crate::families::b5::graph::B5Face],
 ) -> [usize; 4] {
-    let controls = records.values().fold([0usize; 3], |mut counts, face| {
+    let resolved_ids = resolved_faces
+        .iter()
+        .map(|face| face.object_id)
+        .collect::<HashSet<_>>();
+    records.values().fold([0usize; 4], |mut counts, face| {
         match face.terminal_control {
-            Some(0x03) => counts[0] += 1,
-            Some(0x05) => counts[1] += 1,
+            Some(B5FramingControl::Control03) => counts[0] += 1,
+            Some(B5FramingControl::Control05) => counts[1] += 1,
             None => counts[2] += 1,
-            Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
         }
+        counts[3] += usize::from(!resolved_ids.contains(&face.object_id));
         counts
-    });
-    [
-        controls[0],
-        controls[1],
-        controls[2],
-        records
-            .len()
-            .checked_sub(resolved_count)
-            .expect("resolved faces are a subset of typed face records"),
-    ]
+    })
 }
 
 fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
@@ -263,11 +261,10 @@ fn loop_metadata_counts<'a>(
 ) -> [usize; 5] {
     records.fold([0usize; 5], |mut counts, loop_| {
         let index = match loop_.metadata.framing_controls {
-            [0x03, 0x03] => 0,
-            [0x03, 0x05] => 1,
-            [0x05, 0x03] => 2,
-            [0x05, 0x05] => 3,
-            _ => unreachable!("the loop parser admits only controls 03 and 05"),
+            [B5FramingControl::Control03, B5FramingControl::Control03] => 0,
+            [B5FramingControl::Control03, B5FramingControl::Control05] => 1,
+            [B5FramingControl::Control05, B5FramingControl::Control03] => 2,
+            [B5FramingControl::Control05, B5FramingControl::Control05] => 3,
         };
         counts[index] += 1;
         counts[4] += usize::from(loop_.metadata.extension.is_some());
@@ -338,20 +335,19 @@ pub(crate) fn try_decode_freeform_surfaces(
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
             match face.terminal_control {
-                Some(0x03) => counts[0] += 1,
-                Some(0x05) => counts[1] += 1,
+                Some(B5FramingControl::Control03) => counts[0] += 1,
+                Some(B5FramingControl::Control05) => counts[1] += 1,
                 None => counts[2] += 1,
-                Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
             }
             counts
         })
     });
     let typed_face_counts = if let Some(graph) = &b5_graph {
-        Some(typed_face_counts(&graph.face_records, graph.faces.len()))
+        Some(typed_face_counts(&graph.face_records, &graph.faces))
     } else {
         let records =
             crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
-        (!records.is_empty()).then(|| typed_face_counts(&records, 0))
+        (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
     };
     let typed_multi_surface_face_count = b5_graph
         .as_ref()
@@ -364,15 +360,14 @@ pub(crate) fn try_decode_freeform_surfaces(
             .values()
             .fold([0usize; 8], |mut counts, edge| {
                 let index = match edge.terminal_control {
-                    0x01 => 0,
-                    0x02 => 1,
-                    0x21 => 2,
-                    0x22 => 3,
-                    0x25 => 4,
-                    0x26 => 5,
-                    0x29 => 6,
-                    0x2a => 7,
-                    _ => unreachable!("the edge parser admits only declared controls"),
+                    B5EdgeTerminalControl::Control01 => 0,
+                    B5EdgeTerminalControl::Control02 => 1,
+                    B5EdgeTerminalControl::Control21 => 2,
+                    B5EdgeTerminalControl::Control22 => 3,
+                    B5EdgeTerminalControl::Control25 => 4,
+                    B5EdgeTerminalControl::Control26 => 5,
+                    B5EdgeTerminalControl::Control29 => 6,
+                    B5EdgeTerminalControl::Control2A => 7,
                 };
                 counts[index] += 1;
                 counts
@@ -388,11 +383,8 @@ pub(crate) fn try_decode_freeform_surfaces(
                 .values()
                 .fold([0usize; 2], |mut counts, link| {
                     match link.terminal_control {
-                        0x00 => counts[0] += 1,
-                        0x04 => counts[1] += 1,
-                        _ => unreachable!(
-                            "the vertex-incidence parser admits only controls 00 and 04"
-                        ),
+                        B5VertexIncidenceControl::Control00 => counts[0] += 1,
+                        B5VertexIncidenceControl::Control04 => counts[1] += 1,
                     }
                     counts
                 })
@@ -829,7 +821,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage,
             losses,
             notes: Vec::new(),
@@ -2794,6 +2786,42 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn typed_face_counts_partition_the_parsed_record_identities() {
+        use crate::families::b5::graph::{parse, parse_from_records, B5Record};
+        use crate::test_support::{append_b5_record, b5_closed_triangle_stream};
+
+        let mut bytes = b5_closed_triangle_stream();
+        append_b5_record(
+            &mut bytes,
+            0x5f,
+            902,
+            &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+        );
+        let graph = parse(&bytes).expect("one resolved and one unresolved face");
+        assert_eq!(graph.face_records.len(), 2);
+        assert_eq!(graph.faces.len(), 1);
+        assert!(graph
+            .faces
+            .iter()
+            .all(|face| graph.face_records.contains_key(&face.object_id)));
+        assert_eq!(
+            typed_face_counts(&graph.face_records, &graph.faces),
+            [1, 1, 0, 1]
+        );
+        assert_eq!(typed_face_counts(&graph.face_records, &[]), [1, 1, 0, 2]);
+
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x5f,
+            object_id: 902,
+            payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+        };
+        assert!(parse_from_records(&[], std::slice::from_ref(&record), &[], false).is_some());
+        assert!(parse_from_records(&[], &[record.clone(), record], &[], false).is_none());
+    }
 
     #[test]
     fn object_stream_selection_uses_the_unique_topology_root_run() {

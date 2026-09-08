@@ -130,9 +130,11 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{index}")),
         unit: ExpressionUnit::Millimeter,
         expression: index.to_string(),
-        value: Some(f64::from(index)),
+        value: Some(
+            crate::native::om::finite_value::FiniteValue::try_from(f64::from(index)).unwrap(),
+        ),
         source_entry: source_entry.into(),
-        source_table: source_table.into(),
+        source_table: cadmpeg_ir::NonEmptyString::new(source_table).unwrap(),
         source_offset: u64::from(index),
     };
     let mut expressions = [
@@ -165,7 +167,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     .is_empty());
 
     expressions[2].source_entry = "section-a".into();
-    expressions[2].source_table = "table-a".into();
+    expressions[2].source_table = cadmpeg_ir::NonEmptyString::new("table-a").unwrap();
     assert_eq!(
         super::feature_block_dimensions(
             std::slice::from_ref(&construction),
@@ -401,9 +403,11 @@ fn feature_history_links_follow_unique_physical_section_order() {
         row: format!("row-{id}"),
         slot: SegmentIndexSlot::Value,
         schema_role,
-        separator_byte_len: (section_offset - source_offset) as u32,
-        source_offset,
-        section_offset,
+        location: crate::native::segments::om_location::OmLocation::new(
+            source_offset,
+            (section_offset - source_offset) as u32,
+        )
+        .unwrap(),
     };
     let links = super::canonical_feature_history_links([
         link("late", OmSchemaRole::FeatureHistory, 300, 300),
@@ -415,7 +419,7 @@ fn feature_history_links_follow_unique_physical_section_order() {
     assert_eq!(
         links
             .iter()
-            .map(|link| (link.id.as_str(), link.section_offset))
+            .map(|link| (link.id.as_str(), link.location.section_offset()))
             .collect::<Vec<_>>(),
         [("duplicate", 100), ("late", 300)]
     );

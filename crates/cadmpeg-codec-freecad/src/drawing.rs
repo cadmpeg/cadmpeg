@@ -8,7 +8,7 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, DrawingRole, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -30,8 +30,13 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             ensure_unique_property_names(&owned)?;
-            let role = if is_page_type(&object.type_name) {
-                DrawingRole::Page {
+            let kind = if is_page_type(&object.type_name) {
+                TechDrawKind::Page {
+                    runtime: if object.type_name == "TechDraw::DrawPage" {
+                        crate::native::TechDrawPageKind::Page
+                    } else {
+                        crate::native::TechDrawPageKind::Python
+                    },
                     views: typed_links(&owned, "Views", "App::PropertyLinkList")?
                         .into_iter()
                         .filter_map(|link| link.object().map(str::to_owned))
@@ -40,13 +45,13 @@ pub(crate) fn transfer(
                         .and_then(|link| link.object().map(str::to_owned)),
                 }
             } else {
-                DrawingRole::Other
+                TechDrawKind::try_new(object.type_name.clone(), Vec::new(), None)
+                    .map_err(CodecError::malformed)?
             };
             Ok(DrawingRecord {
                 id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
-                kind: object.type_name.clone(),
-                role,
+                kind,
                 sources: [
                     "Source",
                     "XSource",
@@ -184,7 +189,7 @@ pub(crate) fn transfer_neutral(
                 Ok((role.clone(), targets))
             })
             .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
-        let template = if is_page_type(&record.kind) {
+        let template = if matches!(record.kind, TechDrawKind::Page { .. }) {
             record
                 .relationships
                 .get("Template")
@@ -203,8 +208,8 @@ pub(crate) fn transfer_neutral(
             id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
                 .expect("identity grammar"),
             object: record.object.clone(),
-            kind: classify(&record.kind),
-            runtime_type: record.kind.clone(),
+            kind: classify(record.kind.as_str()),
+            runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             visible: None,
             relationships,
@@ -582,7 +587,7 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "drawing property {} has invalid XML: {error}",
             property.id

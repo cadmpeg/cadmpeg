@@ -1800,12 +1800,13 @@ pub(crate) fn exact_assembly_alignment(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
+    let generation = crate::design::assembly::AssemblyScopeGeneration::new(
+        scope.frame_length,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    );
     let legacy_class_388 = matches!(
-        crate::design::assembly::operand_frame_variant(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+        generation.operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     );
     if legacy_class_388 {
@@ -1833,21 +1834,11 @@ pub(crate) fn exact_assembly_alignment(
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
-            && crate::design::assembly::operand_frame_variant(
-                scope.frame_length,
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_none()
+            && generation.operand_frame_variant().is_none()
         {
             return None;
         }
-        let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-            lanes.len(),
-        )?;
+        let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
@@ -3027,11 +3018,12 @@ fn exact_assembly_operand_frames(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let frame_variant = crate::design::assembly::operand_frame_variant(
+    let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_frame_variant()?;
     let frame_offsets = match frame_variant {
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
             class_388_assemble::FIRST_OPERAND_REFERENCE,
@@ -3648,11 +3640,12 @@ fn exact_legacy_class_388_operand_paths(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !matches!(
-        crate::design::assembly::operand_frame_variant(
+        crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length,
             scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+            scope.paired_class_tag.as_str()
+        )
+        .operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
@@ -3961,11 +3954,12 @@ fn exact_assembly_operand_paths(
     let search_start = usize::try_from(scope.paired_byte_offset)
         .ok()?
         .checked_add(11)?;
-    let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
+    let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_path_locator_offsets()?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
     if View::u32_le_at(bytes, count_at)? != 2 {

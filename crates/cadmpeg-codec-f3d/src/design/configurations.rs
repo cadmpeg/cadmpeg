@@ -6,7 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::dimensions::json_scalar_text;
-use crate::ids::neutral_configuration_id;
+use crate::ids::{self, neutral_configuration_id};
 use crate::records::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::CodecError;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
@@ -88,29 +88,29 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
                     entry.name
                 ))
             })?;
-            if !payload.is_object() {
+            let serde_json::Value::Object(payload) = payload else {
                 return Err(CodecError::malformed(format_args!(
                     "F3D configuration JSON must be an object: {}",
                     entry.name
                 )));
-            }
+            };
             let kind = if entry.name.ends_with(".dsgcfgrule") {
                 DesignConfigurationKind::Rule
             } else {
                 DesignConfigurationKind::Table
             };
-            validate_configuration_payload(&entry.name, kind, &payload)?;
             let variant_order = if kind == DesignConfigurationKind::Table {
                 parse_configuration_variant_order(&entry.name, bytes)?
             } else {
                 Vec::new()
             };
-            Ok(DesignConfiguration::new(
+            DesignConfiguration::try_new(
+                ids::configuration_entry_id(&entry.name),
                 entry.name.clone(),
                 kind,
                 variant_order,
                 payload,
-            ))
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();
@@ -133,13 +133,8 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
 pub(crate) fn validate_configuration_payload(
     entry_name: &str,
     kind: DesignConfigurationKind,
-    payload: &serde_json::Value,
+    object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), CodecError> {
-    let object = payload.as_object().ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3D configuration JSON must be an object: {entry_name}"
-        ))
-    })?;
     if kind == DesignConfigurationKind::Rule {
         // Rules need typed `when` and `activate` strings; other shapes stay native JSON.
         return Ok(());
@@ -219,9 +214,9 @@ pub(crate) fn validate_configuration_payload(
 pub(crate) fn validate_configuration_variant_order(
     configuration: &DesignConfiguration,
 ) -> Result<(), CodecError> {
-    if configuration.kind == DesignConfigurationKind::Rule {
+    if configuration.kind() == DesignConfigurationKind::Rule {
         return configuration
-            .variant_order
+            .variant_order()
             .is_empty()
             .then_some(())
             .ok_or_else(|| {
@@ -232,18 +227,18 @@ pub(crate) fn validate_configuration_variant_order(
             });
     }
     let variants = configuration
-        .payload
+        .payload()
         .get("configurations")
         .and_then(serde_json::Value::as_object);
     let count = variants.map_or(0, serde_json::Map::len);
-    if configuration.variant_order.is_empty() && count <= 1 {
+    if configuration.variant_order().is_empty() && count <= 1 {
         return Ok(());
     }
-    let mut unique = HashSet::with_capacity(configuration.variant_order.len());
+    let mut unique = HashSet::with_capacity(configuration.variant_order().len());
     let valid = variants.is_some_and(|variants| {
-        configuration.variant_order.len() == variants.len()
+        configuration.variant_order().len() == variants.len()
             && configuration
-                .variant_order
+                .variant_order()
                 .iter()
                 .all(|name| unique.insert(name) && variants.contains_key(name))
     });
@@ -259,17 +254,17 @@ fn ordered_configuration_variants(
     configuration: &DesignConfiguration,
 ) -> Vec<(&String, &serde_json::Value)> {
     let Some(variants) = configuration
-        .payload
+        .payload()
         .get("configurations")
         .and_then(serde_json::Value::as_object)
     else {
         return Vec::new();
     };
-    if configuration.variant_order.is_empty() {
+    if configuration.variant_order().is_empty() {
         return variants.iter().collect();
     }
     configuration
-        .variant_order
+        .variant_order()
         .iter()
         .map(|name| {
             (
@@ -293,12 +288,12 @@ impl Serialize for OrderedConfigurationVariants<'_> {
         S: Serializer,
     {
         let mut map = serializer.serialize_map(Some(self.variants.len()))?;
-        if self.configuration.variant_order.is_empty() {
+        if self.configuration.variant_order().is_empty() {
             for (name, value) in self.variants {
                 map.serialize_entry(name, value)?;
             }
         } else {
-            for name in &self.configuration.variant_order {
+            for name in self.configuration.variant_order() {
                 map.serialize_entry(name, &self.variants[name])?;
             }
         }
@@ -313,14 +308,10 @@ impl Serialize for OrderedConfigurationPayload<'_> {
     where
         S: Serializer,
     {
-        let object = self
-            .0
-            .payload
-            .as_object()
-            .expect("validated configuration payload is an object");
+        let object = self.0.payload();
         let mut map = serializer.serialize_map(Some(object.len()))?;
         for (name, value) in object {
-            if name == "configurations" && self.0.kind == DesignConfigurationKind::Table {
+            if name == "configurations" && self.0.kind() == DesignConfigurationKind::Table {
                 let variants = value
                     .as_object()
                     .expect("validated configuration variants are an object");
@@ -343,12 +334,6 @@ impl Serialize for OrderedConfigurationPayload<'_> {
 pub(crate) fn encode_configuration_payload(
     configuration: &DesignConfiguration,
 ) -> Result<Vec<u8>, CodecError> {
-    validate_configuration_payload(
-        configuration.entry_name(),
-        configuration.kind,
-        &configuration.payload,
-    )?;
-    validate_configuration_variant_order(configuration)?;
     serde_json::to_vec(&OrderedConfigurationPayload(configuration)).map_err(|error| {
         CodecError::malformed(format_args!(
             "cannot encode F3D configuration JSON {}: {error}",
@@ -366,20 +351,12 @@ pub fn project_configurations(
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
     use std::collections::BTreeMap;
 
-    for configuration in native {
-        validate_configuration_payload(
-            configuration.entry_name(),
-            configuration.kind,
-            &configuration.payload,
-        )?;
-        validate_configuration_variant_order(configuration)?;
-    }
     if native
         .iter()
-        .filter(|configuration| configuration.kind == DesignConfigurationKind::Table)
+        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Table)
         .filter(|configuration| {
             configuration
-                .payload
+                .payload()
                 .get("configurations")
                 .and_then(serde_json::Value::as_object)
                 .is_some_and(|variants| !variants.is_empty())
@@ -395,10 +372,10 @@ pub fn project_configurations(
     let mut projected = Vec::new();
     for table in native
         .iter()
-        .filter(|configuration| configuration.kind == DesignConfigurationKind::Table)
+        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Table)
     {
         let active = table
-            .payload
+            .payload()
             .get("active")
             .and_then(serde_json::Value::as_str);
         for (name, definition) in ordered_configuration_variants(table) {
@@ -445,13 +422,17 @@ pub fn project_configurations(
     }
     for rule in native
         .iter()
-        .filter(|configuration| configuration.kind == DesignConfigurationKind::Rule)
+        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Rule)
     {
-        let Some(condition) = rule.payload.get("when").and_then(serde_json::Value::as_str) else {
+        let Some(condition) = rule
+            .payload()
+            .get("when")
+            .and_then(serde_json::Value::as_str)
+        else {
             continue;
         };
         let Some(target) = rule
-            .payload
+            .payload()
             .get("activate")
             .and_then(serde_json::Value::as_str)
         else {
@@ -572,13 +553,7 @@ pub(crate) fn unresolved_configuration_rule_count(
 ) -> usize {
     native
         .iter()
-        .filter(|rule| {
-            rule.kind == DesignConfigurationKind::Rule
-                && rule
-                    .payload
-                    .as_object()
-                    .is_some_and(|object| !object.is_empty())
-        })
+        .filter(|rule| rule.kind() == DesignConfigurationKind::Rule && !rule.payload().is_empty())
         .filter(|rule| {
             !projected.iter().any(|configuration| {
                 configuration
@@ -593,10 +568,8 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
     native
         .iter()
         .map(|configuration| {
-            let Some(object) = configuration.payload.as_object() else {
-                return 0;
-            };
-            match configuration.kind {
+            let object = configuration.payload();
+            match configuration.kind() {
                 DesignConfigurationKind::Rule => object
                     .keys()
                     .filter(|key| !matches!(key.as_str(), "when" | "activate"))
@@ -631,7 +604,6 @@ mod tests {
         encode_configuration_payload, parse_configuration_variant_order, project_configurations,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
-        validate_configuration_payload, validate_configuration_variant_order,
     };
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     use cadmpeg_ir::features::{
@@ -646,13 +618,13 @@ mod tests {
         let variant_order = parse_configuration_variant_order("table.dsgcfg", bytes).unwrap();
         assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
-        let table = DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-            id: "f3d:configuration:entry#table.dsgcfg".into(),
-            entry_name: "table.dsgcfg".into(),
-            kind: DesignConfigurationKind::Table,
+        let table = DesignConfiguration::try_new(
+            "f3d:configuration:entry#table.dsgcfg".into(),
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
             variant_order,
-            payload,
-        })
+            (payload).as_object().unwrap().clone(),
+        )
         .unwrap();
         let projected = project_configurations(std::slice::from_ref(&table)).unwrap();
         let mut authored = projected
@@ -669,9 +641,6 @@ mod tests {
             ["Small", "Medium", "Large"]
         );
 
-        let mut incomplete = table;
-        incomplete.variant_order.pop();
-        assert!(validate_configuration_variant_order(&incomplete).is_err());
         assert!(parse_configuration_variant_order(
             "table.dsgcfg",
             br#"{"configurations":{"Small":{},"Small":{}}}"#,
@@ -687,51 +656,14 @@ mod tests {
     }
 
     #[test]
-    fn configuration_parameter_overrides_require_scalar_values() {
-        let scalar_parameters = serde_json::json!({
-            "configurations": {
-                "variant": {
-                    "parameters": {
-                        "string": "25 mm",
-                        "number": 2.5,
-                        "boolean": true,
-                        "null": null
-                    }
-                }
-            }
-        });
-        assert!(validate_configuration_payload(
-            "table.dsgcfg",
-            DesignConfigurationKind::Table,
-            &scalar_parameters,
-        )
-        .is_ok());
-
-        for value in [
-            serde_json::json!(["25 mm"]),
-            serde_json::json!({"value": "25 mm"}),
-        ] {
-            let payload = serde_json::json!({
-                "configurations": {"variant": {"parameters": {"width": value}}}
-            });
-            assert!(validate_configuration_payload(
-                "table.dsgcfg",
-                DesignConfigurationKind::Table,
-                &payload,
-            )
-            .is_err());
-        }
-    }
-
-    #[test]
     fn configuration_unknown_members_are_counted_at_each_semantic_level() {
         let native = [
-            DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-                id: "f3d:configuration:entry#table.dsgcfg".into(),
-                entry_name: "table.dsgcfg".into(),
-                kind: DesignConfigurationKind::Table,
-                variant_order: vec!["variant".into()],
-                payload: serde_json::json!({
+            DesignConfiguration::try_new(
+                "f3d:configuration:entry#table.dsgcfg".into(),
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["variant".into()],
+                (serde_json::json!({
                     "active": "variant",
                     "table_unknown": 1,
                     "configurations": {
@@ -742,20 +674,26 @@ mod tests {
                             "variant_unknown": true
                         }
                     }
-                }),
-            })
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
             .unwrap(),
-            DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-                id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
-                entry_name: "rule.dsgcfgrule".into(),
-                kind: DesignConfigurationKind::Rule,
-                variant_order: Vec::new(),
-                payload: serde_json::json!({
+            DesignConfiguration::try_new(
+                "f3d:configuration:entry#rule.dsgcfgrule".into(),
+                "rule.dsgcfgrule".into(),
+                DesignConfigurationKind::Rule,
+                Vec::new(),
+                (serde_json::json!({
                     "when": "width > 20 mm",
                     "activate": "variant",
                     "rule_unknown": null
-                }),
-            })
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
             .unwrap(),
         ];
         assert_eq!(unresolved_configuration_member_count(&native), 3);
@@ -763,22 +701,17 @@ mod tests {
 
     #[test]
     fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
-        let native = [
-            DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-                id: "f3d:configuration:entry#partial.dsgcfgrule".into(),
-                entry_name: "partial.dsgcfgrule".into(),
-                kind: DesignConfigurationKind::Rule,
-                variant_order: Vec::new(),
-                payload: serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}),
-            })
-            .unwrap(),
-        ];
-        assert!(validate_configuration_payload(
-            "partial.dsgcfgrule",
+        let native = [DesignConfiguration::try_new(
+            "f3d:configuration:entry#partial.dsgcfgrule".into(),
+            "partial.dsgcfgrule".into(),
             DesignConfigurationKind::Rule,
-            &native[0].payload,
+            Vec::new(),
+            (serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}))
+                .as_object()
+                .unwrap()
+                .clone(),
         )
-        .is_ok());
+        .unwrap()];
         let projected = project_configurations(&native).expect("empty rule projection");
         assert!(projected.is_empty());
         assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
@@ -787,22 +720,28 @@ mod tests {
     #[test]
     fn configuration_rules_bind_only_one_named_variant() {
         let table = |entry_name: &str, variant_name: &str| {
-            DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-                id: format!("f3d:configuration:entry#{entry_name}"),
-                entry_name: entry_name.into(),
-                kind: DesignConfigurationKind::Table,
-                variant_order: vec![variant_name.into()],
-                payload: serde_json::json!({"configurations": {variant_name: {}}}),
-            })
+            DesignConfiguration::try_new(
+                format!("f3d:configuration:entry#{entry_name}"),
+                entry_name.into(),
+                DesignConfigurationKind::Table,
+                vec![variant_name.into()],
+                (serde_json::json!({"configurations": {variant_name: {}}}))
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
             .unwrap()
         };
-        let rule = DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-            id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
-            entry_name: "rule.dsgcfgrule".into(),
-            kind: DesignConfigurationKind::Rule,
-            variant_order: Vec::new(),
-            payload: serde_json::json!({"when": "width > 20 mm", "activate": "wide"}),
-        })
+        let rule = DesignConfiguration::try_new(
+            "f3d:configuration:entry#rule.dsgcfgrule".into(),
+            "rule.dsgcfgrule".into(),
+            DesignConfigurationKind::Rule,
+            Vec::new(),
+            (serde_json::json!({"when": "width > 20 mm", "activate": "wide"}))
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
         .unwrap();
         let native = [table("table.dsgcfg", "wide"), rule.clone()];
         let projected = project_configurations(&native).expect("ordered configuration table");
@@ -826,15 +765,18 @@ mod tests {
 
     #[test]
     fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
-        let table = DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-            id: "f3d:configuration:entry#table.dsgcfg".into(),
-            entry_name: "table.dsgcfg".into(),
-            kind: DesignConfigurationKind::Table,
-            variant_order: vec!["wide".into()],
-            payload: serde_json::json!({
+        let table = DesignConfiguration::try_new(
+            "f3d:configuration:entry#table.dsgcfg".into(),
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["wide".into()],
+            (serde_json::json!({
                 "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
-            }),
-        })
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
         .unwrap();
         let parameter = NeutralParameter {
             id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
@@ -862,16 +804,17 @@ mod tests {
             id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
-        let mut ambiguous = project_configurations(&[DesignConfiguration::try_from(
-            crate::records::DesignConfigurationWire {
-                id: "f3d:configuration:entry#other.dsgcfg".into(),
-                entry_name: "other.dsgcfg".into(),
-                kind: DesignConfigurationKind::Table,
-                variant_order: vec!["wide".into()],
-                payload: serde_json::json!({
-                    "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
-                }),
-            },
+        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
+            "f3d:configuration:entry#other.dsgcfg".into(),
+            "other.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["wide".into()],
+            (serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
         )
         .unwrap()])
         .expect("ordered configuration table");
@@ -885,15 +828,18 @@ mod tests {
 
     #[test]
     fn configuration_suppression_binds_only_unique_feature_names() {
-        let table = DesignConfiguration::try_from(crate::records::DesignConfigurationWire {
-            id: "f3d:configuration:entry#table.dsgcfg".into(),
-            entry_name: "table.dsgcfg".into(),
-            kind: DesignConfigurationKind::Table,
-            variant_order: vec!["alternate".into()],
-            payload: serde_json::json!({
+        let table = DesignConfiguration::try_new(
+            "f3d:configuration:entry#table.dsgcfg".into(),
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["alternate".into()],
+            (serde_json::json!({
                 "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-            }),
-        })
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
         .unwrap();
         let feature = Feature {
             id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
@@ -928,16 +874,17 @@ mod tests {
             id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
-        let mut ambiguous = project_configurations(&[DesignConfiguration::try_from(
-            crate::records::DesignConfigurationWire {
-                id: "f3d:configuration:entry#other.dsgcfg".into(),
-                entry_name: "other.dsgcfg".into(),
-                kind: DesignConfigurationKind::Table,
-                variant_order: vec!["alternate".into()],
-                payload: serde_json::json!({
-                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-                }),
-            },
+        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
+            "f3d:configuration:entry#other.dsgcfg".into(),
+            "other.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["alternate".into()],
+            (serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
         )
         .unwrap()])
         .expect("ordered configuration table");

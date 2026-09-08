@@ -404,10 +404,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .iter()
             .filter(|span| span.entry == entry.name)
             .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.start);
-        assert_eq!(spans.first().map(|span| span.start), Some(0));
-        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
-        assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
+        spans.sort_by_key(|span| span.span.start());
+        assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
+        assert_eq!(
+            spans.last().map(|span| span.span.end()),
+            Some(entry.byte_len())
+        );
+        assert!(spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start()));
     }
     assert!(ledger
         .iter()
