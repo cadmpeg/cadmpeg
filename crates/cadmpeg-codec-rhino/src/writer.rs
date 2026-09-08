@@ -288,7 +288,6 @@ struct WritePlan<'a> {
     surfaces: Vec<(&'a str, WritableFaceSurface<'a>)>,
     brep_records: std::fs::File,
     topology_points: std::collections::BTreeSet<String>,
-
     point_groups: Vec<PointGroup>,
 }
 
@@ -742,10 +741,10 @@ fn prepare_write(
         )?)?;
     }
     Ok(WritePlan {
-        brep_records,
-        topology_points,
         curves,
         surfaces,
+        brep_records,
+        topology_points,
         point_groups,
     })
 }
