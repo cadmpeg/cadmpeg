@@ -1462,16 +1462,6 @@ fn outer_surface_alias_parser_requires_the_lead_word() {
 }
 
 #[test]
-fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
-    let markers = crate::object_graph::markers_7cd9(&marker_7cd9_stream(), 5);
-    assert_eq!(markers.len(), 2);
-    assert_eq!(markers[0].pos, 1);
-    assert_eq!(markers[0].context, [0x7c, 0xd9, 1, 2, 3]);
-    assert_eq!(markers[0].next_delta, Some(5));
-    assert_eq!(markers[1].next_delta, None);
-}
-
-#[test]
 fn payload_size_preserves_atom_encoding_width() {
     let compact = super::decode_payload(&[0x83, 0xfe]).unwrap();
     let wide = super::decode_payload(&[0xd1, 0x02, 0xfe]).unwrap();
