@@ -7456,7 +7456,7 @@ fn consolidated_cone_faces(
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
         })
-        .map(|record| (record.range.start, record.range.end))
+        .filter_map(|record| record.range().map(|range| (range.start, range.end)))
         .collect::<HashMap<_, _>>();
     crate::families::b2::records::b2_cone_faces(bytes)
         .into_iter()
@@ -8363,7 +8363,7 @@ fn consolidated_edge_nodes(
         })
         .map(|record| {
             (
-                record.range.start,
+                record.byte_offset(),
                 (record.width, record.flag, record.source_index),
             )
         })
