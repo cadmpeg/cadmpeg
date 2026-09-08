@@ -16,6 +16,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
 use super::document::{reject_non_cadir, resolve_one, ResolveError};
+use super::output::{Output, OutputArgs};
 use super::{print_json, read_input};
 
 /// Input selection for `query item`.
@@ -33,34 +34,9 @@ pub struct ItemArgs {
     /// Print the first N records in arena order. Conflicts with explicit IDs.
     #[arg(long, value_name = "N", conflicts_with = "ids")]
     pub head: Option<usize>,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap matched records in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl ItemArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
-}
-
-/// Record-oriented query output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Output<'a> {
-    Pretty,
-    Tsv(&'a [String]),
-    Json,
+    /// Record output selection.
+    #[command(flatten)]
+    pub(crate) output: OutputArgs,
 }
 
 /// Where the requested arena lives in the document.
@@ -155,7 +131,8 @@ fn string_id(raw: &RawValue) -> Option<String> {
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
+pub fn run(args: &ItemArgs) -> Result<()> {
+    let output = args.output.mode();
     let bytes = read_input(&args.file)?;
     reject_non_cadir(&bytes, &args.file, "item")?;
 
