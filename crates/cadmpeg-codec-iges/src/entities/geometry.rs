@@ -1208,7 +1208,7 @@ pub(crate) fn project_geometry(
 ) -> Result<Projection, CodecError> {
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.use_flag().is_some_and(|use_flag| {
+        entry.status.use_flag(global_table).is_some_and(|use_flag| {
             base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table)
         }) && base_geometry_line_font_valid(
             entry.entity_type,
@@ -1219,7 +1219,7 @@ pub(crate) fn project_geometry(
     };
     let mut losses = Vec::new();
     for entry in directory {
-        let Some(use_flag) = entry.status.use_flag() else {
+        let Some(use_flag) = entry.status.use_flag(global_table) else {
             losses.push(entity_loss(
                 entry,
                 format!(

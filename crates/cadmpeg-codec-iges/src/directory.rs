@@ -19,8 +19,6 @@ pub(crate) struct SourceStatus {
     use_flag: u8,
     #[serde(rename = "hierarchy_status")]
     hierarchy: u8,
-    #[serde(skip)]
-    global_table: GlobalTable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,8 +95,8 @@ impl SourceStatus {
         Subordinate::parse(self.subordinate)
     }
 
-    pub(crate) fn use_flag(self) -> Option<UseFlag> {
-        UseFlag::parse(self.use_flag, self.global_table)
+    pub(crate) fn use_flag(self, global_table: GlobalTable) -> Option<UseFlag> {
+        UseFlag::parse(self.use_flag, global_table)
     }
 
     pub(crate) fn hierarchy(self) -> Option<Hierarchy> {
@@ -124,16 +122,12 @@ impl SourceStatus {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_codes(
-        [blank, subordinate, use_flag, hierarchy]: [u8; 4],
-        global_table: GlobalTable,
-    ) -> Self {
+    pub(crate) fn from_codes([blank, subordinate, use_flag, hierarchy]: [u8; 4]) -> Self {
         Self {
             blank,
             subordinate,
             use_flag,
             hierarchy,
-            global_table,
         }
     }
 
@@ -148,9 +142,8 @@ impl SourceStatus {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_use_flag(&mut self, value: u8, global_table: GlobalTable) {
+    pub(crate) fn set_use_flag(&mut self, value: u8) {
         self.use_flag = value;
-        self.global_table = global_table;
     }
 
     #[cfg(test)]
@@ -315,7 +308,6 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, Dir
             subordinate: 0,
             use_flag: 0,
             hierarchy: 0,
-            global_table,
         });
     }
     let mut digits = [b'0'; 8];
@@ -348,7 +340,6 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, Dir
         subordinate: pair(2),
         use_flag: pair(4),
         hierarchy: pair(6),
-        global_table,
     })
 }
 

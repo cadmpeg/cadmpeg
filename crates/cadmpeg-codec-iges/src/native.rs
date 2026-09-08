@@ -3906,7 +3906,7 @@ pub(crate) fn store(
                                             ReferenceExpectation::Named(
                                                 ExpectationLabel::NonAssociativityOrType402Form7,
                                             ),
-                                            flow_join_target_valid,
+                                            |target| flow_join_target_valid(target, global.global_table()),
                                         )
                                     })
                                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
@@ -5041,7 +5041,8 @@ pub(crate) fn store(
                                         ExpectationLabel::DrawingSpaceAnnotation,
                                     ),
                                     |target| {
-                                        target.status.use_flag() == Some(UseFlag::Annotation)
+                                        target.status.use_flag(global.global_table())
+                                            == Some(UseFlag::Annotation)
                                             && target.status.is_physically_dependent()
                                     },
                                 )
