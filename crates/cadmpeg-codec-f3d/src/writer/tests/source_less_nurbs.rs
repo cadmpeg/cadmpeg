@@ -1002,16 +1002,18 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
 
     // The directrix sense Boolean is stored, not assumed: the opposite value
     // survives the same round trip.
-    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            revision_form: Some(form),
-            ..
-        } = definition
-        else {
-            unreachable!("revision-gated extrusion")
-        };
-        form.flags = vec![false];
-    });
+    source_less.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Extrusion {
+                revision_form: Some(form),
+                ..
+            } = definition
+            else {
+                unreachable!("revision-gated extrusion")
+            };
+            form.flags = vec![false];
+        })
+        .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1207,20 +1209,22 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let directrix = source_less.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            direction,
-            ..
-        } = definition
-        else {
-            panic!("expected extrusion definition")
-        };
-        *parameter_interval = Some([0.0, std::f64::consts::TAU]);
-        *direction = Vector3::new(0.0, 0.0, -20.0);
-        directrix.clone()
-    });
+    let directrix = source_less.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval,
+                direction,
+                ..
+            } = definition
+            else {
+                panic!("expected extrusion definition")
+            };
+            *parameter_interval = Some([0.0, std::f64::consts::TAU]);
+            *direction = Vector3::new(0.0, 0.0, -20.0);
+            directrix.clone()
+        })
+        .unwrap();
     source_less
         .model
         .curves

@@ -52,7 +52,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 G2BlendFirstShape::Full {
                     support: Some(support),
                 } if full => {
-                    assert_eq!(support.tolerance, 0.02);
+                    assert_eq!(support.tolerance.get(), 0.02);
                 }
                 G2BlendFirstShape::None {
                     coefficients,
@@ -61,7 +61,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     pcurve,
                 } if !full => {
                     assert_eq!(*coefficients, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
-                    assert_eq!(*tolerance, 0.03);
+                    assert_eq!(tolerance.get(), 0.03);
                     assert_eq!(*extension, Some(LoftBridgeToken::Integer(44)));
                     assert!(pcurve.is_some());
                 }

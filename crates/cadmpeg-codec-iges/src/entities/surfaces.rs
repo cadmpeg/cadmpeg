@@ -1403,7 +1403,8 @@ pub(super) fn project(
                     Some(second_interval[0]),
                     Some(second_interval[1]),
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         losses.push(
             IgesLossCode::RuledDevelopabilityNotTransferred
@@ -1553,7 +1554,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
             continue;
@@ -1682,7 +1684,8 @@ pub(super) fn project(
                     None,
                     None,
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }
@@ -1849,7 +1852,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
             continue;
@@ -2014,7 +2018,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
         decoded.insert(entry.sequence);
@@ -2385,7 +2390,8 @@ pub(super) fn project(
                     Some(v_range[0]),
                     Some(v_range[1]),
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }
@@ -2526,7 +2532,8 @@ pub(super) fn project(
                     ),
                 },
                 None,
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }

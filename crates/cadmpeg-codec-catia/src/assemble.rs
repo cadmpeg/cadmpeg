@@ -1116,7 +1116,8 @@ mod route_tests {
                         ),
                     },
                     None,
-                ),
+                )
+                .unwrap(),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1138,18 +1139,21 @@ mod route_tests {
                         ),
                     },
                     None,
-                ),
+                )
+                .unwrap(),
             )
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
-        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact {
-            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                ranges: [[0.0, 1.0], [0.0, 1.0]],
-                extension: 0,
-            },
-        });
+        ir.model.procedural_surfaces[0]
+            .replace_definition(ProceduralSurfaceDefinition::Exact {
+                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
+                },
+            })
+            .unwrap();
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

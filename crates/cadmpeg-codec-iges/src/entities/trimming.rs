@@ -2285,7 +2285,7 @@ pub(super) fn project(
             });
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(format!(
                         "iges:model:procedural-surface#D{}:implicit-outer",
                         entry.sequence
@@ -2298,7 +2298,13 @@ pub(super) fn project(
                         implicit_outer: true,
                     },
                     support_parameter_bounds,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, &error.to_string()));
+                        continue;
+                    }
+                },
             );
             derived_surface_id
         } else {

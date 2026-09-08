@@ -2427,9 +2427,8 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model
-            .procedural_surfaces
-            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+        ir.model.procedural_surfaces.push(
+            cadmpeg_ir::geometry::ProceduralSurface::new(
                 construction,
                 ProceduralSurfaceDefinition::Offset {
                     support,
@@ -2442,7 +2441,9 @@ mod tests {
                     ),
                 },
                 None,
-            ));
+            )
+            .unwrap(),
+        );
 
         let fit_tolerance = f64::EPSILON.sqrt();
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

@@ -3099,7 +3099,7 @@ pub struct ProceduralSurface {
     definition: ProceduralSurfaceDefinition,
     /// Fit contract of a legacy solved cache. Revision-gated forms carry the
     /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<f64>,
+    legacy_cache_fit_tolerance: Option<FitTolerance>,
     /// Four optional U/V parameter bounds following the record's subtype
     /// scope. For a procedural extrusion or revolution, the first pair is
     /// the neutral surface-carrier interval; its definition retains the
@@ -3758,9 +3758,59 @@ impl ProceduralSurfaceDefinition {
     }
 }
 
+/// A finite, non-negative fit tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "f64", into = "f64")]
+pub struct FitTolerance(f64);
+
+impl FitTolerance {
+    /// Admit a finite, non-negative fit tolerance.
+    pub fn try_new(value: f64) -> Result<Self, CacheFitToleranceError> {
+        if value.is_finite() && value >= 0.0 {
+            Ok(Self(value))
+        } else {
+            Err(CacheFitToleranceError::InvalidValue { value })
+        }
+    }
+
+    /// The fit tolerance in carrier units.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for FitTolerance {
+    type Error = CacheFitToleranceError;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl From<FitTolerance> for f64 {
+    fn from(value: FitTolerance) -> Self {
+        value.get()
+    }
+}
+
 /// A top-level cache-fit field disagrees with the construction that owns it.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CacheFitToleranceError {
+    /// A fit tolerance is negative or non-finite.
+    #[error("fit_tolerance must be finite and non-negative, got {value}")]
+    InvalidValue {
+        /// Rejected tolerance.
+        value: f64,
+    },
+    /// A full law surface requires a solved-cache tolerance.
+    #[error("cache_fit_tolerance is required for a full law surface tail")]
+    MissingLawFull,
+    /// Other law surface tails do not carry a solved-cache tolerance.
+    #[error("cache_fit_tolerance must be absent for a non-full law surface tail")]
+    NonFullLaw,
+
     /// A parameterized form cannot carry a solved-cache tolerance.
     #[error("cache_fit_tolerance must be absent for a parameterized revision cache")]
     Parameterized,
@@ -3784,18 +3834,12 @@ pub enum CacheFitToleranceError {
 
 impl ProceduralSurface {
     /// Build a procedural surface without a legacy top-level cache.
-    #[must_use]
     pub fn new(
         id: ProceduralSurfaceId,
         definition: ProceduralSurfaceDefinition,
         record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Self {
-        Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance: None,
-            record_bounds,
-        }
+    ) -> Result<Self, CacheFitToleranceError> {
+        Self::try_new(id, definition, None, record_bounds)
     }
 
     /// Build a procedural surface and reconcile the legacy top-level cache
@@ -3824,11 +3868,16 @@ impl ProceduralSurface {
 
     /// Replace the construction definition and discard a legacy cache value
     /// when the new definition owns a revision cache.
-    pub fn replace_definition(&mut self, definition: ProceduralSurfaceDefinition) {
-        if definition.owns_revision_cache() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        self.definition = definition;
+    pub fn replace_definition(
+        &mut self,
+        definition: ProceduralSurfaceDefinition,
+    ) -> Result<(), CacheFitToleranceError> {
+        let tolerance = if definition.owns_revision_cache() {
+            None
+        } else {
+            self.legacy_cache_fit_tolerance.map(FitTolerance::get)
+        };
+        self.try_replace_definition(definition, tolerance)
     }
 
     /// Replace the definition and effective cache-fit tolerance atomically.
@@ -3849,12 +3898,11 @@ impl ProceduralSurface {
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralSurfaceDefinition) -> R,
-    ) -> R {
-        let result = edit(&mut self.definition);
-        if self.definition.owns_revision_cache() {
-            self.legacy_cache_fit_tolerance = None;
-        }
-        result
+    ) -> Result<R, CacheFitToleranceError> {
+        let mut definition = self.definition.clone();
+        let result = edit(&mut definition);
+        self.replace_definition(definition)?;
+        Ok(result)
     }
 
     /// Effective fit tolerance of the solved cache.
@@ -3862,7 +3910,7 @@ impl ProceduralSurface {
     pub fn cache_fit_tolerance(&self) -> Option<f64> {
         self.definition
             .revision_cache_fit_tolerance()
-            .unwrap_or(self.legacy_cache_fit_tolerance)
+            .unwrap_or(self.legacy_cache_fit_tolerance.map(FitTolerance::get))
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
@@ -3871,6 +3919,8 @@ impl ProceduralSurface {
         &mut self,
         value: Option<f64>,
     ) -> Result<(), CacheFitToleranceError> {
+        let value = value.map(FitTolerance::try_new).transpose()?;
+        validate_law_cache_fit_tolerance(&self.definition, value)?;
         if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
             return set_variable_blend_cache_fit_tolerance(&mut construction.cache, value);
         }
@@ -3882,29 +3932,20 @@ impl ProceduralSurface {
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) {
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
-            if let VariableBlendCache::Current { fit_tolerance, .. } = &mut construction.cache {
-                *fit_tolerance *= scale;
-            }
-            return;
+    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheFitToleranceError> {
+        if let Some(value) = self.cache_fit_tolerance() {
+            self.set_cache_fit_tolerance(Some(value * scale))?;
         }
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => *fit_tolerance *= scale,
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                if let Some(fit_tolerance) = &mut self.legacy_cache_fit_tolerance {
-                    *fit_tolerance *= scale;
-                }
-            }
-        }
+        Ok(())
     }
 }
 
 fn reconcile_surface_cache_fit_tolerance(
     definition: &ProceduralSurfaceDefinition,
     supplied: Option<f64>,
-) -> Result<Option<f64>, CacheFitToleranceError> {
+) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
+    let checked = supplied.map(FitTolerance::try_new).transpose()?;
+    validate_law_cache_fit_tolerance(definition, checked)?;
     let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
         return reconcile_cache_fit_tolerance(definition.revision_cache(), supplied);
     };
@@ -3919,9 +3960,9 @@ fn reconcile_surface_cache_fit_tolerance(
                 ..
             },
             Some(supplied),
-        ) if supplied != *stored => Err(CacheFitToleranceError::Conflicting {
+        ) if supplied != stored.get() => Err(CacheFitToleranceError::Conflicting {
             supplied,
-            stored: *stored,
+            stored: stored.get(),
         }),
         _ => Ok(None),
     }
@@ -3929,7 +3970,7 @@ fn reconcile_surface_cache_fit_tolerance(
 
 fn set_variable_blend_cache_fit_tolerance(
     cache: &mut VariableBlendCache,
-    value: Option<f64>,
+    value: Option<FitTolerance>,
 ) -> Result<(), CacheFitToleranceError> {
     match (cache, value) {
         (VariableBlendCache::Parameterization { .. }, Some(_)) => {
@@ -3949,7 +3990,8 @@ fn set_variable_blend_cache_fit_tolerance(
 fn reconcile_cache_fit_tolerance<P>(
     cache: Option<&RevisionCacheForm<P>>,
     supplied: Option<f64>,
-) -> Result<Option<f64>, CacheFitToleranceError> {
+) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
+    supplied.map(FitTolerance::try_new).transpose()?;
     match (cache, supplied) {
         (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
             Err(CacheFitToleranceError::Parameterized)
@@ -3959,19 +4001,19 @@ fn reconcile_cache_fit_tolerance<P>(
                 fit_tolerance: stored,
             }),
             Some(supplied),
-        ) if supplied != *stored => Err(CacheFitToleranceError::Conflicting {
+        ) if supplied != stored.get() => Err(CacheFitToleranceError::Conflicting {
             supplied,
-            stored: *stored,
+            stored: stored.get(),
         }),
         (Some(_), _) => Ok(None),
-        (None, supplied) => Ok(supplied),
+        (None, supplied) => supplied.map(FitTolerance::try_new).transpose(),
     }
 }
 
 fn set_cache_fit_tolerance<P>(
     cache: Option<&mut RevisionCacheForm<P>>,
-    legacy: &mut Option<f64>,
-    value: Option<f64>,
+    legacy: &mut Option<FitTolerance>,
+    value: Option<FitTolerance>,
 ) -> Result<(), CacheFitToleranceError> {
     match (cache, value) {
         (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
@@ -3990,6 +4032,20 @@ fn set_cache_fit_tolerance<P>(
             Ok(())
         }
     }
+}
+
+fn validate_law_cache_fit_tolerance(
+    definition: &ProceduralSurfaceDefinition,
+    value: Option<FitTolerance>,
+) -> Result<(), CacheFitToleranceError> {
+    if let ProceduralSurfaceDefinition::Law { construction } = definition {
+        match (&construction.tail, value) {
+            (LawSurfaceTail::Full, None) => return Err(CacheFitToleranceError::MissingLawFull),
+            (LawSurfaceTail::Full, Some(_)) | (_, None) => {}
+            (_, Some(_)) => return Err(CacheFitToleranceError::NonFullLaw),
+        }
+    }
+    Ok(())
 }
 
 /// Structurally selected deformable-surface payload.
@@ -4744,7 +4800,7 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
     /// A solved cache followed by its carrier-specific cache contract.
     SolvedCache {
         /// Carrier-specific solved-cache contract.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// Parameterization stored in place of a solved cache.
     Parameterization(P),
@@ -4794,7 +4850,7 @@ impl<P> RevisionCacheForm<P> {
     #[must_use]
     pub const fn fit_tolerance(&self) -> Option<f64> {
         match self {
-            Self::SolvedCache { fit_tolerance } => Some(*fit_tolerance),
+            Self::SolvedCache { fit_tolerance } => Some(fit_tolerance.get()),
             Self::Parameterization(_) => None,
         }
     }
@@ -4809,7 +4865,7 @@ pub enum VariableBlendCache {
         /// Native approximation-current flag.
         shape_prefix: NonZeroI64,
         /// Fit tolerance in document length units.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// A zero approximation-current flag without an active fit contract.
     Stale,
@@ -4857,14 +4913,14 @@ impl VariableBlendCache {
     #[must_use]
     pub const fn fit_tolerance(&self) -> Option<f64> {
         match self {
-            Self::Current { fit_tolerance, .. } => Some(*fit_tolerance),
+            Self::Current { fit_tolerance, .. } => Some(fit_tolerance.get()),
             _ => None,
         }
     }
 }
 
 mod revision_surface_cache_wire {
-    use super::{RevisionCacheForm, RevisionSurfaceParameterization};
+    use super::{FitTolerance, RevisionCacheForm, RevisionSurfaceParameterization};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize)]
@@ -4885,7 +4941,7 @@ mod revision_surface_cache_wire {
         #[serde(default)]
         tail_parameterization: Option<RevisionSurfaceParameterization>,
         #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
+        cache_fit_tolerance: Option<FitTolerance>,
     }
 
     pub fn serialize<S>(value: &RevisionCacheForm, serializer: S) -> Result<S::Ok, S::Error>
@@ -4928,7 +4984,7 @@ mod revision_surface_cache_wire {
 }
 
 mod variable_blend_cache_wire {
-    use super::{RevisionSurfaceParameterization, VariableBlendCache};
+    use super::{FitTolerance, RevisionSurfaceParameterization, VariableBlendCache};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::num::NonZeroI64;
 
@@ -4949,7 +5005,7 @@ mod variable_blend_cache_wire {
         #[serde(default)]
         tail_parameterization: Option<RevisionSurfaceParameterization>,
         #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
+        cache_fit_tolerance: Option<FitTolerance>,
     }
 
     pub fn serialize<S>(value: &VariableBlendCache, serializer: S) -> Result<S::Ok, S::Error>
@@ -4979,7 +5035,7 @@ mod variable_blend_cache_wire {
 }
 
 mod cache_first_curve_cache_wire {
-    use super::{CacheFirstCurveParameterization, RevisionCacheForm};
+    use super::{CacheFirstCurveParameterization, FitTolerance, RevisionCacheForm};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize)]
@@ -4999,7 +5055,7 @@ mod cache_first_curve_cache_wire {
         #[serde(default)]
         parameterization: Option<CacheFirstCurveParameterization>,
         #[serde(default)]
-        cache_fit_tolerance: Option<f64>,
+        cache_fit_tolerance: Option<FitTolerance>,
     }
 
     pub fn serialize<S>(
@@ -5836,7 +5892,7 @@ pub enum G2BlendFirstShape {
         /// Ordered native frame scalars.
         coefficients: [f64; 9],
         /// Native fit tolerance.
-        tolerance: f64,
+        tolerance: FitTolerance,
         /// Optional intervening native token.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extension: Option<LoftBridgeToken>,
@@ -5853,7 +5909,7 @@ pub struct G2BlendFullSupport {
     /// Exact BS3 support surface.
     pub surface: SurfaceId,
     /// Fit tolerance of the support, in document length units.
-    pub tolerance: f64,
+    pub tolerance: FitTolerance,
 }
 
 #[cfg(feature = "schema")]
@@ -5863,11 +5919,11 @@ struct G2BlendFullSupportSchemaWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     surface: Option<SurfaceId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    tolerance: Option<f64>,
+    tolerance: Option<FitTolerance>,
 }
 
 mod g2_blend_full_support_wire {
-    use super::{G2BlendFullSupport, SurfaceId};
+    use super::{FitTolerance, G2BlendFullSupport, SurfaceId};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
@@ -5875,7 +5931,7 @@ mod g2_blend_full_support_wire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         surface: Option<SurfaceId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        tolerance: Option<f64>,
+        tolerance: Option<FitTolerance>,
     }
 
     // Serde passes the borrowed field to this adapter.
@@ -7420,7 +7476,7 @@ pub enum VertexBlendBoundaryGeometry {
         /// Native sense flag, a logical on the wire.
         sense: bool,
         /// Parameter-space fit tolerance.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
     },
     /// Planar boundary described by a normal and curve.
     Plane {
@@ -7450,7 +7506,7 @@ pub struct VertexBlendConstruction {
     /// Native grid-size integer.
     pub grid_size: i64,
     /// Native model-space fit tolerance.
-    pub fit_tolerance: f64,
+    pub fit_tolerance: FitTolerance,
 }
 
 /// One member of a compound-loft scale block.
@@ -7936,7 +7992,7 @@ pub enum LawSurfaceTail {
         /// Ordered U and V parameter summaries.
         parameters: [Vec<f64>; 2],
         /// Native model-space fit tolerance.
-        fit_tolerance: f64,
+        fit_tolerance: FitTolerance,
         /// Ordered U and V closure enums.
         closures: [i64; 2],
         /// Ordered U and V singularity enums.
@@ -8465,7 +8521,7 @@ pub struct ProceduralCurve {
     definition: ProceduralCurveDefinition,
     /// Fit contract of a legacy solved cache. Revision-gated forms carry the
     /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<f64>,
+    legacy_cache_fit_tolerance: Option<FitTolerance>,
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
@@ -9997,7 +10053,7 @@ impl ProceduralCurve {
     #[must_use]
     pub fn cache_fit_tolerance(&self) -> Option<f64> {
         self.definition.revision_cache().map_or(
-            self.legacy_cache_fit_tolerance,
+            self.legacy_cache_fit_tolerance.map(FitTolerance::get),
             RevisionCacheForm::fit_tolerance,
         )
     }
@@ -10011,36 +10067,34 @@ impl ProceduralCurve {
         set_cache_fit_tolerance(
             self.definition.revision_cache_mut(),
             &mut self.legacy_cache_fit_tolerance,
-            value,
+            value.map(FitTolerance::try_new).transpose()?,
         )
     }
 
     /// Raise the fit tolerance of an existing solved cache. Parameterized
     /// forms have no solved cache and remain unchanged.
-    pub fn raise_cache_fit_tolerance(&mut self, value: f64) {
+    pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
         match self.definition.revision_cache_mut() {
             Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
-                *fit_tolerance = (*fit_tolerance).max(value);
+                *fit_tolerance = FitTolerance(fit_tolerance.get().max(value.get()));
             }
             Some(RevisionCacheForm::Parameterization(_)) => {}
             None => {
-                self.legacy_cache_fit_tolerance =
-                    Some(self.legacy_cache_fit_tolerance.unwrap_or(0.0).max(value));
+                self.legacy_cache_fit_tolerance = Some(FitTolerance(
+                    self.legacy_cache_fit_tolerance
+                        .map_or(0.0, FitTolerance::get)
+                        .max(value.get()),
+                ));
             }
         }
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) {
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => *fit_tolerance *= scale,
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                if let Some(fit_tolerance) = &mut self.legacy_cache_fit_tolerance {
-                    *fit_tolerance *= scale;
-                }
-            }
+    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheFitToleranceError> {
+        if let Some(value) = self.cache_fit_tolerance() {
+            self.set_cache_fit_tolerance(Some(value * scale))?;
         }
+        Ok(())
     }
 }
 

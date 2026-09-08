@@ -197,7 +197,8 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
                 surface_construction,
                 ProceduralSurfaceDefinition::Unknown { record: None },
                 None,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
 

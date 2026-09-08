@@ -2051,7 +2051,7 @@ fn try_decode_brep(
     });
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
-        decoded.qualify_ids(&selected_site_key);
+        decoded.qualify_ids(&selected_site_key).ok()?;
     }
     bind_opaque_geometry(
         &mut decoded,
@@ -2065,7 +2065,7 @@ fn try_decode_brep(
         ));
     }
     for (site, first, mut alternate) in decoded_sites {
-        alternate.qualify_ids(&site);
+        alternate.qualify_ids(&site).ok()?;
         bind_opaque_geometry(
             &mut alternate,
             &UnknownId::mint(streams[first].section.native_id()).expect("identity grammar"),

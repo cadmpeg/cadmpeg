@@ -917,7 +917,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            if let Ok(procedure) = ProceduralCurve::try_new(
+            let procedure = ProceduralCurve::try_new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(
@@ -929,11 +929,12 @@ pub(crate) fn emit_standard_extrusion_definition(
                     discontinuity_flag: false,
                 },
                 Some(cache_fit_tolerance),
-            ) {
-                let _attached = ir
-                    .model
-                    .add_procedural_curve(directrix_id.clone(), procedure);
-            }
+            )
+            .ok()?;
+
+            let _attached = ir
+                .model
+                .add_procedural_curve(directrix_id.clone(), procedure);
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..
@@ -1898,11 +1899,14 @@ fn try_decode_standard_population(
                             false
                         };
                         if attached {
-                            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                                construction,
-                                definition,
-                                Some(record_bounds),
-                            ));
+                            ir.model.procedural_surfaces.push(
+                                ProceduralSurface::new(
+                                    construction,
+                                    definition,
+                                    Some(record_bounds),
+                                )
+                                .ok()?,
+                            );
                         }
                         procedural_supports.insert(support_object_id, support_id.clone());
                         support_id
@@ -2015,11 +2019,9 @@ fn try_decode_standard_population(
             exactness,
         );
         if attached {
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
-                definition,
-                record_bounds,
-            ));
+            ir.model
+                .procedural_surfaces
+                .push(ProceduralSurface::new(procedural_id, definition, record_bounds).ok()?);
         }
     }
     ir.model.surfaces = surfaces;
@@ -2033,7 +2035,7 @@ fn try_decode_standard_population(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
+    )?;
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::mint(format!("catia:standard:pt#{i}")).expect("identity grammar");
@@ -8141,12 +8143,17 @@ pub(crate) fn build_standard_edge_curve(
             };
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
-                surfaces.push(ensure_native_edge_support_surface(
-                    ir,
-                    annotations,
-                    native.surface_object_ids[side],
-                    &native.carriers[side],
-                ));
+                surfaces.push(
+                    match ensure_native_edge_support_surface(
+                        ir,
+                        annotations,
+                        native.surface_object_ids[side],
+                        &native.carriers[side],
+                    ) {
+                        Some(surface) => surface,
+                        None => return (None, None),
+                    },
+                );
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
@@ -8217,7 +8224,7 @@ fn ensure_native_edge_support_surface(
     annotations: &mut AnnotationBuilder,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-) -> SurfaceId {
+) -> Option<SurfaceId> {
     let source = cgm_source("surface", surface_object_id);
     let source_matches = ir
         .model
@@ -8227,10 +8234,12 @@ fn ensure_native_edge_support_surface(
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
     if source_matches.len() == 1 {
-        return source_matches
-            .into_iter()
-            .next()
-            .expect("one identity-matched support surface");
+        return Some(
+            source_matches
+                .into_iter()
+                .next()
+                .expect("one identity-matched support surface"),
+        );
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let geometry_matches = ir
@@ -8241,10 +8250,12 @@ fn ensure_native_edge_support_surface(
             .map(|surface| surface.id.clone())
             .collect::<HashSet<_>>();
         if source_matches.is_empty() && geometry_matches.len() == 1 {
-            return geometry_matches
-                .into_iter()
-                .next()
-                .expect("one geometry-matched support surface");
+            return Some(
+                geometry_matches
+                    .into_iter()
+                    .next()
+                    .expect("one geometry-matched support surface"),
+            );
         }
     }
     let id = SurfaceId::mint(format!(
@@ -8304,13 +8315,11 @@ fn ensure_native_edge_support_surface(
             ),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            definition.as_ref().clone(),
-            None,
-        ));
+        ir.model
+            .procedural_surfaces
+            .push(ProceduralSurface::new(procedural_id, definition.as_ref().clone(), None).ok()?);
     }
-    id
+    Some(id)
 }
 
 pub(crate) fn standard_circle_pair_solution_is_simple(

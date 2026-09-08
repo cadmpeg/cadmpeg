@@ -1302,12 +1302,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            ProceduralSurface::new(
+            match ProceduralSurface::new(
                 ProceduralSurfaceId::mint(ids::construction("swept_surface", id))
                     .expect("identity grammar"),
                 definition,
                 None,
-            ),
+            ) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    warnings.push(format!("procedural surface #{id}: {error}"));
+                    continue;
+                }
+            },
         );
         typed.insert(id);
     }
@@ -1571,7 +1577,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(ids::construction("rectangular_trimmed_surface", id))
                         .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Subset {
@@ -1582,7 +1588,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         v_sense: Some(v_sense),
                     },
                     None,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        continue;
+                    }
+                },
             );
             carrier_index
                 .surfaces
@@ -1658,7 +1670,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(ids::construction("curve_bounded_surface", id))
                         .expect("identity grammar"),
                     ProceduralSurfaceDefinition::CurveBounded {
@@ -1668,7 +1680,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         implicit_outer,
                     },
                     None,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        continue;
+                    }
+                },
             );
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
@@ -1703,7 +1721,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(ids::construction("offset_surface", id))
                         .expect("identity grammar"),
                     ProceduralSurfaceDefinition::ParallelOffset {
@@ -1712,7 +1730,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         self_intersect,
                     },
                     None,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        continue;
+                    }
+                },
             );
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
@@ -1756,7 +1780,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(ids::construction("surface_replica", id))
                         .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Replica {
@@ -1765,7 +1789,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         transform,
                     },
                     None,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        warnings.push(format!("procedural surface #{id}: {error}"));
+                        continue;
+                    }
+                },
             );
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
@@ -1981,7 +2011,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter_map(|pcurve| step_instance_id(pcurve.id.as_str()))
         .collect::<BTreeSet<_>>();
     for surface in &mut ir.model.procedural_surfaces {
-        surface.edit_definition(|definition| {
+        if let Err(error) = surface.edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CurveBounded {
                 boundary_pcurves, ..
             } = definition
@@ -1992,7 +2022,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 step_instance_id(pcurve.as_str())
                     .is_some_and(|id| decoded_pcurve_steps.contains(&id))
             });
-        });
+        }) {
+            warnings.push(format!("procedural surface {}: {error}", surface.id));
+        };
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
@@ -2012,12 +2044,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         let _attached = ir.model.add_procedural_surface(
             surface,
-            ProceduralSurface::new(
+            match ProceduralSurface::new(
                 ProceduralSurfaceId::mint(ids::construction("degenerate_torus", id))
                     .expect("identity grammar"),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
-            ),
+            ) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    warnings.push(format!("procedural surface #{id}: {error}"));
+                    continue;
+                }
+            },
         );
     }
 

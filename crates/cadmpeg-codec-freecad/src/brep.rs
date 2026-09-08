@@ -4951,7 +4951,8 @@ pub(crate) fn append_text_surface(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -4978,7 +4979,8 @@ pub(crate) fn append_text_surface(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -5015,7 +5017,8 @@ pub(crate) fn append_text_surface(
                         v_sense: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
         }
@@ -5044,7 +5047,8 @@ pub(crate) fn append_text_surface(
                         ),
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }

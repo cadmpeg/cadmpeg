@@ -573,7 +573,8 @@ pub(super) fn emit_surfaces(
                             revision_form: None,
                         },
                         None,
-                    ),
+                    )
+                    .ok()?,
                 );
             }
             Some(SurfaceProcedure::RollingBall {
@@ -596,7 +597,7 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    ProceduralSurface::new(procedural_id, definition, None),
+                    ProceduralSurface::new(procedural_id, definition, None).ok()?,
                 );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
@@ -639,7 +640,8 @@ pub(super) fn emit_surfaces(
                     ),
                 },
                 Some(parameter_record_bounds(offset.parameter_bounds)),
-            ),
+            )
+            .ok()?,
         );
     }
     Some(surface_ids)
@@ -705,7 +707,7 @@ fn emit_extrusion_procedure(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            if let Ok(procedure) = ProceduralCurve::try_new(
+            let procedure = ProceduralCurve::try_new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(
@@ -717,11 +719,12 @@ fn emit_extrusion_procedure(
                     discontinuity_flag: false,
                 },
                 Some(cache_fit_tolerance),
-            ) {
-                let _attached = ir
-                    .model
-                    .add_procedural_curve(directrix_id.clone(), procedure);
-            }
+            )
+            .ok()?;
+
+            let _attached = ir
+                .model
+                .add_procedural_curve(directrix_id.clone(), procedure);
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -825,7 +828,8 @@ fn emit_extrusion_procedure(
                 revision_form: None,
             },
             Some(parameter_record_bounds(extrusion.parameter_bounds)),
-        ),
+        )
+        .ok()?,
     );
     Some(())
 }

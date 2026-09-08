@@ -95,10 +95,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             },
             source_object: None,
         });
-    translated
-        .model
-        .procedural_surfaces
-        .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+    translated.model.procedural_surfaces.push(
+        cadmpeg_ir::geometry::ProceduralSurface::new(
             nested_construction,
             ProceduralSurfaceDefinition::Offset {
                 support: surface,
@@ -111,7 +109,9 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 ),
             },
             None,
-        ));
+        )
+        .unwrap(),
+    );
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
         &cadmpeg_ir::index::ModelIndex::new(&translated),
         &nested_surface,
@@ -232,20 +232,23 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: 0.75,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance: 0.75,
+                u_sense: None,
+                v_sense: None,
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        )
+        .unwrap(),
+    );
 
     let expected = Point2::new(0.2, 0.45);
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -280,20 +283,23 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        nested_construction,
-        ProceduralSurfaceDefinition::Offset {
-            support: offset.clone(),
-            distance: 0.5,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            nested_construction,
+            ProceduralSurfaceDefinition::Offset {
+                support: offset.clone(),
+                distance: 0.5,
+                u_sense: None,
+                v_sense: None,
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
         &cadmpeg_ir::index::ModelIndex::new(&ir),
         &nested,
@@ -1122,20 +1128,23 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            constructions[side].clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: base_surfaces[side].clone(),
-                distance: 0.0,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
-            None,
-        ));
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                constructions[side].clone(),
+                ProceduralSurfaceDefinition::Offset {
+                    support: base_surfaces[side].clone(),
+                    distance: 0.0,
+                    u_sense: None,
+                    v_sense: None,
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     let procedural_id = ProceduralCurveId::mint("test:model:entity#synthetic:coupled-intersection")
@@ -1281,11 +1290,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         },
         source_object: None,
     });
-    result
-        .ir_mut()
-        .model
-        .procedural_surfaces
-        .push(ProceduralSurface::new(
+    result.ir_mut().model.procedural_surfaces.push(
+        ProceduralSurface::new(
             blend_construction,
             ProceduralSurfaceDefinition::Blend {
                 supports: offset_surfaces.map(|surface| {
@@ -1302,7 +1308,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                 native: None,
             },
             None,
-        ));
+        )
+        .unwrap(),
+    );
     let parameters = vec![0.0, 0.01];
     let spine_carrier = result
         .ir()
@@ -1683,20 +1691,23 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Offset {
-                support: support.clone(),
-                distance: 30.0,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
-            None,
-        ));
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Offset {
+                    support: support.clone(),
+                    distance: 30.0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                None,
+            )
+            .unwrap(),
+        );
     }
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -1751,30 +1762,34 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     };
     assert_eq!(context.sides()[0].pcurve, context.sides()[1].pcurve);
 
-    ir.model.procedural_surfaces[1].edit_definition(|definition| {
-        if let ProceduralSurfaceDefinition::Offset {
-            support_extension, ..
-        } = definition
-        {
-            *support_extension = Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear);
-        }
-    });
+    ir.model.procedural_surfaces[1]
+        .edit_definition(|definition| {
+            if let ProceduralSurfaceDefinition::Offset {
+                support_extension, ..
+            } = definition
+            {
+                *support_extension = Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear);
+            }
+        })
+        .unwrap();
     assert!(!parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],
         &offsets[1]
     ));
-    ir.model.procedural_surfaces[1].edit_definition(|definition| {
-        if let ProceduralSurfaceDefinition::Offset {
-            distance,
-            support_extension,
-            ..
-        } = definition
-        {
-            *support_extension = None;
-            *distance = 31.0;
-        }
-    });
+    ir.model.procedural_surfaces[1]
+        .edit_definition(|definition| {
+            if let ProceduralSurfaceDefinition::Offset {
+                distance,
+                support_extension,
+                ..
+            } = definition
+            {
+                *support_extension = None;
+                *distance = 31.0;
+            }
+        })
+        .unwrap();
     assert!(!parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],

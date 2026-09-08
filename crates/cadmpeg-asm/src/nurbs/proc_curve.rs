@@ -2047,7 +2047,10 @@ fn cache_first_curve_context(
             let (_, end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(end);
             cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-                fit_tolerance: cur.take_f64()? * LEN_TO_MM,
+                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
+                    cur.take_f64()? * LEN_TO_MM,
+                )
+                .ok()?,
             }
         }
         2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(

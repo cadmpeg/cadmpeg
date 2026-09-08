@@ -629,12 +629,14 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .0;
     decoded.source = None;
     decoded.set_native_unknowns("f3d", &[]).unwrap();
-    decoded.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Sweep { native, .. } = definition else {
-            panic!("expected generated sweep")
-        };
-        *native = None;
-    });
+    decoded.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Sweep { native, .. } = definition else {
+                panic!("expected generated sweep")
+            };
+            *native = None;
+        })
+        .unwrap();
 
     let error = F3dCodec
         .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)

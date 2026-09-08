@@ -71,19 +71,19 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
     let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
     let positional_line_extrusion_plane_count =
-        transfer_positional_line_extrusion_planes(scan, ir, annotations);
+        transfer_positional_line_extrusion_planes(scan, ir, annotations)?;
     let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations);
+        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations)?;
     transfer_fc05_cap_circles(scan, ir, annotations);
     transfer_cap_pair_cylinders(scan, ir, annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations);
     let sketch_segment_coverage = transfer_sketches(scan, ir, annotations);
     let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(scan, ir, annotations);
+        transfer_resolved_revolution_surfaces(scan, ir, annotations)?;
     let feature_revolution_vertex_orbit_curve_count =
         transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations);
     let feature_extrusion_surface_count =
-        transfer_feature_extrusion_surfaces(scan, ir, annotations);
+        transfer_feature_extrusion_surfaces(scan, ir, annotations)?;
     let feature_extrusion_vertex_orbit_curve_count =
         transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
     let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations);

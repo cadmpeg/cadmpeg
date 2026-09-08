@@ -212,7 +212,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
                 direction: Vector3::new(0.0, 1.0, 0.0),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
     let _attached = ir.model.add_procedural_surface(
         revolution.clone(),
@@ -225,7 +226,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
     let length_scale = 0.001;
     let angle_scale = std::f64::consts::PI / 180.0;
@@ -335,7 +337,8 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
                 direction: Vector3::new(0.0, 1.0, 0.0),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
 
     assert_eq!(
@@ -386,7 +389,8 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
 
     assert_eq!(

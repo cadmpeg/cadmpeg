@@ -88,7 +88,7 @@ fn emit_carrier_surface(
     carriers: &mut Carriers,
     reach: &Reachable,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -101,7 +101,7 @@ fn emit_carrier_surface(
     // A record index appears at most once in `records`; a duplicate
     // would have consumed the entry already, so skip rather than panic.
     let Some((geometry, _)) = surface_geo.remove(&i) else {
-        return;
+        return Ok(());
     };
     out.surfaces.push(Surface {
         id: SurfaceId::mint(id(format, i)).expect("identity grammar"),
@@ -376,18 +376,19 @@ fn emit_carrier_surface(
                 format,
             ),
         };
-        if let Ok(procedural) = ProceduralSurface::try_new(
+        let procedural = ProceduralSurface::try_new(
             ProceduralSurfaceId::mint(format!("{format}:brep:procedural_surface#{i}"))
                 .expect("valid owning format and numeric record index"),
             definition,
             procedural.cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
-        ) {
-            out.procedural_surfaces.push((
-                SurfaceId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
-        }
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+
+        out.procedural_surfaces.push((
+            SurfaceId::mint(id(format, i)).expect("identity grammar"),
+            procedural,
+        ));
     } else if cached_unknown_procedural_surfaces.contains(&i) {
         out.procedural_surfaces.push((
             SurfaceId::mint(id(format, i)).expect("identity grammar"),
@@ -400,9 +401,12 @@ fn emit_carrier_surface(
                     ),
                 },
                 None,
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         ));
     }
+
+    Ok(())
 }
 
 /// Emit a kept 3D curve carrier (with its `:reversed` clone when shared) and
@@ -2805,17 +2809,18 @@ fn emit_carrier_curve(
                 }
             }
         };
-        if let Ok(procedural) = ProceduralCurve::try_new(
+        let procedural = ProceduralCurve::try_new(
             ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                 .expect("valid owning format and numeric record index"),
             definition,
             procedural.cache_fit_tolerance,
-        ) {
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
-        }
+        )
+        .map_err(|_| "procedural curve cache_fit_tolerance is invalid")?;
+
+        out.procedural_curves.push((
+            CurveId::mint(id(format, i)).expect("identity grammar"),
+            procedural,
+        ));
     } else if let Some(definition) = cacheless_procedural_curve_defs.remove(&i) {
         out.procedural_curves.push((
             CurveId::mint(id(format, i)).expect("identity grammar"),
@@ -3292,7 +3297,7 @@ pub(crate) fn emit_carrier_records(
         let i = r.index as i64;
         match r.head() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(out, r, i, carriers, reach, format);
+                emit_carrier_surface(out, r, i, carriers, reach, format)?;
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque

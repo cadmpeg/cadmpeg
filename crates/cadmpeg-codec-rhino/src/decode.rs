@@ -2810,7 +2810,7 @@ impl<'a> DecodeContext<'a> {
         else {
             return false;
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let ir_definition = definition.into_definition(|_, path, child| {
                 commit_curve_tree(
                     candidate,
@@ -2836,12 +2836,13 @@ impl<'a> DecodeContext<'a> {
                     .expect("valid identity");
             let _attached = candidate.model.add_procedural_surface(
                 surface_id.clone(),
-                ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
+                ProceduralSurface::new(procedural_id.clone(), ir_definition, None)
+                    .map_err(|error| error.to_string())?,
             );
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 set_exactness(candidate_annotations, id, Exactness::Derived);
             }
-            vec![surface_id.to_string()]
+            Ok(vec![surface_id.to_string()])
         });
         let links = match result {
             Ok(links) => links,
@@ -2924,7 +2925,8 @@ impl<'a> DecodeContext<'a> {
                             revision_form: None,
                         },
                         None,
-                    ),
+                    )
+                    .map_err(|error| error.to_string())?,
                 );
                 annotate_derived(candidate_annotations, &surface_id.to_string());
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
@@ -4556,7 +4558,8 @@ fn stage_brep_procedural_surface(
         .model_mut()
         .add_procedural_surface(
             surface_id.clone(),
-            ProceduralSurface::new(procedural_id.clone(), definition, None),
+            ProceduralSurface::new(procedural_id.clone(), definition, None)
+                .map_err(|error| crate::curves::error(0, &error.to_string()))?,
         )
         .map_err(|error| crate::curves::error(0, &error.to_string()))?;
     staged

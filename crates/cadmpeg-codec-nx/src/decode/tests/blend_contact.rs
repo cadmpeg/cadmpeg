@@ -430,20 +430,23 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            constructions[side].clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: surfaces[1 - side].clone(),
-                distance: 1.0,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
-            None,
-        ));
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                constructions[side].clone(),
+                ProceduralSurfaceDefinition::Offset {
+                    support: surfaces[1 - side].clone(),
+                    distance: 1.0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -823,24 +826,27 @@ fn blend_contact_matches_concentric_blend_carriers() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: supports.map(|surface| {
-                    Some(BlendSupport {
-                        surface,
-                        reversed: false,
-                    })
-                }),
-                spine: Some(spine.clone()),
-                radius: BlendRadiusLaw::Constant {
-                    signed_radius: radius,
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Blend {
+                    supports: supports.map(|surface| {
+                        Some(BlendSupport {
+                            surface,
+                            reversed: false,
+                        })
+                    }),
+                    spine: Some(spine.clone()),
+                    radius: BlendRadiusLaw::Constant {
+                        signed_radius: radius,
+                    },
+                    cross_section: BlendCrossSection::Circular,
+                    native: None,
                 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
-            None,
-        ));
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     assert_eq!(
@@ -857,12 +863,14 @@ fn blend_contact_matches_concentric_blend_carriers() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
-            unreachable!()
-        };
-        supports[0].as_mut().unwrap().reversed = true;
-    });
+    outer_definition
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                unreachable!()
+            };
+            supports[0].as_mut().unwrap().reversed = true;
+        })
+        .unwrap();
     assert!(constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
@@ -951,28 +959,32 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 ),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        blend_construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: support.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: other.clone(),
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine.clone()),
-            radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            blend_construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Line(
@@ -1203,26 +1215,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: first.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: second.clone(),
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine.clone()),
-            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: first.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let expected = Point2::new(8.0, 0.35);
     let point = blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
     let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
@@ -1655,26 +1670,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        outer_construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface,
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: third,
-                    reversed: false,
-                }),
-            ],
-            spine: Some(outer_spine),
-            radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            outer_construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface,
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: third,
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(outer_spine),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let expected = Point2::new(4.0, 0.2);
     let point = blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
     let outer_geometry = ir
@@ -1713,11 +1731,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
-            panic!("blend definition");
-        };
-        supports[0].as_mut().unwrap().surface = outer.clone();
-    });
+    outer_definition
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                panic!("blend definition");
+            };
+            supports[0].as_mut().unwrap().surface = outer.clone();
+        })
+        .unwrap();
     assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }

@@ -50,7 +50,7 @@ pub(crate) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-) -> Vec<ConsolidatedRevolutionBinding> {
+) -> Option<Vec<ConsolidatedRevolutionBinding>> {
     let mut bindings = Vec::new();
     for carrier in resolved {
         let index = carrier.revolution_index;
@@ -202,7 +202,8 @@ pub(crate) fn append_consolidated_revolutions(
                     revision_form: None,
                 },
                 None,
-            ),
+            )
+            .ok()?,
         );
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {
@@ -212,7 +213,7 @@ pub(crate) fn append_consolidated_revolutions(
             });
         }
     }
-    bindings
+    Some(bindings)
 }
 
 fn typed_face_counts(
@@ -525,8 +526,8 @@ pub(crate) fn try_decode_freeform_surfaces(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
-    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
+    )?;
+    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data)?;
     let mut standalone_wires = append_consolidated_line_profiles(
         &mut ir,
         &mut annotations,
@@ -1251,7 +1252,8 @@ pub(crate) fn append_freeform_surface_pools(
                     Some(offset.domain[2]),
                     Some(offset.domain[3]),
                 ]),
-            ),
+            )
+            .ok()?,
         );
     }
 
@@ -1402,20 +1404,23 @@ pub(crate) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::try_new(
-                    crate::families::a5a8::records::A5FreeformCurve::DEGREE,
-                    stations,
-                )
-                .ok()?,
-            ),
-            None,
-        ));
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::RollingBallJet(
+                    cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                        crate::families::a5a8::records::A5FreeformCurve::DEGREE,
+                        stations,
+                    )
+                    .ok()?,
+                ),
+                None,
+            )
+            .ok()?,
+        );
     }
 
-    append_a8_rolling_ball_pools(ir, annotations, data);
+    append_a8_rolling_ball_pools(ir, annotations, data)?;
     append_resolved_consolidated_surface_curves(
         ir,
         annotations,
@@ -1820,7 +1825,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     ),
                                 },
                                 None,
-                            ),
+                            )
+                            .ok()?,
                         );
                         surface_ids.insert(key, id.clone());
                         id
@@ -2732,7 +2738,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) {
+) -> Option<()> {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -2779,8 +2785,10 @@ pub(crate) fn append_a8_rolling_ball_pools(
         );
         ir.model
             .procedural_surfaces
-            .push(ProceduralSurface::new(procedural_id, definition, None));
+            .push(ProceduralSurface::new(procedural_id, definition, None).ok()?);
     }
+
+    Some(())
 }
 
 pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {

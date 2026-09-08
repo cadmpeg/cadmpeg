@@ -1686,7 +1686,8 @@ fn geometry_signal_excludes_opaque_carriers() {
                 },
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
 
     assert!(has_transferred_geometry(&ir));

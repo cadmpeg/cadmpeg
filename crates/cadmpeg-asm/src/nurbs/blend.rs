@@ -29,7 +29,7 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    RevisionCacheForm, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
+    RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
     RollingBallSupportSurface, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -95,7 +95,7 @@ pub(crate) fn cyl_spl_sur(
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
                 flags: vec![directrix_sense],
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
                 discontinuities,
                 tail_flag,
                 trailing_flags: Vec::new(),
@@ -1186,22 +1186,26 @@ pub(crate) fn var_blend_spl_sur(
                 shape_parameter,
                 shape_length,
                 shape_tail,
-                cache: match cache.into_form() {
-                    RevisionCacheForm::SolvedCache { fit_tolerance } => {
-                        match std::num::NonZeroI64::new(shape_prefix) {
-                            Some(shape_prefix) => VariableBlendCache::Current {
-                                shape_prefix,
-                                fit_tolerance,
-                            },
-                            None => VariableBlendCache::Stale,
-                        }
-                    }
-                    RevisionCacheForm::Parameterization(parameterization) => {
-                        VariableBlendCache::Parameterization {
+                cache: match cache {
+                    crate::nurbs::proc_surface::RevisionSurfaceCache::Solved {
+                        fit_tolerance,
+                        ..
+                    } => match std::num::NonZeroI64::new(shape_prefix) {
+                        Some(shape_prefix) => VariableBlendCache::Current {
                             shape_prefix,
-                            parameterization,
-                        }
-                    }
+                            fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
+                                fit_tolerance,
+                            )
+                            .ok()?,
+                        },
+                        None => VariableBlendCache::Stale,
+                    },
+                    crate::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(
+                        parameterization,
+                    ) => VariableBlendCache::Parameterization {
+                        shape_prefix,
+                        parameterization,
+                    },
                 },
                 discontinuities,
                 tail_flag,
@@ -1274,7 +1278,8 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             let surface = embedded_surface(cur)?;
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let sense = cur.take_bool()?;
-            let fit_tolerance = cur.take_f64()?;
+            let fit_tolerance =
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface,
                 support_bounds: [None; 4],
@@ -1376,7 +1381,8 @@ fn revision_vertex_blend_boundary(
             let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let sense = cur.take_bool()?;
-            let fit_tolerance = cur.take_f64()?;
+            let fit_tolerance =
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface: surface?,
                 support_bounds,
@@ -1452,7 +1458,8 @@ pub(crate) fn vertex_blend_spl_sur(
         });
     }
     let grid_size = cur.take_long()?;
-    let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
+    let fit_tolerance =
+        cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
             EmbeddedVertexBlend {
@@ -1554,7 +1561,7 @@ pub(crate) fn full_rb_blend_spl_sur(
                 shape_prefix,
                 parameters,
                 tail,
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
                 discontinuities,
                 tail_flag,
                 third,
