@@ -1994,7 +1994,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
-    let mut legacy_face_candidates = Vec::<(u32, ModelDraft)>::new();
+    let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
     let flows = directory
         .iter()
@@ -2503,7 +2503,7 @@ pub(super) fn project(
                 match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
                     Ok(Some((candidate, plane_sequences))) => {
                         legacy_plane_sequences.extend(plane_sequences);
-                        legacy_face_candidates.push((entry.sequence, candidate));
+                        legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
                     Err(reason) => losses.push(entity_loss(entry, reason)),
@@ -2554,7 +2554,7 @@ pub(super) fn project(
                         vec![edge],
                         global.minimum_resolution_mm(),
                     );
-                    legacy_face_candidates.push((entry.sequence, candidate));
+                    legacy_face_candidates.push((entry, candidate));
                 }
                 Err(reason) => losses.push(entity_loss(entry, reason.message())),
             },
@@ -2576,12 +2576,8 @@ pub(super) fn project(
     }
 
     let mut commit_session = CommitSession::new(ir);
-    for (sequence, candidate) in legacy_face_candidates {
+    for (entry, candidate) in legacy_face_candidates {
         if commit_session.commit_model(candidate, ir).is_err() {
-            let entry = entries
-                .get(&sequence)
-                .copied()
-                .expect("legacy single-parent candidate came from the directory");
             losses.push(entity_loss(
                 entry,
                 "legacy single-parent plane hole failed neutral topology validation",
