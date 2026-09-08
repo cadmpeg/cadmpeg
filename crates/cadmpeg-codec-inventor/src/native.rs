@@ -162,6 +162,10 @@ impl PropertyValueKind {
         let Some(type_code) = type_code else {
             return Err(format!("property value_kind {text} requires type_code"));
         };
+        let expected = crate::property_set::property_kind_name(type_code);
+        if text.split(':').next() != Some(expected) {
+            return Err(format!("property value_kind {text} disagrees with type_code {type_code}: expected {expected}"));
+        }
         match text {
             "empty" => Ok(Self::Empty { type_code }),
             "signed" => Ok(Self::Signed { type_code }),
@@ -1471,5 +1475,52 @@ mod tests {
         assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(invalid).is_err());
         modern["segment_version_major"] = serde_json::json!(16);
         assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern).is_err());
+    }
+    #[test]
+    fn property_kind_wire_agrees_with_ole_type_code() {
+        for (code, kind) in [
+            (0, "empty"),
+            (1, "empty"),
+            (2, "signed"),
+            (3, "signed"),
+            (4, "float"),
+            (5, "float"),
+            (6, "signed"),
+            (7, "float"),
+            (8, "string"),
+            (10, "signed"),
+            (11, "bool"),
+            (16, "signed"),
+            (17, "unsigned"),
+            (18, "unsigned"),
+            (19, "unsigned"),
+            (20, "signed"),
+            (21, "unsigned"),
+            (22, "signed"),
+            (23, "unsigned"),
+            (30, "string"),
+            (31, "string"),
+            (64, "filetime"),
+            (65, "binary:8"),
+            (70, "binary:0"),
+            (71, "clipboard:3:8"),
+            (72, "guid"),
+            (0x100c, "vector:3"),
+            (0x1003, "vector:0"),
+            (0x999, "unknown"),
+        ] {
+            let value = super::PropertyValueKind::from_wire(kind, Some(code)).unwrap();
+            assert_eq!(value.to_string(), kind);
+            assert_eq!(value.type_code(), Some(code));
+            let wrong = if kind == "signed" {
+                "unsigned"
+            } else {
+                "signed"
+            };
+            assert!(super::PropertyValueKind::from_wire(wrong, Some(code)).is_err());
+        }
+        assert!(super::PropertyValueKind::from_wire("unknown", Some(3)).is_err());
+        assert!(super::PropertyValueKind::from_wire("dictionary", Some(0)).is_err());
+        assert!(super::PropertyValueKind::from_wire("dictionary", None).is_ok());
     }
 }
