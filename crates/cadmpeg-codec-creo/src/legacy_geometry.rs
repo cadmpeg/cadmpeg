@@ -487,9 +487,9 @@ fn surface_carrier(
                 points,
                 u_parameters,
                 v_parameters,
-                u_tangents,
-                v_tangents,
-                mixed_derivatives,
+                &u_tangents,
+                &v_tangents,
+                &mixed_derivatives,
             )?;
             return Some(LegacySurfaceCarrier {
                 namespace,
@@ -1182,9 +1182,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             points,
             u_parameters.to_vec(),
             v_parameters.to_vec(),
-            u_tangents,
-            v_tangents,
-            mixed_derivatives,
+            &u_tangents,
+            &v_tangents,
+            &mixed_derivatives,
         )
         .expect("complete full derivative grid");
         let u_derivatives = spline.u_derivatives();

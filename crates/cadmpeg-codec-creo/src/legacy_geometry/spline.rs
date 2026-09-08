@@ -17,9 +17,9 @@ impl LegacySpline {
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
         v_parameters: Vec<f64>,
-        u_tangents: Vec<[f64; 3]>,
-        v_tangents: Vec<[f64; 3]>,
-        mixed_derivatives: Vec<[f64; 3]>,
+        u_tangents: &[[f64; 3]],
+        v_tangents: &[[f64; 3]],
+        mixed_derivatives: &[[f64; 3]],
     ) -> Option<Self> {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
@@ -36,9 +36,9 @@ impl LegacySpline {
             && ordered_finite(&v_parameters)
             && vectors_finite(&points)
             && points.len() == point_count
-            && vectors_finite(&u_tangents)
-            && vectors_finite(&v_tangents)
-            && vectors_finite(&mixed_derivatives)
+            && vectors_finite(u_tangents)
+            && vectors_finite(v_tangents)
+            && vectors_finite(mixed_derivatives)
             && u_tangents.len() == point_count
             && v_tangents.len() == point_count
             && mixed_derivatives.len() == point_count)
@@ -123,9 +123,9 @@ mod tests {
                 points,
                 u.clone(),
                 v.clone(),
-                u_tangents,
-                v_tangents,
-                mixed
+                &u_tangents,
+                &v_tangents,
+                &mixed
             )
             .is_none());
         }
@@ -133,9 +133,9 @@ mod tests {
             points.clone(),
             vec![0.0, 1.0, 0.5],
             v,
-            points.clone(),
-            points.clone(),
-            points
+            &points,
+            &points,
+            &points
         )
         .is_none());
     }
