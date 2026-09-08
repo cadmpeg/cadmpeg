@@ -7971,7 +7971,7 @@ fn zero_entity_oriented_use_pairs(
             uses: std::array::from_fn(|slot| CatiaZeroEntityOrientedUse {
                 byte_offset: pair.uses[slot].pos as u64,
                 record_ordinal: pair.uses[slot].record_ordinal,
-                side: pair.side(slot),
+                side: crate::families::zero_entity::records::ZeroEntityOrientedUsePair::side(slot),
                 allocations: pair.allocations(slot),
             }),
         })
