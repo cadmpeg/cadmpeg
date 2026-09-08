@@ -739,7 +739,10 @@ fn structure(args: &StructArgs) -> Result<()> {
             let at = base + field.offset as u64;
             println!(
                 "  0x{at:08x}  {:<name_width$}  {:<8}  {:<24}  {}",
-                field.name, field.type_name, field.decimal, field.hex
+                field.name,
+                field.type_name,
+                field.decimal.as_deref().unwrap_or(""),
+                field.hex
             );
         }
     }
