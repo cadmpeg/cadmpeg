@@ -138,10 +138,10 @@ pub(super) fn orient_loop_members(
         "catia b5 loop orientation constraints",
     )
     .ok()?;
-    for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
-        let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
-            unreachable!("filtered to two occurrences");
-        };
+    for [(left, left_reversed), (right, right_reversed)] in uses
+        .values()
+        .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
+    {
         let parity = left_reversed == right_reversed;
         if left == right {
             if parity {
@@ -164,9 +164,8 @@ pub(super) fn orient_loop_members(
             continue;
         }
         flips[root] = Some(false);
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
-            let flip = flips[node]?;
+        let mut pending = vec![(root, false)];
+        while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -174,7 +173,7 @@ pub(super) fn orient_loop_members(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        pending.push(neighbor);
+                        pending.push((neighbor, required));
                     }
                 }
             }

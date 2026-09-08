@@ -1741,7 +1741,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     };
 
     assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], &axis),
+        revolved_section_circle(&transform, [2.0, 3.0], &axis).map(CurveGeometry::from),
         Some(CurveGeometry::Circle {
             center,
             axis,

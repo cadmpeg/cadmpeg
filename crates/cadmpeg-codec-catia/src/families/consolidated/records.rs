@@ -177,6 +177,128 @@ impl ConsolidatedEdgeDefinition {
     }
 }
 
+/// Persistent operand encoding in a class-25 definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Option<u8>", into = "Option<u8>")]
+pub enum Class25PersistentLead {
+    Compact,
+    Lead0a,
+    Lead0b,
+}
+impl TryFrom<Option<u8>> for Class25PersistentLead {
+    type Error = String;
+    fn try_from(value: Option<u8>) -> Result<Self, Self::Error> {
+        match value {
+            None => Ok(Self::Compact),
+            Some(0x0a) => Ok(Self::Lead0a),
+            Some(0x0b) => Ok(Self::Lead0b),
+            _ => Err("persistent_lead must be null, 10, or 11".into()),
+        }
+    }
+}
+impl From<Class25PersistentLead> for Option<u8> {
+    fn from(value: Class25PersistentLead) -> Self {
+        match value {
+            Class25PersistentLead::Compact => None,
+            Class25PersistentLead::Lead0a => Some(0x0a),
+            Class25PersistentLead::Lead0b => Some(0x0b),
+        }
+    }
+}
+/// Boundary marker in a class-25 scalar lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum Class25ScalarMarker {
+    M82,
+    M83,
+    M89,
+    M8b,
+}
+impl TryFrom<u8> for Class25ScalarMarker {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x82 => Ok(Self::M82),
+            0x83 => Ok(Self::M83),
+            0x89 => Ok(Self::M89),
+            0x8b => Ok(Self::M8b),
+            _ => Err(format!("marker {value:#x} is not a class-25 scalar marker")),
+        }
+    }
+}
+impl From<Class25ScalarMarker> for u8 {
+    fn from(value: Class25ScalarMarker) -> Self {
+        match value {
+            Class25ScalarMarker::M82 => 0x82,
+            Class25ScalarMarker::M83 => 0x83,
+            Class25ScalarMarker::M89 => 0x89,
+            Class25ScalarMarker::M8b => 0x8b,
+        }
+    }
+}
+/// Scalar tail with the arity selected by its marker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "Class25ScalarSegmentWire",
+    into = "Class25ScalarSegmentWire"
+)]
+pub enum Class25ScalarSegment {
+    M82Five(Box<[f64; 5]>),
+    M82Six(Box<[f64; 6]>),
+    M82Seven(Box<[f64; 7]>),
+    M83Eight(Box<[f64; 8]>),
+    M83Nine(Box<[f64; 9]>),
+    M89(Box<[f64; 20]>),
+    M8b(Box<[f64; 24]>),
+}
+#[derive(Serialize, Deserialize)]
+struct Class25ScalarSegmentWire {
+    marker: Class25ScalarMarker,
+    trailing: Vec<f64>,
+}
+impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
+    type Error = String;
+    fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
+        match (wire.marker, wire.trailing.as_slice()) {
+            (Class25ScalarMarker::M82, lane) if lane.len() == 5 => Ok(Self::M82Five(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M82, lane) if lane.len() == 6 => Ok(Self::M82Six(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M82, lane) if lane.len() == 7 => Ok(Self::M82Seven(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M83, lane) if lane.len() == 8 => Ok(Self::M83Eight(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M83, lane) if lane.len() == 9 => Ok(Self::M83Nine(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M89, lane) if lane.len() == 20 => Ok(Self::M89(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            (Class25ScalarMarker::M8b, lane) if lane.len() == 24 => Ok(Self::M8b(Box::new(
+                lane.try_into().map_err(|_| "trailing arity")?,
+            ))),
+            _ => Err("trailing arity does not match marker".into()),
+        }
+    }
+}
+impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
+    fn from(value: Class25ScalarSegment) -> Self {
+        let (marker, trailing) = match value {
+            Class25ScalarSegment::M82Five(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
+            Class25ScalarSegment::M82Six(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
+            Class25ScalarSegment::M82Seven(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
+            Class25ScalarSegment::M83Eight(lane) => (Class25ScalarMarker::M83, lane.to_vec()),
+            Class25ScalarSegment::M83Nine(lane) => (Class25ScalarMarker::M83, lane.to_vec()),
+            Class25ScalarSegment::M89(lane) => (Class25ScalarMarker::M89, lane.to_vec()),
+            Class25ScalarSegment::M8b(lane) => (Class25ScalarMarker::M8b, lane.to_vec()),
+        };
+        Self { marker, trailing }
+    }
+}
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -198,7 +320,7 @@ pub enum ConsolidatedEdgeDefinitionData {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
         /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
-        persistent_lead: Option<u8>,
+        persistent_lead: Class25PersistentLead,
         /// Complete finite scalar lane.
         values: Vec<f64>,
     },
@@ -207,13 +329,12 @@ pub enum ConsolidatedEdgeDefinitionData {
         /// Two mixed-width allocation operands followed by one persistent operand.
         operands: [u32; 3],
         /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
-        persistent_lead: Option<u8>,
+        persistent_lead: Class25PersistentLead,
         /// Five finite scalars preceding the segment marker.
         leading: [f64; 5],
-        /// Scalar-lane boundary marker (`0x82`, `0x83`, `0x89`, or `0x8b`).
-        marker: u8,
-        /// Complete finite scalar lane following the marker.
-        trailing: Vec<f64>,
+        /// Marker and its scalar tail.
+        #[serde(flatten)]
+        segment: Class25ScalarSegment,
     },
 }
 
@@ -248,18 +369,17 @@ pub fn consolidated_edge_definition_data(
         let leading = read_f64_array::<5>(scalar_bytes, 0)?;
         let marker = *scalar_bytes.get(40)?;
         let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
-        if leading.iter().all(|value| value.is_finite())
-            && matches!(
-                (marker, trailing.len()),
-                (0x82, 5..=7) | (0x83, 8..=9) | (0x89, 20) | (0x8b, 24)
-            )
-        {
+        let segment = Class25ScalarSegment::try_from(Class25ScalarSegmentWire {
+            marker: Class25ScalarMarker::try_from(marker).ok()?,
+            trailing,
+        })
+        .ok()?;
+        if leading.iter().all(|value| value.is_finite()) {
             return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
                 operands,
                 persistent_lead,
                 leading,
-                marker,
-                trailing,
+                segment,
             });
         }
         return None;
@@ -294,14 +414,14 @@ pub fn consolidated_edge_definition_data(
     Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
 }
 
-fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Option<u8>)> {
+fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25PersistentLead)> {
     match *bytes.get(*at)? {
         lead @ (0x0a | 0x0b) => {
             let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
             *at += 3;
-            Some((value, Some(lead)))
+            Some((value, Class25PersistentLead::try_from(Some(lead)).ok()?))
         }
-        _ => Some((compact_int(bytes, at)?, None)),
+        _ => Some((compact_int(bytes, at)?, Class25PersistentLead::Compact)),
     }
 }
 
@@ -1661,7 +1781,7 @@ mod tests {
     use crate::families::b2::records::B2Circle;
     use crate::wire::records::ConsolidatedPcurve;
 
-    use super::{nurbs_carrier_offset, pcurve_matches_circle};
+    use super::{nurbs_carrier_offset, pcurve_matches_circle, ConsolidatedEdgeDefinitionData};
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
@@ -1723,7 +1843,6 @@ mod tests {
             center_pair: [0.0; 2],
             radius: span,
             range: [0.0, span],
-            full_circle: false,
             chart_shift: 0.0,
         };
         let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {
@@ -1758,5 +1877,49 @@ mod tests {
             &pcurve(vec![[0.0, span], [2.0 * span, span]]),
             &circle
         ));
+    }
+    #[test]
+    fn class25_wire_rejects_unknown_marker_and_wrong_arity() {
+        for (marker, count) in [(0x99, 0), (0x82, 0), (0x83, 7), (0x89, 19), (0x8b, 25)] {
+            let wire = serde_json::json!({
+                "kind": "segmented_scalar25", "operands": [1, 2, 3],
+                "persistent_lead": null, "leading": [0.0, 0.0, 0.0, 0.0, 0.0],
+                "marker": marker, "trailing": vec![0.0; count]
+            });
+            assert!(serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire).is_err());
+        }
+    }
+    #[test]
+    fn class25_wire_preserves_marker_tail_and_lead() {
+        for (marker, count) in [
+            (0x82, 5),
+            (0x82, 6),
+            (0x82, 7),
+            (0x83, 8),
+            (0x83, 9),
+            (0x89, 20),
+            (0x8b, 24),
+        ] {
+            for lead in [None, Some(10), Some(11)] {
+                let wire = serde_json::json!({
+                    "kind": "segmented_scalar25", "operands": [1, 2, 3],
+                    "persistent_lead": lead, "leading": [0.0, 0.0, 0.0, 0.0, 0.0],
+                    "marker": marker, "trailing": vec![0.0; count]
+                });
+                let record: ConsolidatedEdgeDefinitionData = serde_json::from_value(wire.clone())
+                    .expect("admitted class-25 marker and tail");
+                assert_eq!(
+                    serde_json::to_value(record).expect("serialize class-25 record"),
+                    wire
+                );
+            }
+        }
+        let wire = serde_json::json!({"kind": "scalar25", "operands": [1, 2, 3], "persistent_lead": 12, "values": []});
+        assert!(
+            serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire)
+                .expect_err("unknown persistent lead must fail admission")
+                .to_string()
+                .contains("persistent_lead")
+        );
     }
 }

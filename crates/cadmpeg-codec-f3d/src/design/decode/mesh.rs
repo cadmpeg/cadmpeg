@@ -1523,7 +1523,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
             }
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .tessellation_id = Some(projected.id.to_string());
+            .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
     }
     for body in design_records

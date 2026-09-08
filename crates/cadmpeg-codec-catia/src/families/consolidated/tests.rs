@@ -810,7 +810,9 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
 
 #[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
-    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+    use crate::families::consolidated::records::{
+        Class25PersistentLead, Class25ScalarSegment, ConsolidatedEdgeDefinitionData,
+    };
 
     let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
     let mut plain = operands.to_vec();
@@ -821,7 +823,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             operands: [1, 57, 3463],
-            persistent_lead: Some(0x0a),
+            persistent_lead: Class25PersistentLead::Lead0a,
             values: vec![1.0, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6],
         })
     );
@@ -838,9 +840,8 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands: [1, 57, 3463],
-            persistent_lead: Some(0x0a),
-            marker: 0x82,
-            ref trailing,
+            persistent_lead: Class25PersistentLead::Lead0a,
+            segment: Class25ScalarSegment::M82Six(ref trailing),
             ..
         }) if trailing.len() == 6
     ));
@@ -856,7 +857,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert!(matches!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &odd_lead),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            persistent_lead: Some(0x0b),
+            persistent_lead: Class25PersistentLead::Lead0b,
             ref values,
             ..
         }) if values.len() == 7
@@ -873,8 +874,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert!(matches!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &long_segment),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            marker: 0x89,
-            ref trailing,
+            segment: Class25ScalarSegment::M89(ref trailing),
             ..
         }) if trailing.len() == 20
     ));
@@ -891,7 +891,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands: [1, 57, 3463],
-                persistent_lead: Some(0x0a),
+                persistent_lead: Class25PersistentLead::Lead0a,
                 ..
             }
         )
