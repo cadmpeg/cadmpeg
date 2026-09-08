@@ -610,8 +610,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 };
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
-                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
@@ -658,7 +657,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 };
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,

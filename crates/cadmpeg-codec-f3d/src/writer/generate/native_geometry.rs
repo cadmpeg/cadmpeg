@@ -1583,29 +1583,12 @@ fn encode_native_compound_loft(
         CodecError::Malformed("compound-loft surface requires a native cache-fit tolerance".into())
     })?;
 
-    let first_absent = construction.scales.iter().position(Option::is_none);
-    if first_absent
-        .is_some_and(|index| construction.scales[index + 1..].iter().any(Option::is_some))
-    {
-        return Err(CodecError::Malformed(
-            "compound-loft leading scales must form a contiguous prefix".into(),
-        ));
-    }
-    if construction.fifth_scale.is_some() && first_absent.is_some() {
-        return Err(CodecError::Malformed(
-            "compound-loft fifth scale requires all four leading scales".into(),
-        ));
-    }
-
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-    for scale in construction.scales.iter().flatten() {
-        native_compound_loft_scale(bytes, target, scale)?;
-    }
-    if let Some(scale) = construction.fifth_scale.as_deref() {
+    for scale in construction.scales.as_slice() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
     for flag in construction.flags {
@@ -1706,14 +1689,6 @@ fn encode_native_scaled_compound_loft(
         CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
     };
 
-    let first_absent = construction.scales.iter().position(Option::is_none);
-    if first_absent
-        .is_some_and(|index| construction.scales[index + 1..].iter().any(Option::is_some))
-    {
-        return Err(CodecError::Malformed(
-            "scaled compound-loft scales must form a contiguous prefix".into(),
-        ));
-    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "scaled_cloft_spl_sur")?;
@@ -1756,7 +1731,7 @@ fn encode_native_scaled_compound_loft(
         native_compound_loft_float_array(bytes, values)?;
     }
     bytes.push(native_bool(construction.discontinuity_flag));
-    for scale in construction.scales.iter().flatten() {
+    for scale in construction.scales.as_slice() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
     for flag in construction.flags {

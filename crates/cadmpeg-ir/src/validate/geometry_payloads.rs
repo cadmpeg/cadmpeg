@@ -363,13 +363,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
-            let first_absent = construction.scales.iter().position(Option::is_none);
-            let leading_scale_shape_valid = first_absent.is_none_or(|index| {
-                construction.scales[index + 1..].iter().all(Option::is_none)
-                    && construction.fifth_scale.is_none()
-            });
-            let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
-            scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+            let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
             let tail_valid = match &construction.tail {
                 crate::geometry::CompoundLoftTail::Six {
                     scale,
@@ -407,7 +401,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && data.direction.as_ref().is_none_or(&vector_finite)
                 })
             });
-            if !leading_scale_shape_valid || !tail_valid || !scales_valid {
+            if !tail_valid || !scales_valid {
                 bounds_err(
                     findings,
                     procedural.id.as_str(),
@@ -421,9 +415,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let vector_finite = |vector: &Vector3| {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
-            let first_absent = construction.scales.iter().position(Option::is_none);
-            let leading_scale_shape_valid = first_absent
-                .is_none_or(|index| construction.scales[index + 1..].iter().all(Option::is_none));
             let shape_valid = match &construction.shape {
                 crate::geometry::ScaledCompoundLoftShape::Full => true,
                 crate::geometry::ScaledCompoundLoftShape::None {
@@ -438,7 +429,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && parameter_ranges.iter().all(|range| range[0] <= range[1])
                 }
             };
-            let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+            let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
             let branch_valid = match &construction.branch {
                 crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                     first_scale,
@@ -477,12 +468,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .flatten()
                 .all(|value| value.is_finite())
                 && construction.tail_directions.iter().all(vector_finite);
-            if !leading_scale_shape_valid
-                || !shape_valid
-                || !branch_valid
-                || !scales_valid
-                || !scalars_valid
-            {
+            if !shape_valid || !branch_valid || !scales_valid || !scalars_valid {
                 bounds_err(
                     findings,
                     procedural.id.as_str(),
