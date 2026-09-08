@@ -182,13 +182,16 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                         .map_or(section.offset as u64, |(offset, _)| {
                             offset + section.offset as u64
                         })
-                        == link.section_offset
+                        == link.location.section_offset()
                 })?
                 .1
                 .clone();
             let header = section.record_area_header()?;
             let bytes = section.record_area?.bytes;
-            let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
+            let entry_offset = link
+                .location
+                .section_offset()
+                .checked_sub(section.offset as u64)?;
             let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(OmRecordArea {
                 id: format!("nx:om-record-areas:area#{section_key}-{}", header.offset),
@@ -218,7 +221,7 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -257,7 +260,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -298,7 +301,7 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -340,7 +343,7 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -387,7 +390,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -430,7 +433,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
@@ -477,7 +480,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };

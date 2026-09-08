@@ -294,7 +294,7 @@ impl ContainerNoted for DataBlockAbrReferenceLane {
 }
 impl ContainerNoted for SegmentOmLink {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.location.source_offset())
     }
 }
 impl ContainerNoted for OmRecordArea {
