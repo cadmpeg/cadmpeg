@@ -283,12 +283,11 @@ pub(crate) fn walk_reachable_topology(
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
                                 pcurve_geo
-                                    .entry(pc)
+                                    .entry(super::PcurveRecordIndex(pc))
                                     .or_insert_with(|| PcurveGeometry::Line {
                                         origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
                                         direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
                                     });
-                                pcurve_parameter_ranges.entry(ci).or_insert([0.0, 0.0]);
                                 kept_pcurves.insert(pc);
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
@@ -363,8 +362,12 @@ pub(crate) fn walk_reachable_topology(
                                         .map(|range| (decoded, range))
                                 });
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    pcurve_geo.insert(pc, PcurveGeometry::Nurbs { nurbs: decoded });
-                                    pcurve_parameter_ranges.insert(ci, parameter_range);
+                                    pcurve_geo.insert(
+                                        super::PcurveRecordIndex(pc),
+                                        PcurveGeometry::Nurbs { nurbs: decoded },
+                                    );
+                                    pcurve_parameter_ranges
+                                        .insert(super::CoedgeRecordIndex(ci), parameter_range);
                                     kept_pcurves.insert(pc);
                                 } else {
                                     count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());

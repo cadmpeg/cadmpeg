@@ -365,6 +365,12 @@ enum ProceduralCurveSource {
     Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct PcurveRecordIndex(i64);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct CoedgeRecordIndex(i64);
+
 /// Decoded carrier geometry keyed by `RecordTable` index. The reachability and
 /// emit passes read decoded shapes from here and consume them (`remove`) as the
 /// owning surface or curve record is emitted.
@@ -374,8 +380,8 @@ pub(crate) struct Carriers {
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
-    pcurve_geo: HashMap<i64, PcurveGeometry>,
-    pcurve_parameter_ranges: HashMap<i64, [f64; 2]>,
+    pcurve_geo: HashMap<PcurveRecordIndex, PcurveGeometry>,
+    pcurve_parameter_ranges: HashMap<CoedgeRecordIndex, [f64; 2]>,
 }
 
 /// Record indices reached from kept faces by the shell/loop/coedge walk,
