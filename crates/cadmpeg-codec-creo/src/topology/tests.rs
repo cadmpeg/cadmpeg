@@ -477,10 +477,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .iter()
             .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
             .expect("projected plane pcurve");
-        assert!(match pcurve.geometry {
-            cadmpeg_ir::geometry::PcurveGeometry::Line(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            pcurve.geometry,
+            cadmpeg_ir::geometry::PcurveGeometry::Line(_)
+        ));
         let edge = model
             .edges
             .iter()

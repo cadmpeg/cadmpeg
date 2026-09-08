@@ -517,10 +517,7 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
                 .find(|curve| curve.id == *id)
         })
         .expect("edge carrier");
-    assert!(match carrier.geometry {
-        CurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(carrier.geometry, CurveGeometry::Line(_)));
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -607,34 +604,32 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(match graph
-        .get(NodeKind::Plane, 6)
-        .and_then(crate::topology::Node::surface_geometry)
-    {
-        Some(SurfaceGeometry::Plane(_)) => true,
-        _ => false,
-    });
-    assert!(match graph
-        .get(NodeKind::Line, 9)
-        .and_then(crate::topology::Node::curve_geometry)
-    {
-        Some(CurveGeometry::Line(_)) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        graph
+            .get(NodeKind::Plane, 6)
+            .and_then(crate::topology::Node::surface_geometry),
+        Some(SurfaceGeometry::Plane(_))
+    ));
+    assert!(matches!(
+        graph
+            .get(NodeKind::Line, 9)
+            .and_then(crate::topology::Node::curve_geometry),
+        Some(CurveGeometry::Line(_))
+    ));
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
-    assert!(match result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
-    assert!(match result.ir().model.curves[0].geometry {
-        CurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Plane(_)
+    ));
+    assert!(matches!(
+        result.ir().model.curves[0].geometry,
+        CurveGeometry::Line(_)
+    ));
 }
 
 #[test]
@@ -644,14 +639,14 @@ fn decode_tracks_geometry_envelope_escape_shift() {
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(match result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
-    assert!(match result.ir().model.curves[0].geometry {
-        CurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Plane(_)
+    ));
+    assert!(matches!(
+        result.ir().model.curves[0].geometry,
+        CurveGeometry::Line(_)
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

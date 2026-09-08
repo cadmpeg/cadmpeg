@@ -2269,10 +2269,7 @@ mod tests {
         assert!(ir.model.curves.iter().any(|curve| {
             curve.id
                 == CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
-                && match curve.geometry {
-                    CurveGeometry::Line(_) => true,
-                    _ => false,
-                }
+                && matches!(curve.geometry, CurveGeometry::Line(_))
         }));
     }
 

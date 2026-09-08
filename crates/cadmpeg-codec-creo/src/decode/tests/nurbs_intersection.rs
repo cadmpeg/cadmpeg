@@ -214,26 +214,19 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar")
         ])
     );
-    assert!(match with_witness
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id
-            == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry)
-    {
-        Some(CurveGeometry::Line(line_curve))
-            if {
-                let (origin, direction) = line_curve.parts();
-                (origin.x - 2.0).abs() <= EPS_POSITION
-                    && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
-                    && direction.z == 1.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(with_witness
+    .model
+    .curves
+    .iter()
+    .find(|curve| curve.id
+        == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
+    .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+        if {
+            let (origin, direction) = line_curve.parts();
+            (origin.x - 2.0).abs() <= EPS_POSITION
+                && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
+                && direction.z == 1.0
+        }));
 
     let mut without_witness = source_ir();
     assert!(transfer_carrier_intersection_curves(

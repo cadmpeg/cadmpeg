@@ -149,17 +149,13 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         &HashSet::from([10]),
         &HashSet::new(),
     );
-    assert!(match evidence.surface_geometries.get(&10) {
-        Some(SurfaceGeometry::Plane(plane_surface))
-            if {
-                let (origin, _, _) = plane_surface.parts();
-                *origin == Point3::new(0.0, 0.0, 0.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Plane(plane_surface))
+        if {
+            let (origin, _, _) = plane_surface.parts();
+            *origin == Point3::new(0.0, 0.0, 0.0)
+        })
+    );
 
     let mut conflicting = stream.clone();
     let face_payload = conflicting.len() - 4;

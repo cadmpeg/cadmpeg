@@ -54,6 +54,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
     let table = crate::feature::FeatureEntityTable {
@@ -1133,19 +1135,13 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .iter()
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
-            match geometry {
-                SurfaceGeometry::Cylinder(cylinder_surface)
-                    if {
-                        let (origin, axis, _, radius) = cylinder_surface.parts();
-                        *origin == Point3::new(1.0, 2.0, 3.0)
-                            && *axis == Vector3::new(0.0, 0.0, 1.0)
-                            && (*radius - 0.098).abs() < 1.0e-12
-                    } =>
-                {
-                    true
-                }
-                _ => false,
-            }
+            matches!(geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+            if {
+                let (origin, axis, _, radius) = cylinder_surface.parts();
+                *origin == Point3::new(1.0, 2.0, 3.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && (*radius - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
+            })
         }));
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),

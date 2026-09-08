@@ -167,14 +167,14 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
         )
         .unwrap();
 
-    assert!(match result.ir().model.curves[0].geometry {
-        CurveGeometry::Line(_) => true,
-        _ => false,
-    });
-    assert!(match result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        result.ir().model.curves[0].geometry,
+        CurveGeometry::Line(_)
+    ));
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Plane(_)
+    ));
 }
 
 #[test]

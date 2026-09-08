@@ -544,18 +544,17 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         panic!("expected an exact revolution definition");
     };
     assert_eq!(directrix.as_str(), "iges:model:curve#D3");
-    assert!(match result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *directrix)
-        .expect("line generatrix")
-        .geometry
-    {
-        cadmpeg_ir::geometry::CurveGeometry::Line(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .expect("line generatrix")
+            .geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Line(_)
+    ));
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert_eq!(
         procedural.record_bounds,
@@ -670,10 +669,10 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .find(|curve| curve.id == *directrix)
             .expect("hyperbola directrix")
             .geometry;
-        assert!(match directrix_geometry {
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            directrix_geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_)
+        ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let source_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
@@ -955,10 +954,10 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .find(|curve| curve.id == *directrix)
             .expect("hyperbola directrix")
             .geometry;
-        assert!(match directrix_geometry {
-            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            directrix_geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Hyperbola(_)
+        ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");

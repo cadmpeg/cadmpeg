@@ -589,10 +589,10 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
     }];
 
     let associated = associate_standard_freeform_e5_surfaces(&records, &stream);
-    assert!(match associated.get(&7) {
-        Some(SurfaceGeometry::Torus(_)) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        associated.get(&7),
+        Some(SurfaceGeometry::Torus(_))
+    ));
 }
 
 #[test]

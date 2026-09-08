@@ -555,17 +555,13 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
         .expect("shared source pcurve");
-    assert!(match &source.geometry {
-        PcurveGeometry::Trimmed(trimmed_pcurve)
-            if {
-                let (parameter_range, _, _) = trimmed_pcurve.parts();
-                (*trimmed_pcurve.parts().1 == true) && (*parameter_range == [0.0, 1.0])
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(&source.geometry, PcurveGeometry::Trimmed(trimmed_pcurve)
+        if {
+            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            *trimmed_pcurve.parts().1 && (*parameter_range == [0.0, 1.0])
+        })
+    );
 
     assert!(decoded
         .ir()
@@ -617,17 +613,13 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
         .expect("reordered shared source pcurve");
-    assert!(match &source.geometry {
-        PcurveGeometry::Trimmed(trimmed_pcurve)
-            if {
-                let (parameter_range, _, _) = trimmed_pcurve.parts();
-                (*trimmed_pcurve.parts().1 == true) && (*parameter_range == [0.0, 1.0])
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(&source.geometry, PcurveGeometry::Trimmed(trimmed_pcurve)
+        if {
+            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            *trimmed_pcurve.parts().1 && (*parameter_range == [0.0, 1.0])
+        })
+    );
 
     assert!(decoded
         .ir()

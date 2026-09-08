@@ -21,6 +21,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::F3dCodec;
 
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -1682,17 +1684,13 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated cone decode");
-    assert!(match round_trip.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cone(cone_surface)
-            if {
-                let (_, _, _, _, _, half_angle) = cone_surface.parts();
-                (*cone_surface.parts().4 == 0.4) && ((half_angle - 0.35).abs() < 1.0e-12)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(round_trip.ir().model.surfaces[0].geometry, SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (_, _, _, _, _, half_angle) = cone_surface.parts();
+            (*cone_surface.parts().4 == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
+        })
+    );
 }
 
 #[test]

@@ -13,6 +13,8 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::BTreeMap;
 
+const EPS_LATITUDE_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
     let mut ir = CadIr::empty();
@@ -89,76 +91,46 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .unwrap(),
     );
 
+    assert!(matches!(
+        linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]),
+        Some(CurveGeometry::Line(_))
+    ));
+    assert!(matches!(
+        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]),
+        Some(CurveGeometry::Line(_))
+    ));
     assert!(
-        match linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]) {
-            Some(CurveGeometry::Line(_)) => true,
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 2.0
+        })
     );
+    assert!(matches!(
+        linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]),
+        Some(CurveGeometry::Line(_))
+    ));
     assert!(
-        match linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]) {
-            Some(CurveGeometry::Line(_)) => true,
-            _ => false,
-        }
-    );
-    assert!(
-        match linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]) {
-            Some(CurveGeometry::Circle(circle_curve))
-                if {
-                    let (_, _, _, radius) = circle_curve.parts();
-                    *radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
-    );
-    assert!(
-        match linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]) {
-            Some(CurveGeometry::Line(_)) => true,
-            _ => false,
-        }
-    );
-    assert!(
-        match linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]) {
-            Some(CurveGeometry::Ellipse(ellipse_curve))
-                if {
-                    let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
-                    major_radius > minor_radius
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Ellipse(ellipse_curve))
+        if {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            major_radius > minor_radius
+        })
     );
     assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).is_none());
     assert!(
-        match linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]) {
-            Some(CurveGeometry::Circle(circle_curve))
-                if {
-                    let (_, _, _, radius) = circle_curve.parts();
-                    *radius == 2.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 2.0
+        })
     );
     assert!(
-        match linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]) {
-            Some(CurveGeometry::Circle(circle_curve))
-                if {
-                    let (_, _, _, radius) = circle_curve.parts();
-                    (radius - 2.0 * 0.25_f64.cos()).abs() <= 1.0e-12
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            (radius - 2.0 * 0.25_f64.cos()).abs() <= EPS_LATITUDE_RADIUS
+        })
     );
 
     let torus = SurfaceGeometry::Torus(
@@ -172,30 +144,18 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .unwrap(),
     );
     assert!(
-        match linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]) {
-            Some(CurveGeometry::Circle(circle_curve))
-                if {
-                    let (_, _, _, radius) = circle_curve.parts();
-                    *radius == 1.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 1.0
+        })
     );
     assert!(
-        match linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]) {
-            Some(CurveGeometry::Circle(circle_curve))
-                if {
-                    let (_, _, _, radius) = circle_curve.parts();
-                    *radius == 4.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 4.0
+        })
     );
 }
 
@@ -463,20 +423,16 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         )
         .unwrap(),
     );
-    assert!(match planar_curve_pcurve(&plane(), &circle) {
-        Some(PcurveGeometry::Circle(circle_pcurve))
-            if {
-                let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
-                *center == Point2::new(2.0, 4.0)
-                    && *x_axis == Point2::new(0.0, 1.0)
-                    && *y_axis == Point2::new(-1.0, 0.0)
-                    && *radius == 2.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(planar_curve_pcurve(&plane(), &circle), Some(PcurveGeometry::Circle(circle_pcurve))
+        if {
+            let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
+            *center == Point2::new(2.0, 4.0)
+                && *x_axis == Point2::new(0.0, 1.0)
+                && *y_axis == Point2::new(-1.0, 0.0)
+                && *radius == 2.0
+        })
+    );
 
     let nurbs = CurveGeometry::Nurbs(
         NurbsCurve::new(

@@ -218,10 +218,7 @@ mod tests {
         let decoded = scan(&wrapper(0.005, false), &carriers());
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
-        assert!(match decoded[0].geometry {
-            CurveGeometry::Line(_) => true,
-            _ => false,
-        });
+        assert!(matches!(decoded[0].geometry, CurveGeometry::Line(_)));
         assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
     }
 

@@ -736,17 +736,11 @@ fn encoder_bakes_rigid_body_transform() {
             && (point.position.z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-        match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (_, normal, _) = plane_surface.parts();
-                    *normal == expected_normal
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (_, normal, _) = plane_surface.parts();
+            *normal == expected_normal
+        })
     }));
     assert!(decoded
         .ir()

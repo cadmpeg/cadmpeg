@@ -731,24 +731,17 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
             panic!("expected sub-surface")
         };
         assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
-        assert!(match decoded
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *support)
-            .map(|surface| &surface.geometry)
-        {
-            Some(SurfaceGeometry::Plane(plane_surface))
-                if {
-                    let (origin, _, _) = plane_surface.parts();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(matches!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *support)
+        .map(|surface| &surface.geometry), Some(SurfaceGeometry::Plane(plane_surface))
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
+            }));
         assert!(matches!(
             decoded
                 .ir()

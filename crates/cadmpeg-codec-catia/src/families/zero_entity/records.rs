@@ -2533,45 +2533,33 @@ mod tests {
         cylinder[33..41].copy_from_slice(&1.0_f64.to_le_bytes());
         cylinder[65..73].copy_from_slice(&1.0_f64.to_le_bytes());
         cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
-        assert!(match zero_entity_cylinder(&cylinder) {
-            Some(SurfaceGeometry::Cylinder(cylinder_surface))
-                if { *cylinder_surface.parts().3 == 2_000_000.0 } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(zero_entity_cylinder(&cylinder), Some(SurfaceGeometry::Cylinder(cylinder_surface))
+                if { *cylinder_surface.parts().3 == 2_000_000.0 })
+        );
 
         let mut cone = vec![0_u8; 120];
         cone[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
         cone[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
         cone[104..112].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
         cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
-        assert!(match zero_entity_cone(&cone) {
-            Some(SurfaceGeometry::Cone(cone_surface))
-                if { *cone_surface.parts().3 == 2_000_000.0 } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(zero_entity_cone(&cone), Some(SurfaceGeometry::Cone(cone_surface))
+                if { *cone_surface.parts().3 == 2_000_000.0 })
+        );
 
         let mut torus = vec![0_u8; 120];
         torus[32..40].copy_from_slice(&1.0_f64.to_le_bytes());
         torus[96..104].copy_from_slice(&1.0_f64.to_le_bytes());
         torus[104..112].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         torus[112..120].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-        assert!(match zero_entity_torus(&torus) {
-            Some(SurfaceGeometry::Torus(torus_surface))
-                if {
-                    (*torus_surface.parts().3 == 2_000_000.0)
-                        && (*torus_surface.parts().4 == 1_500_000.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(zero_entity_torus(&torus), Some(SurfaceGeometry::Torus(torus_surface))
+            if {
+                (*torus_surface.parts().3 == 2_000_000.0)
+                    && (*torus_surface.parts().4 == 1_500_000.0)
+            })
+        );
     }
 
     #[test]

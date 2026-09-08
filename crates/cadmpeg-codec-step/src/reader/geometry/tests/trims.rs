@@ -37,12 +37,10 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#8")
         .expect("trimmed surface carrier");
-    assert!(
-        match *trimmed.geometry.solved_cache().unwrap_or(&trimmed.geometry) {
-            SurfaceGeometry::Plane(_) => true,
-            _ => false,
-        }
-    );
+    assert!(matches!(
+        *trimmed.geometry.solved_cache().unwrap_or(&trimmed.geometry),
+        SurfaceGeometry::Plane(_)
+    ));
     let procedural = decoded
         .ir()
         .model

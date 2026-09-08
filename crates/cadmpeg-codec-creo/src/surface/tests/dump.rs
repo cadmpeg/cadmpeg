@@ -10,6 +10,8 @@ use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
+const EPS_ANALYTIC_FRAME: f64 = 1.0e-12;
+
 #[test]
 fn decode_transfers_positional_line_extrusion_plane() {
     let mut payload = visibgeom_payload(1, 0);
@@ -374,28 +376,24 @@ fn decode_places_complete_positional_torus() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("positional torus surface");
-    assert!(match surface.geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface)
-            if {
-                let (center, axis, ref_direction, major_radius, minor_radius) =
-                    torus_surface.parts();
-                (center.x - 1.0).abs() < 1.0e-12
-                    && (center.y - 16.74).abs() < 1.0e-12
-                    && center.z.abs() < 1.0e-12
-                    && axis.x.abs() < 1.0e-12
-                    && axis.y.abs() < 1.0e-12
-                    && (axis.z - 1.0).abs() < 1.0e-12
-                    && (ref_direction.x + 0.999_899_554_583_406_1).abs() < 1.0e-12
-                    && (ref_direction.y - 0.014_173_240_416_574_131).abs() < 1.0e-12
-                    && ref_direction.z.abs() < 1.0e-12
-                    && (major_radius - 4.45).abs() < 1.0e-12
-                    && (minor_radius - 0.5).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface)
+        if {
+            let (center, axis, ref_direction, major_radius, minor_radius) =
+                torus_surface.parts();
+            (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
+                && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
+                && center.z.abs() < EPS_ANALYTIC_FRAME
+                && axis.x.abs() < EPS_ANALYTIC_FRAME
+                && axis.y.abs() < EPS_ANALYTIC_FRAME
+                && (axis.z - 1.0).abs() < EPS_ANALYTIC_FRAME
+                && (ref_direction.x + 0.999_899_554_583_406_1).abs() < EPS_ANALYTIC_FRAME
+                && (ref_direction.y - 0.014_173_240_416_574_131).abs() < EPS_ANALYTIC_FRAME
+                && ref_direction.z.abs() < EPS_ANALYTIC_FRAME
+                && (major_radius - 4.45).abs() < EPS_ANALYTIC_FRAME
+                && (minor_radius - 0.5).abs() < EPS_ANALYTIC_FRAME
+        })
+    );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert!(
         (record.fields()["positional_torus_frame"]["major_radius"]
@@ -486,22 +484,18 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
             .expect("paired sphere surface");
-        assert!(match surface.geometry {
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface)
-                if {
-                    let (center, axis, ref_direction, radius) = sphere_surface.parts();
-                    center.x == 0.0
-                        && center.y == 0.0
-                        && (center.z + 15.0).abs() < 1.0e-12
-                        && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                        && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 2.65
-                } =>
-            {
-                true
-            }
-            _ => false,
-        });
+        assert!(
+            matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface)
+            if {
+                let (center, axis, ref_direction, radius) = sphere_surface.parts();
+                center.x == 0.0
+                    && center.y == 0.0
+                    && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME
+                    && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                    && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                    && *radius == 2.65
+            })
+        );
     }
     assert_eq!(
         result
@@ -1005,10 +999,10 @@ fn decode_places_named_prototype_before_its_surface_row() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
         .expect("following first plane instance");
-    assert!(match plane.geometry {
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        plane.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
+    ));
 }
 
 #[test]

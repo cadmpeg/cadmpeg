@@ -49,6 +49,8 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_FILLET_CIRCLE: f64 = 1.0e-12;
+
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::FeatureSegment {
@@ -1822,17 +1824,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert_eq!(reversed_candidates.len(), 2);
     assert!(reversed_candidates
         .iter()
-        .any(|(geometry, _)| match geometry {
-            CurveGeometry::Circle(circle_curve)
+        .any(|(geometry, _)| matches!(geometry, CurveGeometry::Circle(circle_curve)
                 if {
                     let (center, _, _, radius) = circle_curve.parts();
-                    (center.z - 4.0 / 3.0).abs() < 1.0e-12 && (radius - 10.0 / 3.0).abs() < 1.0e-12
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+                    (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
+                })));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());
     let shifted = CarrierEquation::Cone(
         ConeEquation::new(

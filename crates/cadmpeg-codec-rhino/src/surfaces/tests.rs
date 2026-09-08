@@ -521,10 +521,10 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
         let (plane, _) =
             read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
         assert_eq!(reader.remaining(), 0);
-        assert!(match plane {
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            plane,
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
+        ));
     }
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);

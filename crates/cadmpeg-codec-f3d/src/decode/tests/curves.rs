@@ -20,6 +20,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::F3dCodec;
 
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
     use cadmpeg_asm::sab::{Record, Token};
@@ -1361,26 +1363,17 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .geometry
             .clone()
     });
-    assert!(match supports[0] {
-        SurfaceGeometry::Cone(cone_surface)
-            if {
-                let (_, axis, _, _, _, half_angle) = cone_surface.parts();
-                (*cone_surface.parts().3 == 10.0)
-                    && (*cone_surface.parts().4 == 0.4)
-                    && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-                        && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
-    assert!(match supports[1] {
-        SurfaceGeometry::Torus(torus_surface) if { *torus_surface.parts().4 == -7.5 } => {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(supports[0], SurfaceGeometry::Cone(cone_surface)
+    if {
+        let (_, axis, _, _, _, half_angle) = cone_surface.parts();
+        (*cone_surface.parts().3 == 10.0)
+            && (*cone_surface.parts().4 == 0.4)
+            && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
+    }));
+    assert!(
+        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { *torus_surface.parts().4 == -7.5 })
+    );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -1444,21 +1437,14 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             .geometry
             .clone()
     });
-    assert!(match expected_geometries[0] {
-        SurfaceGeometry::Cone(cone_surface)
-            if {
-                let (_, _, _, _, _, half_angle) = cone_surface.parts();
-                (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
-    assert!(match expected_geometries[1] {
-        SurfaceGeometry::Torus(_) => true,
-        _ => false,
-    });
+    assert!(
+        matches!(expected_geometries[0], SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (_, _, _, _, _, half_angle) = cone_surface.parts();
+            (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+        })
+    );
+    assert!(matches!(expected_geometries[1], SurfaceGeometry::Torus(_)));
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
@@ -1738,12 +1724,9 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
-    assert!(match third_surface.geometry {
-        SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 } => {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 })
+    );
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0]
@@ -1802,12 +1785,9 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
-    assert!(match third_surface.geometry {
-        SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 } => {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 })
+    );
 }
 
 #[test]

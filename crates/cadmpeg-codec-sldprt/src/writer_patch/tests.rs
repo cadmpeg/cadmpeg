@@ -335,44 +335,26 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| match surface.geometry {
-            SurfaceGeometry::Plane(plane_surface)
-                if {
-                    let (origin, _, _) = plane_surface.parts();
-                    origin.x == 25.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(regenerated.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, _, _) = plane_surface.parts();
+            origin.x == 25.0
+        })
+    ));
     assert!(regenerated
         .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
-    assert!(regenerated
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| match curve.geometry {
-            CurveGeometry::Line(line_curve)
-                if {
-                    let (origin, _) = line_curve.parts();
-                    origin.y == 12.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }));
+    assert!(regenerated.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
+        if {
+            let (origin, _) = line_curve.parts();
+            origin.y == 12.0
+        })
+    ));
 }
 
 #[test]

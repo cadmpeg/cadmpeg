@@ -343,28 +343,14 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .curves
             .iter()
-            .any(|curve| match curve.geometry {
-                CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 } => {
-                    true
-                }
-                _ => false,
-            }));
-        assert!(decoded
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .any(|surface| match surface.geometry {
-                SurfaceGeometry::Plane(plane_surface)
-                    if {
-                        let (origin, _, _) = plane_surface.parts();
-                        origin.z == 3.0
-                    } =>
-                {
-                    true
-                }
-                _ => false,
-            }));
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })));
+        assert!(decoded.ir().model.surfaces.iter().any(
+            |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                origin.z == 3.0
+            })
+        ));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }

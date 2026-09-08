@@ -27,12 +27,9 @@ fn e5_circle_parser_reads_framed_carrier() {
         other => panic!("expected circle, got {other:?}"),
     }
     let surfaces = crate::families::e5::records::e5_surfaces(&stream);
-    assert!(match surfaces[0].geometry {
-        SurfaceGeometry::Cylinder(cylinder_surface) if { *cylinder_surface.parts().3 == 2.5 } => {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { *cylinder_surface.parts().3 == 2.5 })
+    );
 
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
@@ -292,17 +289,11 @@ fn e5_surface_parser_reads_framed_torus() {
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
     assert!(
-        match crate::families::e5::records::e5_surfaces(&large)[0].geometry {
-            SurfaceGeometry::Torus(torus_surface)
-                if {
-                    (*torus_surface.parts().3 == 2_000_000.0)
-                        && (*torus_surface.parts().4 == 1_500_000.0)
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(crate::families::e5::records::e5_surfaces(&large)[0].geometry, SurfaceGeometry::Torus(torus_surface)
+        if {
+            (*torus_surface.parts().3 == 2_000_000.0)
+                && (*torus_surface.parts().4 == 1_500_000.0)
+        })
     );
 
     let mut tiny = e5_torus_stream();
@@ -401,10 +392,10 @@ fn decode_e5_stream_transfers_circle_carrier() {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
-    assert!(match result.ir().model.curves[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Circle(_) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        result.ir().model.curves[0].geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle(_)
+    ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));

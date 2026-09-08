@@ -435,10 +435,7 @@ fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
     );
     let mut scaled = original.clone();
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
-    assert!(match scaled {
-        PcurveGeometry::Harmonic(_) => true,
-        _ => false,
-    });
+    assert!(matches!(scaled, PcurveGeometry::Harmonic(_)));
     for parameter in [0.0, 0.25, 1.0, 2.0] {
         let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
@@ -478,11 +475,8 @@ fn unsupported_anisotropic_pcurve_forms_are_not_reshaped_by_scalar_scaling() {
         )
         .unwrap(),
     );
-    assert!(!parabola.try_scale_coordinates([2.0, 3.0]).is_ok());
-    assert!(match parabola {
-        PcurveGeometry::Parabola(_) => true,
-        _ => false,
-    });
+    assert!(parabola.try_scale_coordinates([2.0, 3.0]).is_err());
+    assert!(matches!(parabola, PcurveGeometry::Parabola(_)));
 }
 
 #[test]

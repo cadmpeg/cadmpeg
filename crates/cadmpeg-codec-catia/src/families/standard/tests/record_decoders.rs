@@ -82,24 +82,18 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
     for value in [0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0, 1_500_000.0] {
         bytes.extend_from_slice(&value.to_be_bytes());
     }
-    assert!(match crate::families::standard::records::decode_curved(
+    assert!(matches!(crate::families::standard::records::decode_curved(
         &bytes,
         &crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 0,
             kind: AnalyticSurfaceKind::Torus,
         },
-    ) {
-        Some(SurfaceGeometry::Torus(torus_surface))
+    ), Some(SurfaceGeometry::Torus(torus_surface))
             if {
                 (*torus_surface.parts().3 == 2_000_000.0)
                     && (*torus_surface.parts().4 == 1_500_000.0)
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+            }));
 }
 
 #[test]
@@ -1160,14 +1154,14 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         &HashSet::from([100, 501]),
         &HashSet::new(),
     );
-    assert!(match evidence.surface_geometries.get(&100) {
-        Some(SurfaceGeometry::Plane(_)) => true,
-        _ => false,
-    });
-    assert!(match evidence.surface_geometries.get(&501) {
-        Some(SurfaceGeometry::Plane(_)) => true,
-        _ => false,
-    });
+    assert!(matches!(
+        evidence.surface_geometries.get(&100),
+        Some(SurfaceGeometry::Plane(_))
+    ));
+    assert!(matches!(
+        evidence.surface_geometries.get(&501),
+        Some(SurfaceGeometry::Plane(_))
+    ));
 }
 
 #[test]
