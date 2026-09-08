@@ -6,7 +6,7 @@ use std::cell::Cell;
 use crate::CodecError;
 
 use super::error::{
-    ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
+    ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
@@ -110,7 +110,6 @@ impl DecodeBudget {
             return Err(self.refuse(
                 dimension,
                 ResourceFailure::BudgetExceeded,
-                LimitScope::Global,
                 limit,
                 before,
                 amount,
@@ -127,7 +126,6 @@ impl DecodeBudget {
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
-        scope: LimitScope,
         limit: u64,
         used: u64,
         additional: u64,
@@ -137,7 +135,6 @@ impl DecodeBudget {
         let resource = ResourceLimit {
             dimension,
             reason,
-            scope,
             limit,
             used,
             additional,
@@ -491,7 +488,6 @@ fn local_limit_error(
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::Codec(what),
         reason: ResourceFailure::BudgetExceeded,
-        scope: LimitScope::Global,
         limit,
         used: requested.min(limit),
         additional: requested.saturating_sub(limit),

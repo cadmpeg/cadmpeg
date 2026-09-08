@@ -9,7 +9,7 @@ use crate::{CodecError, ReadSeek};
 use super::arena::DecodeArena;
 use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{
-    ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
+    ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
@@ -18,6 +18,12 @@ use super::space::{
     resolve_address, ByteRange, ResolvedAddress, SpaceDerivation, SpaceDescriptor, SpaceId,
 };
 use super::view::View;
+
+#[derive(Clone, Copy)]
+enum LimitScope {
+    Global,
+    PerExpand,
+}
 
 /// Cap on the initial per-expand reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
@@ -194,7 +200,6 @@ impl<'a> DecodeContext<'a> {
         self.budget.refuse(
             ResourceDimension::DecompressedBytes,
             reason,
-            scope,
             limit,
             self.budget.decompressed_used(),
             amount,
@@ -319,7 +324,6 @@ impl<'a> DecodeContext<'a> {
         self.budget.refuse(
             ResourceDimension::Codec(operation),
             ResourceFailure::BudgetExceeded,
-            LimitScope::Global,
             limit,
             requested.min(limit),
             requested.saturating_sub(limit),
@@ -421,7 +425,6 @@ impl<'a> DecodeContext<'a> {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::Global,
                     self.policy.limits.max_retained_bytes,
                     total as u64,
                     view.window().len() as u64,
@@ -436,7 +439,6 @@ impl<'a> DecodeContext<'a> {
             self.budget.refuse(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::AllocationFailed,
-                LimitScope::Global,
                 self.policy.limits.max_materialized_bytes,
                 0,
                 total as u64,
@@ -525,7 +527,6 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,
-        scope: LimitScope::Global,
         limit,
         used,
         additional: used.saturating_sub(limit),
