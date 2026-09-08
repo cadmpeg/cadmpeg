@@ -33,7 +33,6 @@ pub(crate) enum ReferenceKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Resolution {
     Resolved,
-    Null,
     OutOfRange,
     EvenSequence,
     Dangling,
@@ -456,9 +455,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                     let target = candidate
                         .target_sequence
                         .and_then(|value| index.get(&value).copied());
-                    let resolution = if candidate.raw_pointer == 0 {
-                        Resolution::Null
-                    } else if candidate.target_sequence.is_none() {
+                    let resolution = if candidate.target_sequence.is_none() {
                         Resolution::OutOfRange
                     } else if candidate
                         .target_sequence
@@ -545,9 +542,7 @@ pub(crate) fn losses(
             let records = &records;
             edges
                 .iter()
-                .filter(|edge| {
-                    !matches!(edge.resolution, Resolution::Resolved | Resolution::Null)
-                })
+                .filter(|edge| edge.resolution != Resolution::Resolved)
                 .map(move |edge| {
                     let parameter_location = edge.origin.parameter_index().and_then(|index| {
                         let record = records.get(source)?;
