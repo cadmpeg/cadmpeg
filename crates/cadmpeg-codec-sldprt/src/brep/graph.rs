@@ -52,58 +52,58 @@ const EPS_POINT_DISTANCE: f64 = 1.0e-12;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
-pub struct Brep {
+pub(crate) struct Brep {
     /// Source locations for decoded entities.
-    pub annotations: Annotations,
+    pub(crate) annotations: Annotations,
     /// Top-level solid or sheet bodies.
-    pub bodies: Vec<Body>,
+    pub(crate) bodies: Vec<Body>,
     /// Solid regions / sheet regions owned by each body.
-    pub regions: Vec<Region>,
+    pub(crate) regions: Vec<Region>,
     /// Shells owned by each region.
-    pub shells: Vec<Shell>,
+    pub(crate) shells: Vec<Shell>,
     /// Faces reached through face-use bridge records.
-    pub faces: Vec<Face>,
+    pub(crate) faces: Vec<Face>,
     /// Loops reached through `00 0f` loop heads.
-    pub loops: Vec<Loop>,
+    pub(crate) loops: Vec<Loop>,
     /// Coedges in loop-ring order.
-    pub coedges: Vec<Coedge>,
+    pub(crate) coedges: Vec<Coedge>,
     /// Edges resolved from edge-use records.
-    pub edges: Vec<Edge>,
+    pub(crate) edges: Vec<Edge>,
     /// Vertices resolved from vertex-use and world-point records.
-    pub vertices: Vec<Vertex>,
+    pub(crate) vertices: Vec<Vertex>,
     /// World points converted to millimetres.
-    pub points: Vec<Point>,
+    pub(crate) points: Vec<Point>,
     /// Analytic, NURBS, or opaque support surfaces.
-    pub surfaces: Vec<Surface>,
+    pub(crate) surfaces: Vec<Surface>,
     /// Exact procedural constructions behind emitted support surfaces.
-    pub procedural_surfaces: Vec<ProceduralSurface>,
+    pub(crate) procedural_surfaces: Vec<ProceduralSurface>,
     /// Analytic, NURBS, or opaque support curves.
-    pub curves: Vec<Curve>,
+    pub(crate) curves: Vec<Curve>,
     /// Pcurves derived for supported analytic and NURBS-boundary cases.
-    pub pcurves: Vec<Pcurve>,
+    pub(crate) pcurves: Vec<Pcurve>,
     /// Records whose carrier kind this codec does not type, retained as
     /// opaque payloads.
-    pub unknowns: Vec<UnknownRecord>,
+    pub(crate) unknowns: Vec<UnknownRecord>,
     /// Per-face RGB colors resolved from native entity records.
-    pub face_colors: Vec<entity::FaceColor>,
+    pub(crate) face_colors: Vec<entity::FaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
-    pub face_atoms: Vec<attrib::FaceAtom>,
+    pub(crate) face_atoms: Vec<attrib::FaceAtom>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
-    pub face_bridge_sequences: Vec<(u32, u16)>,
+    pub(crate) face_bridge_sequences: Vec<(u32, u16)>,
     /// Source-local sequence-to-attribute links carried by edge-use records.
     /// The decode boundary retains this map only for the active source because
     /// SWIFT identifiers resolve in that source namespace.
-    pub edge_use_sequences: Vec<(u32, u16)>,
+    pub(crate) edge_use_sequences: Vec<(u32, u16)>,
     /// Source-local sequence-to-attribute links carried by vertex-use records.
     /// The decode boundary retains this map only for the active source because
     /// SWIFT identifiers resolve in that source namespace.
-    pub vertex_use_sequences: Vec<(u32, u16)>,
+    pub(crate) vertex_use_sequences: Vec<(u32, u16)>,
     /// Body-to-history ordinals resolved from Parasolid attributes.
-    pub body_modifiers: Vec<attrib::BodyModifier>,
+    pub(crate) body_modifiers: Vec<attrib::BodyModifier>,
     /// Loss accounting for this decode.
-    pub stats: Stats,
+    pub(crate) stats: Stats,
 }
 
 impl Brep {
@@ -440,28 +440,28 @@ struct ShellRecord {
 
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
-pub struct Stats {
+pub(crate) struct Stats {
     /// Framed top-level model entity records across the selected stream site.
-    pub source_entity_records: usize,
+    pub(crate) source_entity_records: usize,
     /// Face-color bindings withheld because current records conflict.
-    pub unresolved_face_colors: usize,
+    pub(crate) unresolved_face_colors: usize,
     /// Face owners with multiple non-equivalent bridge uses.
-    pub ambiguous_face_owners: usize,
+    pub(crate) ambiguous_face_owners: usize,
     /// Canonical faces that no explicit body record claims.
-    pub unclaimed_faces: usize,
+    pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
-    pub unknown_surface_faces: usize,
+    pub(crate) unknown_surface_faces: usize,
     /// Hidden procedural support surfaces whose carrier geometry remains opaque.
-    pub unknown_procedural_supports: usize,
+    pub(crate) unknown_procedural_supports: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
-    pub unknown_curve_edges: usize,
+    pub(crate) unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
-    pub ambiguous_pcurve_parameters: usize,
+    pub(crate) ambiguous_pcurve_parameters: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
-    pub off_surface_nurbs_pcurves: usize,
+    pub(crate) off_surface_nurbs_pcurves: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
-    pub synthetic_body_grouping: bool,
+    pub(crate) synthetic_body_grouping: bool,
 }
 
 fn id_face(a: u16) -> String {
@@ -881,7 +881,7 @@ fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
-pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
+pub(crate) fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
     decode_body(&payload[header.body_offset.min(payload.len())..], stream)
 }
 
@@ -890,7 +890,7 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 /// Partition records are the base set. Deltas records fill missing subordinate
 /// records and point updates, but do not replace a same-identity partition
 /// topology or carrier record. `stream` names the combined provenance source.
-pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
+pub(crate) fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();

@@ -127,7 +127,7 @@ pub(crate) fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut E
     }
 }
 
-pub fn bind_topology_selections(
+pub(crate) fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     inputs: &TopologySelectionInputs<'_>,

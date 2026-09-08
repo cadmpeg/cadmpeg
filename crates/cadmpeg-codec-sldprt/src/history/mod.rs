@@ -28,7 +28,10 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
-pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
+pub(crate) fn histories(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Vec<FeatureHistory> {
     scan.sections()
         .filter_map(|section| {
             let source = section.ordinal();

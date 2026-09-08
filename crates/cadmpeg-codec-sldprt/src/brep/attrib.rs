@@ -41,28 +41,28 @@ const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
 #[derive(Debug, Clone)]
-pub struct RawFaceAtom {
+pub(crate) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
-    pub face_attr: u16,
-    pub identity: super::PersistentFaceIdentity,
+    pub(crate) face_attr: u16,
+    pub(crate) identity: super::PersistentFaceIdentity,
 }
 
 /// A persistent identity bound to an emitted face.
 #[derive(Debug, Clone)]
-pub struct FaceAtom {
-    pub face: cadmpeg_ir::ids::FaceId,
-    pub identity: super::PersistentFaceIdentity,
+pub(crate) struct FaceAtom {
+    pub(crate) face: cadmpeg_ir::ids::FaceId,
+    pub(crate) identity: super::PersistentFaceIdentity,
 }
 
 /// One body's last modifying history ordinal.
 #[derive(Debug, Clone)]
-pub struct BodyModifier {
+pub(crate) struct BodyModifier {
     /// Attribute id of the body carrying the attribute.
-    pub body_attr: u16,
+    pub(crate) body_attr: u16,
     /// One-based ordinal in the ordered Keywords modeling-feature records.
-    pub history_ordinal: u32,
+    pub(crate) history_ordinal: u32,
     /// Emitted body identity, resolved once the graph retains its bodies.
-    pub target: Option<String>,
+    pub(crate) target: Option<String>,
 }
 
 /// Start of a record body: the tag, then an optional `0xff` marker.
@@ -280,7 +280,7 @@ fn atom_payload<'a>(
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
-pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
+pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == ATOM_ID) {
         return Vec::new();
@@ -338,7 +338,7 @@ pub fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
 }
 
 /// Decode every body-level last-modifier binding carried by one stream body.
-pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
+pub(crate) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
         return Vec::new();

@@ -28,7 +28,7 @@ const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
 pub(crate) mod eval;
 pub(crate) use eval::*;
 
-pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
+pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
     let feature_names = histories
         .iter()
         .flat_map(|history| {
@@ -132,7 +132,7 @@ pub(crate) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterV
         || identifiers
             .identifiers
             .iter()
-            .any(definite_parameter_reference)
+            .any(|identifier| definite_parameter_reference(expression, identifier))
     {
         return None;
     }
@@ -588,10 +588,12 @@ pub(crate) fn parameters_with_unresolved_references(
                     .filter(|identifier| {
                         !expression_identifier_is_syntax(&parameter.expression, identifier)
                     })
-                    .filter(definite_parameter_reference)
+                    .filter(|identifier| {
+                        definite_parameter_reference(&parameter.expression, identifier)
+                    })
                     .any(|identifier| {
                         aliases
-                            .get(&identifier.value)
+                            .get(identifier.value(&parameter.expression).as_ref())
                             .and_then(Clone::clone)
                             .is_none_or(|dependency| dependency == parameter.id)
                     })
@@ -719,12 +721,18 @@ pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &Paramet
     }
 }
 
-pub(crate) fn definite_parameter_reference(identifier: &ExpressionIdentifier) -> bool {
+pub(crate) fn definite_parameter_reference(
+    expression: &str,
+    identifier: &ExpressionIdentifier,
+) -> bool {
     identifier.quoted
-        || identifier.value.contains('@')
-        || identifier.value.strip_prefix('D').is_some_and(|ordinal| {
-            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-        })
+        || identifier.value(expression).contains('@')
+        || identifier
+            .value(expression)
+            .strip_prefix('D')
+            .is_some_and(|ordinal| {
+                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+            })
 }
 
 pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
@@ -732,7 +740,7 @@ pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = S
         .identifiers
         .into_iter()
         .filter(|token| !expression_identifier_is_syntax(expression, token))
-        .map(|token| token.value)
+        .map(|token| token.value(expression).into_owned())
 }
 
 pub(crate) fn expression_identifier_is_syntax(
@@ -743,18 +751,18 @@ pub(crate) fn expression_identifier_is_syntax(
         return false;
     }
     if identifier
-        .value
+        .value(expression)
         .starts_with(|character: char| character.is_ascii_digit() || character == '.')
     {
         return true;
     }
-    if identifier.value.eq_ignore_ascii_case("pi")
-        || identifier.value.eq_ignore_ascii_case("true")
-        || identifier.value.eq_ignore_ascii_case("false")
+    if identifier.value(expression).eq_ignore_ascii_case("pi")
+        || identifier.value(expression).eq_ignore_ascii_case("true")
+        || identifier.value(expression).eq_ignore_ascii_case("false")
     {
         return true;
     }
-    let is_function = eval::ParameterFunction::parse(&identifier.value).is_some();
+    let is_function = eval::ParameterFunction::parse(&identifier.value(expression)).is_some();
     is_function && expression[identifier.end..].trim_start().starts_with('(')
 }
 
@@ -766,8 +774,23 @@ pub(crate) struct ParsedExpressionIdentifiers {
 pub(crate) struct ExpressionIdentifier {
     pub(crate) start: usize,
     pub(crate) end: usize,
-    pub(crate) value: String,
     pub(crate) quoted: bool,
+}
+
+impl ExpressionIdentifier {
+    pub(crate) fn value<'a>(&self, expression: &'a str) -> std::borrow::Cow<'a, str> {
+        let raw = &expression[self.start..self.end];
+        if self.quoted {
+            let raw = &raw[1..raw.len() - 1];
+            if raw.contains("\"\"") {
+                std::borrow::Cow::Owned(raw.replace("\"\"", "\""))
+            } else {
+                std::borrow::Cow::Borrowed(raw)
+            }
+        } else {
+            std::borrow::Cow::Borrowed(raw)
+        }
+    }
 }
 
 pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpressionIdentifiers {
@@ -776,13 +799,11 @@ pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpression
     while at < expression.len() {
         let rest = &expression[at..];
         if rest.starts_with('"') {
-            let mut value = String::new();
             let mut cursor = at + 1;
             let mut closed = false;
             while cursor < expression.len() {
                 let quoted = &expression[cursor..];
                 if quoted.starts_with("\"\"") {
-                    value.push('"');
                     cursor += 2;
                 } else if quoted.starts_with('"') {
                     cursor += 1;
@@ -790,16 +811,14 @@ pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpression
                     break;
                 } else {
                     let character = quoted.chars().next().expect("nonempty suffix");
-                    value.push(character);
                     cursor += character.len_utf8();
                 }
             }
             if closed {
-                if !value.is_empty() {
+                if cursor > at + 2 {
                     identifiers.push(ExpressionIdentifier {
                         start: at,
                         end: cursor,
-                        value,
                         quoted: true,
                     });
                 }
@@ -825,7 +844,6 @@ pub(crate) fn expression_identifier_tokens(expression: &str) -> ParsedExpression
             identifiers.push(ExpressionIdentifier {
                 start: at,
                 end: at + end,
-                value: rest[..end].to_string(),
                 quoted: false,
             });
             at += end;

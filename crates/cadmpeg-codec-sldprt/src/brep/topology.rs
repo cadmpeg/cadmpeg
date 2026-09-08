@@ -27,36 +27,36 @@ use cadmpeg_ir::topology::Sense;
 use crate::layout::world_point as world_pt;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
-pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+pub(crate) const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Bridge {
-    pub attr: u16,
-    pub refs: [u16; 5],
-    pub sequence: u32,
-    pub sense: Sense,
-    pub owner: Option<u16>,
-    pub offset: usize,
+pub(crate) struct Bridge {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 5],
+    pub(crate) sequence: u32,
+    pub(crate) sense: Sense,
+    pub(crate) owner: Option<u16>,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Loop {
-    pub attr: u16,
-    pub refs: [u16; 4],
-    pub offset: usize,
+pub(crate) struct Loop {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 4],
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct EdgeUse {
-    pub attr: u16,
-    pub references: EdgeReferences,
-    pub sequence: u32,
-    pub offset: usize,
+pub(crate) struct EdgeUse {
+    pub(crate) attr: u16,
+    pub(crate) references: EdgeReferences,
+    pub(crate) sequence: u32,
+    pub(crate) offset: usize,
 }
 
 /// Bare edge-use cells or the curve-only compact layout.
 #[derive(Debug, Clone, Eq)]
-pub enum EdgeReferences {
+pub(crate) enum EdgeReferences {
     Bare([u16; 6]),
     Compact { curve: u16 },
 }
@@ -76,14 +76,14 @@ impl PartialEq for EdgeReferences {
 }
 
 impl EdgeReferences {
-    pub fn canonical(&self) -> Option<u16> {
+    pub(crate) fn canonical(&self) -> Option<u16> {
         match self {
             Self::Bare(refs) => Some(refs[0]),
             Self::Compact { .. } => None,
         }
     }
 
-    pub fn curve(&self) -> u16 {
+    pub(crate) fn curve(&self) -> u16 {
         match self {
             Self::Bare(refs) => refs[3],
             Self::Compact { curve } => *curve,
@@ -92,28 +92,28 @@ impl EdgeReferences {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Coedge {
-    pub attr: u16,
-    pub refs: [u16; 9],
-    pub sense: Sense,
-    pub offset: usize,
+pub(crate) struct Coedge {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 9],
+    pub(crate) sense: Sense,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct VertexUse {
-    pub attr: u16,
-    pub refs: [u16; 5],
-    pub sequence: u32,
-    pub offset: usize,
+pub(crate) struct VertexUse {
+    pub(crate) attr: u16,
+    pub(crate) refs: [u16; 5],
+    pub(crate) sequence: u32,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Point {
-    pub attr: u16,
-    pub refs: Vec<u16>,
-    pub xyz_m: [f64; 3],
-    pub xyz_offset: usize,
-    pub offset: usize,
+pub(crate) struct Point {
+    pub(crate) attr: u16,
+    pub(crate) refs: Vec<u16>,
+    pub(crate) xyz_m: [f64; 3],
+    pub(crate) xyz_offset: usize,
+    pub(crate) offset: usize,
 }
 
 fn parse_sense(marker: u8) -> Option<Sense> {
@@ -480,7 +480,11 @@ impl Tables {
     ///
     /// Preserve partition topology for shared identities and add only deltas
     /// bridges selected by the typed FACE ownership set.
-    pub fn merge_deltas(&mut self, mut deltas: Self, selected_bridge_attrs: Option<&HashSet<u16>>) {
+    pub(crate) fn merge_deltas(
+        &mut self,
+        mut deltas: Self,
+        selected_bridge_attrs: Option<&HashSet<u16>>,
+    ) {
         if self.bridges.is_empty() {
             if let Some(selected_bridge_attrs) = selected_bridge_attrs {
                 retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
@@ -770,7 +774,7 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// enclosing payload. Family-specific framing gates reject payload coincidences.
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
-pub fn scan(body: &[u8]) -> Tables {
+pub(crate) fn scan(body: &[u8]) -> Tables {
     scan_with_point_framing(body, false, None, None)
 }
 

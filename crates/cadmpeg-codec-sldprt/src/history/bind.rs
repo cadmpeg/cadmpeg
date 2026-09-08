@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::history::classify::is_history_metadata_record;
 
-pub fn bind_unique_sketch_feature(
+pub(crate) fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
@@ -168,7 +168,9 @@ pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
 /// Assign stable neutral regeneration ordinals with every structural parent and
 /// explicit dependency before its consumer. Native history ordinals retain the
 /// independent Keywords serialization order.
-pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Feature]) -> bool {
+pub(crate) fn order_features_for_regeneration(
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> bool {
     let tree_parent_by_child = features
         .iter()
         .filter_map(|feature| {
@@ -249,7 +251,7 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
 
 /// Assign one regeneration order that satisfies the baseline feature graph and
 /// every configuration-local feature graph.
-pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool {
+pub(crate) fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool {
     let mut ordering_graph = ir.model.features.clone();
     let by_id = ordering_graph
         .iter()
@@ -331,7 +333,7 @@ pub(crate) fn face_owner_bodies(
 /// the ordered, non-metadata Keywords feature records. A resolved ordinal adds
 /// that body to the corresponding feature's outputs. An ordinal that is absent
 /// or ambiguous across history records is ignored.
-pub fn derive_feature_outputs(
+pub(crate) fn derive_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     face_producers: &[(String, u32)],

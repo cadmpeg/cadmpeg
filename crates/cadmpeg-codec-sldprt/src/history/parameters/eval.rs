@@ -7,6 +7,11 @@ use std::collections::HashMap;
 use super::ParameterAliasView;
 use crate::history::literals::parse_parameter_literal;
 
+enum Token {
+    Quoted(String),
+    Bare(String),
+}
+
 pub(crate) struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
@@ -131,11 +136,11 @@ impl<'a> ParameterExpressionParser<'a> {
             self.skip_space();
             return self.take(')').then_some(value);
         }
-        let (token, quoted) = self.token()?;
-        if !quoted {
+        let token = self.token()?;
+        if let Token::Bare(token) = &token {
             self.skip_space();
             if self.take('(') {
-                let function = ParameterFunction::parse(&token)?;
+                let function = ParameterFunction::parse(token)?;
                 let mut arguments = Vec::with_capacity(function.argument_count());
                 for index in 0..function.argument_count() {
                     if index != 0 {
@@ -156,20 +161,19 @@ impl<'a> ParameterExpressionParser<'a> {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
             }
         }
-        let referenced = || {
+        let referenced = |token: &str| {
             self.aliases
-                .get(&token)
+                .get(token)
                 .and_then(Clone::clone)
                 .and_then(|id| self.values.get(&id).cloned())
         };
-        if quoted {
-            referenced()
-        } else {
-            parse_parameter_literal(&token).or_else(referenced)
+        match token {
+            Token::Quoted(token) => referenced(&token),
+            Token::Bare(token) => parse_parameter_literal(&token).or_else(|| referenced(&token)),
         }
     }
 
-    fn token(&mut self) -> Option<(String, bool)> {
+    fn token(&mut self) -> Option<Token> {
         let rest = &self.input[self.offset..];
         if let Some((marker, prefix)) = [
             ("<MOD-DIAM>", "<MOD-DIAM>"),
@@ -181,8 +185,10 @@ impl<'a> ParameterExpressionParser<'a> {
         .find(|(marker, _)| rest.starts_with(marker))
         {
             self.offset += marker.len();
-            let (value, quoted) = self.token()?;
-            return (!quoted).then(|| (format!("{prefix}{value}"), false));
+            let Token::Bare(value) = self.token()? else {
+                return None;
+            };
+            return Some(Token::Bare(format!("{prefix}{value}")));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -194,7 +200,7 @@ impl<'a> ParameterExpressionParser<'a> {
                     self.offset += 2;
                 } else if rest.starts_with('"') {
                     self.offset += 1;
-                    return Some((value, true));
+                    return Some(Token::Quoted(value));
                 } else {
                     let character = rest.chars().next()?;
                     value.push(character);
@@ -218,7 +224,7 @@ impl<'a> ParameterExpressionParser<'a> {
             }
             self.offset += character.len_utf8();
         }
-        (self.offset > start).then(|| (self.input[start..self.offset].to_string(), false))
+        (self.offset > start).then(|| Token::Bare(self.input[start..self.offset].to_string()))
     }
 
     fn skip_space(&mut self) {
