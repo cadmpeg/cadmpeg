@@ -992,7 +992,9 @@ mod tests {
     fn f32_read_distinguishes_truncation_from_stored_nan() {
         assert_eq!(super::f32_le(&[0; 3], 0), None);
         assert_eq!(super::f32_le(&[0; 4], 5), None);
-        assert!(super::f32_le(&f32::NAN.to_le_bytes(), 0).unwrap().is_nan());
+        assert!(super::f32_le(&f32::NAN.to_le_bytes(), 0)
+            .expect("complete stored NaN")
+            .is_nan());
         assert_eq!(super::f32_le(&1.5_f32.to_le_bytes(), 0), Some(1.5));
     }
 }
