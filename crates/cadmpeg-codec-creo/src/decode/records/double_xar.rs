@@ -5,7 +5,7 @@ use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
 
 use crate::container::ModelDoubleXarTable;
-use crate::scalar::DoubleXarEntry;
+use crate::scalar::DoubleXarSlot;
 
 pub(in crate::decode) struct CreoDoubleXarTableRecord<'a> {
     pub(in crate::decode) id: String,
@@ -25,7 +25,7 @@ impl Serialize for CreoDoubleXarTableRecord<'_> {
     }
 }
 
-struct Entries<'a>(&'a [DoubleXarEntry]);
+struct Entries<'a>(&'a [DoubleXarSlot]);
 
 impl Serialize for Entries<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -41,9 +41,9 @@ impl Serialize for Entries<'_> {
         for (index, entry) in self.0.iter().enumerate() {
             entries.serialize_element(&Entry {
                 index,
-                raw: &entry.raw,
-                value: entry.slot.value(),
-                kind: entry.slot.kind(),
+                raw: entry.raw(),
+                value: entry.value(),
+                kind: entry.kind(),
             })?;
         }
         entries.end()

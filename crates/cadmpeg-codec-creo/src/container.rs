@@ -209,7 +209,7 @@ pub struct ModelDoubleXarTable {
     /// Offset of the table label in the expanded section.
     pub expanded_offset: usize,
     /// Entries in stored order.
-    pub entries: Vec<crate::scalar::DoubleXarEntry>,
+    pub entries: Vec<crate::scalar::DoubleXarSlot>,
 }
 
 /// The byte-backed count headers read from the visible-geometry section.
