@@ -695,11 +695,15 @@ fn extract_entry(args: &ExtractArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
     let payload = container::extract(&bytes, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
-    match &args.output {
+    let destination = crate::application::artifact_store::FileDestination::optional(
+        args.output.clone().filter(|path| path != Path::new("-")),
+        args.force,
+    );
+    match destination {
         None => write_payload_to_stdout(&payload),
-        Some(path) if path == Path::new("-") => write_payload_to_stdout(&payload),
-        Some(path) => {
-            if path.exists() && !args.force {
+        Some(destination) => {
+            let path = &destination.path;
+            if path.exists() && !destination.overwrite {
                 bail!("{} exists; pass --force to replace it", path.display());
             }
             std::fs::write(path, &payload)

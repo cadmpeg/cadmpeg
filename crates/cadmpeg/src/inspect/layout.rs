@@ -16,6 +16,7 @@
 //! Example: `u32le:count,pad4,f64le:x,f64le:y,bytes4:tag`.
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 use super::numeric::{Endian, ScalarType};
 
@@ -120,9 +121,7 @@ pub enum FieldKind {
     /// A fixed-width number in a stated byte order.
     Scalar(ScalarType, Endian),
     /// A run of raw bytes rendered as hexadecimal.
-    Bytes(usize),
-    /// A run of bytes that is skipped and never printed.
-    Pad(usize),
+    Bytes(NonZeroUsize),
 }
 
 impl FieldKind {
@@ -130,7 +129,7 @@ impl FieldKind {
     pub const fn width(self) -> usize {
         match self {
             Self::Scalar(ty, _) => ty.width(),
-            Self::Bytes(count) | Self::Pad(count) => count,
+            Self::Bytes(count) => count.get(),
         }
     }
 
@@ -139,18 +138,23 @@ impl FieldKind {
         match self {
             Self::Scalar(ty, endian) => ty.display_name(endian),
             Self::Bytes(count) => format!("bytes{count}"),
-            Self::Pad(count) => format!("pad{count}"),
         }
     }
 }
 
-/// One named field and its byte offset inside the record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Field {
-    /// Field name, defaulted to `f<index>` when the spec omits one.
-    name: String,
-    /// What the field reads.
-    kind: FieldKind,
+enum Field {
+    Named { name: String, kind: FieldKind },
+    Pad(NonZeroUsize),
+}
+
+impl Field {
+    fn width(&self) -> usize {
+        match self {
+            Self::Named { kind, .. } => kind.width(),
+            Self::Pad(count) => count.get(),
+        }
+    }
 }
 
 /// A parsed record layout.
@@ -181,37 +185,48 @@ impl Layout {
                 return Err(LayoutError::EmptyField { index });
             }
             let (type_text, name) = split_name(token, index)?;
-            let kind = parse_kind(type_text, token)?;
-            if matches!(kind, FieldKind::Pad(_)) && name.is_some() {
-                return Err(LayoutError::NamedPad {
-                    token: token.to_string(),
-                });
-            }
-            let name = name.unwrap_or_else(|| format!("f{index}"));
-            fields.push(Field { name, kind });
-            offset = offset
-                .checked_add(kind.width())
-                .ok_or_else(|| LayoutError::SizeOverflow {
-                    token: token.to_string(),
-                })?;
+            let field = if let Some(count) = type_text.strip_prefix("pad") {
+                let count = parse_count(count, token, "pad")?;
+                if name.is_some() {
+                    return Err(LayoutError::NamedPad {
+                        token: token.to_string(),
+                    });
+                }
+                Field::Pad(count)
+            } else {
+                Field::Named {
+                    kind: parse_kind(type_text, token)?,
+                    name: name.unwrap_or_else(|| format!("f{index}")),
+                }
+            };
+            offset =
+                offset
+                    .checked_add(field.width())
+                    .ok_or_else(|| LayoutError::SizeOverflow {
+                        token: token.to_string(),
+                    })?;
+            fields.push(field);
         }
         Ok(Self { fields })
     }
 
     /// Returns the total record size in bytes.
     pub fn size(&self) -> usize {
-        self.fields.iter().map(|field| field.kind.width()).sum()
+        self.fields.iter().map(Field::width).sum()
     }
 
-    /// Returns the field names in layout order, including padding.
+    /// Returns the printable field names in layout order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.fields.iter().map(|field| field.name.as_str())
+        self.fields.iter().filter_map(|field| match field {
+            Field::Named { name, .. } => Some(name.as_str()),
+            Field::Pad(_) => None,
+        })
     }
 
     fn fields_with_offsets(&self) -> impl Iterator<Item = (usize, &Field)> {
         self.fields.iter().scan(0, |offset, field| {
             let start = *offset;
-            *offset += field.kind.width();
+            *offset += field.width();
             Some((start, field))
         })
     }
@@ -225,18 +240,20 @@ impl Layout {
     pub fn decode(&self, record: &[u8]) -> Vec<DecodedField> {
         self.fields_with_offsets()
             .filter_map(|(offset, field)| {
-                let bytes = &record[offset..offset + field.kind.width()];
-                let (decimal, hex) = match field.kind {
+                let Field::Named { name, kind } = field else {
+                    return None;
+                };
+                let bytes = &record[offset..offset + kind.width()];
+                let (decimal, hex) = match *kind {
                     FieldKind::Scalar(ty, endian) => {
                         let value = ty.read(bytes, endian);
                         (value.decimal(), value.hex())
                     }
                     FieldKind::Bytes(_) => (String::new(), hex_bytes(bytes)),
-                    FieldKind::Pad(_) => return None,
                 };
                 Some(DecodedField {
-                    name: field.name.clone(),
-                    type_name: field.kind.type_name(),
+                    name: name.clone(),
+                    type_name: kind.type_name(),
                     offset,
                     decimal,
                     hex,
@@ -286,9 +303,6 @@ fn parse_kind(type_text: &str, token: &str) -> Result<FieldKind, LayoutError> {
     if let Some(count) = type_text.strip_prefix("bytes") {
         return parse_count(count, token, "bytes").map(FieldKind::Bytes);
     }
-    if let Some(count) = type_text.strip_prefix("pad") {
-        return parse_count(count, token, "pad").map(FieldKind::Pad);
-    }
     if let Some(ty) = ScalarType::from_base_name(type_text) {
         if ty.is_single_byte() {
             return Ok(FieldKind::Scalar(ty, Endian::Le));
@@ -320,7 +334,11 @@ fn parse_kind(type_text: &str, token: &str) -> Result<FieldKind, LayoutError> {
     })
 }
 
-fn parse_count(digits: &str, token: &str, keyword: &'static str) -> Result<usize, LayoutError> {
+fn parse_count(
+    digits: &str,
+    token: &str,
+    keyword: &'static str,
+) -> Result<NonZeroUsize, LayoutError> {
     if digits.is_empty() {
         return Err(LayoutError::MissingCount {
             token: token.to_string(),
@@ -332,13 +350,10 @@ fn parse_count(digits: &str, token: &str, keyword: &'static str) -> Result<usize
         keyword,
         digits: digits.to_string(),
     })?;
-    if count == 0 {
-        return Err(LayoutError::ZeroCount {
-            token: token.to_string(),
-            keyword,
-        });
-    }
-    Ok(count)
+    NonZeroUsize::new(count).ok_or_else(|| LayoutError::ZeroCount {
+        token: token.to_string(),
+        keyword,
+    })
 }
 
 fn hex_bytes(bytes: &[u8]) -> String {
@@ -356,12 +371,22 @@ fn hex_bytes(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn padding_does_not_widen_printed_name_column() {
+        let layout = Layout::parse("u8:x,pad4,u8:y").unwrap();
+        assert_eq!(layout.names().map(str::len).max(), Some(1));
+        assert_eq!(layout.names().collect::<Vec<_>>(), ["x", "y"]);
+    }
+
     fn kinds(spec: &str) -> Vec<FieldKind> {
         Layout::parse(spec)
             .unwrap()
             .fields
             .into_iter()
-            .map(|field| field.kind)
+            .filter_map(|field| match field {
+                Field::Named { kind, .. } => Some(kind),
+                Field::Pad(_) => None,
+            })
             .collect()
     }
 
@@ -369,12 +394,8 @@ mod tests {
     fn parses_the_documented_example() {
         let layout = Layout::parse("u32le:count,pad4,f64le:x,f64le:y,bytes4:tag").unwrap();
         assert_eq!(layout.size(), 4 + 4 + 8 + 8 + 4);
-        let names: Vec<&str> = layout
-            .fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect();
-        assert_eq!(names, ["count", "f1", "x", "y", "tag"]);
+        let names: Vec<&str> = layout.names().collect();
+        assert_eq!(names, ["count", "x", "y", "tag"]);
         let offsets: Vec<usize> = layout
             .fields_with_offsets()
             .map(|(offset, _)| offset)
@@ -406,8 +427,7 @@ mod tests {
     fn tolerates_whitespace_around_tokens_and_names() {
         let layout = Layout::parse(" u32le : count , f64be:x ").unwrap();
         assert_eq!(layout.size(), 12);
-        assert_eq!(layout.fields[0].name, "count");
-        assert_eq!(layout.fields[1].name, "x");
+        assert_eq!(layout.names().collect::<Vec<_>>(), ["count", "x"]);
     }
 
     #[track_caller]

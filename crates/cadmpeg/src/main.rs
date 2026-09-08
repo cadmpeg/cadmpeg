@@ -18,9 +18,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use cadmpeg_registry::{ForcedInput, InputCatalog};
+use clap::builder::TypedValueParser;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
+use crate::application::artifact_store::FileDestination;
 use crate::application::transcoder::{DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
@@ -48,19 +50,16 @@ struct InputArgs {
     #[arg(
         long,
         visible_alias = "from",
-        value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+        value_parser = input_format_parser()
     )]
-    input_format: Option<String>,
+    input_format: Option<ForcedInput>,
 }
 
-impl InputArgs {
-    fn forced(&self) -> Option<ForcedInput> {
-        forced_input(self.input_format.as_deref())
-    }
-}
-
-fn forced_input(name: Option<&str>) -> Option<ForcedInput> {
-    name.map(|name| cadmpeg_registry::forced_input(name).expect("clap validates input formats"))
+fn input_format_parser() -> impl TypedValueParser<Value = ForcedInput> {
+    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names()).try_map(|name| {
+        cadmpeg_registry::forced_input(&name)
+            .ok_or_else(|| format!("unsupported input format: {name}"))
+    })
 }
 
 #[derive(Debug, Clone, Args)]
@@ -285,15 +284,15 @@ enum Command {
         /// Treat the first file as this format.
         #[arg(
             long,
-            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+            value_parser = input_format_parser()
         )]
-        input_format_a: Option<String>,
+        input_format_a: Option<ForcedInput>,
         /// Treat the second file as this format.
         #[arg(
             long,
-            value_parser = clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names())
+            value_parser = input_format_parser()
         )]
-        input_format_b: Option<String>,
+        input_format_b: Option<ForcedInput>,
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
@@ -337,10 +336,9 @@ fn main() -> ExitCode {
         Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
             &inputs,
             args.file.path(),
-            args.input_args.forced(),
+            args.input_args.input_format,
             args.json,
-            args.report.as_deref(),
-            args.force,
+            FileDestination::optional(args.report, args.force).as_ref(),
             args.limits.limits(),
         )
         .map(|()| ExitCode::SUCCESS),
@@ -355,10 +353,9 @@ fn main() -> ExitCode {
         } => commands::dump(
             &inputs,
             file.path(),
-            output.as_deref(),
-            force,
-            report.as_deref(),
-            input_args.forced(),
+            &DestinationPolicy::new(output, force, false),
+            FileDestination::optional(report, force).as_ref(),
+            input_args.input_format,
             &decode,
         )
         .map(|()| ExitCode::SUCCESS),
@@ -375,11 +372,10 @@ fn main() -> ExitCode {
         } => commands::check_cmd(
             &inputs,
             file.path(),
-            input_args.forced(),
+            input_args.input_format,
             &decode,
             json,
-            report.as_deref(),
-            force,
+            FileDestination::optional(report, force).as_ref(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
@@ -395,16 +391,15 @@ fn main() -> ExitCode {
             &inputs,
             commands::DiffInput {
                 path: &a,
-                forced: forced_input(input_format_a.as_deref()),
+                forced: input_format_a,
             },
             commands::DiffInput {
                 path: &b,
-                forced: forced_input(input_format_b.as_deref()),
+                forced: input_format_b,
             },
             &decode,
             json,
-            report.as_deref(),
-            force,
+            FileDestination::optional(report, force).as_ref(),
         ),
         Command::Convert {
             file,
@@ -425,9 +420,8 @@ fn main() -> ExitCode {
                 allow_errors,
                 allow_empty,
                 destination: DestinationPolicy::new(output, force, binary_stdout),
-                overwrite_report: force,
-                report,
-                forced_input: input_args.forced(),
+                report: FileDestination::optional(report, force),
+                forced_input: input_args.input_format,
             };
             commands::convert(
                 &inputs,
