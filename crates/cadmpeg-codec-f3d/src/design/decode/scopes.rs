@@ -6944,27 +6944,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
         value_offset: scalar.value_offset,
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
-        let tangency_weight = tangency_lane.map(scalar);
-        if tangency_weight
-            .as_ref()
-            .is_some_and(|weight| weight.value <= 0.0)
-            || law.radii().any(|radius| radius.value < 0.0)
-            || law.radii().all(|radius| radius.value == 0.0)
-            || law
-                .intermediate()
-                .iter()
-                .any(|row| !(0.0..1.0).contains(&row.parameter.value))
-            || law
-                .intermediate()
-                .windows(2)
-                .any(|pair| pair[0].parameter.value >= pair[1].parameter.value)
-        {
-            return None;
-        }
-        Some(DesignFixedFilletGroup {
-            tangency_weight,
-            law,
-        })
+        DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
     };
     let groups = if lanes.len() == 1 {
         vec![group(
