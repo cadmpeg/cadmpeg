@@ -94,7 +94,7 @@ fn exact_class_363_operand_path(
         || leading_record_index == terminal_record_index
         || leading_identity_record_index == terminal_identity_record_index
         || rigid_transform_at(bytes, carrier_at.checked_add(class_363_carrier::TRANSFORM)?)?
-            != frame.transform
+            != frame.transform.rows()
         || marked_record_reference(
             bytes,
             carrier_at.checked_add(class_363_carrier::REPEATED_LEADING_REFERENCE)?,
@@ -458,7 +458,7 @@ mod tests {
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
-            transform: super::super::identity_matrix(),
+            transform: super::super::identity_matrix().try_into().unwrap(),
             transform_offset: 20,
         };
 

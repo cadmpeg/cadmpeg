@@ -2853,7 +2853,7 @@ impl<'a> F3dDecodeSession<'a> {
         let (components, occurrences) = crate::design::components::project_local_components(
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
-        );
+        )?;
         self.ir.model.product_definitions.extend(components);
         self.ir.model.occurrences.extend(occurrences);
         crate::design::components::project_derived_instance_features(
@@ -2865,7 +2865,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
                 self.ir.model.occurrences.len(),
-            );
+            )?;
         self.ir
             .model
             .occurrences
@@ -2874,7 +2874,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
             &self.ir.model.features,
-        );
+        )?;
         Ok(())
     }
 

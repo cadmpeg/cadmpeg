@@ -4079,6 +4079,40 @@ impl DesignMeshBody {
     }
 }
 
+/// A finite row-major affine placement.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct DesignAffineTransform([[f64; 4]; 4]);
+
+impl DesignAffineTransform {
+    /// Four row-major rows.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0
+    }
+}
+
+impl TryFrom<[[f64; 4]; 4]> for DesignAffineTransform {
+    type Error = String;
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        cadmpeg_ir::transform::Transform::from_rows(rows)
+            .map(|_| Self(rows))
+            .ok_or_else(|| "transform must be finite and affine".into())
+    }
+}
+
+impl From<DesignAffineTransform> for [[f64; 4]; 4] {
+    fn from(value: DesignAffineTransform) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for DesignAffineTransform {
+    type Target = [[f64; 4]; 4];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]

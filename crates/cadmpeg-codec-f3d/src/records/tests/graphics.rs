@@ -1202,3 +1202,29 @@ fn strict_guid_text_rejects_relaxed_only_value() {
     )
     .is_err());
 }
+
+#[test]
+fn affine_placement_preserves_shear_and_rejects_invalid_wire() {
+    use crate::records::DesignAffineTransform;
+    let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+    rows[0][1] = 2.0;
+    rows[2][2] = 0.0;
+    let placement = DesignAffineTransform::try_from(rows).unwrap();
+    let wire = serde_json::to_value(rows).unwrap();
+    assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<DesignAffineTransform>(wire).unwrap(),
+        placement
+    );
+    rows[3][0] = 1.0;
+    assert!(DesignAffineTransform::try_from(rows).is_err());
+    assert!(
+        serde_json::from_value::<DesignAffineTransform>(serde_json::to_value(rows).unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("transform")
+    );
+    rows[3][0] = 0.0;
+    rows[0][0] = f64::INFINITY;
+    assert!(DesignAffineTransform::try_from(rows).is_err());
+}

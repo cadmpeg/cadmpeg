@@ -100,7 +100,7 @@ pub(crate) fn exact_component_occurrence(
             crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform: crate::records::Located {
-                    value: transform,
+                    value: transform.try_into().ok()?,
                     offset: u64::try_from(start.checked_add(209)?).ok()?,
                 },
             }
