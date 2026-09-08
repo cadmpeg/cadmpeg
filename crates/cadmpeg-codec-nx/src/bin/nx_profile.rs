@@ -265,6 +265,21 @@ enum DecodeStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FailureStatus {
+    TimedOut,
+    Failed,
+}
+
+impl From<FailureStatus> for DecodeStatus {
+    fn from(status: FailureStatus) -> Self {
+        match status {
+            FailureStatus::TimedOut => Self::TimedOut,
+            FailureStatus::Failed => Self::Failed,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum WorkerFailure {
     TimedOut,
@@ -336,16 +351,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(path.as_path())
             .to_string_lossy()
             .into_owned();
-        if let Some(decoded) = first.as_ref().ok().or_else(|| second.as_ref().ok()) {
-            add_totals(
-                decoded,
-                &mut totals,
-                &mut total_loss_codes,
-                &mut total_loss_details,
-            );
-            fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
-        } else {
-            fixtures.push(failed_fixture_evidence(filename, status));
+        match (first.as_ref(), second.as_ref()) {
+            (Ok(decoded), _) | (_, Ok(decoded)) => {
+                add_totals(
+                    decoded,
+                    &mut totals,
+                    &mut total_loss_codes,
+                    &mut total_loss_details,
+                );
+                fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
+            }
+            (Err(first), Err(second)) => {
+                let failure = if matches!(first, WorkerFailure::TimedOut)
+                    || matches!(second, WorkerFailure::TimedOut)
+                {
+                    FailureStatus::TimedOut
+                } else {
+                    FailureStatus::Failed
+                };
+                fixtures.push(failed_fixture_evidence(filename, failure));
+            }
         }
     }
 
@@ -451,15 +476,14 @@ fn fixture_evidence(
     }
 }
 
-fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvidence {
+fn failed_fixture_evidence(filename: String, status: FailureStatus) -> FixtureEvidence {
     let boundary = match status {
-        DecodeStatus::TimedOut => RederivationBoundary::WorkerTimeout,
-        DecodeStatus::Failed => RederivationBoundary::WorkerFailure,
-        DecodeStatus::Complete => unreachable!("completed status has decoded evidence"),
+        FailureStatus::TimedOut => RederivationBoundary::WorkerTimeout,
+        FailureStatus::Failed => RederivationBoundary::WorkerFailure,
     };
     FixtureEvidence {
         filename,
-        status,
+        status: status.into(),
         deterministic: false,
         entities: EntityCounts::default(),
         losses: BTreeMap::new(),
