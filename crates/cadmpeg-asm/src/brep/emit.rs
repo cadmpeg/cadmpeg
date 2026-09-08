@@ -2909,10 +2909,9 @@ fn emit_silhouette_curve(
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let mut next_side = 0;
-    let support_ids: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
+    let support_ids: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
         let side = next_side;
         next_side += 1;
-        let geometry = geometry.into_surface()?;
         let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
             .expect("identity grammar");
         out.surfaces.push(Surface {
@@ -2922,9 +2921,10 @@ fn emit_silhouette_curve(
         });
         Some(id)
     });
-    let pcurves = embedded.context.pcurves.map(|pcurve| {
-        pcurve
-            .map(|nurbs| cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs }))
+    let pcurves = embedded.pcurves.map(|pcurve| {
+        Some(cadmpeg_ir::geometry::SupportPcurve::from(
+            PcurveGeometry::Nurbs { nurbs: pcurve },
+        ))
     });
     let cast_surface = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:cast_surface"))
         .expect("identity grammar");
@@ -2939,8 +2939,8 @@ fn emit_silhouette_curve(
                 surface: support_ids[side].clone(),
                 pcurve: pcurves[side].clone(),
             }),
-            parameter_range: embedded.context.parameter_range,
-            discontinuities: embedded.context.discontinuities,
+            parameter_range: embedded.parameter_range,
+            discontinuities: embedded.discontinuities,
         },
         silhouette: embedded.silhouette,
         cast_surface,
