@@ -65,8 +65,8 @@ fn scan_resolves_identifiers_within_independent_scopes() {
     assert_eq!(persistence.declaration_count(), 2);
     assert_eq!(persistence.value_count(), 2);
     assert_eq!(persistence.conflicting_declaration_count(), 0);
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(persistence.real_values[0].scope_offset, second);
+    assert_eq!(persistence.real_values.rows.len(), 1);
+    assert_eq!(persistence.real_values.rows[0].scope_offset, second);
 }
 
 #[test]
@@ -218,22 +218,22 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
             @single 4 2\n0 4 [1]\n1 4 400\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.real_values.len(), 4);
-    assert_eq!(persistence.unresolved_real_value_count, 0);
+    assert_eq!(persistence.real_values.rows.len(), 4);
+    assert_eq!(persistence.real_values.unresolved_count, 0);
     assert_eq!(
-        persistence.real_values[0].payload,
+        persistence.real_values.rows[0].payload,
         RealPayload::Scalar {
             value: Real(1.0f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[1].payload,
+        persistence.real_values.rows[1].payload,
         RealPayload::Scalar {
             value: Real(25.4f64.to_bits())
         }
     );
     assert_eq!(
-        persistence.real_values[2].payload,
+        persistence.real_values.rows[2].payload,
         RealPayload::array(
             vec![2, 2],
             vec![
@@ -253,9 +253,9 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
         )
         .expect("complete numeric array")
     );
-    assert_eq!(persistence.real_values[2].payload.element_count(), 4);
+    assert_eq!(persistence.real_values.rows[2].payload.element_count(), 4);
     assert_eq!(
-        persistence.real_values[3].payload,
+        persistence.real_values.rows[3].payload,
         RealPayload::array(
             vec![1],
             vec![RealRun {
@@ -274,8 +274,8 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
             @infinite 3 2\n0 3 7FF\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert!(persistence.real_values.is_empty());
-    assert_eq!(persistence.unresolved_real_value_count, 3);
+    assert!(persistence.real_values.rows.is_empty());
+    assert_eq!(persistence.real_values.unresolved_count, 3);
 }
 
 #[test]
@@ -285,14 +285,14 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
             @single 3 1\n0 3 [1]\n1 3 42\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert_eq!(persistence.integer_values.len(), 3);
-    assert_eq!(persistence.unresolved_integer_value_count, 0);
+    assert_eq!(persistence.integer_values.rows.len(), 3);
+    assert_eq!(persistence.integer_values.unresolved_count, 0);
     assert_eq!(
-        persistence.integer_values[0].payload,
+        persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: i32::MIN }
     );
     assert_eq!(
-        persistence.integer_values[1].payload,
+        persistence.integer_values.rows[1].payload,
         IntegerPayload::array(
             vec![4],
             vec![
@@ -307,7 +307,7 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
         .expect("complete numeric array")
     );
     assert_eq!(
-        persistence.integer_values[2].payload,
+        persistence.integer_values.rows[2].payload,
         IntegerPayload::array(
             vec![1],
             vec![IntegerRun {
@@ -325,8 +325,8 @@ fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
             @overflow 2 1\n0 2 2147483648\n";
     let persistence = scan(data, std::iter::once(0..data.len()));
 
-    assert!(persistence.integer_values.is_empty());
-    assert_eq!(persistence.unresolved_integer_value_count, 2);
+    assert!(persistence.integer_values.rows.is_empty());
+    assert_eq!(persistence.integer_values.unresolved_count, 2);
 }
 
 #[test]
@@ -599,10 +599,13 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
             ],
         }
     );
-    assert_eq!(persistence.integer_values.len(), 1);
-    assert_eq!(persistence.integer_values[0].parent, Some(root_offset));
-    assert_eq!(persistence.real_values.len(), 1);
-    assert_eq!(persistence.real_values[0].parent, Some(first_child_offset));
+    assert_eq!(persistence.integer_values.rows.len(), 1);
+    assert_eq!(persistence.integer_values.rows[0].parent, Some(root_offset));
+    assert_eq!(persistence.real_values.rows.len(), 1);
+    assert_eq!(
+        persistence.real_values.rows[0].parent,
+        Some(first_child_offset)
+    );
     assert_eq!(persistence.objects[1].offset, array_offset);
 }
 

@@ -211,15 +211,18 @@ impl<'a> Index<'a> {
         }
 
         let mut integers_by_parent_name = BTreeMap::new();
-        add_value_index(&mut integers_by_parent_name, &persistence.integer_values);
+        add_value_index(
+            &mut integers_by_parent_name,
+            &persistence.integer_values.rows,
+        );
         let mut reals_by_parent_name = BTreeMap::new();
-        add_value_index(&mut reals_by_parent_name, &persistence.real_values);
+        add_value_index(&mut reals_by_parent_name, &persistence.real_values.rows);
         let mut strings_by_parent_name = BTreeMap::new();
         add_value_index(&mut strings_by_parent_name, &persistence.string_values);
 
         let mut typed_field_names = BTreeMap::new();
-        add_typed_field_names(&mut typed_field_names, &persistence.integer_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.real_values);
+        add_typed_field_names(&mut typed_field_names, &persistence.integer_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.real_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.string_values);
         add_typed_field_names(&mut typed_field_names, &persistence.type_3_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.type_4_values.rows);
@@ -700,14 +703,20 @@ mod tests {
                     9,
                 ),
             ],
-            integer_values: vec![
-                integer(item, "id", 17, 10),
-                integer(item, "type", 2, 11),
-                integer(item, "invisible", 0, 12),
-                integer(instance, "attributes", 0, 13),
-                integer(value, "type", 50, 14),
-            ],
-            real_values: vec![real(value, VALUE_REAL, 2.5, 15)],
+            integer_values: crate::legacy::TypedValues {
+                rows: vec![
+                    integer(item, "id", 17, 10),
+                    integer(item, "type", 2, 11),
+                    integer(item, "invisible", 0, 12),
+                    integer(instance, "attributes", 0, 13),
+                    integer(value, "type", 50, 14),
+                ],
+                unresolved_count: 0,
+            },
+            real_values: crate::legacy::TypedValues {
+                rows: vec![real(value, VALUE_REAL, 2.5, 15)],
+                unresolved_count: 0,
+            },
             string_values: vec![
                 string(item, "name", "d0", 16),
                 string(instance, "name", "SMALL", 17),
@@ -764,7 +773,7 @@ mod tests {
     #[test]
     fn incomplete_value_form_is_retained() {
         let mut persistence = complete_table();
-        persistence.integer_values.retain(|record| {
+        persistence.integer_values.rows.retain(|record| {
             record.name != "type" || record.parent != Some(fixture_offset("value"))
         });
         assert!(parse(&persistence).is_none());
@@ -773,15 +782,18 @@ mod tests {
     #[test]
     fn integer_and_string_value_forms_are_typed_by_their_source_field() {
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
+            .rows
             .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 52, 30));
         persistence
             .integer_values
+            .rows
             .push(integer("value", VALUE_INTEGER, 3, 31));
         let mut table = parse(&persistence).expect("integer family table");
         assert!(matches!(
@@ -795,12 +807,14 @@ mod tests {
         ));
 
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
+            .rows
             .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 51, 40));
         persistence
             .string_values

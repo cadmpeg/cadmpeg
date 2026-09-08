@@ -130,7 +130,7 @@ pub(in super::super) fn source_meta(
             crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
             legacy.persistence.unresolved_object_value_count,
         );
-        let integer_counts = legacy_numeric_coverage(&legacy.persistence.integer_values);
+        let integer_counts = legacy_numeric_coverage(&legacy.persistence.integer_values.rows);
         coverage.record(
             crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
             integer_counts.scalars,
@@ -145,9 +145,9 @@ pub(in super::super) fn source_meta(
         );
         coverage.record(
             crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
-            legacy.persistence.unresolved_integer_value_count,
+            legacy.persistence.integer_values.unresolved_count,
         );
-        let real_counts = legacy_numeric_coverage(&legacy.persistence.real_values);
+        let real_counts = legacy_numeric_coverage(&legacy.persistence.real_values.rows);
         coverage.record(
             crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
             real_counts.scalars,
@@ -162,7 +162,7 @@ pub(in super::super) fn source_meta(
         );
         coverage.record(
             crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
-            legacy.persistence.unresolved_real_value_count,
+            legacy.persistence.real_values.unresolved_count,
         );
         let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
             legacy.persistence.string_values.iter().fold(

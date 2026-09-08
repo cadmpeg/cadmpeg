@@ -2231,6 +2231,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
 fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str) -> Option<u32> {
     let mut values = persistence
         .integer_values
+        .rows
         .iter()
         .filter(|record| record.name == field_name)
         .filter_map(|record| {

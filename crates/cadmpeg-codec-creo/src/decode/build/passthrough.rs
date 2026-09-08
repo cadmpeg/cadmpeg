@@ -152,7 +152,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_integer_values",
-        &legacy.persistence.integer_values,
+        &legacy.persistence.integer_values.rows,
         "legacy_type_1_integer",
     )?;
     emit_legacy_value_arena(
@@ -160,7 +160,7 @@ pub(in super::super) fn emit_legacy_arenas(
         ir,
         annotations,
         "legacy_real_values",
-        &legacy.persistence.real_values,
+        &legacy.persistence.real_values.rows,
         "legacy_type_2_real",
     )?;
     emit_legacy_value_arena(

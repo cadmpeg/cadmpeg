@@ -373,28 +373,31 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
     };
     let persistence = crate::legacy::Persistence {
         objects: vec![root],
-        integer_values: vec![
-            crate::legacy::IntegerRecord {
-                kind: crate::legacy::ValueKind::Integer,
-                name: "first_quilt_ptr".to_string(),
-                attribute_id: 4,
-                scope_offset: 0,
-                parent: Some(0),
-                depth: 1,
-                payload: crate::legacy::NumericPayload::Scalar { value: 0 },
-                offset: 1,
-            },
-            crate::legacy::IntegerRecord {
-                kind: crate::legacy::ValueKind::Integer,
-                name: "first_quilt_ptr".to_string(),
-                attribute_id: 4,
-                scope_offset: 0,
-                parent: Some(0),
-                depth: 1,
-                payload: crate::legacy::NumericPayload::Scalar { value: 7 },
-                offset: 2,
-            },
-        ],
+        integer_values: crate::legacy::TypedValues {
+            rows: vec![
+                crate::legacy::IntegerRecord {
+                    kind: crate::legacy::ValueKind::Integer,
+                    name: "first_quilt_ptr".to_string(),
+                    attribute_id: 4,
+                    scope_offset: 0,
+                    parent: Some(0),
+                    depth: 1,
+                    payload: crate::legacy::NumericPayload::Scalar { value: 0 },
+                    offset: 1,
+                },
+                crate::legacy::IntegerRecord {
+                    kind: crate::legacy::ValueKind::Integer,
+                    name: "first_quilt_ptr".to_string(),
+                    attribute_id: 4,
+                    scope_offset: 0,
+                    parent: Some(0),
+                    depth: 1,
+                    payload: crate::legacy::NumericPayload::Scalar { value: 7 },
+                    offset: 2,
+                },
+            ],
+            unresolved_count: 0,
+        },
         ..Default::default()
     };
 
