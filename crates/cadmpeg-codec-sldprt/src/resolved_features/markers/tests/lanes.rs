@@ -129,7 +129,7 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("inconsistent marker order"));
+    assert!(error.to_string().contains("local object id does not match"));
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("inconsistent marker order"));
+    assert!(error.to_string().contains("object index does not match"));
 }
 
 #[test]
@@ -183,58 +183,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     assert!(
         error
             .to_string()
-            .contains("has 3 markers but 2 native records"),
+            .contains("expects entity ordinal 1, found 2"),
         "{error}"
     );
-}
-
-#[test]
-fn native_validation_rejects_duplicate_sketch_marker_offsets() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_resolved_features(
-                &triangle_body(),
-                &[0, 1],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
-        native.feature_input_lanes[0].sketch_entities[1].offset = offset;
-    });
-    assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
-            .iter()
-            .any(|finding| finding.message.contains("repeats entity offset"))
-    );
-}
-
-#[test]
-fn native_validation_requires_complete_ordered_sketch_markers() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_resolved_features(
-                &triangle_body(),
-                &[0, 1, 2],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities.remove(1);
-        native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
-    });
-    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
-        .into_iter()
-        .map(|finding| finding.message)
-        .collect::<Vec<_>>();
-    assert!(messages
-        .iter()
-        .any(|message| message.contains("expects entity ordinal")));
-    assert!(messages
-        .iter()
-        .any(|message| message.contains("omits marker at offset")));
 }

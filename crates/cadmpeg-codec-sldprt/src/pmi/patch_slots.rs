@@ -131,3 +131,8 @@ impl<'a> IntegerPatchSlot<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub(super) fn field_offset(payload: &[u8], offset: u64, field: &str) -> Result<usize, String> {
+    dimension_field(payload, offset, field).map(|value| value.data_offset)
+}

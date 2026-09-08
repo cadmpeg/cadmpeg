@@ -938,7 +938,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .enumerate()
         .map(|(index, coordinates)| {
             let mut point = marker(&format!("point-{index}"), Some(coordinates));
-            point.offset = index as u64;
+            point = point.with_test_position(point.ordinal(), index as u64);
             point
         })
         .collect::<Vec<_>>();
@@ -1118,7 +1118,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker.offset = index as u64;
+            marker = marker.with_test_position(marker.ordinal(), index as u64);
             marker
         })
         .collect::<Vec<_>>();
@@ -1313,7 +1313,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .enumerate()
         .map(|(index, coordinates_m)| {
             let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
-            marker.offset = index as u64;
+            marker = marker.with_test_position(marker.ordinal(), index as u64);
             marker
         })
         .collect::<Vec<_>>();

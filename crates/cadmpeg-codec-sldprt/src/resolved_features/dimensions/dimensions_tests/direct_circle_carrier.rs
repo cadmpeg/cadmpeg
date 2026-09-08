@@ -47,18 +47,23 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![SketchInputEntity {
-            id: marker.into(),
-            parent: "lane".into(),
-            feature_ref: Some(feature.into()),
-            ordinal: 0,
-            offset: 0,
-            object_index: None,
-            local_id: None,
-            kind: SketchInputKind::LineOrCircle,
-            state_value: Some(1.0),
-            coordinates_m: Some([0.001, 0.002]),
-            links: None,
+        sketch_entities: vec![{
+            let marker_id: String = marker.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                0,
+                0,
+                SketchInputKind::LineOrCircle,
+            );
+            constructed_marker.feature_ref = Some(feature.into());
+            constructed_marker.object_index = None;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = Some(1.0);
+            constructed_marker.coordinates_m = Some([0.001, 0.002]);
+            constructed_marker.links = None;
+            constructed_marker
         }],
     }
 }

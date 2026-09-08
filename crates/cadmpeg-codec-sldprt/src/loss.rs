@@ -232,7 +232,47 @@ impl SldprtLossCode {
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream => Severity::Error,
-            _ => Severity::Warning,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved
+            | Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPcurveAmbiguous
+            | Self::AppearanceFaceColorUnresolved
+            | Self::AppearanceAssignmentUnresolved
+            | Self::TessellationFaceOwnershipUnresolved
+            | Self::TopologyBodyHierarchyDerived
+            | Self::TopologyFaceOwnerAmbiguous
+            | Self::TopologyFaceUnclaimed
+            | Self::TopologyPcurveCarrierOffSurface
+            | Self::MaterialMetadataNotTransferred
+            | Self::SourceDialectUnverified
+            | Self::KernelDialectUnverified
+            | Self::DialectLayerCollision
+            | Self::SourceDialectDisplaced => Severity::Warning,
         }
     }
 
@@ -260,7 +300,32 @@ impl SldprtLossCode {
             }
             Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            _ => LossTaxonomy::FeatureHistoryRetained,
+            Self::ConfigActiveIdentityUnresolved
+            | Self::ConfigActivePartitionMismatch
+            | Self::ConfigInferredWithoutNative
+            | Self::ConfigLaneIdentityUnresolved
+            | Self::ConfigAmbiguousPartition
+            | Self::ConfigAmbiguousNaming
+            | Self::ConfigIncoherentBodyRefs
+            | Self::ConfigIncompleteSnapshot
+            | Self::ParameterUnevaluated
+            | Self::ParameterAmbiguousIdentity
+            | Self::PmiDimensionUnbound
+            | Self::PmiSemanticRecordMalformed
+            | Self::PmiSwiftAnnotationUnsupported
+            | Self::HistoryIncompleteReferences
+            | Self::FeatureIncoherentEdges
+            | Self::FeatureIncoherentContent
+            | Self::FeatureUnresolvedOutputScope
+            | Self::FeatureIncoherentOutputs
+            | Self::SketchNativeConstraint
+            | Self::SketchNativeGeometry
+            | Self::SketchRelationUnprojected
+            | Self::SketchRelationMultiplyProjected
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureInputObjectUnbound
+            | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -295,6 +360,22 @@ mod tests {
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn all_covers_every_declared_variant() {
+        let source = include_str!("loss.rs");
+        let declaration = source
+            .split_once("pub(crate) enum SldprtLossCode {")
+            .unwrap()
+            .1;
+        let body = declaration.split_once("\n}").unwrap().0;
+        let variant_count = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.ends_with(','))
+            .count();
+        assert_eq!(SldprtLossCode::ALL.len(), variant_count);
+    }
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]

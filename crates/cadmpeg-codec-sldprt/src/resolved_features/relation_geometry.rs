@@ -114,7 +114,7 @@ fn ensure_spatial_relation_point(
     if let [entity] = matches.as_slice() {
         return Some(entity.id().clone());
     }
-    let id = SpatialSketchEntityId(format!("{}:relation-point:{}", sketch.0, marker.offset));
+    let id = SpatialSketchEntityId(format!("{}:relation-point:{}", sketch.0, marker.offset()));
     entities.push(
         SpatialSketchEntity::new(
             id.clone(),
@@ -143,7 +143,7 @@ fn spatial_relation_point_line_entities(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             let code = marker_native_code(&lane.native_payload, offset)?;
             matches!(code, 2..=5).then_some(())?;
             Some((
@@ -152,7 +152,7 @@ fn spatial_relation_point_line_entities(
             ))
         })
         .collect::<Vec<_>>();
-    point_markers.sort_unstable_by_key(|(marker, _)| marker.offset);
+    point_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
     let point_operand = relation.operands.first()?;
     let point_marker = point_operand
         .entity_ref
@@ -173,7 +173,7 @@ fn spatial_relation_point_line_entities(
                 && marker.object_index.is_some()
         })
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             (marker_native_code(&lane.native_payload, offset) == Some(0)).then_some(())?;
             Some((
                 marker,
@@ -181,7 +181,7 @@ fn spatial_relation_point_line_entities(
             ))
         })
         .collect::<Vec<_>>();
-    line_markers.sort_unstable_by_key(|(marker, _)| marker.offset);
+    line_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
     let line_matches = line_markers
         .chunks_exact(2)
         .filter_map(|pair| {
@@ -491,7 +491,7 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             if sketch.0.contains("sketch#compact:")
-                && !marker_is_geometry_locus(&lane.native_payload, marker.offset as usize)
+                && !marker_is_geometry_locus(&lane.native_payload, marker.offset() as usize)
                 && !entities.iter().any(|entity| {
                     entity
                         .endpoint_refs
@@ -531,7 +531,7 @@ pub(crate) fn project_relation_point_geometry(
                 SketchEntity::new(
                     SketchEntityId(format!(
                         "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                        marker.offset
+                        marker.offset()
                     )),
                     sketch.clone(),
                     SketchGeometry::Point { position },
@@ -561,7 +561,7 @@ pub(crate) fn project_relation_point_geometry(
             .collect::<HashMap<_, _>>();
         let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
         for marker in &lane.sketch_entities {
-            let marker_offset = usize::try_from(marker.offset).ok();
+            let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
                     current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
@@ -646,7 +646,7 @@ pub(crate) fn project_relation_point_geometry(
                             }),
                     )
                     .collect::<Vec<_>>();
-                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
                 endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
             }
             let [first_marker, second_marker] = endpoints.as_slice() else {
@@ -700,7 +700,7 @@ pub(crate) fn project_relation_point_geometry(
                 SketchEntity::new(
                     SketchEntityId(format!(
                         "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
-                        marker.offset
+                        marker.offset()
                     )),
                     sketch.clone(),
                     SketchGeometry::Line { start, end },
@@ -879,7 +879,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                         )
                 })
                 .collect::<Vec<_>>();
-            points.sort_by_key(|marker| marker.offset);
+            points.sort_by_key(|marker| marker.offset());
             let endpoint_line_markers = |operand_index: usize| {
                 relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
                     .and_then(|marker_id| {
@@ -1558,10 +1558,10 @@ pub(super) fn implicit_circle_marker<'a>(
                 .iter()
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(feature)
-                        && marker.offset > center.offset
+                        && marker.offset() > center.offset()
                         && marker.coordinates_m.is_some()
                 })
-                .min_by_key(|marker| marker.offset)?;
+                .min_by_key(|marker| marker.offset())?;
             let [cu, cv] = center.coordinates_m?;
             let [ru, rv] = radial.coordinates_m?;
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
@@ -1597,7 +1597,7 @@ pub(super) fn implicit_circle_marker<'a>(
             for center in feature_markers
                 .iter()
                 .copied()
-                .filter(|marker| marker.local_id.is_some() && marker.offset < radial.offset)
+                .filter(|marker| marker.local_id.is_some() && marker.offset() < radial.offset())
             {
                 let [cu, cv] = center.coordinates_m?;
                 let [ru, rv] = radial.coordinates_m?;
@@ -1635,7 +1635,7 @@ pub(super) fn implicit_circle_marker<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     let pair = (markers.len() % 2 == 0)
         .then(|| markers.chunks_exact(2).nth(usize::from(index)))
         .flatten()?;
@@ -1705,7 +1705,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
-    let marker_offset = usize::try_from(marker.offset).ok()?;
+    let marker_offset = usize::try_from(marker.offset()).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
 
     let entity_class = lane
@@ -1721,7 +1721,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .filter(|class| {
             class.name == "sgSlotHandle"
                 && class.offset > entity_class.offset
-                && class.offset < marker.offset
+                && class.offset < marker.offset()
         })
         .collect::<Vec<_>>();
     if slot_classes.len() != 1 {
@@ -1735,7 +1735,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .map(|class| class.offset)
         .min()
         .unwrap_or_else(|| u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX))
-        .min(marker.offset);
+        .min(marker.offset());
     let class_start = usize::try_from(slot_class.offset).ok()?;
     let class_end = usize::try_from(class_end)
         .ok()?
@@ -1783,7 +1783,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             )
         })
         .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|candidate| candidate.offset);
+    points.sort_unstable_by_key(|candidate| candidate.offset());
     let [first, second] = center_indices.map(|index| points.get(index).copied());
     let (first, second) = (first?, second?);
     let center = match (
@@ -1841,7 +1841,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     let pairs = markers
         .chunks_exact(2)
         .map(|pair| [pair[0], pair[1]])
@@ -2084,7 +2084,7 @@ fn declared_entity_handle_pairs<'a>(
     let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
     pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
     pairs.extend(declared_entity_handle_indexed_point_pairs(lane, feature));
-    pairs.sort_unstable_by_key(|[center, radial]| (center.offset, radial.offset));
+    pairs.sort_unstable_by_key(|[center, radial]| (center.offset(), radial.offset()));
     pairs.dedup_by(|left, right| left[0].id == right[0].id && left[1].id == right[1].id);
     pairs
 }
@@ -2109,7 +2109,7 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2142,7 +2142,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
         .collect::<Vec<_>>();
-    feature_markers.sort_unstable_by_key(|marker| marker.offset);
+    feature_markers.sort_unstable_by_key(|marker| marker.offset());
     let mut markers = feature_markers
         .iter()
         .copied()
@@ -2157,7 +2157,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2177,11 +2177,11 @@ fn declared_entity_handle_declared_child_pairs<'a>(
             }
             let next_marker_offset = feature_markers
                 .iter()
-                .find(|marker| marker.offset > radial.offset)
-                .map_or(u64::MAX, |marker| marker.offset);
+                .find(|marker| marker.offset() > radial.offset())
+                .map_or(u64::MAX, |marker| marker.offset());
             let declared = lane.classes.iter().any(|class| {
                 class.name == class_name
-                    && class.offset > radial.offset
+                    && class.offset > radial.offset()
                     && class.offset < next_marker_offset
             });
             if !declared {
@@ -2211,7 +2211,7 @@ fn declared_entity_handle_linked_pairs<'a>(
             )
         })
         .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers.sort_unstable_by_key(|marker| marker.offset());
     markers
         .windows(2)
         .filter_map(|pair| {
@@ -2444,7 +2444,7 @@ pub(crate) fn project_relation_bindings(
             let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
-                    marker.offset
+                    marker.offset()
                 )),
                 sketch: (*sketch).clone(),
                 definition,
