@@ -808,9 +808,9 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     let mut features = vec![
         model_hole(),
         second_model_hole,
-        model_sketch("claimed-profile", "claimed-sketch", 1),
-        model_sketch("first-profile", "first-sketch", 2),
-        model_sketch("second-profile", "second-sketch", 3),
+        model_sketch("claimed-profile", "synthetic:test:id#claimed-sketch", 1),
+        model_sketch("first-profile", "synthetic:test:id#first-sketch", 2),
+        model_sketch("second-profile", "synthetic:test:id#second-sketch", 3),
     ];
     let axial_rectangle = |sketch: &str, radius: f64, depth: f64, first_ordinal| {
         let sketch = SketchId::mint(sketch).unwrap();

@@ -792,10 +792,10 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
             .map(|use_| (use_.entity.as_str(), use_.reversed))
             .collect::<Vec<_>>(),
         [
-            ("top", false),
-            ("right", true),
-            ("bottom", true),
-            ("left", true)
+            ("synthetic:test:id#top", false),
+            ("synthetic:test:id#right", true),
+            ("synthetic:test:id#bottom", true),
+            ("synthetic:test:id#left", true)
         ]
     );
     assert_eq!(complete_ordered_compact_line_profile(&lines, 5), None);
@@ -868,12 +868,12 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         .with_native_ref(Some(id.into()))
     };
     let mut entities = vec![
-        point("synthetic:test:id#center-a", Point2::new(0.0, 0.0)),
-        point("synthetic:test:id#a-plus", Point2::new(0.0, 2.0)),
-        point("synthetic:test:id#a-minus", Point2::new(0.0, -2.0)),
-        point("synthetic:test:id#center-b", Point2::new(3.0, 0.0)),
-        point("synthetic:test:id#b-plus", Point2::new(3.0, 2.0)),
-        point("synthetic:test:id#b-minus", Point2::new(3.0, -2.0)),
+        point("center-a", Point2::new(0.0, 0.0)),
+        point("a-plus", Point2::new(0.0, 2.0)),
+        point("a-minus", Point2::new(0.0, -2.0)),
+        point("center-b", Point2::new(3.0, 0.0)),
+        point("b-plus", Point2::new(3.0, 2.0)),
+        point("b-minus", Point2::new(3.0, -2.0)),
         curve("curve-a"),
         curve("curve-b"),
     ];
@@ -1238,7 +1238,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
-        .with_native_ref(Some(id.into()))
+        .with_native_ref(Some(id.rsplit_once('#').map_or(id, |(_, key)| key).into()))
     };
     let line = |id: &str, start: &str, end: &str, start_position, end_position| {
         SketchEntity::new(
@@ -1250,7 +1250,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             })
             .unwrap(),
         )
-        .with_native_ref(Some(id.into()))
+        .with_native_ref(Some(id.rsplit_once('#').map_or(id, |(_, key)| key).into()))
         .with_endpoint_refs(vec![start.into(), end.into()])
     };
     let center = Point2::new(9.5, 0.0);

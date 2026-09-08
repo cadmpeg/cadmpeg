@@ -48,7 +48,7 @@ pub(super) fn typed_marker_relation_definition(
 ) -> Option<SketchConstraintDefinitionInput> {
     typed_marker_relation_definition_in_sketch(
         marker,
-        &SketchId::mint(String::new()).unwrap(),
+        &SketchId::mint("synthetic:test:sketch#unbound").unwrap(),
         &[],
         markers_by_id,
         loci_by_marker,

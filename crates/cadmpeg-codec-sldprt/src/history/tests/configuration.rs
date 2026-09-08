@@ -412,7 +412,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             && matches!(
                 constraint.definition.kind(),
                 SketchConstraintDefinitionInput::Horizontal { ref entity }
-                    if entity.as_str() == "configuration-line"
+                    if entity.as_str() == "synthetic:test:id#configuration-line"
             )
     }));
 }
