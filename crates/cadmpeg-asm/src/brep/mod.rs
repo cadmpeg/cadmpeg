@@ -357,9 +357,12 @@ pub fn id(format: IdFormat<'_>, index: i64) -> String {
 }
 
 /// Construction and fit metadata separated from the cache geometry.
-struct ProceduralCurveTail {
-    construction: ProceduralCurveConstruction,
-    cache_fit_tolerance: Option<f64>,
+enum ProceduralCurveSource {
+    Cached {
+        construction: Box<ProceduralCurveConstruction>,
+        cache_fit_tolerance: Option<f64>,
+    },
+    Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
 }
 
 /// Decoded carrier geometry keyed by `RecordTable` index. The reachability and
@@ -370,8 +373,7 @@ pub(crate) struct Carriers {
     surface_geo: HashMap<i64, SurfaceGeometry>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
-    procedural_curve_defs: HashMap<i64, ProceduralCurveTail>,
-    cacheless_procedural_curve_defs: HashMap<i64, cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
     pcurve_geo: HashMap<i64, PcurveGeometry>,
     pcurve_parameter_ranges: HashMap<i64, [f64; 2]>,
 }
