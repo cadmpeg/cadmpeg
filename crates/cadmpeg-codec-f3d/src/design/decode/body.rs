@@ -577,11 +577,11 @@ fn parse_snapshot_body_map_frame(
         else {
             continue;
         };
-        if bytes.get(pairs_start..pairs_end).is_none() {
+        let Some(pairs) = bytes.get(pairs_start..pairs_end) else {
             continue;
-        }
-        if (0..count).any(|pair| {
-            View::u64_le_at(bytes, pairs_start + pair * 16 + 8).is_none_or(|body_entity| {
+        };
+        if pairs.chunks_exact(16).any(|pair| {
+            View::u64_le_at(pair, 8).is_none_or(|body_entity| {
                 !entity_has_type(
                     meta,
                     body_entity,
@@ -633,12 +633,12 @@ fn parse_snapshot_body_map_frame(
             bindings.try_reserve(count).map_err(|_| {
                 crate::error::malformed("F3D snapshot body-map count exceeds capacity")
             })?;
-            for pair in 0..count {
-                let at = pairs_start + pair * 16;
+            for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
+                let mut pair = View::over_retained(pair);
                 bindings.push(BodyBinding {
-                    asm_key: View::u64_le_at(bytes, at).expect("validated pair extent"),
-                    asm_key_offset: at,
-                    entity_suffix: View::u64_le_at(bytes, at + 8).expect("validated pair extent"),
+                    asm_key: pair.req_u64_le()?,
+                    asm_key_offset: pairs_start + ordinal * 16,
+                    entity_suffix: pair.req_u64_le()?,
                 });
             }
             return Ok(Some(BodyMapRecord {
