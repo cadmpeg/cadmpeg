@@ -35,12 +35,12 @@ use super::native_records::{
     CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
     CreoSketchDimension, CreoSketchDimensionReference, CreoSketchDimensionReferenceTable,
     CreoSketchEquation, CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
-    CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
-    CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
-    CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp, CreoSketchSkampItem,
-    CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex, CreoSketchVariable,
-    CreoTabulatedCylinderFrame, CreoTorusOutlineFrame, CreoTorusRadiusOverrides,
-    CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
+    CreoSketchPointState, CreoSketchReferenceLineSegment, CreoSketchRelation,
+    CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
+    CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
+    CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
+    CreoSketchVariable, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
+    CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
 };
 use super::sketch::{
     resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
@@ -2687,20 +2687,16 @@ pub(super) fn sketch_section_point_records(
         .map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
             let state = if ambiguous.contains(&point_id) {
-                "conflicting"
+                CreoSketchPointState::Conflicting
             } else {
-                match (u.is_some(), v.is_some()) {
-                    (true, true) => "resolved",
-                    (true, false) | (false, true) => "partial",
-                    (false, false) => "unresolved",
+                match (u, v) {
+                    (Some(u), Some(v)) => CreoSketchPointState::Resolved([u, v]),
+                    (Some(u), None) => CreoSketchPointState::PartialU(u),
+                    (None, Some(v)) => CreoSketchPointState::PartialV(v),
+                    (None, None) => CreoSketchPointState::Unresolved,
                 }
             };
-            CreoSketchSectionPoint {
-                point_id,
-                u,
-                v,
-                state,
-            }
+            CreoSketchSectionPoint { point_id, state }
         })
         .collect()
 }
