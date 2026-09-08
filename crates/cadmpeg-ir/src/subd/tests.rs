@@ -20,21 +20,9 @@ fn subd_round_trip_and_directed_ring_validation() {
         source_object: None,
         cage: crate::subd::SubdCage::new(
             vec![
-                SubdVertex {
-                    point: Point3::new(0.0, 0.0, 0.0),
-                    tag: SubdVertexTag::Smooth,
-                    secondary_grips: None,
-                },
-                SubdVertex {
-                    point: Point3::new(1.0, 0.0, 0.0),
-                    tag: SubdVertexTag::Smooth,
-                    secondary_grips: None,
-                },
-                SubdVertex {
-                    point: Point3::new(0.0, 1.0, 0.0),
-                    tag: SubdVertexTag::Smooth,
-                    secondary_grips: None,
-                },
+                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
+                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
+                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
             ],
             vec![
                 SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
@@ -197,11 +185,7 @@ fn triangle_cage() -> crate::subd::SubdCage {
             Point3::new(0.0, 1.0, 0.0),
         ]
         .into_iter()
-        .map(|point| SubdVertex {
-            point,
-            tag: SubdVertexTag::Smooth,
-            secondary_grips: None,
-        })
+        .map(|point| SubdVertex::new(point, SubdVertexTag::Smooth, None).unwrap())
         .collect(),
         [[0, 1], [1, 2], [2, 0]]
             .into_iter()
@@ -473,3 +457,5 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
 }
 
 mod symmetry;
+
+mod vertices;

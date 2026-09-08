@@ -325,21 +325,12 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
         source_object: None,
         cage: crate::subd::SubdCage::new(
             vec![
-                SubdVertex {
-                    point: Point3::new(0.0, 0.0, 0.0),
-                    tag: SubdVertexTag::Crease,
-                    secondary_grips: None,
-                },
-                SubdVertex {
-                    point: Point3::new(1.0, 0.0, 0.0),
-                    tag: SubdVertexTag::Smooth,
-                    secondary_grips: None,
-                },
-                SubdVertex {
-                    point: Point3::new(0.0, 1.0, 0.0),
-                    tag: SubdVertexTag::Corner,
-                    secondary_grips: None,
-                },
+                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Crease, None)
+                    .expect("valid example vertex"),
+                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
+                    .expect("valid example vertex"),
+                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Corner, None)
+                    .expect("valid example vertex"),
             ],
             vec![
                 SubdEdge::new(

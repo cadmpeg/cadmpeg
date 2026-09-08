@@ -38,8 +38,11 @@ impl std::error::Error for SubdError {}
 
 const EPS_SUBD_SYMMETRY_FRAME: f64 = 1.0e-9;
 
-fn finite_point(point: Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+fn require_finite_point(field: &str, point: Point3) -> Result<(), SubdError> {
+    if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+        return Err(SubdError(format!("{field} must be finite")));
+    }
+    Ok(())
 }
 
 fn finite_vector(vector: Vector3) -> bool {
@@ -183,9 +186,6 @@ impl SubdCage {
     fn validate_vertices(&self, vertices: &[SubdVertex]) -> Result<(), SubdError> {
         let mut grip_indices = std::collections::BTreeSet::new();
         for (index, vertex) in vertices.iter().enumerate() {
-            if !finite_point(vertex.point) {
-                return Err(SubdError(format!("vertices[{index}].point is not finite")));
-            }
             let Some(layout) = &vertex.secondary_grips else {
                 continue;
             };
@@ -292,9 +292,7 @@ impl SubdPlaneFrame {
         first_axis: Vector3,
         second_axis: Vector3,
     ) -> Result<Self, SubdError> {
-        if !finite_point(origin) {
-            return Err(SubdError("origin must be finite".into()));
-        }
+        require_finite_point("origin", origin)?;
         if !finite_vector(first_axis) || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
             return Err(SubdError(
                 "first_axis must be finite and unit length".into(),
@@ -579,14 +577,60 @@ pub enum SubdScheme {
 /// A control-cage vertex and its subdivision tag.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdVertexWire")]
 pub struct SubdVertex {
     /// Vertex position.
-    pub point: Point3,
+    point: Point3,
     /// Subdivision vertex tag.
     pub tag: SubdVertexTag,
     /// Optional secondary-grip topology owned by this vertex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_grips: Option<SubdVertexGripLayout>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdVertexWire {
+    point: Point3,
+    tag: SubdVertexTag,
+    #[serde(default)]
+    secondary_grips: Option<SubdVertexGripLayout>,
+}
+
+impl TryFrom<SubdVertexWire> for SubdVertex {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdVertexWire) -> Result<Self, Self::Error> {
+        Self::new(wire.point, wire.tag, wire.secondary_grips)
+    }
+}
+
+impl SubdVertex {
+    /// Construct a control vertex with a finite position.
+    pub fn new(
+        point: Point3,
+        tag: SubdVertexTag,
+        secondary_grips: Option<SubdVertexGripLayout>,
+    ) -> Result<Self, SubdError> {
+        require_finite_point("point", point)?;
+        Ok(Self {
+            point,
+            tag,
+            secondary_grips,
+        })
+    }
+
+    /// Vertex position in document units.
+    pub const fn point(&self) -> Point3 {
+        self.point
+    }
+
+    /// Replace the vertex position with finite coordinates.
+    pub fn set_point(&mut self, point: Point3) -> Result<(), SubdError> {
+        require_finite_point("point", point)?;
+        self.point = point;
+        Ok(())
+    }
 }
 
 /// Compass direction of the root edge in a control-cage grid frame.
@@ -743,9 +787,7 @@ impl TryFrom<SubdSecondaryGripWire> for SubdSecondaryGrip {
 impl SubdSecondaryGrip {
     /// Construct a finite grip point with a positive finite rational weight.
     pub fn new(source_index: u32, point: Point3, weight: f64) -> Result<Self, SubdError> {
-        if !finite_point(point) {
-            return Err(SubdError("point must be finite".into()));
-        }
+        require_finite_point("point", point)?;
         if !weight.is_finite() || weight <= 0.0 {
             return Err(SubdError("weight must be finite and positive".into()));
         }

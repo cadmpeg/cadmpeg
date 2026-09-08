@@ -1129,8 +1129,8 @@ fn materialize(
             let tag = vertex
                 .tag
                 .ok_or_else(|| malformed(0, "invalid materialized SubD vertex tag"))?;
-            Ok(SubdVertex {
-                point: Point3::new(
+            SubdVertex::new(
+                Point3::new(
                     crate::wire::scaled_coordinate(vertex.point.x, scale)
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                     crate::wire::scaled_coordinate(vertex.point.y, scale)
@@ -1139,8 +1139,9 @@ fn materialize(
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                 ),
                 tag,
-                secondary_grips: None,
-            })
+                None,
+            )
+            .map_err(|error| malformed(0, &error.to_string()))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let edges = level
