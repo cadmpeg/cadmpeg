@@ -1118,6 +1118,7 @@ fn patch_two_sided_offset_definition(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 struct SurfaceOffsetFields<'a> {
     context: &'a IntcurveSupportContext,
     discontinuity_flag: &'a bool,
