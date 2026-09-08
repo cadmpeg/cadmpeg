@@ -214,6 +214,7 @@ pub(crate) struct ProteinAppearanceEdit {
 pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
+    notes: &mut Vec<String>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
@@ -239,7 +240,7 @@ pub(crate) fn patch_protein_appearances(
         }
         let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
-            patch_instance_colors(protein, &mut bytes, edits, &mut patched)?;
+            patch_instance_colors(protein, &mut bytes, edits, &mut patched, notes)?;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot write nested Protein entry: {error}"))
@@ -258,6 +259,7 @@ fn patch_instance_colors(
     bytes: &mut [u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
+    notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let frames = cadmpeg_protein::framing::record_frames(bytes).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
@@ -265,12 +267,12 @@ fn patch_instance_colors(
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
         let outcome = cadmpeg_protein::decode_detailed(protein, bytes)?;
-        if let Some(rejected) = outcome.rejected.first() {
-            return Err(CodecError::malformed(format_args!(
+        notes.extend(outcome.rejected.iter().map(|rejected| {
+            format!(
                 "Protein record {} rejected: {}",
                 rejected.ordinal, rejected.detail
-            )));
-        }
+            )
+        }));
         outcome.records
     } else {
         Vec::new()
@@ -491,6 +493,8 @@ pub struct DecodedMaterials {
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
     pub untyped_distance_properties: usize,
+    /// Rejected Protein record diagnostics.
+    pub notes: Vec<String>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -515,6 +519,7 @@ pub fn decode_with_body_bindings<'a>(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
+    let mut notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -534,12 +539,12 @@ pub fn decode_with_body_bindings<'a>(
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
             let outcome = cadmpeg_protein::decode_detailed(protein.window(), instance.window())?;
-            if let Some(rejected) = outcome.rejected.first() {
-                return Err(CodecError::malformed(format_args!(
+            notes.extend(outcome.rejected.iter().map(|rejected| {
+                format!(
                     "Protein {} record {} rejected: {}",
                     entry.name, rejected.ordinal, rejected.detail
-                )));
-            }
+                )
+            }));
             let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(&records)?;
             untyped_distance_properties = untyped_distance_properties
@@ -675,6 +680,7 @@ pub fn decode_with_body_bindings<'a>(
         face_assignments,
         has_topology_assignments,
         untyped_distance_properties,
+        notes,
     })
 }
 
