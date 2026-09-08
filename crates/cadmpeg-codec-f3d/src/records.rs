@@ -8719,7 +8719,7 @@ impl ActChannelGroup {
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
-    /// Record index shared by the channel group and its optional ACTTable row.
+    /// Record index shared by the channel group and its optional `ACTTable` row.
     record_index: u32,
     entity_id: String,
     table_row: Option<ActTableRow>,
