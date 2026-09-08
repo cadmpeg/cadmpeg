@@ -8,12 +8,15 @@ fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
         family: SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: SurfaceNamedValue::ScalarArray {
-                dimensions: 4,
-                count: 3,
-                values: values.into_iter().map(Some).collect(),
-                tokens: None,
-            },
+            value: SurfaceNamedValue::ScalarArray(
+                crate::surface::arrays::DimensionedScalars::try_new(
+                    4,
+                    3,
+                    values.into_iter().map(Some).collect(),
+                    None,
+                )
+                .expect("valid scalar array"),
+            ),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
@@ -29,12 +32,10 @@ fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord
         ),
         parameters: vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
-            value: SurfaceNamedValue::ScalarArray {
-                dimensions: 4,
-                count: 3,
-                values,
-                tokens: None,
-            },
+            value: SurfaceNamedValue::ScalarArray(
+                crate::surface::arrays::DimensionedScalars::try_new(4, 3, values, None)
+                    .expect("valid scalar array"),
+            ),
             body: Vec::new(),
             offset: 0,
             value_offset: 0,

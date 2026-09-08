@@ -214,15 +214,15 @@ pub(in super::super) fn source_meta(
                 crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
                 crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
                 crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
-                legacy.persistence.type_3_values.as_slice(),
-                legacy.persistence.unresolved_type_3_value_count,
+                legacy.persistence.type_3_values.rows.as_slice(),
+                legacy.persistence.type_3_values.unresolved_count,
             ),
             (
                 crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
                 crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
                 crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
-                legacy.persistence.type_4_values.as_slice(),
-                legacy.persistence.unresolved_type_4_value_count,
+                legacy.persistence.type_4_values.rows.as_slice(),
+                legacy.persistence.type_4_values.unresolved_count,
             ),
         ] {
             let scalars = records.len();
@@ -251,40 +251,40 @@ pub(in super::super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_5_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_5_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_5_values),
-            legacy.persistence.unresolved_type_5_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_5_values.rows),
+            legacy.persistence.type_5_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_6_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_6_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_6_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_6_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_6_values),
-            legacy.persistence.unresolved_type_6_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_6_values.rows),
+            legacy.persistence.type_6_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_7_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_7_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_7_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_7_values),
-            legacy.persistence.unresolved_type_7_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_7_values.rows),
+            legacy.persistence.type_7_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_9_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_9_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_9_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_9_values),
-            legacy.persistence.unresolved_type_9_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_9_values.rows),
+            legacy.persistence.type_9_values.unresolved_count,
         );
         insert_numbered_numeric_coverage(
             crate::coverage::DECODED_LEGACY_TYPE_11_SCALAR_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_11_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_11_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_11_values),
-            legacy.persistence.unresolved_type_11_value_count,
+            legacy_numeric_coverage(&legacy.persistence.type_11_values.rows),
+            legacy.persistence.type_11_values.unresolved_count,
         );
     }
     coverage.record(

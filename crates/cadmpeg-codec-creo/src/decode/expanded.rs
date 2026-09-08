@@ -69,11 +69,12 @@ pub(crate) fn attach_expanded_sections(
         .map(|array| CreoPrimitiveScalarArrayRecord {
             id: format!(
                 "creo:solid_primdata:scalar_array#{}:{}",
-                array.field, array.offset
+                array.field.as_str(),
+                array.offset
             ),
-            field: array.field.clone(),
+            field: array.field.as_str().to_owned(),
             expanded_offset: array.offset,
-            count: array.count,
+            count: array.values.len(),
             values: array.values.clone(),
         })
         .collect::<Vec<_>>();
