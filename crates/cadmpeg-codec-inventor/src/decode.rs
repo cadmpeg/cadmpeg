@@ -27,9 +27,10 @@ use crate::native::protein::{
     ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
 };
 use crate::native::ufrx::{
-    EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
-    UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxRecord,
-    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
+    EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
+    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
+    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord, UfrxRepresentationRecord,
+    UfrxRepresentationRecordWire,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
@@ -388,41 +389,47 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .embedded_references
                 .iter()
                 .enumerate()
-                .map(|(ordinal, reference)| EmbeddedReferenceRecord {
-                    id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    value_0: reference.value_0,
-                    filetime: reference.filetime,
-                    value_1: reference.value_1,
-                    extended_value: reference.extended_value,
-                    value_2: reference.value_2,
-                    path: reference.path.clone(),
-                    library_id: reference.library_id,
-                    library_name: reference.library_name.clone(),
-                    state: reference.state,
-                    display_name: reference.display_name.clone(),
-                    state_values: reference.state_values,
-                    record_len: reference.source.window().len() as u64,
-                    record_sha256: sha256_hex(reference.source.window()),
+                .map(|(ordinal, reference)| {
+                    EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
+                        id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        value_0: reference.value_0,
+                        filetime: reference.filetime,
+                        value_1: reference.value_1,
+                        extended_value: reference.extended_value,
+                        value_2: reference.value_2,
+                        path: reference.path.clone(),
+                        library_id: reference.library_id,
+                        library_name: reference.library_name.clone(),
+                        state: reference.state,
+                        display_name: reference.display_name.clone(),
+                        state_values: reference.state_values,
+                        record_len: reference.source.window().len() as u64,
+                        record_sha256: sha256_hex(reference.source.window()),
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(CodecError::malformed)?;
             let occurrences = document
                 .occurrences
                 .iter()
                 .enumerate()
-                .map(|(ordinal, occurrence)| UfrxOccurrenceRecord {
-                    id: format!("inventor:ufrx:occurrence#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    end_string_flag: occurrence.end_string_flag,
-                    file_reference_id: occurrence.file_reference_id,
-                    occurrence_id: occurrence.occurrence_id,
-                    header_value: occurrence.header_value,
-                    title: occurrence.title.clone(),
-                    header_padding_words: occurrence.header_padding_words,
-                    record_len: occurrence.source.window().len() as u64,
-                    record_sha256: sha256_hex(occurrence.source.window()),
+                .map(|(ordinal, occurrence)| {
+                    UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
+                        id: format!("inventor:ufrx:occurrence#{ordinal}"),
+                        ordinal: ordinal as u32,
+                        end_string_flag: occurrence.end_string_flag,
+                        file_reference_id: occurrence.file_reference_id,
+                        occurrence_id: occurrence.occurrence_id,
+                        header_value: occurrence.header_value,
+                        title: occurrence.title.clone(),
+                        header_padding_words: occurrence.header_padding_words,
+                        record_len: occurrence.source.window().len() as u64,
+                        record_sha256: sha256_hex(occurrence.source.window()),
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(CodecError::malformed)?;
             UfrxRecord::ParsedPrefix {
                 id: "inventor:ufrx:state#root".into(),
                 directory_id: document.stream.directory_id(),
