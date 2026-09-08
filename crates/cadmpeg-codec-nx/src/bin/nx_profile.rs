@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
+    UnsupportedBodyCensusReason,
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -67,9 +68,34 @@ enum VerificationStatus {
     try_from = "RederivationBoundaryWire",
     into = "RederivationBoundaryWire"
 )]
-struct RederivationBoundary {
-    feature: Option<FeatureBoundary>,
-    reason: String,
+enum RederivationBoundary {
+    Unsupported {
+        feature: FeatureBoundary,
+        reason: UnsupportedBodyCensusReason,
+    },
+    SavedBodyCensusMismatch,
+    ConfigurationEvaluation,
+    WorkerTimeout,
+    WorkerFailure,
+}
+
+impl RederivationBoundary {
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::Unsupported { reason, .. } => reason.as_str(),
+            Self::SavedBodyCensusMismatch => "saved_body_census_mismatch",
+            Self::ConfigurationEvaluation => "configuration_evaluation",
+            Self::WorkerTimeout => "profile_worker_timeout",
+            Self::WorkerFailure => "profile_worker_failure",
+        }
+    }
+
+    fn feature(&self) -> Option<&FeatureBoundary> {
+        match self {
+            Self::Unsupported { feature, .. } => Some(feature),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,30 +121,49 @@ impl TryFrom<RederivationBoundaryWire> for RederivationBoundary {
             (None, None) if wire.feature_name.is_none() && wire.feature_family.is_none() => None,
             _ => return Err("feature: identity and ordinal must be present together; name and family require identity".into()),
         };
-        Ok(Self {
-            feature,
-            reason: wire.reason,
-        })
+        let boundary = match wire.reason.as_str() {
+            "saved_body_census_mismatch" => Self::SavedBodyCensusMismatch,
+            "configuration_evaluation" => Self::ConfigurationEvaluation,
+            "profile_worker_timeout" => Self::WorkerTimeout,
+            "profile_worker_failure" => Self::WorkerFailure,
+            _ => {
+                let reason = UnsupportedBodyCensusReason::deserialize(
+                    serde::de::value::StringDeserializer::<serde::de::value::Error>::new(
+                        wire.reason,
+                    ),
+                )
+                .map_err(|error| format!("reason: {error}"))?;
+                return Ok(Self::Unsupported {
+                    feature: feature.ok_or("feature: required for unsupported evaluation")?,
+                    reason,
+                });
+            }
+        };
+        if feature.is_some() {
+            return Err("feature: only unsupported evaluation can name a feature".into());
+        }
+        Ok(boundary)
     }
 }
 
 impl From<RederivationBoundary> for RederivationBoundaryWire {
     fn from(value: RederivationBoundary) -> Self {
-        let (feature, feature_name, feature_family, feature_ordinal) = match value.feature {
-            Some(feature) => (
+        let reason = value.reason().to_owned();
+        let (feature, feature_name, feature_family, feature_ordinal) = match value {
+            RederivationBoundary::Unsupported { feature, .. } => (
                 Some(feature.id.as_str().to_owned()),
                 feature.name,
                 feature.family,
                 Some(feature.ordinal),
             ),
-            None => (None, None, None, None),
+            _ => (None, None, None, None),
         };
         Self {
             feature,
             feature_name,
             feature_family,
             feature_ordinal,
-            reason: value.reason,
+            reason,
         }
     }
 }
@@ -407,9 +452,9 @@ fn fixture_evidence(
 }
 
 fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvidence {
-    let reason = match status {
-        DecodeStatus::TimedOut => "profile_worker_timeout",
-        DecodeStatus::Failed => "profile_worker_failure",
+    let boundary = match status {
+        DecodeStatus::TimedOut => RederivationBoundary::WorkerTimeout,
+        DecodeStatus::Failed => RederivationBoundary::WorkerFailure,
         DecodeStatus::Complete => unreachable!("completed status has decoded evidence"),
     };
     FixtureEvidence {
@@ -424,10 +469,7 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         all_bodies_colored: false,
         all_faces_colored: false,
         rederivation: VerificationStatus::Missing,
-        rederivation_boundary: Some(RederivationBoundary {
-            feature: None,
-            reason: reason.to_string(),
-        }),
+        rederivation_boundary: Some(boundary),
     }
 }
 
@@ -440,10 +482,9 @@ fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<Rederivatio
     {
         *counts
             .entry((
-                boundary.reason.clone(),
+                boundary.reason().to_owned(),
                 boundary
-                    .feature
-                    .as_ref()
+                    .feature()
                     .and_then(|feature| feature.family.clone()),
             ))
             .or_default() += 1;
@@ -631,24 +672,15 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
         BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
         BodyCensusEvaluation::Mismatch { .. } => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: None,
-                reason: "saved_body_census_mismatch".to_string(),
-            }),
+            Some(RederivationBoundary::SavedBodyCensusMismatch),
         ),
         BodyCensusEvaluation::Unsupported { feature, reason } => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: Some(feature),
-                reason: reason.as_str().to_string(),
-            }),
+            Some(RederivationBoundary::Unsupported { feature, reason }),
         ),
         BodyCensusEvaluation::ConfigurationEvaluation => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: None,
-                reason: "configuration_evaluation".to_string(),
-            }),
+            Some(RederivationBoundary::ConfigurationEvaluation),
         ),
     }
 }
@@ -1031,40 +1063,38 @@ mod tests {
         assert_eq!(status, VerificationStatus::Missing);
         assert_eq!(
             boundary,
-            Some(RederivationBoundary {
-                feature: Some(FeatureBoundary {
+            Some(RederivationBoundary::Unsupported {
+                feature: FeatureBoundary {
                     id: cadmpeg_ir::features::FeatureId::mint("block")
                         .expect("valid block fixture identity"),
                     name: Some("BLOCK".to_string()),
                     family: Some("block".to_string()),
                     ordinal: 17
-                }),
-                reason: "incomplete_feature_definition".to_string(),
+                },
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             })
         );
     }
 
     #[test]
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
-        let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
-            feature: family.map(|family| FeatureBoundary {
+        let boundary = |family: &str| RederivationBoundary::Unsupported {
+            feature: FeatureBoundary {
                 id: cadmpeg_ir::features::FeatureId::mint("feature")
                     .expect("valid feature fixture identity"),
                 name: None,
                 family: Some(family.to_owned()),
                 ordinal: 0,
-            }),
-            reason: reason.to_string(),
+            },
+            reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         };
         let mut fixtures = [fixture(), fixture(), fixture()];
         fixtures[0].rederivation = VerificationStatus::Missing;
-        fixtures[0].rederivation_boundary =
-            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[0].rederivation_boundary = Some(boundary("hole"));
         fixtures[1].rederivation = VerificationStatus::Missing;
-        fixtures[1].rederivation_boundary =
-            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[1].rederivation_boundary = Some(boundary("hole"));
         fixtures[2].rederivation = VerificationStatus::Missing;
-        fixtures[2].rederivation_boundary = Some(boundary("configuration_evaluation", None));
+        fixtures[2].rederivation_boundary = Some(RederivationBoundary::ConfigurationEvaluation);
 
         assert_eq!(
             rederivation_boundary_counts(&fixtures),
@@ -1384,5 +1414,22 @@ mod tests {
         assert!(gates[6].assertions[0].passed);
         assert_eq!(gates[6].assertions[1].id, "saved_body_census_rederived");
         assert!(!gates[6].assertions[1].passed);
+    }
+}
+
+#[cfg(test)]
+mod boundary_wire_tests {
+    use super::RederivationBoundary;
+
+    #[test]
+    fn worker_boundary_requires_a_feature_for_unsupported_reasons() {
+        let wire = serde_json::json!({
+            "feature": null, "feature_name": null, "feature_family": null,
+            "feature_ordinal": null, "reason": "incomplete_feature_definition"
+        });
+        assert!(serde_json::from_value::<RederivationBoundary>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("feature"));
     }
 }
