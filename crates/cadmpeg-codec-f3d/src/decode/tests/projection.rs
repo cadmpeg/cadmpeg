@@ -756,7 +756,7 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_offset_plane",
-            "reference": "feature:plane",
+            "reference": "test:model:feature#plane",
             "distance": 5.0
         }),
     )));
@@ -1148,7 +1148,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.sketch_constraints.push(native_dimension);
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "extrude",
+            "id": "synthetic:test:id#extrude",
             "ordinal": 0,
             "definition": {
                 "definition": "extrude",
@@ -1173,7 +1173,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "sweep",
+            "id": "synthetic:test:id#sweep",
             "ordinal": 1,
             "definition": {
                 "definition": "sweep",
@@ -1189,7 +1189,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "fillet",
+            "id": "synthetic:test:id#fillet",
             "ordinal": 2,
             "definition": {
                 "definition": "fillet",
@@ -1224,7 +1224,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "suppressed-fillet",
+            "id": "synthetic:test:id#suppressed-fillet",
             "ordinal": 2,
             "suppressed": true,
             "definition": {
@@ -1239,7 +1239,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "native-feature",
+            "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
             "definition": {
                 "definition": "native",
@@ -1252,7 +1252,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "unresolved-pattern",
+            "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
             "definition": {
                 "definition": "pattern",
@@ -1525,7 +1525,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     ir.model.parameters.push(
         serde_json::from_value(serde_json::json!({
-            "id": "parameter-2",
+            "id": "synthetic:test:id#parameter-2",
             "ordinal": 2,
             "name": "d2",
             "expression": "1 mm",
@@ -1581,7 +1581,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .iter()
         .map(|scope| {
             serde_json::from_value(serde_json::json!({
-                "id": format!("feature-{}", scope.record_index),
+                "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
                 "definition": {
                     "definition": "native",
