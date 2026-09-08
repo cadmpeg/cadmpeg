@@ -225,7 +225,7 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
         scan.framing
             .sections
             .iter()
-            .map(|section| section.name())
+            .map(super::Section::name)
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
