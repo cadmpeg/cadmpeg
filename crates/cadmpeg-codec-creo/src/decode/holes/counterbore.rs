@@ -12,13 +12,13 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{placed_planes, reconciled_model_plane};
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
 use super::super::sketch::{approximately_equal, normalized};
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
+use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 
 const EPS_COUNTERBORE_GEOMETRY: f64 = 1.0e-9;
 const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;

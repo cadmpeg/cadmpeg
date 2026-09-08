@@ -4,8 +4,9 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::analytic::{circular_cone, cross, dot, CarrierEquation};
 use super::super::sketch::normalized;
+use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
+use crate::vecmath::{cross, dot};
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_CENTER_ALIGNMENT: f64 = 1.0e-9;

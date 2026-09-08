@@ -2,6 +2,12 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::blend::analytic_surface_offset;
+use crate::decode::build::{
+    ordered_curve_candidates, ordered_point_candidates, ordered_surface_candidates,
+};
+use crate::decode::pcurves::attach_tolerant_edge_intersections;
+
 use crate::framing::node_kind::NodeKind;
 use std::io::Cursor;
 
@@ -97,9 +103,9 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         half_angle: angle,
     };
 
-    let distance = crate::decode::analytic_surface_offset(&support, &offset).expect("offset");
+    let distance = analytic_surface_offset(&support, &offset).expect("offset");
     assert!((distance - expected).abs() <= 1.0e-12);
-    let reverse = crate::decode::analytic_surface_offset(&offset, &support).expect("reverse");
+    let reverse = analytic_surface_offset(&offset, &support).expect("reverse");
     assert!((reverse + expected).abs() <= 1.0e-12);
 
     let mut lateral = offset.clone();
@@ -107,21 +113,21 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         unreachable!()
     };
     origin.x = 0.1;
-    assert!(crate::decode::analytic_surface_offset(&support, &lateral).is_none());
+    assert!(analytic_surface_offset(&support, &lateral).is_none());
 
     let mut shifted_parameterization = offset.clone();
     let SurfaceGeometry::Cone { origin, .. } = &mut shifted_parameterization else {
         unreachable!()
     };
     origin.z += 0.1;
-    assert!(crate::decode::analytic_surface_offset(&support, &shifted_parameterization).is_none());
+    assert!(analytic_surface_offset(&support, &shifted_parameterization).is_none());
 
     let mut elliptical = offset;
     let SurfaceGeometry::Cone { ratio, .. } = &mut elliptical else {
         unreachable!()
     };
     *ratio = 0.5;
-    assert!(crate::decode::analytic_surface_offset(&support, &elliptical).is_none());
+    assert!(analytic_surface_offset(&support, &elliptical).is_none());
 }
 
 #[test]
@@ -136,18 +142,18 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
         radius,
     };
     assert_eq!(
-        crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(6.5)),
+        analytic_surface_offset(&sphere(4.0), &sphere(6.5)),
         Some(2.5)
     );
     assert_eq!(
-        crate::decode::analytic_surface_offset(&sphere(-4.0), &sphere(-6.5)),
+        analytic_surface_offset(&sphere(-4.0), &sphere(-6.5)),
         Some(2.5)
     );
     assert_eq!(
-        crate::decode::analytic_surface_offset(&sphere(-6.5), &sphere(-4.0)),
+        analytic_surface_offset(&sphere(-6.5), &sphere(-4.0)),
         Some(-2.5)
     );
-    assert!(crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(-6.5)).is_none());
+    assert!(analytic_surface_offset(&sphere(4.0), &sphere(-6.5)).is_none());
 }
 
 #[test]
@@ -162,20 +168,17 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
         major_radius: 10.0,
         minor_radius,
     };
+    assert_eq!(analytic_surface_offset(&torus(2.0), &torus(3.5)), Some(1.5));
     assert_eq!(
-        crate::decode::analytic_surface_offset(&torus(2.0), &torus(3.5)),
+        analytic_surface_offset(&torus(-2.0), &torus(-3.5)),
         Some(1.5)
     );
     assert_eq!(
-        crate::decode::analytic_surface_offset(&torus(-2.0), &torus(-3.5)),
-        Some(1.5)
-    );
-    assert_eq!(
-        crate::decode::analytic_surface_offset(&torus(-3.5), &torus(-2.0)),
+        analytic_surface_offset(&torus(-3.5), &torus(-2.0)),
         Some(-1.5)
     );
-    assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(-3.5)).is_none());
-    assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(10.0)).is_none());
+    assert!(analytic_surface_offset(&torus(2.0), &torus(-3.5)).is_none());
+    assert!(analytic_surface_offset(&torus(2.0), &torus(10.0)).is_none());
 }
 
 #[test]
@@ -338,7 +341,7 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     stream.extend(second);
 
     let graph = crate::topology::Graph::parse(&stream);
-    let points = crate::decode::ordered_point_candidates(&stream, &graph);
+    let points = ordered_point_candidates(&stream, &graph);
     assert_eq!(points.len(), 2);
     assert_eq!(points[0].1.pos, first);
     assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
@@ -378,14 +381,14 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     stream.extend(line);
 
     let graph = crate::topology::Graph::parse(&stream);
-    let surfaces = crate::decode::ordered_surface_candidates(&stream, &graph);
+    let surfaces = ordered_surface_candidates(&stream, &graph);
     assert_eq!(surfaces.len(), 2);
     assert_eq!(surfaces[0].1.pos, first_surface);
     assert_eq!(surfaces[0].1.xmt, 6);
     assert_eq!(surfaces[1].1.pos, second_surface_offset);
     assert_eq!(surfaces[1].1.xmt, 77);
 
-    let curves = crate::decode::ordered_curve_candidates(&stream, &graph);
+    let curves = ordered_curve_candidates(&stream, &graph);
     assert_eq!(curves.len(), 2);
     assert_eq!(curves[0].1.pos, first_curve);
     assert_eq!(curves[0].1.xmt, 9);
@@ -407,7 +410,7 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
     assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
     let graph = crate::topology::Graph::parse(&stream);
     assert!(graph.get(NodeKind::Plane, 77).is_none());
-    assert!(crate::decode::ordered_surface_candidates(&stream, &graph).is_empty());
+    assert!(ordered_surface_candidates(&stream, &graph).is_empty());
 }
 
 #[test]
@@ -584,7 +587,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = annotations.stream("nx:test");
 
-    crate::decode::attach_tolerant_edge_intersections(
+    attach_tolerant_edge_intersections(
         &mut ir,
         &graph,
         &edges,
@@ -647,7 +650,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     point.position.z += 0.5;
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = annotations.stream("nx:test");
-    crate::decode::attach_tolerant_edge_intersections(
+    attach_tolerant_edge_intersections(
         &mut off_support_ir,
         &graph,
         &edges,
@@ -676,7 +679,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
 
-    crate::decode::attach_tolerant_edge_intersections(
+    attach_tolerant_edge_intersections(
         &mut ir,
         &graph,
         &edges,

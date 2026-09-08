@@ -2,13 +2,10 @@
 //! Native class-0x5b/0x5c frames and their byte-string wire projection.
 
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Record class of a consolidated B-family class-`0x5b` or class-`0x5c` frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub enum CatiaClass5b5c {
     /// Class `0x5b`.
@@ -40,7 +37,6 @@ impl TryFrom<u8> for CatiaClass5b5c {
 
 /// Complete consolidated class-`0x5b` or class-`0x5c` source-local control record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Class5b5cWire", into = "Class5b5cWire")]
 pub struct CatiaConsolidatedClass5b5cRecord {
     /// Stable native-record identity.
@@ -62,7 +58,6 @@ impl CatiaConsolidatedClass5b5cRecord {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct Class5b5cWire {
     id: String,
     byte_offset: u64,
@@ -74,7 +69,6 @@ struct Class5b5cWire {
     class: CatiaClass5b5c,
     header_token: u32,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     payload: Vec<u8>,
 }
 

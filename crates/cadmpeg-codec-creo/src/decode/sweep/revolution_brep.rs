@@ -4,10 +4,6 @@
 use super::super::feature_history::revolution_axis_for_transfer;
 use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::{
-    current_additive_feature_recipe, feature_is_first_material_operation,
-    feature_revolution_extent, unique_feature_revolution_extent,
-};
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -18,6 +14,10 @@ use super::pcurves::{
 use super::profiles::{extrusion_profile_signed_area, resolved_sketch_profiles};
 use super::surfaces::revolved_section_circle;
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::{
+    current_additive_feature_recipe, feature_is_first_material_operation,
+    feature_revolution_extent, unique_feature_revolution_extent,
+};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};

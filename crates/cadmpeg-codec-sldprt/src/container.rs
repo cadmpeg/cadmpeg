@@ -302,11 +302,6 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Test whether a prefix has the generic Compound File Binary signature.
-pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
-    prefix.starts_with(&COMPOUND_FILE_MAGIC)
-}
-
 /// Scan an in-memory `.sldprt` image.
 ///
 /// Truncated input produces a scan containing every structure that could be

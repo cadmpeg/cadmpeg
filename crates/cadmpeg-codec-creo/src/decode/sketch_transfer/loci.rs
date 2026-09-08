@@ -10,11 +10,13 @@ use super::super::sketch::{
     SectionPointSource,
 };
 use super::super::sketch_ids::sketch_entity_id;
-use super::{
+use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, semantic_saved_section_entities,
+    unique_section_segment_external_ids,
+};
+use crate::decode::sketch_transfer::profiles::{
     solver_only_section_entities, solver_only_section_entity_family,
-    unique_section_incidence_curve_family, unique_section_segment_external_ids,
-    SectionEntityIncidenceFamily,
+    unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
 };
 use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;

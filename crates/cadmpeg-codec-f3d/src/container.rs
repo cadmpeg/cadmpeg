@@ -628,24 +628,6 @@ pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
         .collect()
 }
 
-/// Return the complete BREP set for the legacy `Design1` segment layout.
-///
-/// That layout predates body-to-blob bindings: its model is distributed across
-/// the archive's BREP entries, in archive order. Both design streams must be
-/// present so an unrelated path component named `Design1` cannot select this
-/// fallback.
-pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<Vec<&'s BrepFacts>> {
-    let has = |leaf: &str| {
-        scan.design_asset_folder().is_some_and(|folder| {
-            scan.entries
-                .iter()
-                .any(|entry| entry.name == format!("{folder}/Design1/{leaf}"))
-        })
-    };
-    let breps = design_breps(scan).collect::<Vec<_>>();
-    (has("BulkStream.dat") && has("MetaStream.dat") && !breps.is_empty()).then_some(breps)
-}
-
 fn asm_magic_label(bytes: &[u8]) -> String {
     if asm_header::has_asm_magic(bytes) {
         // Both magics are the 15-byte prefix plus the width digit; byte 15 is

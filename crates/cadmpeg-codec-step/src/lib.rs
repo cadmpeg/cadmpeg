@@ -47,7 +47,6 @@ mod options;
 mod parse;
 mod reader;
 mod signature;
-#[allow(dead_code)] // String helpers are part of the internal parser layer.
 mod strings;
 mod writer;
 

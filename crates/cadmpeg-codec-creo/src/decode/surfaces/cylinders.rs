@@ -12,10 +12,6 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{
-    cross, dot, is_axis_aligned, placed_planes, plane_intersection_line, reconciled_model_plane,
-    PlaneEquation,
-};
 use super::super::feature_history::{
     agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
     round_constant_radius, round_support_envelope_cylinder, section_sweep_allows_linear_extrusion,
@@ -27,10 +23,13 @@ use super::super::holes::{
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
-use super::super::sketch_transfer::{
+use super::super::uniqueness::exactly_one;
+use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
+use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
+use crate::decode::sketch_transfer::recipe::{
     feature_recipe, feature_schema_class, feature_section_sweep_semantics_conflict,
 };
-use super::super::uniqueness::exactly_one;
+use crate::vecmath::{cross, dot};
 
 const EPS_CYLINDER_POSITION: f64 = 1.0e-8;
 const EPS_CYLINDER_GEOMETRY: f64 = 1.0e-9;

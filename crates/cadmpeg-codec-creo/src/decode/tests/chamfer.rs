@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::analytic::{ConeEquation, PlaneEquation};
+use crate::decode::analytic::equations::{ConeEquation, PlaneEquation};
 use crate::decode::feature_history::{chamfer_constant_distance, equal_distance_chamfer_setback};
 use cadmpeg_ir::document::CadIr;
 

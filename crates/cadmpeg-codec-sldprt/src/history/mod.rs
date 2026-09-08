@@ -24,28 +24,9 @@ pub(crate) use write::*;
 
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-#[allow(unused_imports)]
 use cadmpeg_ir::annotations::Annotations;
-#[allow(unused_imports)]
-use cadmpeg_ir::attributes::AttributeValue;
-#[allow(unused_imports)]
-use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
-    CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, Length,
-    LinearTermination, ParameterId, ParameterValue, PathRef, ProfileRef, RadiusSpec,
-    RevolveConstruction, RevolveExtent, RibConstruction, SplitFaceTool,
-};
-#[allow(unused_imports)]
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-#[allow(unused_imports)]
-use cadmpeg_ir::math::{Point3, Vector3};
-#[allow(unused_imports)]
-use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::Exactness;
-#[allow(unused_imports)]
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
     scan.sections()
@@ -305,6 +286,7 @@ pub(crate) fn enrich_scene_classes(
 #[cfg(test)]
 mod literal_tests {
     use super::*;
+    use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {

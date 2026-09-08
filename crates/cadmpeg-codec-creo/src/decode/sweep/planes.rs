@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature plane equations and generated cylinder and cap extents.
 
-use super::super::analytic::{
-    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
-};
 use super::super::holes::blind_extrude_side;
 use super::super::sketch::normalized;
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::PlaneEquation;
+use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::surface::SurfaceParameterRecord;
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;

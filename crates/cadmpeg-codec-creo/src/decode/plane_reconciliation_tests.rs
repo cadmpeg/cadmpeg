@@ -1,16 +1,18 @@
-use crate::decode::analytic::{
+use crate::decode::analytic::carriers::transfer_topology_bound_planes;
+use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
+use crate::decode::analytic::planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, dot, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
+    analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes,
-    unique_round_edge_origin_candidate, BoundaryLine, CylinderEquation, PlaneCandidate, PlaneChart,
-    PlaneEquation,
+    topology_bound_line_plane, topology_bound_plane, unique_round_edge_origin_candidate,
+    BoundaryLine, PlaneCandidate, PlaneChart,
 };
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
+use crate::vecmath::dot;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1111,8 +1113,8 @@ fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
         }),
         offset: 0,
     };
-    let cylinder = crate::decode::analytic::CarrierEquation::Cylinder(
-        crate::decode::analytic::CylinderEquation {
+    let cylinder = crate::decode::analytic::equations::CarrierEquation::Cylinder(
+        crate::decode::analytic::equations::CylinderEquation {
             origin: [0.0, 0.0, 0.0],
             axis: [1.0, 0.0, 0.0],
             ref_direction: [0.0, 1.0, 0.0],

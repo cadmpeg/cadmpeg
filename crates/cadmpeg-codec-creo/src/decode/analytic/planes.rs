@@ -21,10 +21,11 @@ use super::super::surfaces::{
 
 use super::edges::nurbs_intrinsic_parameter_range;
 use super::equations::{
-    cross, dot, intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
+    intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
 };
 use super::vertices::model_points_agree;
+use crate::vecmath::{cross, dot};
 
 const EPS_ON_CARRIER: f64 = 1.0e-7;
 const EPS_POINT_UNIQUE: f64 = 1.0e-7;
@@ -1337,7 +1338,7 @@ fn round_edge_envelopes_for_plane(
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
-                            && crate::decode::sketch_transfer::feature_schema_class(
+                            && crate::decode::sketch_transfer::recipe::feature_schema_class(
                                 scan,
                                 row.feature_id,
                             ) == Some(SchemaClass::Round)

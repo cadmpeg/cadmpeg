@@ -25,12 +25,12 @@ use super::super::feature_history::{
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
-use super::super::sketch_transfer::{
-    close_sketch_constraint_parameter_references, current_feature_operation,
-    current_feature_recipe, current_feature_recipe_parent, feature_schema_class,
-    row_feature_schema_classes,
-};
 use super::super::uniqueness::unique_feature_datum_plane;
+use crate::decode::sketch_transfer::constraints::close_sketch_constraint_parameter_references;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
+    feature_schema_class, row_feature_schema_classes,
+};
 
 fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
     let output_updates = ir

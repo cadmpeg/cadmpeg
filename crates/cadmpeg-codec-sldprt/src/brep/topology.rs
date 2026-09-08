@@ -292,7 +292,8 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
             }
         }
     }
-    deduplicate_records(out)
+    out.dedup();
+    out
 }
 
 /// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
@@ -333,12 +334,8 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
             });
         }
     }
-    deduplicate_records(out)
-}
-
-fn deduplicate_records<T: PartialEq>(mut records: Vec<T>) -> Vec<T> {
-    records.dedup();
-    records
+    out.dedup();
+    out
 }
 
 /// Vertex-use `00 12`: 24-byte body, magic at body+16, `refs[5]` at body+6.
@@ -523,7 +520,7 @@ fn insert_candidates<T: Candidate>(target: &mut CandidateMap<T>, records: Vec<T>
             {
                 let candidates = entry.get_mut();
                 candidates.extend(records);
-                *candidates = deduplicate_records(std::mem::take(candidates));
+                candidates.dedup();
             }
         }
     }
@@ -705,12 +702,6 @@ pub fn scan(body: &[u8]) -> Tables {
     scan_with_point_framing(body, false, None, None)
 }
 
-/// Scan a partition stream with the typed curve attributes available to
-/// resolve an otherwise ambiguous edge-use reference orientation.
-pub(crate) fn scan_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, false, Some(curve_attrs), None)
-}
-
 /// Scan a partition stream while admitting typed FACE offsets that carry a
 /// loop head.  A typed FACE and a compact bridge share the `00 0e` framing.
 /// An ownership-only typed FACE has a null loop field and must not replace a
@@ -727,12 +718,6 @@ pub(crate) fn scan_with_curve_attrs_excluding(
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
     )
-}
-
-/// Scan a deltas stream with the typed curve attributes available to resolve
-/// an otherwise ambiguous edge-use reference orientation.
-pub(crate) fn scan_deltas_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs), None)
 }
 
 /// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
@@ -1052,7 +1037,7 @@ mod tests {
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
-        let tables = scan_deltas_with_curve_attrs(&bytes, &curve_attrs);
+        let tables = scan_deltas_with_curve_attrs_excluding(&bytes, &curve_attrs, &HashSet::new());
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
     }
 

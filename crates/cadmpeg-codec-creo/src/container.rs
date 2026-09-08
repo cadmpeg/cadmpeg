@@ -2953,9 +2953,9 @@ mod feature_row_definition_tests {
         let operation = FeatureOperation {
             feature_id: 42,
             kind: crate::feature::OperationKind::Stored("Round".to_string()),
-            name: crate::feature::OperationName::Stored {
+            name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Round id 42".to_vec(),
-                keyword: crate::feature::IdKeyword::Id,
+                keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
             recipe: crate::feature::RecipeResolution::None,
@@ -3058,7 +3058,7 @@ mod feature_row_definition_tests {
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
-            name: crate::feature::OperationName::Derived,
+            name: crate::feature::operations::OperationName::Derived,
             recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: None,

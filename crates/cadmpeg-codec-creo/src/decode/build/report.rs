@@ -14,13 +14,13 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use crate::container::{self, ContainerScan};
 use crate::loss::CreoLossCode;
 
-use super::super::analytic::is_axis_aligned;
 use super::super::surfaces::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
     push_structural_layer_notes,
 };
+use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {

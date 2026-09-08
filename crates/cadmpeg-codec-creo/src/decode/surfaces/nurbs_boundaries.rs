@@ -6,8 +6,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 
-use super::super::analytic::{cross, dot, quadratic_real_roots, PlaneEquation};
 use super::super::sketch::normalized;
+use crate::decode::analytic::equations::{quadratic_real_roots, PlaneEquation};
+use crate::vecmath::{cross, dot};
 
 const EPS_CUBIC_PARAM: f64 = 1.0e-11;
 const EPS_BOUNDARY_EXTENT: f64 = 1.0e-9;

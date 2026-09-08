@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -16,7 +14,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterScope,
         DesignSheetMetalHeightDatum,
     };
-    use crate::records::DesignParameterKind;
+
     use cadmpeg_ir::features::{
         FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
         SheetMetalFlangeWidth, SheetMetalHeightDatum,
@@ -492,7 +490,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation,
         DesignParameterScope, DesignSheetMetalHeightDatum,
     };
-    use crate::records::DesignParameterKind;
+
     use cadmpeg_ir::features::{
         FeatureDefinition, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
@@ -980,7 +978,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
-    use crate::records::{DesignParameter, DesignParameterKind, DesignParameterOwner};
+    use crate::records::{DesignParameter, DesignParameterOwner};
     use cadmpeg_ir::features::{FeatureDefinition, SheetMetalHemDirection, SheetMetalHemForm};
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";

@@ -10,8 +10,6 @@ use super::{
     CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Complete production selected by the entity value and suffix frames.
@@ -62,7 +60,6 @@ pub enum CatiaEntityRecordSuffix {
 
 /// One `7C05` entity-table record paired with a `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CatiaEntityRecordWire", into = "CatiaEntityRecordWire")]
 pub struct CatiaEntityRecord {
     /// Globally unique entity-record identity.
@@ -354,7 +351,6 @@ impl CatiaEntityRecord {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(super) struct CatiaEntityRecordWire {
     id: String,
     object_graph: String,
@@ -364,21 +360,17 @@ pub(super) struct CatiaEntityRecordWire {
     byte_len: u64,
     lead: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     inline_body: Option<Vec<u8>>,
     definition_len: u64,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     definition_prefix: Vec<u8>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
     entity_id: u32,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     definition_suffix: Vec<u8>,
     value_len: u64,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     value_payload: Vec<u8>,
     #[serde(default)]
     value_fields: Vec<value_block::ValueField>,
@@ -419,7 +411,6 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reference_signature: Option<CatiaReferenceSignature>,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     record_suffix: Vec<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     suffix_value: Option<CatiaEntitySuffixValue>,

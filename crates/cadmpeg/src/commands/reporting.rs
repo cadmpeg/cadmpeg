@@ -10,8 +10,9 @@ use cadmpeg_ir::SourceFidelity;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::refusal::ConversionRefusal;
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
-use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome};
 
 pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
     if let Some(change) = &source.format_change {
@@ -156,12 +157,6 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
     if diff.retained_records_changed {
         println!("    retained records changed");
     }
-}
-
-pub(super) fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
-    report
-        .map(|report| report.losses.clone())
-        .unwrap_or_default()
 }
 
 #[derive(Clone, Copy)]
@@ -392,7 +387,7 @@ fn write_serialized_report(
     };
     let mut bytes = serde_json::to_vec_pretty(report)?;
     bytes.push(b'\n');
-    ArtifactStore::write_output(input, output, &bytes, force)?;
+    artifact_store::write_output(input, output, &bytes, force)?;
     eprintln!("wrote report {}", output.display());
     Ok(())
 }

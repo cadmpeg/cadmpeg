@@ -6,13 +6,10 @@ use crate::families::consolidated::records::{
     ConsolidatedEdgeDefinitionData,
 };
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Exact class-specific edge-definition frame owned by one consolidated edge node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "EdgeDefinitionWire", into = "EdgeDefinitionWire")]
 pub struct CatiaConsolidatedEdgeDefinition {
     /// Complete raw frame.
@@ -22,7 +19,6 @@ pub struct CatiaConsolidatedEdgeDefinition {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct EdgeDefinitionWire {
     byte_offset: u64,
     width: ConsolidatedFrameWidth,

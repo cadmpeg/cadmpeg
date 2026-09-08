@@ -20,221 +20,207 @@ use sha2::{Digest, Sha256};
 
 use super::document::LoadOrigin;
 
-/// Owner of bounded reads, sidecar paths, digest checks, and atomic writes.
+/// Read the bytes used for native-format detection.
 ///
-/// Methods are associated functions: the type names the owner; there is no
-/// instance state.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ArtifactStore;
-
-impl ArtifactStore {
-    /// Sidecar path for a CADIR path (`<stem>.fidelity.json`).
-    pub fn sidecar_path(cadir_path: &Path) -> PathBuf {
-        decode_sidecar_path(cadir_path)
-    }
-
-    /// Read the bytes used for native-format detection.
-    ///
-    /// Most codecs need only the leading prefix. A Compound File Binary
-    /// directory may be physically remote from the header, so its codec
-    /// evidence cannot be established from a short prefix. Extend such inputs
-    /// until the bounded CFB probe reaches the directory or the configured
-    /// input ceiling.
-    pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
-        let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
-            if error.kind() == io::ErrorKind::FileTooLarge {
-                anyhow!(
-                    "{} exceeds the configured {}-byte input limit",
-                    path.display(),
-                    max_bytes
-                )
-            } else {
-                error.into()
-            }
-        })
-    }
-
-    /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
-    pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-        let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let mut limited = file.take(max_bytes.saturating_add(1));
-        let mut text = String::new();
-        limited
-            .read_to_string(&mut text)
-            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-        if text.len() as u64 > max_bytes {
-            return Err(anyhow!(
+/// Most codecs need only the leading prefix. A Compound File Binary
+/// directory may be physically remote from the header, so its codec
+/// evidence cannot be established from a short prefix. Extend such inputs
+/// until the bounded CFB probe reaches the directory or the configured
+/// input ceiling.
+pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
+        if error.kind() == io::ErrorKind::FileTooLarge {
+            anyhow!(
                 "{} exceeds the configured {}-byte input limit",
                 path.display(),
                 max_bytes
-            ));
-        }
-        Ok(text)
-    }
-
-    /// Load and parse a decode sidecar, verifying it against CADIR bytes.
-    ///
-    /// Mismatch is a hard error (fail-closed).
-    pub fn load_matching_sidecar(
-        cadir_path: &Path,
-        cadir_bytes: &[u8],
-        max_bytes: u64,
-    ) -> Result<Option<DecodeSidecar>> {
-        let path = Self::sidecar_path(cadir_path);
-        if !path.exists() {
-            return Ok(None);
-        }
-        let text = Self::read_bounded_text(&path, max_bytes)
-            .with_context(|| format!("reading decode sidecar {}", path.display()))?;
-        let sidecar = DecodeSidecar::from_json(&text)
-            .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
-        if !sidecar.matches(cadir_bytes) {
-            return Err(anyhow!(
-                "decode sidecar {} does not match {}",
-                path.display(),
-                cadir_path.display()
-            ));
-        }
-        Ok(Some(sidecar))
-    }
-
-    /// Refuse to overwrite the input path, or an existing output without force.
-    pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
-        // A missing source is diagnosed by the loader. It cannot alias an
-        // existing source file, so output preflight must not replace that
-        // input error with a canonicalization failure.
-        let input = input
-            .exists()
-            .then(|| {
-                std::fs::canonicalize(input)
-                    .with_context(|| format!("canonicalizing {}", input.display()))
-            })
-            .transpose()?;
-        let output_absolute = Self::absolute_output_path(output)?;
-        if input.as_ref() == Some(&output_absolute) {
-            bail!("refusing to overwrite input {}", output_absolute.display());
-        }
-        if output.exists() && !force {
-            bail!("{} exists; pass --force to overwrite", output.display());
-        }
-        Ok(())
-    }
-
-    /// Refuse two independently written outputs that resolve to one path.
-    pub fn check_distinct_output_paths(
-        first: &Path,
-        first_label: &str,
-        second: &Path,
-        second_label: &str,
-    ) -> Result<()> {
-        if Self::absolute_output_path(first)? == Self::absolute_output_path(second)? {
-            bail!(
-                "{first_label} and {second_label} resolve to the same path {}; choose distinct output paths",
-                first.display()
-            );
-        }
-        Ok(())
-    }
-
-    fn absolute_output_path(output: &Path) -> Result<PathBuf> {
-        let parent = output
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        if output.exists() {
-            Ok(std::fs::canonicalize(output)?)
+            )
         } else {
-            Ok(std::fs::canonicalize(parent)?.join(
-                output
-                    .file_name()
-                    .ok_or_else(|| anyhow!("output path has no filename"))?,
-            ))
+            error.into()
         }
-    }
+    })
+}
 
-    /// Stage bytes then atomically replace `output`.
-    pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
-        let parent = output
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let mut temporary = tempfile::NamedTempFile::new_in(parent)
-            .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-        temporary
-            .write_all(bytes)
-            .with_context(|| format!("writing temporary output for {}", output.display()))?;
-        temporary
-            .persist(output)
-            .map_err(|error| error.error)
-            .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-        Ok(())
+/// Read a UTF-8 text file, refusing payloads above `max_bytes`.
+pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
+    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut limited = file.take(max_bytes.saturating_add(1));
+    let mut text = String::new();
+    limited
+        .read_to_string(&mut text)
+        .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    if text.len() as u64 > max_bytes {
+        return Err(anyhow!(
+            "{} exceeds the configured {}-byte input limit",
+            path.display(),
+            max_bytes
+        ));
     }
+    Ok(text)
+}
 
-    /// Check the output path, then write bytes atomically.
-    pub fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
-        Self::check_output_path(input, output, force)?;
-        Self::write_bytes_atomic(output, bytes)
+/// Load and parse a decode sidecar, verifying it against CADIR bytes.
+///
+/// Mismatch is a hard error (fail-closed).
+pub fn load_matching_sidecar(
+    cadir_path: &Path,
+    cadir_bytes: &[u8],
+    max_bytes: u64,
+) -> Result<Option<DecodeSidecar>> {
+    let path = decode_sidecar_path(cadir_path);
+    if !path.exists() {
+        return Ok(None);
     }
-
-    /// Stage an export plan and hash the emitted bytes.
-    pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
-        let parent = output
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let mut temporary = tempfile::NamedTempFile::new_in(parent)
-            .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-        let mut sink = TempFileWriter {
-            file: &mut temporary,
-            hasher: Sha256::new(),
-        };
-        let mut writer = BufWriter::new(&mut sink);
-        let report = plan
-            .write_to(&mut writer)
-            .with_context(|| format!("writing temporary output for {}", output.display()))?;
-        writer
-            .flush()
-            .with_context(|| format!("flushing temporary output for {}", output.display()))?;
-        drop(writer);
-        let digest = sink.finish();
-        temporary
-            .persist(output)
-            .map_err(|error| error.error)
-            .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-        Ok((report, digest))
+    let text = read_bounded_text(&path, max_bytes)
+        .with_context(|| format!("reading decode sidecar {}", path.display()))?;
+    let sidecar = DecodeSidecar::from_json(&text)
+        .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
+    if !sidecar.matches(cadir_bytes) {
+        return Err(anyhow!(
+            "decode sidecar {} does not match {}",
+            path.display(),
+            cadir_path.display()
+        ));
     }
+    Ok(Some(sidecar))
+}
 
-    /// Persist or remove the decode-fidelity sidecar beside a CADIR file.
-    ///
-    /// A decoded origin causes a second atomic rename after the CADIR write.
-    /// The pair is not transactional; see the module docs. A neutral origin
-    /// removes a stale sidecar.
-    pub fn persist_decode_sidecar(
-        cadir_path: &Path,
-        cadir_sha256: &str,
-        origin: &LoadOrigin,
-    ) -> Result<SidecarPersistOutcome> {
-        let path = Self::sidecar_path(cadir_path);
-        match origin {
-            LoadOrigin::Decoded {
-                report, fidelity, ..
-            }
-            | LoadOrigin::Restored { report, fidelity } => {
-                let mut sidecar =
-                    DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
-                let mut bytes = sidecar.to_canonical_json()?.into_bytes();
-                bytes.push(b'\n');
-                Self::write_bytes_atomic(&path, &bytes)?;
-                Ok(SidecarPersistOutcome::Wrote(path))
-            }
-            LoadOrigin::Neutral if path.exists() => {
-                std::fs::remove_file(&path)
-                    .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
-                Ok(SidecarPersistOutcome::RemovedStale(path))
-            }
-            LoadOrigin::Neutral => Ok(SidecarPersistOutcome::Absent),
+/// Refuse to overwrite the input path, or an existing output without force.
+pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
+    // A missing source is diagnosed by the loader. It cannot alias an
+    // existing source file, so output preflight must not replace that
+    // input error with a canonicalization failure.
+    let input = input
+        .exists()
+        .then(|| {
+            std::fs::canonicalize(input)
+                .with_context(|| format!("canonicalizing {}", input.display()))
+        })
+        .transpose()?;
+    let output_absolute = absolute_output_path(output)?;
+    if input.as_ref() == Some(&output_absolute) {
+        bail!("refusing to overwrite input {}", output_absolute.display());
+    }
+    if output.exists() && !force {
+        bail!("{} exists; pass --force to overwrite", output.display());
+    }
+    Ok(())
+}
+
+/// Refuse two independently written outputs that resolve to one path.
+pub fn check_distinct_output_paths(
+    first: &Path,
+    first_label: &str,
+    second: &Path,
+    second_label: &str,
+) -> Result<()> {
+    if absolute_output_path(first)? == absolute_output_path(second)? {
+        bail!(
+            "{first_label} and {second_label} resolve to the same path {}; choose distinct output paths",
+            first.display()
+        );
+    }
+    Ok(())
+}
+
+fn absolute_output_path(output: &Path) -> Result<PathBuf> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if output.exists() {
+        Ok(std::fs::canonicalize(output)?)
+    } else {
+        Ok(std::fs::canonicalize(parent)?.join(
+            output
+                .file_name()
+                .ok_or_else(|| anyhow!("output path has no filename"))?,
+        ))
+    }
+}
+
+/// Stage bytes then atomically replace `output`.
+pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+    temporary
+        .write_all(bytes)
+        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    temporary
+        .persist(output)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+    Ok(())
+}
+
+/// Check the output path, then write bytes atomically.
+pub fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
+    check_output_path(input, output, force)?;
+    write_bytes_atomic(output, bytes)
+}
+
+/// Stage an export plan and hash the emitted bytes.
+pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+    let mut sink = TempFileWriter {
+        file: &mut temporary,
+        hasher: Sha256::new(),
+    };
+    let mut writer = BufWriter::new(&mut sink);
+    let report = plan
+        .write_to(&mut writer)
+        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    writer
+        .flush()
+        .with_context(|| format!("flushing temporary output for {}", output.display()))?;
+    drop(writer);
+    let digest = sink.finish();
+    temporary
+        .persist(output)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+    Ok((report, digest))
+}
+
+/// Persist or remove the decode-fidelity sidecar beside a CADIR file.
+///
+/// A decoded origin causes a second atomic rename after the CADIR write.
+/// The pair is not transactional; see the module docs. A neutral origin
+/// removes a stale sidecar.
+pub fn persist_decode_sidecar(
+    cadir_path: &Path,
+    cadir_sha256: &str,
+    origin: &LoadOrigin,
+) -> Result<SidecarPersistOutcome> {
+    let path = decode_sidecar_path(cadir_path);
+    match origin {
+        LoadOrigin::Decoded {
+            report, fidelity, ..
         }
+        | LoadOrigin::Restored { report, fidelity } => {
+            let mut sidecar =
+                DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
+            let mut bytes = sidecar.to_canonical_json()?.into_bytes();
+            bytes.push(b'\n');
+            write_bytes_atomic(&path, &bytes)?;
+            Ok(SidecarPersistOutcome::Wrote(path))
+        }
+        LoadOrigin::Neutral if path.exists() => {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
+            Ok(SidecarPersistOutcome::RemovedStale(path))
+        }
+        LoadOrigin::Neutral => Ok(SidecarPersistOutcome::Absent),
     }
 }
 
@@ -293,7 +279,7 @@ mod tests {
         let missing = directory.path().join("missing.cadir.json");
         let output = directory.path().join("part.step");
 
-        ArtifactStore::check_output_path(&missing, &output, false)
+        check_output_path(&missing, &output, false)
             .expect("a missing source cannot alias an existing input file");
     }
 
@@ -303,7 +289,7 @@ mod tests {
         let source = directory.path().join("part.step");
         std::fs::write(&source, b"source").unwrap();
 
-        let error = ArtifactStore::check_output_path(&source, &source, true).unwrap_err();
+        let error = check_output_path(&source, &source, true).unwrap_err();
         assert!(error.to_string().contains("refusing to overwrite input"));
     }
 
@@ -324,22 +310,17 @@ mod tests {
         .unwrap();
         let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            ArtifactStore::sidecar_path(&path),
+            decode_sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
 
-        let loaded =
-            ArtifactStore::load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
+        let loaded = load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
         assert!(loaded.is_some());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error = ArtifactStore::load_matching_sidecar(
-            &path,
-            format!("{text}\n").as_bytes(),
-            1024 * 1024,
-        )
-        .unwrap_err();
+        let error =
+            load_matching_sidecar(&path, format!("{text}\n").as_bytes(), 1024 * 1024).unwrap_err();
         assert!(error.to_string().contains("does not match"));
     }
 
@@ -348,7 +329,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("large.json");
         std::fs::write(&path, "12345").unwrap();
-        let error = ArtifactStore::read_bounded_text(&path, 4).unwrap_err();
+        let error = read_bounded_text(&path, 4).unwrap_err();
         assert!(error.to_string().contains("4-byte input limit"));
     }
 
@@ -360,7 +341,7 @@ mod tests {
         bytes.extend(std::iter::repeat_n(0x5a, 128));
         std::fs::write(&path, &bytes).unwrap();
 
-        let detected = ArtifactStore::read_detection_input(&path, 8, 1024).unwrap();
+        let detected = read_detection_input(&path, 8, 1024).unwrap();
         assert_eq!(detected, bytes);
     }
 
@@ -370,7 +351,7 @@ mod tests {
         let path = directory.path().join("part.igs");
         std::fs::write(&path, vec![b'x'; 1024]).unwrap();
 
-        let detected = ArtifactStore::read_detection_input(&path, DETECTION_PREFIX_LEN, 16)
+        let detected = read_detection_input(&path, DETECTION_PREFIX_LEN, 16)
             .expect("a non-CFB detection prefix respects the limit without refusing the file");
 
         assert_eq!(detected, vec![b'x'; 16]);
@@ -386,8 +367,7 @@ mod tests {
         let path = directory.path().join("remote-directory.prt");
         std::fs::write(&path, &bytes).unwrap();
         let cli_prefix =
-            ArtifactStore::read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64)
-                .unwrap();
+            read_detection_input(&path, DETECTION_PREFIX_LEN, bytes.len() as u64).unwrap();
         assert_eq!(cli_prefix, bytes);
 
         let cli_candidates = InputCatalog::with_builtins()

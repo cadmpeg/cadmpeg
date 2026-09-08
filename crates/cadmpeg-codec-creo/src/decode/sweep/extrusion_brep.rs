@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved extrusion B-rep transfer.
 
-use super::super::analytic::nurbs_intrinsic_parameter_range;
 use super::super::feature_history::{
     feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
 };
 use super::super::native::annotate;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::feature_is_first_material_operation;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -23,6 +21,8 @@ use super::profiles::{
     ordered_extrusion_profiles, oriented_arc_parameterization, resolved_sketch_profiles,
 };
 use crate::container::ContainerScan;
+use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
+use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{

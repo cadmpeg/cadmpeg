@@ -8,20 +8,16 @@ use super::{
 use super::{DesignClassTag, DesignEntityId, DesignRelaxedGuidText, DesignSecondaryIdentity};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
 /// Sketch-profile selection frame named by a profile-based feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSketchProfileOperandWire",
     into = "DesignSketchProfileOperandWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignSketchProfileOperandWire"))]
 pub struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
@@ -49,7 +45,6 @@ pub struct DesignSketchProfileOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignSketchProfileOperandWire {
     /// Zero-based position in the scope's ordered reference table.
     scope_reference_ordinal: u32,
@@ -124,7 +119,6 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
 
 /// Nested ordered region selection carried by a sketch-profile operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSketchProfileRegionSelection {
     /// Indexed identity of the region-selection record.
     pub record_index: u32,
@@ -144,7 +138,6 @@ pub struct DesignSketchProfileRegionSelection {
 
 /// One selected region in a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSketchProfileRegion {
     /// Byte offset of this region's member count.
     pub member_count_offset: u64,
@@ -154,7 +147,6 @@ pub struct DesignSketchProfileRegion {
 
 /// One fixed-width persistent curve member of a selected sketch region.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSketchProfileRegionMemberWire",
     into = "DesignSketchProfileRegionMemberWire"
@@ -203,7 +195,6 @@ impl From<DesignRegionIncidence> for u32 {
 
 /// One fixed-width persistent curve member of a selected sketch region.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignSketchProfileRegionMemberWire {
     /// Native member-kind code. Profile-region curve members use value three.
     kind: u32,
@@ -275,7 +266,6 @@ impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWi
 
 /// Counted selection group owned by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignExtrudeSelectionGroupWire",
     into = "DesignExtrudeSelectionGroupWire"
@@ -315,7 +305,6 @@ pub struct DesignExtrudeSelectionGroup {
 
 /// Counted selection group owned by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignExtrudeSelectionGroupWire {
     /// Globally unique deterministic identifier for this native group.
     id: String,
@@ -424,7 +413,6 @@ pub enum DesignExtrudeOperandRole {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum DesignExtrudeOperandRoleTag {
     Bodies,
@@ -434,7 +422,6 @@ enum DesignExtrudeOperandRoleTag {
 
 /// Semantic use of an ordered Extrude face-operand group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignExtrudeFaceRole {
     /// Face supporting a selected-face start.
@@ -547,11 +534,6 @@ impl DesignConstructionOperandRole {
 
 /// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignConstructionOperandGroupSerde")
-)]
 #[serde(
     try_from = "DesignConstructionOperandGroupSerde",
     into = "DesignConstructionOperandGroupSerde"
@@ -605,7 +587,6 @@ impl DesignConstructionOperandGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignConstructionOperandGroupSerde {
     id: String,
     scope_record_index: u32,
@@ -723,7 +704,6 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
 
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignConstructionOperandGroupFrameWire",
     into = "DesignConstructionOperandGroupFrameWire"
@@ -764,7 +744,6 @@ pub struct DesignConstructionOperandGroupFrame {
 
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignConstructionOperandGroupFrameWire {
     member_count_offset: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -865,7 +844,6 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
 
 /// Compact boolean record named by a construction-operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignConstructionOperandFlag {
     /// Indexed flag-record identity.
     pub record_index: u32,
@@ -881,7 +859,6 @@ pub struct DesignConstructionOperandFlag {
 
 /// Affine placement named by a construction-operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignConstructionOperandTransform {
     /// Indexed transform-record identity.
     pub record_index: u32,
@@ -903,7 +880,6 @@ pub struct DesignConstructionOperandTransform {
 
 /// Two ordered affine placements named by an operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignConstructionOperandDualTransform {
     /// Indexed transform-record identity.
     pub record_index: u32,
@@ -923,7 +899,6 @@ pub struct DesignConstructionOperandDualTransform {
 
 /// One persistent-entity step in a construction operand's selection path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignConstructionOperandPathWire",
     into = "DesignConstructionOperandPathWire"
@@ -958,7 +933,6 @@ pub struct DesignConstructionOperandPath {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignConstructionOperandPathWire {
     /// Indexed path-record identity.
     record_index: u32,
@@ -1050,7 +1024,6 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
 
 /// Placement layout carried by a persistent-entity selection path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignConstructionPathPlacement {
     Transform(Located<[[f64; 4]; 4]>),
     Compact(bool),
@@ -1058,7 +1031,6 @@ pub enum DesignConstructionPathPlacement {
 
 /// Nested identity chain named by a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignConstructionOperandIdentityWire",
     into = "DesignConstructionOperandIdentityWire"
@@ -1086,7 +1058,6 @@ pub struct DesignConstructionOperandIdentity {
 
 /// Identity and location of one indexed construction wrapper.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignIdentityWrapper {
     pub record_index: u32,
     pub byte_offset: u64,
@@ -1094,7 +1065,6 @@ pub struct DesignIdentityWrapper {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignConstructionOperandIdentityWire {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -1184,11 +1154,6 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
 
 /// Entity-tracking path embedded in a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignConstructionTrackingPathWire")
-)]
 #[serde(
     try_from = "DesignConstructionTrackingPathWire",
     into = "DesignConstructionTrackingPathWire"
@@ -1233,7 +1198,6 @@ pub struct DesignConstructionTrackingPath {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignConstructionTrackingPathWire {
     wrapper_record_index: u32,
     wrapper_byte_offset: u64,
@@ -1325,7 +1289,6 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignConstructionPersistentIdentity {
     /// Local persistent identity preceding the two UUID fields.
     pub local_id: u64,
@@ -1353,7 +1316,6 @@ pub struct DesignConstructionPersistentIdentity {
 
 /// One radius assignment and its ordered edge group in a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFilletRadiusGroup {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -1374,8 +1336,6 @@ pub struct DesignFilletRadiusGroup {
 
 /// Parameter records defining one Fillet group's radius law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignFilletRadiusLawWire"))]
 #[serde(
     try_from = "DesignFilletRadiusLawWire",
     into = "DesignFilletRadiusLawWire"
@@ -1417,7 +1377,6 @@ pub struct DesignFilletMidpoint {
 
 /// Parameter records defining one Fillet group's radius law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignFilletRadiusLawWire {
     /// One radius applies along the complete edge group.
@@ -1549,7 +1508,6 @@ impl From<DesignFilletRadiusLaw> for DesignFilletRadiusLawWire {
 
 /// ASM history family, entity slot, and states for one selected identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct HistoricalBinding {
     /// Stable ASM family containing the selected identity.
     #[serde(rename = "historical_entity_kind")]
@@ -1586,7 +1544,6 @@ fn deserialize_historical_binding<'de, D: serde::Deserializer<'de>>(
 
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExtrudeSelectionMember {
     /// Globally unique deterministic identifier for this native member.
     pub id: String,
@@ -1637,11 +1594,6 @@ pub struct DesignExtrudeSelectionMember {
 
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignEntitySelectionOperandWire")
-)]
 #[serde(
     try_from = "DesignEntitySelectionOperandWire",
     into = "DesignEntitySelectionOperandWire"
@@ -1696,7 +1648,6 @@ pub struct DesignEntitySelectionOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignEntitySelectionOperandWire {
     /// Globally unique deterministic identifier for this native operand.
     id: String,
@@ -1836,7 +1787,6 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
 
 /// Face proof for one persistent identity in one ASM history namespace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEntitySelectionFaceCandidate {
     /// Native ASM history containing the selected identity.
     pub history_id: String,
@@ -1853,11 +1803,6 @@ pub struct DesignEntitySelectionFaceCandidate {
 /// from the ordinary construction-operand group because its member and
 /// scalar lanes do not use the counted-group grammar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignLoftLegacyBodyCarrierSerde")
-)]
 #[serde(
     try_from = "DesignLoftLegacyBodyCarrierSerde",
     into = "DesignLoftLegacyBodyCarrierSerde"
@@ -1910,7 +1855,6 @@ pub struct DesignLoftLegacyBodyCarrier {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignLoftLegacyBodyCarrierSerde {
     id: String,
     scope_record_index: u32,
@@ -2046,7 +1990,6 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
 
 /// Historical edge proof carried by one nested entity-selection identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEntitySelectionEdgeCandidate {
     /// Zero for the first identity and one for the second identity.
     pub identity_ordinal: u32,
@@ -2062,7 +2005,6 @@ pub struct DesignEntitySelectionEdgeCandidate {
 
 /// Whole-body construction operand carrying a persistent body-recipe reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignBodyRecipeOperandWire",
     into = "DesignBodyRecipeOperandWire"
@@ -2122,7 +2064,6 @@ pub struct DesignBodyRecipeOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignBodyRecipeOperandWire {
     /// Globally unique deterministic identifier for this native operand.
     id: String,
@@ -2244,7 +2185,6 @@ impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
 
 /// Construction-operand group record and member position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignOperandGroup {
     /// Owning construction-operand group record.
     pub group_record_index: u32,
@@ -2254,7 +2194,6 @@ pub struct DesignOperandGroup {
 
 /// Exact owner of a construction operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
 pub enum DesignOperandOwner {
     /// Operand named by a counted construction-operand group.
@@ -2286,7 +2225,6 @@ impl DesignOperandOwner {
 
 /// One counted persistent reference inside a whole-body recipe operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBodyRecipeReference {
     /// Persistent Design reference.
     pub design_reference: u64,
@@ -2309,7 +2247,6 @@ pub struct DesignBodyRecipeReference {
 
 /// Stable ASM entity family named by a Design persistent identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AsmHistoricalEntityKind {
     /// Body topology slot.
@@ -2381,8 +2318,6 @@ impl DesignEdgeIdentityLayout {
 
 /// Persistent selection identity owned by a Fillet or Chamfer operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeIdentityOperandWire"))]
 #[serde(
     try_from = "DesignEdgeIdentityOperandWire",
     into = "DesignEdgeIdentityOperandWire"
@@ -2442,7 +2377,6 @@ impl DesignEdgeIdentityOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignEdgeIdentityOperandWire {
     id: String,
     scope_record_index: u32,
@@ -2542,7 +2476,6 @@ impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
 
 /// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEdgeOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -2570,7 +2503,6 @@ pub struct DesignEdgeOperand {
     pub recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     pub recipe_references: Vec<DesignRecipeReference>,
@@ -2661,7 +2593,6 @@ pub struct DesignEdgeOperand {
         serialize_with = "serialize_edge_resolved_axis",
         deserialize_with = "deserialize_edge_resolved_axis"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "EdgeResolvedAxisWire"))]
     pub resolved_axis: Option<DesignAxis>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
@@ -2670,7 +2601,6 @@ pub struct DesignEdgeOperand {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct EdgeResolvedAxisWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resolved_axis_origin: Option<Point3>,
@@ -2705,7 +2635,6 @@ fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 /// One radius-qualified historical edge candidate recovered from an inserted
 /// treatment face and its carrier-stable adjacent supports.
 pub struct DesignEdgeTreatmentRadiusCandidate {
@@ -2718,7 +2647,6 @@ pub struct DesignEdgeTreatmentRadiusCandidate {
 /// Stable surface-support relation from an active face candidate to the
 /// topology preceding its owning feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHistoricalFaceSupportContext {
     /// Stable slot of the active face candidate.
     pub active_face_slot: i64,
@@ -2735,7 +2663,6 @@ pub struct DesignHistoricalFaceSupportContext {
 
 /// Historical edge-boundary context for one ordered edge-recipe prefix reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEdgeRecipeReferenceContext {
     /// Zero-based position in the edge recipe's prefix reference sequence.
     pub reference_ordinal: u32,
@@ -2773,7 +2700,6 @@ pub struct DesignEdgeRecipeReferenceContext {
 
 /// Ordered loop topology retained for one historical face.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHistoricalFaceBoundaryContext {
     /// Stable ASM face slot.
     pub face_slot: i64,
@@ -2783,8 +2709,6 @@ pub struct DesignHistoricalFaceBoundaryContext {
 
 /// Ordered topology and available geometry of one historical face loop.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignHistoricalFaceLoopWire"))]
 #[serde(
     try_from = "DesignHistoricalFaceLoopWire",
     into = "DesignHistoricalFaceLoopWire"
@@ -2847,7 +2771,6 @@ impl DesignHistoricalLoopBoundary {
 
 /// Ordered coedge and edge membership of one historical face loop.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignHistoricalFaceLoopWire {
     /// Stable ASM loop slot.
     loop_slot: i64,
@@ -2976,7 +2899,6 @@ impl From<DesignHistoricalFaceLoopContext> for DesignHistoricalFaceLoopWire {
 
 /// Historical topology surrounding one candidate edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHistoricalEdgeContext {
     /// Stable ASM edge slot.
     pub edge_slot: i64,
@@ -2986,7 +2908,6 @@ pub struct DesignHistoricalEdgeContext {
 
 /// One historical coedge use of a candidate edge and its ordered loop neighbors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHistoricalEdgeLoopContext {
     /// Stable ASM coedge slot using the candidate edge.
     pub coedge_slot: i64,
@@ -3009,11 +2930,6 @@ pub struct DesignHistoricalEdgeLoopContext {
 #[serde(
     try_from = "DesignEdgeRecipeSelectorContextWire",
     into = "DesignEdgeRecipeSelectorContextWire"
-)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignEdgeRecipeSelectorContextWire")
 )]
 pub struct DesignEdgeRecipeSelectorContext {
     pub selector: i32,
@@ -3040,7 +2956,6 @@ impl DesignEdgeRecipeSelectorContext {
 
 /// Serialized selector context.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignEdgeRecipeSelectorContextWire {
     /// Selector value stored in each grouped entry.
     selector: i32,
@@ -3127,7 +3042,6 @@ impl From<DesignEdgeRecipeSelectorContext> for DesignEdgeRecipeSelectorContextWi
 
 /// Standard delimiter structure following an edge recipe's common prologue.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEdgeRecipeStructure {
     /// Number of ordered side clauses.
     pub root: i32,
@@ -3138,14 +3052,9 @@ pub struct DesignEdgeRecipeStructure {
 /// The alternate two-clause structure used by a fixed-path `SurfacePatch`
 /// edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSurfacePatchRecipeStructureWire",
     into = "DesignSurfacePatchRecipeStructureWire"
-)]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignSurfacePatchRecipeStructureWire")
 )]
 pub struct DesignSurfacePatchRecipeStructure {
     /// Ordered clauses in the recipe program.
@@ -3153,7 +3062,6 @@ pub struct DesignSurfacePatchRecipeStructure {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignSurfacePatchRecipeStructureWire {
     root: i32,
     clauses: Vec<DesignSurfacePatchRecipeClause>,
@@ -3184,7 +3092,6 @@ impl From<DesignSurfacePatchRecipeStructure> for DesignSurfacePatchRecipeStructu
 
 /// One clause in a `SurfacePatch` edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfacePatchRecipeClause {
     /// Six delimiter-bounded fields before the counted topology payload.
     pub fields: Vec<Vec<i32>>,
@@ -3200,7 +3107,6 @@ pub struct DesignSurfacePatchRecipeClause {
 
 /// One delimiter-bounded side clause in a standard edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignTopologyRecipeSide {
     /// Encoded number of fields after the header count: scalar fields plus the payload.
     pub field_count: NonZeroU32,
@@ -3218,12 +3124,10 @@ pub struct DesignTopologyRecipeSide {
 
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignTopologyRecipeEntryWire",
     into = "DesignTopologyRecipeEntryWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeEntryWire"))]
 pub struct DesignTopologyRecipeEntry {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
     pub selector: i32,
@@ -3234,7 +3138,6 @@ pub struct DesignTopologyRecipeEntry {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignTopologyRecipeEntryWire {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
     selector: i32,
@@ -3291,12 +3194,10 @@ impl From<DesignTopologyRecipeEntry> for DesignTopologyRecipeEntryWire {
 
 /// One three-word invariant in an edge-recipe entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignTopologyRecipeTripletWire",
     into = "DesignTopologyRecipeTripletWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeTripletWire"))]
 pub struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words, not exceeding the containing
     /// entry's boundary-edge count.
@@ -3308,7 +3209,6 @@ pub struct DesignTopologyRecipeTriplet {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignTopologyRecipeTripletWire {
     /// Equal positive first and third words, not exceeding the containing
     /// entry's boundary-edge count.
@@ -3374,7 +3274,6 @@ pub struct DesignTopologyIncident {
 
 /// Which loop edge incident to a recipe vertex is named by a topology triplet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignTopologyIncidentSide {
     /// Edge immediately preceding the vertex in cyclic loop order.
@@ -3385,8 +3284,6 @@ pub enum DesignTopologyIncidentSide {
 
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignFaceOperandWire"))]
 #[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]
 pub struct DesignFaceOperand {
     /// Globally unique deterministic identifier for this native operand.
@@ -3458,7 +3355,6 @@ pub struct DesignFaceOperand {
 
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignFaceOperandWire {
     /// Globally unique deterministic identifier for this native operand.
     id: String,
@@ -3491,7 +3387,6 @@ struct DesignFaceOperandWire {
     recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     recipe_references: Vec<DesignRecipeReference>,
@@ -3654,8 +3549,6 @@ impl DesignFaceOperand {
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignFaceSourceGroupWire"))]
 #[serde(
     try_from = "DesignFaceSourceGroupWire",
     into = "DesignFaceSourceGroupWire"
@@ -3683,7 +3576,6 @@ pub struct DesignFaceSourceGroup {
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignFaceSourceGroupWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -3769,7 +3661,6 @@ impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
 
 /// Persistent source-shape identity named by a `Face` source carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFaceSourceMember {
     /// Indexed record named by the carrier's source-reference slot.
     pub record_index: u32,
@@ -3783,7 +3674,6 @@ pub struct DesignFaceSourceMember {
 
 /// One length-delimited node in a face regeneration recipe program.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFaceRecipeNode {
     /// Byte offset of the node's `[-1, -1, 2]` opener.
     pub byte_offset: u64,
@@ -3797,7 +3687,6 @@ pub struct DesignFaceRecipeNode {
 
 /// Structured topology program following a face-recipe node opener.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFaceRecipeStructure {
     /// Scalar before the prelude delimiters.
     pub root: i32,
@@ -3813,7 +3702,6 @@ pub struct DesignFaceRecipeStructure {
         serialize_with = "serialize_face_recipe_postlude",
         deserialize_with = "deserialize_face_recipe_postlude"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<i32>"))]
     pub postlude_value: Option<i32>,
 }
 

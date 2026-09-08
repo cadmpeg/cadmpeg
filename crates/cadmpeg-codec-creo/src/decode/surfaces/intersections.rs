@@ -4,8 +4,9 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::analytic::{circular_cone, cross, dot, plane_cone_conic, CarrierEquation};
 use super::super::sketch::normalized;
+use crate::decode::analytic::equations::{circular_cone, plane_cone_conic, CarrierEquation};
+use crate::vecmath::{cross, dot};
 
 use super::intersection_candidates::apex_plane_cone_generator_candidates;
 

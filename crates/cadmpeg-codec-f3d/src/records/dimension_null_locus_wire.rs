@@ -2,7 +2,6 @@ use super::{DesignDimensionLocusPair, DesignDimensionLocusPairWire};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub(crate) struct Wire {
     id: String,
     companion_record_index: u32,

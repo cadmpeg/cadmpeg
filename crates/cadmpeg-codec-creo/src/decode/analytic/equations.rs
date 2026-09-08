@@ -5,8 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::vecmath::normalized;
-pub(crate) use crate::vecmath::{cross, dot};
+use crate::vecmath::{cross, dot, normalized};
 
 use super::planes::point_on_carrier;
 

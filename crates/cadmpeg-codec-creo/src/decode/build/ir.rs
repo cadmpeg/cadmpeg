@@ -21,7 +21,6 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::placed_plane_surfaces;
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
 use super::super::sketch::normalized;
@@ -32,6 +31,7 @@ use super::ir_features::{emit_model_features, finish_feature_transfers};
 use super::ir_geometry::transfer_and_record_scanned_geometry;
 use super::meta::source_meta;
 use super::passthrough::{emit_legacy_arenas, preserve_passthrough_sections};
+use crate::decode::analytic::planes::placed_plane_surfaces;
 
 pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,

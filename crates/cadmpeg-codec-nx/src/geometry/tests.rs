@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::emit::decoded_tolerance;
+
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -163,10 +165,10 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
 
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
-    assert_eq!(crate::decode::decoded_tolerance(1_001.0), Some(1_001_000.0));
-    assert_eq!(crate::decode::decoded_tolerance(0.0), None);
-    assert_eq!(crate::decode::decoded_tolerance(f64::INFINITY), None);
-    assert_eq!(crate::decode::decoded_tolerance(f64::MAX), None);
+    assert_eq!(decoded_tolerance(1_001.0), Some(1_001_000.0));
+    assert_eq!(decoded_tolerance(0.0), None);
+    assert_eq!(decoded_tolerance(f64::INFINITY), None);
+    assert_eq!(decoded_tolerance(f64::MAX), None);
 }
 
 #[test]

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
@@ -10,7 +8,6 @@ use super::CatiaAllocationReferenceEncoding;
 /// Parameter axis held constant by selectors `0x05` and `0x09` in a
 /// consolidated owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaOwnerChartSideAxis {
     /// First surface parameter.
@@ -21,7 +18,6 @@ pub enum CatiaOwnerChartSideAxis {
 
 /// Family-and-class carrier production that opens an owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaOwnerChartCarrier {
     /// B-family class-`0x28` cylinder carrier.
@@ -34,7 +30,6 @@ pub enum CatiaOwnerChartCarrier {
 
 /// Outer alias row selected by a unique width-coded support tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerChartAliasBinding {
     /// Exact outer alias row.
     pub row: String,
@@ -44,7 +39,6 @@ pub struct CatiaOwnerChartAliasBinding {
 
 /// One allocation-local reference in an owner-chart bridge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "CatiaOwnerChartBridgeReferenceWire",
     into = "CatiaOwnerChartBridgeReferenceWire"
@@ -117,7 +111,6 @@ impl CatiaOwnerChartBridgeReference {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CatiaOwnerChartBridgeReferenceWire {
     value: u32,
     encoding: CatiaAllocationReferenceEncoding,
@@ -251,7 +244,6 @@ pub enum CatiaOwnerChartBridge {
 
 /// Compatibility representation with explicit framing controls.
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaOwnerChartBridgeWire {
     /// Five-reference supported-surface construction.
@@ -388,7 +380,6 @@ impl CatiaOwnerChartBridgeWire {
 
 /// Source-closed carrier chart terminated by an owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "CatiaOwnerChartRelationWire",
     into = "CatiaOwnerChartRelationWire"
@@ -416,7 +407,6 @@ impl CatiaOwnerChartRelation {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CatiaOwnerChartRelationWire {
     carrier_byte_offset: u64,
     carrier: CatiaOwnerChartCarrier,

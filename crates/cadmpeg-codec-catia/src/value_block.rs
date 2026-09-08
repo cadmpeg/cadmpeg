@@ -2,15 +2,12 @@
 //! Framed CATIA `7C0B` value blocks.
 
 use cadmpeg_core::decode::View;
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::value_block_7c0b as value_block;
 
 /// One exact `7C0B` value block immediately preceding a schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ValueBlockWire", into = "ValueBlockWire")]
 pub struct ValueBlock {
     /// Byte offset of the `7C0B` marker.
@@ -34,7 +31,6 @@ impl ValueBlock {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ValueBlockWire {
     pos: usize,
     declared_len: usize,
@@ -68,7 +64,6 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
 
 /// One through eight inline bytes with a derived length code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "InlineBytesWire", into = "InlineBytesWire")]
 pub struct InlineBytes(Vec<u8>);
 
@@ -94,11 +89,9 @@ impl TryFrom<Vec<u8>> for InlineBytes {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct InlineBytesWire {
     code: u8,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     bytes: Vec<u8>,
 }
 
@@ -123,7 +116,6 @@ impl TryFrom<InlineBytesWire> for InlineBytes {
 
 /// One token in a `7C0B` value payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ValueField {
     /// `0x32` followed by a source-schema ordinal or terminal absent sentinel.
     SchemaSelector {
@@ -170,7 +162,6 @@ pub enum ValueField {
     ByteString {
         /// Exact stored bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         /// Byte offset within the value payload.
         offset: usize,

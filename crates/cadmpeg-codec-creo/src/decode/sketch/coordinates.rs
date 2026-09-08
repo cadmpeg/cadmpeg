@@ -6,11 +6,6 @@ use super::axis::SectionAxis;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_relation_table_complete;
-use super::super::sketch_transfer::{
-    active_complete_section_skamps, section_linear_distance_vectors,
-    section_skamp_arc_midpoint_source, section_skamp_line_midpoint_sources,
-    section_skamp_same_coordinate_sources, section_solver_relation_is_disabled,
-};
 use super::equations_coordinate::{
     approximately_equal, section_equal_length_coordinate_values,
     section_equation_equal_length_constraints, section_equation_point_on_line_constraints,
@@ -32,6 +27,13 @@ use super::skamp::{
     section_skamp_axis_symmetry, section_skamp_incidence_point, section_skamp_point_entity_id,
     section_skamp_point_on_line, section_skamp_point_symmetry, section_skamp_saved_point_on_line,
     SectionPointSource, SectionSymmetryAxis,
+};
+use crate::decode::sketch_transfer::constraints::{
+    section_linear_distance_vectors, section_solver_relation_is_disabled,
+};
+use crate::decode::sketch_transfer::loci::{
+    active_complete_section_skamps, section_skamp_arc_midpoint_source,
+    section_skamp_line_midpoint_sources, section_skamp_same_coordinate_sources,
 };
 
 const EPS_SECTION_COORDINATE: f64 = 1.0e-9;

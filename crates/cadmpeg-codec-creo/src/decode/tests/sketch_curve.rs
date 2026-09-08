@@ -8,10 +8,11 @@ use crate::decode::feature_history::{
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
 use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
-use crate::decode::sketch_transfer::{
+use crate::decode::sketch_transfer::constraints::{
     section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
-    section_segment_verhor_definition, section_skamp_active,
+    section_segment_verhor_definition,
 };
+use crate::decode::sketch_transfer::loci::section_skamp_active;
 use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};

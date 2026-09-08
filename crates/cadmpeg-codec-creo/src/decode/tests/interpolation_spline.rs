@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: interpolation spline.
 
-use crate::decode::analytic::PlaneEquation;
+use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::feature_history::{
     class_942_boundary_surface_entity_graph, draft_neutral_plane_selection,
     feature_allows_linear_extrusion, feature_is_sheet_extrusion, feature_surface_transitions,
@@ -17,10 +17,10 @@ use crate::decode::holes::{
     hole_cylinder_from_cap_outlines, hole_extent_and_direction, hole_placement,
     CircularSweepGeometry, ExtrusionSpan,
 };
-use crate::decode::sketch_transfer::{
+use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
-    sketch_constraint_loci_compatible,
 };
+use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::sweep::{
     arcs_intersect, circular_section_profile_from_cylinder, connected_sketch_profile_vertices,
     extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
@@ -388,10 +388,10 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
         .push(crate::feature::FeatureOperation {
             feature_id: 917,
             kind: crate::feature::OperationKind::Native,
-            name: crate::feature::OperationName::Derived,
+            name: crate::feature::operations::OperationName::Derived,
             recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: true,
-            depdb: Some(crate::feature::DepdbPrefix {
+            depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Protrusion,
                 parent: 0,
             }),
@@ -412,14 +412,14 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
             kind: crate::feature::OperationKind::Stored("Surface".to_string()),
-            name: crate::feature::OperationName::Stored {
+            name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
-                keyword: crate::feature::IdKeyword::Id,
+                keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
             recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
-            depdb: Some(crate::feature::DepdbPrefix {
+            depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
@@ -487,14 +487,14 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
             kind: crate::feature::OperationKind::Stored("Surface".to_string()),
-            name: crate::feature::OperationName::Stored {
+            name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
-                keyword: crate::feature::IdKeyword::Id,
+                keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
             recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
-            depdb: Some(crate::feature::DepdbPrefix {
+            depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
@@ -516,14 +516,14 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
             kind: crate::feature::OperationKind::Stored("Surface".to_string()),
-            name: crate::feature::OperationName::Stored {
+            name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
-                keyword: crate::feature::IdKeyword::Id,
+                keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
             recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
-            depdb: Some(crate::feature::DepdbPrefix {
+            depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
@@ -1571,10 +1571,10 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     let operation = |recipe, parent_feature_id, offset| crate::feature::FeatureOperation {
         feature_id: 6,
         kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-        name: crate::feature::OperationName::Derived,
+        name: crate::feature::operations::OperationName::Derived,
         recipe: crate::feature::RecipeResolution::Resolved(recipe),
         display_state_conflict: false,
-        depdb: Some(crate::feature::DepdbPrefix {
+        depdb: Some(crate::feature::operations::DepdbPrefix {
             schema: crate::feature::schema::SchemaClass::Protrusion,
             parent: parent_feature_id,
         }),

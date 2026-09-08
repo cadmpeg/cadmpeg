@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit tests for section-equation constraint transfer.
 
-use crate::decode::sketch_transfer::{
+use crate::decode::sketch_transfer::constraints::{
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,

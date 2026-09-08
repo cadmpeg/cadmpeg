@@ -4,7 +4,7 @@
 use super::{
     class_911_surface_row, simple_drilled_recipe_surface_rows, simple_drilled_recipe_table,
 };
-use crate::decode::analytic::rowless_round_face_orientations;
+use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::coverage::{
     constraint_kind_breakdown, curve_transfer_coverage, design_constraint_transfer_coverage,
     surface_transfer_coverage,
@@ -26,10 +26,10 @@ use crate::decode::holes::{
     simple_drilled_hole_recipe, stepped_hole_form, ExtrusionSpan, SimpleDrilledDimensionFamily,
 };
 use crate::decode::sketch::approximately_equal;
-use crate::decode::sketch_transfer::{
-    normalize_section_incidence_curve_family_evidence, sketch_constraint_loci_compatible,
-    SectionEntityIncidenceFamily,
+use crate::decode::sketch_transfer::profiles::{
+    normalize_section_incidence_curve_family_evidence, SectionEntityIncidenceFamily,
 };
+use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
 use super::*;
 use crate::native::features::payload_name::FeaturePayloadName;

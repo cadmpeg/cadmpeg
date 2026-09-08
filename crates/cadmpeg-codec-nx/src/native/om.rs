@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
+#[cfg(test)]
+use crate::decode::feature_completeness;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::om::control_leading_value::ControlLeadingValue;
@@ -4051,7 +4054,6 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -4084,19 +4086,9 @@ mod tests {
     mod expression_wire;
     mod native_units;
     mod state_counters;
-    use std::io::{Cursor, Write};
+    use std::io::Cursor;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use super::*;
     use crate::container;
@@ -4444,13 +4436,13 @@ mod tests {
                 .map(String::as_str),
             Some("degree")
         );
-        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         ir.model.parameters[0]
             .properties
             .insert("unit".into(), "native".into());
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             [
                 ir.model.parameters[0].id.clone(),
                 ir.model.parameters[2].id.clone(),
@@ -4526,21 +4518,21 @@ mod tests {
                 cadmpeg_ir::features::Length(value),
             ));
         }
-        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         let mut inconsistent = ir.clone();
         inconsistent.model.parameters[1].value = Some(
             cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
         );
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&inconsistent),
+            feature_completeness::incomplete_expression_parameters(&inconsistent),
             [inconsistent.model.parameters[1].id.clone()].into()
         );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&duplicate_name),
+            feature_completeness::incomplete_expression_parameters(&duplicate_name),
             duplicate_name.model.parameters[..2]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -4550,7 +4542,7 @@ mod tests {
         let mut unevaluated = ir.clone();
         unevaluated.model.parameters[1].value = None;
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&unevaluated),
+            feature_completeness::incomplete_expression_parameters(&unevaluated),
             [unevaluated.model.parameters[1].id.clone()].into()
         );
 
@@ -4561,7 +4553,7 @@ mod tests {
                 parameters: BTreeMap::default(),
             };
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&operation_owned),
+            feature_completeness::incomplete_expression_parameters(&operation_owned),
             [operation_owned.model.parameters[1].id.clone()].into()
         );
     }
@@ -4602,7 +4594,7 @@ mod tests {
             .iter()
             .all(|parameter| parameter.dependencies.is_empty()));
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             ir.model
                 .parameters
                 .iter()
@@ -4610,7 +4602,7 @@ mod tests {
                 .collect()
         );
         let mut losses = Vec::new();
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        crate::decode::report::append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("2 NX expression parameter(s)"));
     }
@@ -4666,7 +4658,7 @@ mod tests {
             ));
         }
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             ir.model.parameters[2..]
                 .iter()
                 .map(|parameter| parameter.id.clone())

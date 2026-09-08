@@ -9,14 +9,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::feature_history::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
-use super::super::sketch_transfer::{
-    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
-};
 use super::coordinates::resolved_section_coordinates;
 use super::equations_coordinate::{
     approximately_equal, section_equation_function_six_distance_values,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distances,
     SectionCoordinateEquation, SectionCoordinateVariable,
+};
+use crate::decode::sketch_transfer::constraints::{
+    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
 };
 
 const EPS_RADIAL_VALUE: f64 = 1.0e-9;

@@ -4,8 +4,6 @@ use std::ops::Deref;
 
 /// An arena containing only pairs of nonnull geometry loci with an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "Vec<DesignDimensionLocusPair>"))]
 #[serde(
     try_from = "Vec<DesignDimensionLocusPair>",
     into = "Vec<DesignDimensionLocusPair>"
@@ -57,11 +55,6 @@ impl<'a> IntoIterator for &'a DesignDimensionLocusPairs {
 
 /// An arena containing only null-first geometry pairs without an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "Vec<dimension_null_locus_wire::Wire>")
-)]
 #[serde(
     try_from = "Vec<dimension_null_locus_wire::Entry>",
     into = "Vec<dimension_null_locus_wire::Wire>"

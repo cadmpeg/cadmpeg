@@ -3,10 +3,10 @@
 
 mod brep;
 mod cylinders;
-mod intersection_candidates;
+pub(super) mod intersection_candidates;
 mod intersection_resolve;
-mod intersections;
-mod nurbs_boundaries;
+pub(super) mod intersections;
+pub(super) mod nurbs_boundaries;
 mod positional;
 mod prototypes;
 mod transfer_curves;
@@ -16,14 +16,8 @@ use crate::decode::axis::{Axis, Sign};
 pub(super) use brep::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use cylinders::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use intersection_candidates::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use intersection_resolve::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use intersections::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use nurbs_boundaries::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use positional::*;
 #[allow(clippy::wildcard_imports)]
@@ -368,10 +362,10 @@ pub(super) fn transfer_fc05_cap_circles(
             reference,
             axis_sign,
         );
-        let witness = crate::decode::analytic::fc05_cylinder_model_witness(
+        let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
             scan,
             *cylinder_id,
-            crate::decode::analytic::CylinderEquation {
+            crate::decode::analytic::equations::CylinderEquation {
                 origin: legacy_frame.0,
                 axis: legacy_frame.1,
                 ref_direction: legacy_frame.2,

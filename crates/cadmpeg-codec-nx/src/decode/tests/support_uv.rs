@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support-UV admission and invalidation tests.
 
+use crate::decode::offset::point_distance;
+use crate::decode::support_uv::SerializedSupportUv;
+
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -13,8 +16,6 @@ use cadmpeg_ir::math::Point3;
 
 use crate::test_support::*;
 use crate::NxCodec;
-
-use super::*;
 
 #[test]
 fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
@@ -267,8 +268,8 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         parameter_range,
     )
     .expect("complete validation endpoint witness");
-    assert!(crate::decode::point_distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
-    assert!(crate::decode::point_distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
+    assert!(point_distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
+    assert!(point_distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
 }
 
 #[test]

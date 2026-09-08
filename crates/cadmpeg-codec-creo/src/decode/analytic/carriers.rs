@@ -393,13 +393,13 @@ fn positional_cylinder_carrier(
     let inline = record.has_inline_non_plane_envelope()
         || record.has_inline_non_plane_local_system_suffix()
         || record.selector_corner_interval_cylinder_frame().is_some();
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id)
+    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
         == Some(SchemaClass::Round)
         && !inline
     {
         return None;
     }
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id)
+    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
         == Some(SchemaClass::Round)
         && inline
     {

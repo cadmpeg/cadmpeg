@@ -3,6 +3,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::features::{
+    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+    CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection,
+    ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
+    FeatureTreeNodeRole, HoleBottom, HoleKind, Length, LinearTermination, ParameterId,
+    ParameterValue, PathRef, ProfileRef, RevolveExtent, RibConstruction, SplitFaceTool,
+};
+use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::Face;
+use std::collections::HashSet;
 
 fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     Feature {

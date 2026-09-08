@@ -30,6 +30,7 @@ pub(crate) enum FormatKind {
         id: FormatId,
         input_extensions: &'static [&'static str],
     },
+    #[allow(dead_code)] // CADIR-only builds construct no native descriptors.
     Native(NativeDescriptor),
 }
 
@@ -145,6 +146,14 @@ macro_rules! reader {
     };
 }
 
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "sldprt",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges"
+))]
 macro_rules! writable {
     ($name:ident, $output:ident, $id:expr, $input_exts:expr, $decoder:expr, $input_order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
         static $output: OutputDescriptor = OutputDescriptor {

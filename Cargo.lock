@@ -161,13 +161,10 @@ dependencies = [
  "assert_cmd",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
- "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
- "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
- "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",
@@ -207,11 +204,9 @@ dependencies = [
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "memchr",
- "schemars",
  "serde",
  "serde-value",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -224,7 +219,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -240,13 +234,11 @@ dependencies = [
  "lzma-rs",
  "memchr",
  "roxmltree",
- "schemars",
  "serde",
  "serde-value",
  "serde_json",
  "sha2",
  "tempfile",
- "thiserror",
  "zip",
 ]
 
@@ -259,7 +251,6 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-test-support",
- "flate2",
  "roxmltree",
  "serde",
  "serde_json",
@@ -277,7 +268,6 @@ dependencies = [
  "memchr",
  "serde",
  "serde_json",
- "sha2",
  "toml",
 ]
 
@@ -293,7 +283,6 @@ dependencies = [
  "cadmpeg-test-support",
  "encoding_rs",
  "flate2",
- "schemars",
  "serde",
  "serde_json",
  "zip",
@@ -357,11 +346,9 @@ dependencies = [
  "flate2",
  "rmp",
  "roxmltree",
- "schemars",
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
 ]
 
 [[package]]
@@ -431,7 +418,6 @@ name = "cadmpeg-protein"
 version = "0.5.5"
 dependencies = [
  "cadmpeg-core",
- "flate2",
  "roxmltree",
  "serde",
  "serde_json",
@@ -456,7 +442,6 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
- "crc32fast",
  "serde",
  "serde_json",
  "thiserror",

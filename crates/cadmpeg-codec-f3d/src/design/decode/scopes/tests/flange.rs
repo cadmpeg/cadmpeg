@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 const EPS_BEND_RADIUS: f64 = 1.0e-12;
 
@@ -354,8 +352,6 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
 
 #[test]
 fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
-    use crate::layout::edge_flange_class364_per_edge_width_fixed_operation as layout;
-
     let references = [
         201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240,
     ];
@@ -420,8 +416,6 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
 
 #[test]
 fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
-    use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as layout;
-
     let references = [
         201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246,
     ];
@@ -569,8 +563,6 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
 
 #[test]
 fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
-    use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as layout;
-
     let references = [
         201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246, 249, 252,
         255, 258, 261, 264, 267, 270, 273, 276, 279, 282,

@@ -792,7 +792,7 @@ fn attach_jpeg_preview_assets(
             continue;
         };
         let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
-        if crate::decode::jpeg_dimensions(bytes).is_none() {
+        if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
                 .note(&native_ref, stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");

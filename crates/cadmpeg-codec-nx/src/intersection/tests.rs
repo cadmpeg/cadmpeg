@@ -2,6 +2,11 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::pcurves::{
+    complete_intersection_pcurves_from_coedge_incidence,
+    complete_intersection_supports_from_edge_incidence, pcurve_matches_edge,
+};
+
 use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition};
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
@@ -65,7 +70,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         ),
     );
 
-    crate::decode::complete_intersection_supports_from_edge_incidence(&mut ir);
+    complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
     else {
@@ -110,7 +115,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         parameter_range: None,
     }];
 
-    crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
+    complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
     else {
@@ -504,14 +509,14 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         .expect("valid intersection pcurve"),
     };
 
-    assert!(crate::decode::pcurve_matches_edge(
+    assert!(pcurve_matches_edge(
         &ir,
         &edge,
         &surface,
         &pcurve(Point2::new(10.0, 0.0)),
         None,
     ));
-    assert!(!crate::decode::pcurve_matches_edge(
+    assert!(!pcurve_matches_edge(
         &ir,
         &edge,
         &surface,

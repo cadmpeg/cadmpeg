@@ -36,11 +36,10 @@ default = [
 #
 # Each id forwards to the same feature of `cadmpeg-registry`, which owns the
 # codec registry and constructs the codecs for detection, inspection, and
-# encoding. The CLI keeps its own optional dependency on each codec crate for
-# the native validators and for the conformance suites.
+# encoding. Direct codec dependencies are needed only by CLI tests.
 fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
-f3d = ["cadmpeg-registry/f3d", "dep:cadmpeg-codec-f3d"]
-inventor = ["cadmpeg-registry/inventor", "dep:cadmpeg-codec-inventor"]
+f3d = ["cadmpeg-registry/f3d"]
+inventor = ["cadmpeg-registry/inventor"]
 sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
 catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]
 creo = ["cadmpeg-registry/creo", "dep:cadmpeg-codec-creo"]
@@ -48,15 +47,13 @@ nx = ["cadmpeg-registry/nx", "dep:cadmpeg-codec-nx"]
 rhino = ["cadmpeg-registry/rhino", "dep:cadmpeg-codec-rhino"]
 step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
 iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
-sat = ["cadmpeg-registry/sat", "dep:cadmpeg-codec-sat"]
+sat = ["cadmpeg-registry/sat"]
 
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir = { workspace = true, features = ["schema"] }
 cadmpeg-registry.workspace = true
-cadmpeg-codec-f3d = { workspace = true, optional = true }
-cadmpeg-codec-inventor = { workspace = true, optional = true }
 cadmpeg-codec-freecad = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }
 cadmpeg-codec-catia = { workspace = true, optional = true }
@@ -65,7 +62,6 @@ cadmpeg-codec-nx = { workspace = true, optional = true }
 cadmpeg-codec-rhino = { workspace = true, optional = true }
 cadmpeg-codec-iges = { workspace = true, optional = true }
 cadmpeg-codec-step = { workspace = true, optional = true }
-cadmpeg-codec-sat = { workspace = true, optional = true }
 clap.workspace = true
 anyhow.workspace = true
 memchr.workspace = true

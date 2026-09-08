@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Consolidated edge nodes and their vertex-identity arena join.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -60,7 +58,6 @@ pub struct CatiaConsolidatedEdgeNode {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(super) struct CatiaConsolidatedEdgeNodeWire {
     id: String,
     byte_offset: u64,

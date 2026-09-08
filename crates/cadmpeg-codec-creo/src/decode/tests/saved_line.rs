@@ -12,15 +12,22 @@ use crate::decode::sketch::{
     saved_section_circle_values, saved_section_entity_geometry, saved_section_line_geometry,
     saved_section_missing_line_geometry, saved_section_segment_point_coordinates, trim_segment_id,
 };
-use crate::decode::sketch_transfer::{
-    ambiguous_section_segment_external_ids, joined_relation_incidence_entities,
-    materialized_saved_section_external_ids, relation_incidence_entities,
-    saved_section_external_id, section_dimension_constraints, section_entity_external_ids,
-    section_skamp_constraints_for_geometry, section_skamp_incidence_locus,
-    section_skamp_point_locus, semantic_saved_section_entities, solver_only_section_entity_family,
-    unique_saved_section_internal_ids, unique_section_incidence_curve_family,
-    unresolved_saved_section_entity, SectionEntityIncidenceFamily,
+use crate::decode::sketch_transfer::constraints::{
+    joined_relation_incidence_entities, relation_incidence_entities, section_dimension_constraints,
 };
+use crate::decode::sketch_transfer::identity::{
+    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
+    saved_section_external_id, section_entity_external_ids, semantic_saved_section_entities,
+    unique_saved_section_internal_ids, unresolved_saved_section_entity,
+};
+use crate::decode::sketch_transfer::loci::{
+    section_skamp_incidence_locus, section_skamp_point_locus,
+};
+use crate::decode::sketch_transfer::profiles::{
+    solver_only_section_entity_family, unique_section_incidence_curve_family,
+    SectionEntityIncidenceFamily,
+};
+use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section surface and curve construction and extrusion surface transfer.
 
-use super::super::analytic::{cross, dot};
 use super::super::feature_history::{
     analytic_surface_id_for_feature, feature_allows_linear_extrusion,
     generated_surface_id_for_feature, surface_kind_for_geometry,
@@ -13,7 +12,6 @@ use super::super::sketch::{
     trim_segment_id,
 };
 use super::super::sketch_ids::sketch_section_curve_id;
-use super::super::sketch_transfer::semantic_saved_section_entities;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -23,6 +21,8 @@ use super::nurbs::{
     translated_nurbs_curve,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{

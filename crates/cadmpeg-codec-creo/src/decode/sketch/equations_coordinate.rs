@@ -8,11 +8,11 @@ use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_dimension_table_complete;
-use super::super::sketch_transfer::section_solver_equation_is_disabled;
 use super::equations_scalar::{
     reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
 };
 use super::skamp::SectionPointSource;
+use crate::decode::sketch_transfer::constraints::section_solver_equation_is_disabled;
 
 const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
 const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;

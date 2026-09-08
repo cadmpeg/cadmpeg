@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolution axes, section profile refs, and geometry-generator features.
 
-use super::super::analytic::{cross, dot};
 use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,

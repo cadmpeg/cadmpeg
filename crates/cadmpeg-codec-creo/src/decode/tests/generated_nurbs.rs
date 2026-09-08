@@ -12,12 +12,15 @@ use crate::decode::sketch::{
     resolved_section_scalar_values, section_axis_reference_line_geometry, section_line_geometry,
     section_point_geometry,
 };
-use crate::decode::sketch_transfer::{
+use crate::decode::sketch_transfer::constraints::{
+    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
+    section_equation_same_coordinate_constraints,
+};
+use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
     feature_is_first_material_operation, first_material_feature_by_definition_order,
-    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     resolved_feature_schema_class_from_classes, row_feature_schema_classes,
-    section_equation_same_coordinate_constraints, unique_feature_revolution_extent,
+    unique_feature_revolution_extent,
 };
 use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
@@ -1264,16 +1267,16 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     let operation = crate::feature::FeatureOperation {
         feature_id: 6,
         kind: crate::feature::OperationKind::Extrude,
-        name: crate::feature::OperationName::Stored {
+        name: crate::feature::operations::OperationName::Stored {
             bytes: b"Extrude id 6".to_vec(),
-            keyword: crate::feature::IdKeyword::Id,
+            keyword: crate::feature::operations::IdKeyword::Id,
             prefix: None,
         },
         recipe: crate::feature::RecipeResolution::Resolved(
             crate::feature::FeatureRecipe::ProtrudeExtrude,
         ),
         display_state_conflict: false,
-        depdb: Some(crate::feature::DepdbPrefix {
+        depdb: Some(crate::feature::operations::DepdbPrefix {
             schema: crate::feature::schema::SchemaClass::Protrusion,
             parent: 0,
         }),
@@ -1298,7 +1301,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         None
     );
     let mut parented_operation = operation.clone();
-    parented_operation.depdb = Some(crate::feature::DepdbPrefix {
+    parented_operation.depdb = Some(crate::feature::operations::DepdbPrefix {
         schema: crate::feature::schema::SchemaClass::Protrusion,
         parent: 5,
     });
@@ -1307,7 +1310,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         Some(5)
     );
     let mut conflicting_parent = parented_operation.clone();
-    conflicting_parent.depdb = Some(crate::feature::DepdbPrefix {
+    conflicting_parent.depdb = Some(crate::feature::operations::DepdbPrefix {
         schema: crate::feature::schema::SchemaClass::Protrusion,
         parent: 4,
     });
@@ -1508,10 +1511,10 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         |feature_id, root_schema_class: Option<u32>, recipe| crate::feature::FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-            name: crate::feature::OperationName::Derived,
+            name: crate::feature::operations::OperationName::Derived,
             recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
-            depdb: root_schema_class.map(|schema: u32| crate::feature::DepdbPrefix {
+            depdb: root_schema_class.map(|schema: u32| crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::from(schema),
                 parent: 0,
             }),

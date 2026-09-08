@@ -11,7 +11,7 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::export;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
@@ -638,11 +638,11 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.as_str() == StepIdentity::data("face", face_step))
+        .find(|face| face.id.as_str() == ids::data("face", face_step))
         .expect("decoded face");
     assert_eq!(
         face.loops[0].as_str(),
-        StepIdentity::data("loop", format!("{outer_loop}-face-{face_step}"))
+        ids::data("loop", format!("{outer_loop}-face-{face_step}"))
     );
 }
 

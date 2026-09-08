@@ -13,13 +13,16 @@ use super::super::sketch_ids::{
 use super::super::sweep::{
     placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
 };
-use super::{
-    opaque_section_segment_identity_suffix, saved_section_external_id,
-    section_degenerate_axis_line, section_segment_identity_suffix, semantic_saved_section_entities,
-    unique_section_incidence_curve_family, unresolved_saved_section_entity,
-    SectionEntityIncidenceFamily,
-};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::{
+    opaque_section_segment_identity_suffix, saved_section_external_id,
+    section_segment_identity_suffix, semantic_saved_section_entities,
+    unresolved_saved_section_entity,
+};
+use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
+use crate::decode::sketch_transfer::profiles::{
+    unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;

@@ -87,7 +87,6 @@ impl RelationScalars {
 }
 
 #[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub(super) struct Wire {
     scalar_refs: Vec<String>,
     #[serde(default)]

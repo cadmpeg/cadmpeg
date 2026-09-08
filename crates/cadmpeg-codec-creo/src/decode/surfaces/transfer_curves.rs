@@ -13,12 +13,12 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{
-    pcurve_edge_endpoint_evidence, placed_carriers, solved_topological_vertices, CarrierEquation,
-    PlaneEquation,
-};
 use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
+use crate::decode::analytic::carriers::placed_carriers;
+use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
+use crate::decode::analytic::pcurves::pcurve_edge_endpoint_evidence;
+use crate::decode::analytic::vertices::solved_topological_vertices;
 
 use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
@@ -314,7 +314,7 @@ mod tests {
 
     use super::transfer_nurbs_boundary_curves;
     use super::{resolve_carrier_intersection_curve, transfer_carrier_intersection_curves};
-    use crate::decode::analytic::{CarrierEquation, PlaneEquation};
+    use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
     use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
     use crate::{container, curve, surface};
 

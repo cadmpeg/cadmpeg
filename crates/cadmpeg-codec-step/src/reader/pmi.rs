@@ -14,7 +14,7 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -1364,7 +1364,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId::mint(StepIdentity::presentation("pmi", id)).expect("identity grammar")
+    PmiId::mint(ids::presentation("pmi", id)).expect("identity grammar")
 }
 
 fn datum_target_form(value: &str) -> DatumTargetForm {

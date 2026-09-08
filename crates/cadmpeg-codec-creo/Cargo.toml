@@ -23,7 +23,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
-sha2.workspace = true
 regex.workspace = true
 
 [dev-dependencies]

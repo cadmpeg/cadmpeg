@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -9,13 +8,8 @@
 )]
 use super::prelude::*;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
-use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
-use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
-use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
-use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
-use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 use crate::records::topology::DesignOperandRole;
 

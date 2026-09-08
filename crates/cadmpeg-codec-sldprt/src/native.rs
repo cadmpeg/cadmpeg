@@ -2,8 +2,6 @@
 //! SOLIDWORKS native feature-history records.
 #![deny(clippy::disallowed_methods)]
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::View;
@@ -208,7 +206,6 @@ const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeN
 
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(default)]
 pub struct SldprtNative {
     /// Parametric construction-history timelines decoded from the source part.

@@ -21,11 +21,11 @@ use super::super::sketch_ids::{
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
-use super::{
-    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
-    native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
-    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
-    reconcile_section_dimension_constraint, resolved_profile_chains, section_degenerate_axis_line,
+use crate::container::ContainerScan;
+use crate::coverage::SketchSegmentFamily;
+use crate::decode::sketch_transfer::constraints::{
+    native_section_segment_verhor_definition, reconcile_constraint_entity_references,
+    reconcile_constraint_parameter_reference, reconcile_section_dimension_constraint,
     section_dimension_constraints, section_equation_axis_distance_constraints,
     section_equation_equal_distance_constraints,
     section_equation_function_five_scalar_equality_constraints,
@@ -36,14 +36,19 @@ use super::{
     section_equation_native_constraints, section_equation_point_on_line_constraints,
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
     section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
-    section_segment_identity_suffix, section_segment_radius_constraints_for_emitted,
-    section_segment_verhor_definition, section_skamp_constraints_for_geometry,
-    solver_only_section_entities, solver_only_section_entity_family,
+    section_segment_radius_constraints_for_emitted, section_segment_verhor_definition,
+};
+use crate::decode::sketch_transfer::identity::{
+    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
+    opaque_section_segment_identity_suffix, section_segment_identity_suffix,
     unique_saved_section_internal_ids, unique_section_segment_external_ids,
+};
+use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
+use crate::decode::sketch_transfer::profiles::{
+    resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family,
     SectionEntityIncidenceFamily,
 };
-use crate::container::ContainerScan;
-use crate::coverage::SketchSegmentFamily;
+use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;

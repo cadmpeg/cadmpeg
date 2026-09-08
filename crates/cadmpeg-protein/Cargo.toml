@@ -15,7 +15,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-core.workspace = true
-flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 zip.workspace = true

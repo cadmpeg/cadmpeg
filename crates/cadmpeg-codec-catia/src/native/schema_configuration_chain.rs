@@ -6,14 +6,11 @@ use super::{
     CatiaEntityReference, CatiaSchemaConfigurationRowLink, CatiaTerminalNullByGraphIndex,
 };
 use crate::native::entity_record::CatiaEntityRecord;
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// One complete ordered schema-configuration chain formed by exact `configrow` links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ChainWire", into = "ChainWire")]
 pub struct CatiaSchemaConfigurationRowChain {
     /// Stable identity derived from the graph and stored class identity.
@@ -61,7 +58,6 @@ impl CatiaSchemaConfigurationRowChain {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ChainWire {
     id: String,
     object_graph: String,
@@ -70,7 +66,6 @@ struct ChainWire {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct LinkWire {
     row: CatiaEntityReference,
     successor_payload_offset: u64,
