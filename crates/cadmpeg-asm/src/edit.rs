@@ -257,8 +257,7 @@ impl AsmEditSet {
                 "ASM boolean token carrier is missing".into(),
             ));
         }
-        bytes[offset] = if value { 0x0a } else { 0x0b };
-        Ok(())
+        Self::patch_native_bool(bytes, offset, value)
     }
 
     /// Replace one fixed-width ASCII token payload.
@@ -461,6 +460,19 @@ impl AsmEditSet {
             .get_mut(offset..end)
             .ok_or_else(|| CodecError::Malformed("native double payload is truncated".into()))?
             .copy_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
+    /// Replace one native boolean byte at a checked offset.
+    pub fn patch_native_bool(
+        bytes: &mut [u8],
+        offset: usize,
+        value: bool,
+    ) -> Result<(), CodecError> {
+        let target = bytes
+            .get_mut(offset)
+            .ok_or_else(|| CodecError::Malformed("native boolean payload is truncated".into()))?;
+        *target = native_bool(value);
         Ok(())
     }
 
@@ -1130,7 +1142,11 @@ fn patch_two_sided_offset_definition(
             AsmEditSet::patch_f64_payload(bytes, record.offset + *at, *value)?;
         }
     }
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     for (at, value) in layout.offsets.into_iter().zip(offsets) {
         AsmEditSet::patch_f64_payload(bytes, record.offset + at, value / LEN_TO_MM)?;
     }
@@ -1228,7 +1244,11 @@ fn patch_surface_offset_definition(
                     ])),
             ),
     )?;
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        *discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1282,7 +1302,11 @@ fn patch_spring_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     )?;
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.direction,
@@ -1327,7 +1351,7 @@ fn patch_projection_definition(
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
-        ) => bytes[record.offset + offset] = native_bool(*flag),
+        ) => AsmEditSet::patch_native_bool(bytes, record.offset + offset, *flag)?,
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
                 flag: flag_offset,
@@ -1345,7 +1369,7 @@ fn patch_projection_definition(
                     "projection tail range must be finite".into(),
                 ));
             }
-            bytes[record.offset + flag_offset] = native_bool(*flag);
+            AsmEditSet::patch_native_bool(bytes, record.offset + flag_offset, *flag)?;
             AsmEditSet::patch_f64_payloads(
                 bytes,
                 record.offset,
@@ -1378,7 +1402,11 @@ fn patch_projection_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     )?;
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1426,7 +1454,11 @@ fn patch_intersection_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     )?;
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
+    AsmEditSet::patch_native_bool(
+        bytes,
+        record.offset + layout.discontinuity_flag,
+        discontinuity_flag,
+    )?;
     Ok(())
 }
 
@@ -1994,6 +2026,21 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn native_bool_patch_rejects_a_truncated_record_without_writing() {
+        let original = b"\x0d\x08intcurve\x0b\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let offset =
+            AsmEditSet::required_payload_field_at(original, &records[0], RefWidth::Eight, 0, 0x0b)
+                .unwrap();
+        let mut truncated = original[..offset].to_vec();
+        let before = truncated.clone();
+        let error = AsmEditSet::patch_native_bool(&mut truncated, offset, true).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(error.to_string().contains("truncated"));
+        assert_eq!(truncated, before);
+    }
 
     #[test]
     fn procedural_writer_returns_malformed_for_a_truncated_framed_record() {
