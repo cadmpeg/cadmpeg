@@ -75,7 +75,7 @@ pub(in super::super) fn preserve_passthrough_sections(
         annotate(
             annotations,
             &id,
-            &section.name(),
+            section.name(),
             offset as u64,
             tag,
             exactness,
