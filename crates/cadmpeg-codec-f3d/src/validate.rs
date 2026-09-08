@@ -81,7 +81,7 @@ fn valid_assembly_operand_path_link(
     path: &records::feature::DesignAssemblyOperandPath,
     locator_marker_offset: usize,
 ) -> bool {
-    let link = &path.link;
+    let link = &path.link();
     let Ok(locator_marker_offset) = u64::try_from(locator_marker_offset) else {
         return false;
     };
@@ -142,10 +142,10 @@ fn valid_assembly_operand_path_link(
         } else {
             link.locator_record_index.checked_add(2) == Some(link.wrapper_record_index)
         }
-        && path.byte_offset == path_byte_offset
+        && path.byte_offset() == path_byte_offset
         && link.locator_scope_reference_offset == locator_scope_reference_offset
         && link.wrapper_reference_offset == wrapper_reference_offset
-        && link.wrapper_byte_offset > path.byte_offset
+        && link.wrapper_byte_offset > path.byte_offset()
         && link.path_reference_offset == path_reference_offset
 }
 
@@ -154,10 +154,10 @@ fn valid_class_363_operand_path_link(
     frame: &records::feature::DesignAssemblyOperandFrame,
     path: &records::feature::DesignAssemblyOperandPath,
 ) -> bool {
-    let link = &path.link;
+    let link = &path.link();
     link.locator_class_tag.as_str() == "363"
         && link.wrapper_class_tag.as_str() == "388"
-        && path.class_tag.as_str() == "386"
+        && path.class_tag().as_str() == "386"
         && link.locator_record_index == frame.reference_record_index
         && link.locator_reference_offset == frame.reference_offset
         && link.locator_scope_reference_offset
@@ -170,11 +170,9 @@ fn valid_class_363_operand_path_link(
         && link.locator_scope_reference_offset > link.locator_byte_offset
         && link.locator_reference_offset >= scope.byte_offset
         && link.locator_reference_offset < scope.paired_byte_offset
-        && path.byte_offset < link.locator_byte_offset
-        && path.occurrence_guids.len() == 1
-        && path.identity_guids.len() == 1
-        && path.occurrence_guids[0].offset == link.path_reference_offset
-        && path.identity_guids[0].offset > path.occurrence_guids[0].offset
+        && path.byte_offset() < link.locator_byte_offset
+        && path.occurrence_guids()[0].offset == link.path_reference_offset
+        && path.identity_guids()[0].offset > path.occurrence_guids()[0].offset
 }
 
 fn valid_class_307_joint_origin_qualifier(
@@ -2212,10 +2210,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && frames.iter().enumerate().all(|(ordinal, frame)| {
                                     let offsets_match = if as_built_frames {
                                         operand_paths.as_ref().is_some_and(|paths| {
-                                            paths[ordinal].link.locator_byte_offset.checked_add(22)
+                                            paths[ordinal]
+                                                .link()
+                                                .locator_byte_offset
+                                                .checked_add(22)
                                                 == Some(frame.reference_offset)
                                                 && paths[ordinal]
-                                                    .link
+                                                    .link()
                                                     .locator_byte_offset
                                                     .checked_add(33)
                                                     == Some(frame.transform_offset)
@@ -2270,11 +2271,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
                             let class_363_carriers = paths
                                 .iter()
-                                .all(|path| path.link.locator_class_tag.as_str() == "363");
+                                .all(|path| path.link().locator_class_tag.as_str() == "363");
                             if class_363_carriers {
                                 !axial_frames
-                                    && paths[0].link.locator_record_index
-                                        != paths[1].link.locator_record_index
+                                    && paths[0].link().locator_record_index
+                                        != paths[1].link().locator_record_index
                                     && paths.iter().zip(&frames).all(|(path, frame)| {
                                         valid_class_363_operand_path_link(scope, frame, path)
                                     })
@@ -2285,13 +2286,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         scope.class_tag.as_str(),
                                         scope.paired_class_tag.as_str(),
                                     );
-                                let first_start = paths[0].link.locator_byte_offset;
-                                let second_start = paths[1].link.locator_byte_offset;
+                                let first_start = paths[0].link().locator_byte_offset;
+                                let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
                                     let continuation_count = if variable_reference {
-                                        path.link
+                                        path.link()
                                             .wrapper_record_index
-                                            .checked_sub(path.link.locator_record_index)?
+                                            .checked_sub(path.link().locator_record_index)?
                                             .checked_sub(2)?
                                     } else {
                                         0
@@ -2300,7 +2301,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .ok()?
                                         .checked_add(u64::from(continuation_count).checked_mul(11)?)
                                         .and_then(|length| {
-                                            path.link.wrapper_byte_offset.checked_add(length)
+                                            path.link().wrapper_byte_offset.checked_add(length)
                                         })
                                 });
                                 !axial_frames
@@ -2309,59 +2310,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             valid_assembly_operand_path_link(scope, path, offset)
                                         })
                                     })
-                                    && paths[0].link.locator_record_index
-                                        != paths[1].link.locator_record_index
+                                    && paths[0].link().locator_record_index
+                                        != paths[1].link().locator_record_index
                                     && matches!(envelope_ends, [Some(first_end), Some(second_end)]
                                 if !(first_start < second_end && second_start < first_end))
                                     && paths.iter().all(|path| {
-                                        !path.occurrence_guids.is_empty()
-                                            && matches!(
-                                                path.class_tag.as_str(),
-                                                "294"
-                                                    | "299"
-                                                    | "307"
-                                                    | "329"
-                                                    | "330"
-                                                    | "386"
-                                                    | "390"
-                                            )
-                                            && match path.class_tag.as_str() {
-                                                "294" | "299" | "307" | "386" | "390" => {
-                                                    path.identity_guids.len() == 4
-                                                }
-                                                "329" => {
-                                                    path.identity_guids.is_empty()
-                                                        || path.identity_guids.len() == 4
-                                                }
-                                                "330" => {
-                                                    !path.identity_guids.is_empty()
-                                                        && path
-                                                            .identity_guids
-                                                            .len()
-                                                            .is_multiple_of(4)
-                                                }
-                                                _ => false,
-                                            }
-                                            && path
-                                                .identity_guids
-                                                .windows(2)
-                                                .all(|offsets| offsets[0].offset < offsets[1].offset)
-                                            && path
-                                                .identity_guids
-                                                .iter()
-                                                .all(|offset| offset.offset > path.byte_offset)
-                                            && path
-                                                .occurrence_guids
-                                                .windows(2)
-                                                .all(|offsets| offsets[0].offset < offsets[1].offset)
-                                            && path
-                                                .occurrence_guids
-                                                .iter()
-                                                .all(|offset| offset.offset > path.byte_offset)
+                                        matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390")
+                                            && !matches!(path.link().locator_class_tag.as_str(), "363" | "378")
                                             && (matches!(
-                                                path.class_tag.as_str(),
+                                                path.class_tag().as_str(),
                                                 "294" | "299" | "307" | "330" | "386"
-                                            ) || path.occurrence_guids.first().is_some_and(
+                                            ) || path.occurrence_guids().first().is_some_and(
                                                 |guid| {
                                                     native
                                                         .design_component_occurrences
