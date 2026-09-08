@@ -19,7 +19,8 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
@@ -128,11 +129,25 @@ struct InspectPayload<'a> {
     summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
-#[derive(Serialize)]
 struct DiffReportPayload<'a> {
-    different: bool,
     diff: &'a cadmpeg_ir::IrDiff,
     source_fidelity: &'a reporting::FidelitySummary,
+}
+
+impl DiffReportPayload<'_> {
+    fn different(&self) -> bool {
+        !self.diff.is_empty() || fidelity_differs(self.source_fidelity)
+    }
+}
+
+impl Serialize for DiffReportPayload<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DiffReportPayload", 3)?;
+        state.serialize_field("different", &self.different())?;
+        state.serialize_field("diff", self.diff)?;
+        state.serialize_field("source_fidelity", self.source_fidelity)?;
+        state.end()
+    }
 }
 
 /// Inspect a native container and print its entries.
@@ -489,16 +504,14 @@ pub fn diff(
     print_load_notice(&right);
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
-    let different = !result.is_empty() || fidelity_differs(&fidelity);
     let payload = DiffReportPayload {
-        different,
         diff: &result,
         source_fidelity: &fidelity,
     };
     write_json_report(a.path, report_path, "diff", &payload)?;
     if json {
         println!("{}", command_report_json("diff", &payload)?);
-        return Ok(if different {
+        return Ok(if payload.different() {
             ExitCode::from(1)
         } else {
             ExitCode::SUCCESS
@@ -530,7 +543,7 @@ pub fn diff(
         print_id_delta("modified", &modified);
     }
     print_fidelity_summary(&fidelity);
-    if different {
+    if payload.different() {
         Ok(ExitCode::from(1))
     } else {
         println!("  identical");
