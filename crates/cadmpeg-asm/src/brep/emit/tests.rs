@@ -84,3 +84,68 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         assert_eq!(out.face_sidedness[0].normalized_sense, normalized);
     }
 }
+
+#[test]
+fn tolerant_coedge_extension_retains_the_release_band() {
+    for (major, suffix, expected) in [
+        (214, vec![], TolerantCoedgeExtension::None),
+        (
+            215,
+            vec![Token::Ref(-1)],
+            TolerantCoedgeExtension::Reference { target: None },
+        ),
+        (
+            219,
+            vec![Token::Ref(-1)],
+            TolerantCoedgeExtension::Reference { target: None },
+        ),
+        (
+            220,
+            vec![Token::Ref(-1), Token::Long(0), Token::Long(0)],
+            TolerantCoedgeExtension::Empty { target: None },
+        ),
+    ] {
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Ref(0),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::False,
+            Token::Ref(2),
+            Token::Long(0),
+            Token::Ref(-1),
+            Token::Double(0.0),
+            Token::Double(1.0),
+        ];
+        tokens.extend(suffix);
+        let records = [Record {
+            index: 0,
+            name: "tcoedge".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }];
+        let table = nurbs::toks::SubtypeTable::from_records(&records);
+        let reach = Reachable {
+            coedges: HashSet::from([0]),
+            edges: HashSet::from([1]),
+            loops: HashSet::from([2]),
+            ..Reachable::default()
+        };
+        let mut out = AsmBrep::default();
+        emit_coedges(
+            &mut out,
+            &records,
+            &table,
+            Some(major),
+            &Carriers::default(),
+            &reach,
+            IdFormat("f3d"),
+        );
+        assert_eq!(out.tolerant_coedge_parameters.len(), 1);
+        assert_eq!(out.tolerant_coedge_parameters[0].extension, expected);
+    }
+}
