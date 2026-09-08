@@ -6192,7 +6192,6 @@ pub(crate) fn census(
                 object: object.id.clone(),
                 type_name: object.type_name.clone(),
                 feature: feature.id.as_str().to_owned(),
-                neutral: !matches!(definition, FeatureDefinition::Native { .. }),
                 semantic_kind,
                 post_processed,
             })

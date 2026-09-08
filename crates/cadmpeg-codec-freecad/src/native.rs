@@ -4,6 +4,7 @@
 pub(crate) mod frame;
 pub(crate) mod joint;
 
+use crate::attachment::MapModeIndex;
 use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_ir::hash::sha256_hex;
@@ -48,6 +49,22 @@ fn encode_id_key(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn design_census_neutral_is_derived_and_checked_on_the_wire() {
+        for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
+            let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
+            let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
+            assert_eq!(record.neutral(), neutral);
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let mut invalid = wire;
+            invalid["neutral"] = serde_json::json!(!neutral);
+            assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("neutral"));
+        }
+    }
 
     #[test]
     fn string_table_admission_requires_distinct_backward_references() {
@@ -311,6 +328,7 @@ mod tests {
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DesignCensusRecordWire", into = "DesignCensusRecordWire")]
 pub struct DesignCensusRecord {
     /// Stable census identity derived from the native object.
     pub id: String,
@@ -322,10 +340,60 @@ pub struct DesignCensusRecord {
     pub feature: String,
     /// Stable CADIR feature-definition family name.
     pub semantic_kind: String,
-    /// Whether the operation has neutral semantics instead of only native retention.
-    pub neutral: bool,
     /// Whether topology post-processing composition wraps the operation.
     pub post_processed: bool,
+}
+
+impl DesignCensusRecord {
+    /// Whether the operation has neutral semantics.
+    pub fn neutral(&self) -> bool {
+        self.semantic_kind != "native"
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DesignCensusRecordWire {
+    id: String,
+    object: String,
+    type_name: String,
+    feature: String,
+    semantic_kind: String,
+    neutral: bool,
+    post_processed: bool,
+}
+
+impl From<DesignCensusRecord> for DesignCensusRecordWire {
+    fn from(value: DesignCensusRecord) -> Self {
+        let neutral = value.neutral();
+        Self {
+            id: value.id,
+            object: value.object,
+            type_name: value.type_name,
+            feature: value.feature,
+            semantic_kind: value.semantic_kind,
+            neutral,
+            post_processed: value.post_processed,
+        }
+    }
+}
+
+impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
+    type Error = String;
+
+    fn try_from(wire: DesignCensusRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            type_name: wire.type_name,
+            feature: wire.feature,
+            semantic_kind: wire.semantic_kind,
+            post_processed: wire.post_processed,
+        };
+        if wire.neutral != record.neutral() {
+            return Err("neutral disagrees with semantic_kind".to_owned());
+        }
+        Ok(record)
+    }
 }
 
 /// Carrier grammar counted by a census record. Empty payloads have no census.
@@ -376,7 +444,7 @@ pub struct AttachmentRecord {
     /// Ordered support objects and subelements.
     pub supports: Vec<LinkTarget>,
     /// Persisted attachment-map mode.
-    pub map_mode: Option<String>,
+    pub map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
     placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
@@ -388,7 +456,7 @@ impl AttachmentRecord {
         id: String,
         object: String,
         supports: Vec<LinkTarget>,
-        map_mode: Option<String>,
+        map_mode: Option<MapModeIndex>,
         placement: Option<[[f64; 4]; 4]>,
         offset: Option<[[f64; 4]; 4]>,
     ) -> Result<Self, String> {
@@ -431,7 +499,7 @@ struct AttachmentRecordWire {
     id: String,
     object: String,
     supports: Vec<LinkTarget>,
-    map_mode: Option<String>,
+    map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
     effective_frame: [[f64; 4]; 4],
@@ -753,18 +821,74 @@ pub struct SemanticAnnotationRecord {
     pub side_entries: Vec<String>,
 }
 
-/// Page-only vs other `TechDraw` drawing payload.
+/// Persisted page runtime type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TechDrawPageKind {
+    /// Native page.
+    Page,
+    /// Python page.
+    Python,
+}
+
+/// Persisted non-page runtime type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DrawingRole {
-    /// `TechDraw::DrawPage` or `TechDraw::DrawPagePython`.
+pub struct TechDrawNonPageKind(String);
+
+/// Drawing runtime type and its page payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TechDrawKind {
+    /// Page with ordered views and optional template.
     Page {
+        /// Persisted page class.
+        runtime: TechDrawPageKind,
         /// Ordered page views.
         views: Vec<String>,
-        /// Page template object, when linked.
+        /// Page template object.
         template: Option<String>,
     },
-    /// Template, view, dimension, annotation, or other drawing object.
-    Other,
+    /// Non-page drawing object.
+    Other(TechDrawNonPageKind),
+}
+
+impl TechDrawKind {
+    /// Admits a runtime type and its page payload.
+    pub fn try_new(
+        kind: String,
+        views: Vec<String>,
+        template: Option<String>,
+    ) -> Result<Self, String> {
+        let runtime = match kind.as_str() {
+            "TechDraw::DrawPage" => Some(TechDrawPageKind::Page),
+            "TechDraw::DrawPagePython" => Some(TechDrawPageKind::Python),
+            _ => None,
+        };
+        if let Some(runtime) = runtime {
+            Ok(Self::Page {
+                runtime,
+                views,
+                template,
+            })
+        } else if views.is_empty() && template.is_none() {
+            Ok(Self::Other(TechDrawNonPageKind(kind)))
+        } else {
+            Err("non-page drawing record cannot carry views or a template".to_owned())
+        }
+    }
+
+    /// Persisted runtime type name.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Page {
+                runtime: TechDrawPageKind::Page,
+                ..
+            } => "TechDraw::DrawPage",
+            Self::Page {
+                runtime: TechDrawPageKind::Python,
+                ..
+            } => "TechDraw::DrawPagePython",
+            Self::Other(kind) => &kind.0,
+        }
+    }
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
@@ -776,9 +900,7 @@ pub struct DrawingRecord {
     /// Owning application object.
     pub object: String,
     /// Persisted `TechDraw` runtime type.
-    pub kind: String,
-    /// Page views and template, or a non-page payload.
-    pub role: DrawingRole,
+    pub kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
     pub sources: Vec<LinkTarget>,
     /// All drawing relationships grouped by their persisted property name.
@@ -787,10 +909,6 @@ pub struct DrawingRecord {
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
     pub side_entries: Vec<String>,
-}
-
-fn is_page_kind(kind: &str) -> bool {
-    matches!(kind, "TechDraw::DrawPage" | "TechDraw::DrawPagePython")
 }
 
 #[derive(Serialize, Deserialize)]
@@ -808,14 +926,17 @@ struct DrawingRecordWire {
 
 impl From<DrawingRecord> for DrawingRecordWire {
     fn from(value: DrawingRecord) -> Self {
-        let (views, template) = match value.role {
-            DrawingRole::Page { views, template } => (views, template),
-            DrawingRole::Other => (Vec::new(), None),
+        let kind = value.kind.as_str().to_owned();
+        let (views, template) = match value.kind {
+            TechDrawKind::Page {
+                views, template, ..
+            } => (views, template),
+            TechDrawKind::Other(_) => (Vec::new(), None),
         };
         Self {
             id: value.id,
             object: value.object,
-            kind: value.kind,
+            kind,
             views,
             template,
             sources: value.sources,
@@ -830,21 +951,11 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
     type Error = String;
 
     fn try_from(wire: DrawingRecordWire) -> Result<Self, Self::Error> {
-        let role = if is_page_kind(&wire.kind) {
-            DrawingRole::Page {
-                views: wire.views,
-                template: wire.template,
-            }
-        } else if wire.views.is_empty() && wire.template.is_none() {
-            DrawingRole::Other
-        } else {
-            return Err("non-page drawing record cannot carry views or a template".to_owned());
-        };
+        let kind = TechDrawKind::try_new(wire.kind, wire.views, wire.template)?;
         Ok(Self {
             id: wire.id,
             object: wire.object,
-            kind: wire.kind,
-            role,
+            kind,
             sources: wire.sources,
             relationships: wire.relationships,
             parameters: wire.parameters,
