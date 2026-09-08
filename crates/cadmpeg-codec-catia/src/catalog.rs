@@ -2,12 +2,11 @@
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
 use cadmpeg_core::decode::View;
-use serde::{Deserialize, Serialize};
 
 const PREFIX: [&str; 4] = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
 
 /// One exact `7C02` string catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Catalog {
     /// Byte offset of the `7C02` marker.
     pub pos: usize,
@@ -18,7 +17,7 @@ pub struct Catalog {
 }
 
 /// One inclusive-length ASCII catalog entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogEntry {
     /// Zero-based serialized entry ordinal.
     pub ordinal: u32,
