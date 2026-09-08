@@ -14,6 +14,7 @@ use super::markers::{
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
     sketch_marker_prefix_at,
 };
+use super::names::checked_nonempty_name;
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
@@ -130,8 +131,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .links()
             .iter()
             .map(|link| SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-local-id")
-                    .expect("source operand kind is nonempty"),
+                native_kind: checked_nonempty_name("sldprt:marker-local-id"),
                 field: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
@@ -139,10 +139,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().filter_map(|owner| {
             Some(SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                    "sldprt:marker-constraint-owner",
-                )
-                .expect("source operand kind is nonempty"),
+                native_kind: checked_nonempty_name("sldprt:marker-constraint-owner"),
                 field: None,
                 object_index: owner.object_index.or(owner.local_id)?,
                 native_ref: Some(owner.id.clone()),
