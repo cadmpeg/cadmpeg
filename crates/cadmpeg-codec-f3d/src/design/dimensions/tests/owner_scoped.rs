@@ -393,7 +393,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         3.0 * std::f64::consts::FRAC_PI_4,
     ))
     .expect("angular parameter");
-    parameter.byte_offset = 100;
+    parameter.try_translate_offsets(100).unwrap();
     let parameter_id = ParameterId::mint("parameter#angle").expect("identity grammar");
 
     assert!(matches!(
@@ -582,12 +582,16 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     ));
 
     let mut linear = parameter;
-    linear.source = crate::records::DesignParameterSource::new(
-        "Linear Dimension-2".into(),
-        linear.owner_record_index(),
-        linear.family_discriminator(),
-    )
-    .unwrap();
+    linear
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                linear.owner_record_index(),
+                linear.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     assert!(!radial_extension_annotation_group(
         &[&extension_point, &line],
         &linear,

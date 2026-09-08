@@ -398,7 +398,7 @@ fn project_all_dimension_constraints(
             return None;
         }
         let source_kind = source_parameter.source_kind();
-        let evaluated_value = source_parameter.evaluated_value;
+        let evaluated_value = source_parameter.evaluated_value();
         let entities = indices
             .iter()
             .map(|record_index| projected.get(&(scope, *record_index)).copied())
@@ -540,7 +540,7 @@ fn project_all_dimension_constraints(
             &locus_entities,
             entities,
             parameter.source_kind(),
-            parameter.evaluated_value,
+            parameter.evaluated_value(),
             &parameter_id,
         ) {
             return Some(definition);
@@ -570,7 +570,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )?;
                 let parameter =
-                    offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0).map(
+                    offset_parameter_factor(distance.0, parameter.evaluated_value() * 10.0).map(
                         |factor| cadmpeg_ir::sketches::OffsetParameter {
                             id: parameter_id,
                             negated: factor.is_sign_negative(),
@@ -584,7 +584,7 @@ fn project_all_dimension_constraints(
             }
             if let Some(definition) = directional_point_dimension(
                 &locus_entities,
-                parameter.evaluated_value * 10.0,
+                parameter.evaluated_value() * 10.0,
                 parameter_id.clone(),
                 linear_tolerance,
             ) {
@@ -904,7 +904,7 @@ fn project_all_dimension_constraints(
                         pair,
                         entity,
                         parameter.source_kind(),
-                        parameter.evaluated_value,
+                        parameter.evaluated_value(),
                         parameter_id.clone(),
                         linear_tolerance,
                     ) {
@@ -1029,7 +1029,7 @@ fn project_all_dimension_constraints(
                 recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
-                    parameter.evaluated_value * 10.0,
+                    parameter.evaluated_value() * 10.0,
                     &parameter_id,
                     linear_tolerance,
                 )
@@ -1326,7 +1326,7 @@ fn presentation_dimension_definition(
         [entity] => radial_dimension_definition_at_tolerance(
             entity,
             parameter.source_kind(),
-            parameter.evaluated_value,
+            parameter.evaluated_value(),
             parameter_id.clone(),
             linear_tolerance,
         )
@@ -1338,12 +1338,16 @@ fn presentation_dimension_definition(
                 return None;
             };
             let measured = (end.u - start.u).hypot(end.v - start.v);
-            linear_measurement_matches(measured, parameter.evaluated_value * 10.0, linear_tolerance)
-                .then(|| Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
-                    parameter: parameter_id.clone(),
-                })
+            linear_measurement_matches(
+                measured,
+                parameter.evaluated_value() * 10.0,
+                linear_tolerance,
+            )
+            .then(|| Definition::DistanceLoci {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
+                parameter: parameter_id.clone(),
+            })
         }),
         [first, second] if parameter.source_kind().starts_with("Tangent Dimension") => {
             tangent_entity_distance_definition(
@@ -1364,13 +1368,16 @@ fn presentation_dimension_definition(
             )
         }
         [first, second] if parameter.source_kind().starts_with("Angular Dimension") => {
-            line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value).then(
-                || Definition::Angle {
-                    first: first.id().clone(),
-                    second: second.id().clone(),
-                    parameter: parameter_id.clone(),
-                },
+            line_angle_matches(
+                &first.geometry,
+                &second.geometry,
+                parameter.evaluated_value(),
             )
+            .then(|| Definition::Angle {
+                first: first.id().clone(),
+                second: second.id().clone(),
+                parameter: parameter_id.clone(),
+            })
         }
         _ => None,
     }
@@ -1388,7 +1395,7 @@ fn tangent_radius_dimension_definition(
         SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
         _ => return None,
     };
-    linear_measurement_matches(radius, parameter.evaluated_value * 10.0, linear_tolerance).then(
+    linear_measurement_matches(radius, parameter.evaluated_value() * 10.0, linear_tolerance).then(
         || Definition::Radius {
             entity: entity.id().clone(),
             parameter: parameter_id.clone(),
@@ -1467,7 +1474,7 @@ fn tangent_entity_distance_definition(
         .filter(|candidate| {
             linear_measurement_matches(
                 *candidate,
-                parameter.evaluated_value * 10.0,
+                parameter.evaluated_value() * 10.0,
                 linear_tolerance,
             )
         })
@@ -1492,7 +1499,7 @@ fn explicit_linear_dimension_definition(
         SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
     };
 
-    let expected = parameter.evaluated_value * 10.0;
+    let expected = parameter.evaluated_value() * 10.0;
     if let Some(definition) = directional_point_dimension(
         &[first, second],
         expected,
@@ -1547,14 +1554,13 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
 
     if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
-        || !parameter.evaluated_value.is_finite()
     {
         return None;
     }
     let preceding_curves = curves
         .iter()
         .filter(|curve| {
-            native_stream(&curve.id) == Some(scope) && curve.byte_offset < parameter.byte_offset
+            native_stream(&curve.id) == Some(scope) && curve.byte_offset < parameter.byte_offset()
         })
         .map(|curve| (curve.record_index, curve))
         .collect::<HashMap<_, _>>();
@@ -1565,7 +1571,7 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
         &cadmpeg_ir::sketches::SketchEntity,
     )>;
     for point in points.iter().filter(|point| {
-        native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset
+        native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset()
     }) {
         let companion = point.companion();
         let [first_record, second_record] = companion.incident_curves else {
@@ -1586,7 +1592,11 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
             || &second.sketch != sketch
             || !matches!(first.geometry, SketchGeometry::Line { .. })
             || !matches!(second.geometry, SketchGeometry::Line { .. })
-            || !line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value)
+            || !line_angle_matches(
+                &first.geometry,
+                &second.geometry,
+                parameter.evaluated_value(),
+            )
         {
             continue;
         }
@@ -1623,7 +1633,6 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
 
     if !parameter.source_kind().starts_with("Angular Dimension")
         || !design_dimension_unit(parameter)
-        || !parameter.evaluated_value.is_finite()
     {
         return None;
     }
@@ -1639,7 +1648,7 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
             if !line_angle_matches(
                 &lines[first].geometry,
                 &lines[second].geometry,
-                parameter.evaluated_value,
+                parameter.evaluated_value(),
             ) {
                 continue;
             }
@@ -1681,12 +1690,15 @@ pub(crate) fn parallel_group_axis_angle_definition(
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
     };
-    (line_angle_matches(&first.geometry, &horizontal_axis, parameter.evaluated_value)
-        && line_angle_matches(
-            &second.geometry,
-            &horizontal_axis,
-            parameter.evaluated_value,
-        ))
+    (line_angle_matches(
+        &first.geometry,
+        &horizontal_axis,
+        parameter.evaluated_value(),
+    ) && line_angle_matches(
+        &second.geometry,
+        &horizontal_axis,
+        parameter.evaluated_value(),
+    ))
     .then(|| Definition::AngleToAxis {
         entity: first.id().clone(),
         axis: SketchAxis::Horizontal,
@@ -1712,7 +1724,7 @@ pub(crate) fn concentric_circle_dimension_definition(
     {
         return None;
     }
-    let evaluated_mm = parameter.evaluated_value * 10.0;
+    let evaluated_mm = parameter.evaluated_value() * 10.0;
     if !evaluated_mm.is_finite() {
         return None;
     }
@@ -1776,7 +1788,7 @@ pub(crate) fn unique_point_line_dimension_definition(
     {
         return None;
     }
-    let evaluated_mm = parameter.evaluated_value * 10.0;
+    let evaluated_mm = parameter.evaluated_value() * 10.0;
     if !evaluated_mm.is_finite() {
         return None;
     }
@@ -1825,7 +1837,7 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     {
         return None;
     }
-    let evaluated_mm = parameter.evaluated_value * 10.0;
+    let evaluated_mm = parameter.evaluated_value() * 10.0;
     if !evaluated_mm.is_finite() {
         return None;
     }
@@ -1871,7 +1883,7 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
     {
         return None;
     }
-    let evaluated_mm = parameter.evaluated_value * 10.0;
+    let evaluated_mm = parameter.evaluated_value() * 10.0;
     if !evaluated_mm.is_finite() {
         return None;
     }
@@ -1964,7 +1976,7 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
     {
         return None;
     }
-    let expected = parameter.evaluated_value * 10.0;
+    let expected = parameter.evaluated_value() * 10.0;
     if !expected.is_finite() {
         return None;
     }
@@ -2021,7 +2033,7 @@ pub(crate) fn unique_point_class_dimension_definition(
     {
         return None;
     }
-    let expected = (parameter.evaluated_value * 10.0).abs();
+    let expected = (parameter.evaluated_value() * 10.0).abs();
     if !expected.is_finite() {
         return None;
     }
@@ -2138,7 +2150,7 @@ pub(crate) fn owner_scoped_radial_dimension_definition(
             radial_dimension_definition_at_tolerance(
                 entity,
                 parameter.source_kind(),
-                parameter.evaluated_value,
+                parameter.evaluated_value(),
                 parameter_id.clone(),
                 linear_tolerance,
             )
@@ -2715,7 +2727,7 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
     {
         return None;
     }
-    let expected = (parameter.evaluated_value * 10.0).abs();
+    let expected = (parameter.evaluated_value() * 10.0).abs();
     if !expected.is_finite() {
         return None;
     }
@@ -2762,7 +2774,7 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     {
         return None;
     }
-    let expected = (parameter.evaluated_value * 10.0).abs();
+    let expected = (parameter.evaluated_value() * 10.0).abs();
     if !expected.is_finite() {
         return None;
     }
@@ -2811,7 +2823,7 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     {
         return None;
     }
-    let expected = (parameter.evaluated_value * 10.0).abs();
+    let expected = (parameter.evaluated_value() * 10.0).abs();
     if !expected.is_finite() {
         return None;
     }
@@ -2878,7 +2890,7 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     {
         return None;
     }
-    let expected = (parameter.evaluated_value * 10.0).abs();
+    let expected = (parameter.evaluated_value() * 10.0).abs();
     if !expected.is_finite() {
         return None;
     }
@@ -3556,7 +3568,7 @@ pub(crate) fn annotation_offset_dimension_definition(
     };
 
     let source = projected.get(&(scope, source_record_index))?;
-    let expected = parameter.evaluated_value * 10.0;
+    let expected = parameter.evaluated_value() * 10.0;
     if !expected.is_finite() {
         return None;
     }
@@ -4614,7 +4626,7 @@ pub(crate) fn symmetric_parallel_line_dimension_definition(
         return None;
     }
     let separation = parallel_line_distance(first, second)?;
-    let expected = parameter.evaluated_value * 10.0;
+    let expected = parameter.evaluated_value() * 10.0;
     linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
         Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
@@ -6104,7 +6116,7 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
         names_by_stream
             .entry(stream)
             .or_default()
-            .insert(parameter.name.as_str());
+            .insert(parameter.name());
     }
 
     native
@@ -6120,7 +6132,7 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
                 .map(|dependency| dependency.name.as_str())
                 .collect::<HashSet<_>>();
             Some(
-                expression_identifiers(&parameter.expression)
+                expression_identifiers(parameter.expression())
                     .filter(|identifier| names.contains(identifier.as_str()))
                     .collect::<HashSet<_>>()
                     .into_iter()

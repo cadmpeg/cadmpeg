@@ -503,7 +503,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     ));
 
     let mut direct_parameter = parameter.clone();
-    direct_parameter.evaluated_value = 0.5;
+    direct_parameter.try_set_evaluated_value(0.5).unwrap();
     assert!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(
             &first,
@@ -722,34 +722,36 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#20"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 20,
-        source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-4".into(),
-            Some(21),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "2 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 20,
+            source_ordinal: 4,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-4".into(),
+                Some(21),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "2 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d4".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d4".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
@@ -1045,12 +1047,16 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_byte_offset: 0,
     };
     let mut symmetry_parameter = parameter.clone();
-    symmetry_parameter.source = crate::records::DesignParameterSource::new(
-        "Linear Dimension-6".into(),
-        symmetry_parameter.owner_record_index(),
-        symmetry_parameter.family_discriminator(),
-    )
-    .unwrap();
+    symmetry_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Linear Dimension-6".into(),
+                symmetry_parameter.owner_record_index(),
+                symmetry_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let mut symmetry_entities = spatial_entities.clone();
     symmetry_entities.push(axis_entity.clone());
     let symmetry_constraints = project_spatial_dimension_constraints(
@@ -1091,7 +1097,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     )));
 
     let mut zero_parameter = parameter;
-    zero_parameter.evaluated_value = 0.0;
+    zero_parameter.try_set_evaluated_value(0.0).unwrap();
     let mut duplicate_pair = pair.clone();
     duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
     let duplicate = project_dimension_constraints(

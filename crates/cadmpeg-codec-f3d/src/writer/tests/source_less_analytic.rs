@@ -771,9 +771,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let native_id = format!("f3d:{stream}:design-parameter#0");
-    f3d_native_mut(&mut source_less)
-        .design_parameters
-        .push(crate::records::DesignParameter {
+    f3d_native_mut(&mut source_less).design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: native_id.clone(),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
@@ -797,10 +796,11 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             name_offset: 120,
             evaluated_value: 3.0,
             evaluated_value_offset: 150,
-        });
-    f3d_native_mut(&mut source_less)
-        .design_parameters
-        .push(crate::records::DesignParameter {
+        })
+        .unwrap(),
+    );
+    f3d_native_mut(&mut source_less).design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("f3d:{stream}:design-parameter#1"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
@@ -824,7 +824,9 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             name_offset: 120,
             evaluated_value: 6.0,
             evaluated_value_offset: 150,
-        });
+        })
+        .unwrap(),
+    );
     let (_, parameters) = crate::design::feature_project::project_parameter_design(
         &f3d_native(&source_less).design_parameters,
         &[],
@@ -864,7 +866,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .expect("identity grammar")]
     );
     assert_eq!(
-        f3d_native(decoded.ir()).design_parameters[0].evaluated_value,
+        f3d_native(decoded.ir()).design_parameters[0].evaluated_value(),
         3.0
     );
 }

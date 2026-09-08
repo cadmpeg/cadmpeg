@@ -1881,7 +1881,7 @@ pub(super) fn continue_fixed_kind_operations(
     ))
     .expect("generated parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
-    parameter.byte_offset = 65;
+    parameter.try_translate_offsets(65).unwrap();
     assert_eq!(
         companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
         Some((58, 65))

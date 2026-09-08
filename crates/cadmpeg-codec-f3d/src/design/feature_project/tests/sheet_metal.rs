@@ -73,7 +73,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             companion_record_index: 0,
         };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
-        crate::records::DesignParameter {
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -81,19 +81,20 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
                 .unwrap(),
-            expression: String::new(),
-            expression_offset: 0,
-            source_kind_offset: 0,
+            expression: evaluated_value.to_string(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: None,
+                offset: Some(70),
             }),
             name: source_kind.into(),
-            name_offset: 0,
+            name_offset: 80,
             evaluated_value,
-            evaluated_value_offset: 0,
-        }
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
     };
     let owners = [
         owner(393, 392),
@@ -219,20 +220,28 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         *slot = Some(offset_operation);
     }
     let mut offset_parameters = parameters.clone();
-    offset_parameters[0].source = crate::records::DesignParameterSource::new(
-        "EdgeOffset_1".into(),
-        offset_parameters[0].owner_record_index(),
-        offset_parameters[0].family_discriminator(),
-    )
-    .unwrap();
-    offset_parameters[0].evaluated_value = -3.0;
-    offset_parameters[1].source = crate::records::DesignParameterSource::new(
-        "EdgeOffset_2".into(),
-        offset_parameters[1].owner_record_index(),
-        offset_parameters[1].family_discriminator(),
-    )
-    .unwrap();
-    offset_parameters[1].evaluated_value = -1.5;
+    offset_parameters[0]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "EdgeOffset_1".into(),
+                offset_parameters[0].owner_record_index(),
+                offset_parameters[0].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    offset_parameters[0].try_set_evaluated_value(-3.0).unwrap();
+    offset_parameters[1]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "EdgeOffset_2".into(),
+                offset_parameters[1].owner_record_index(),
+                offset_parameters[1].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    offset_parameters[1].try_set_evaluated_value(-1.5).unwrap();
     let offset_inputs = crate::design::feature_project::ProjectInputs {
         native: &offset_parameters,
         owners: &owners,
@@ -333,19 +342,27 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 
     let mut per_edge_parameters = parameters.clone();
-    per_edge_parameters[0].source = crate::records::DesignParameterSource::new(
-        "EdgeWidth".into(),
-        per_edge_parameters[0].owner_record_index(),
-        per_edge_parameters[0].family_discriminator(),
-    )
-    .unwrap();
-    per_edge_parameters[1].source = crate::records::DesignParameterSource::new(
-        "EdgeWidth".into(),
-        per_edge_parameters[1].owner_record_index(),
-        per_edge_parameters[1].family_discriminator(),
-    )
-    .unwrap();
-    per_edge_parameters[1].evaluated_value = 3.0;
+    per_edge_parameters[0]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "EdgeWidth".into(),
+                per_edge_parameters[0].owner_record_index(),
+                per_edge_parameters[0].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    per_edge_parameters[1]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "EdgeWidth".into(),
+                per_edge_parameters[1].owner_record_index(),
+                per_edge_parameters[1].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    per_edge_parameters[1].try_set_evaluated_value(3.0).unwrap();
     let mut per_edge_operation = multi_operation;
     per_edge_operation.shape = crate::records::feature::DesignEdgeFlangeShape::SymmetricPerEdge(
         per_edge_operation
@@ -393,7 +410,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         }
     );
     let mut distinct_parameters = per_edge_parameters.clone();
-    distinct_parameters[1].evaluated_value = 1.5;
+    distinct_parameters[1].try_set_evaluated_value(1.5).unwrap();
     let distinct_inputs = crate::design::feature_project::ProjectInputs {
         native: &distinct_parameters,
         owners: &owners,
@@ -558,7 +575,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             companion_record_index: 0,
         };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
-        crate::records::DesignParameter {
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -566,19 +583,20 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
                 .unwrap(),
-            expression: String::new(),
-            expression_offset: 0,
-            source_kind_offset: 0,
+            expression: evaluated_value.to_string(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: None,
+                offset: Some(70),
             }),
             name: source_kind.into(),
-            name_offset: 0,
+            name_offset: 80,
             evaluated_value,
-            evaluated_value_offset: 0,
-        }
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
     };
     let owners = [owner(399, 398), owner(402, 401), owner(430, 429)];
     let parameters = [
@@ -1029,8 +1047,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             companion_record_index: 0,
         }
     };
-    let parameter =
-        |record_index: u32, source_kind: &str, unit: &str, value: f64| DesignParameter {
+    let parameter = |record_index: u32, source_kind: &str, unit: &str, value: f64| {
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -1038,19 +1056,21 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
                 .unwrap(),
-            expression: String::new(),
-            expression_offset: 0,
-            source_kind_offset: 0,
+            expression: value.to_string(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
             unit: Some(crate::records::RecordedValue {
                 value: unit.into(),
-                offset: None,
+                offset: Some(70),
             }),
             name: source_kind.into(),
-            name_offset: 0,
+            name_offset: 80,
             evaluated_value: value,
-            evaluated_value_offset: 0,
-        };
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
+    };
     let group = |scope_record_index: u32,
                  record_index: u32,
                  member: u32,

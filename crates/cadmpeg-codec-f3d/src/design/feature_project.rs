@@ -682,7 +682,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         },
@@ -703,7 +703,7 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
+                            (parameter.name().to_owned(), parameter.expression().to_owned())
                         })
                         .collect(),
                 }),
@@ -739,7 +739,7 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
+                                (parameter.name().to_owned(), parameter.expression().to_owned())
                             })
                             .collect(),
                     }),
@@ -771,7 +771,7 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
+                            (parameter.name().to_owned(), parameter.expression().to_owned())
                         })
                         .collect(),
                 }),
@@ -824,7 +824,7 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
+                            (parameter.name().to_owned(), parameter.expression().to_owned())
                         })
                         .collect(),
                 }),
@@ -888,7 +888,7 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
+                            (parameter.name().to_owned(), parameter.expression().to_owned())
                         })
                         .collect(),
                 }),
@@ -913,7 +913,7 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
+                                (parameter.name().to_owned(), parameter.expression().to_owned())
                             })
                             .collect(),
                     }),
@@ -953,7 +953,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         })
@@ -964,7 +964,7 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
+                                (parameter.name().to_owned(), parameter.expression().to_owned())
                             })
                             .collect(),
                     }),
@@ -975,7 +975,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         }
@@ -988,7 +988,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         },
@@ -1001,7 +1001,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         }
@@ -1062,7 +1062,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         },
@@ -1139,7 +1139,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         }
@@ -1151,7 +1151,7 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
+                                (parameter.name().to_owned(), parameter.expression().to_owned())
                             })
                             .collect(),
                     }),
@@ -1165,7 +1165,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
-                                        (parameter.name.clone(), parameter.expression.clone())
+                                        (parameter.name().to_owned(), parameter.expression().to_owned())
                                     })
                                     .collect(),
                             },
@@ -1199,7 +1199,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
-                                        (parameter.name.clone(), parameter.expression.clone())
+                                        (parameter.name().to_owned(), parameter.expression().to_owned())
                                     })
                                     .collect(),
                             },
@@ -1222,7 +1222,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     parameters: parameters
                                         .iter()
                                         .map(|(_, parameter)| {
-                                            (parameter.name.clone(), parameter.expression.clone())
+                                            (parameter.name().to_owned(), parameter.expression().to_owned())
                                         })
                                         .collect(),
                                 },
@@ -1242,7 +1242,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
-                                        (parameter.name.clone(), parameter.expression.clone())
+                                        (parameter.name().to_owned(), parameter.expression().to_owned())
                                     })
                                     .collect(),
                             },
@@ -1355,7 +1355,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
+                                    (parameter.name().to_owned(), parameter.expression().to_owned())
                                 })
                                 .collect(),
                         }
@@ -1544,19 +1544,19 @@ pub fn project_parameter_design_with_edge_identities(
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
                 properties.insert("owner_record_index".into(), owner_record_index.to_string());
             }
-            let value = match parameter.unit.as_ref().map(|field| field.value.as_str()) {
+            let value = match parameter.unit().map(|field| field.value.as_str()) {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
-                    parameter.evaluated_value * 10.0,
+                    parameter.evaluated_value() * 10.0,
                 ))),
                 Some(unit) if design_angle_unit(unit) => {
-                    Some(ParameterValue::Angle(Angle(parameter.evaluated_value)))
+                    Some(ParameterValue::Angle(Angle(parameter.evaluated_value())))
                 }
-                None => Some(ParameterValue::Real(parameter.evaluated_value)),
+                None => Some(ParameterValue::Real(parameter.evaluated_value())),
                 Some(unit) => {
                     properties.insert("unit".into(), unit.into());
                     properties.insert(
                         "evaluated_scalar".into(),
-                        parameter.evaluated_value.to_string(),
+                        parameter.evaluated_value().to_string(),
                     );
                     None
                 }
@@ -1567,8 +1567,8 @@ pub fn project_parameter_design_with_edge_identities(
                 ordinal: owner
                     .zip(native_owner)
                     .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
-                name: parameter.name.clone(),
-                expression: parameter.expression.clone(),
+                name: parameter.name().to_owned(),
+                expression: parameter.expression().to_owned(),
                 display: if parameter.source_kind().contains("Diameter Dimension") {
                     Some(DimensionDisplay::Diameter)
                 } else if parameter.source_kind().contains("Radius Dimension") {
@@ -1959,12 +1959,12 @@ fn project_work_point_construction(
                 .map(|(_, parameter)| *parameter)
                 .filter(|parameter| parameter.source_kind() == "PathDistance");
             let distance = distances.next()?;
-            if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value) {
+            if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value()) {
                 return None;
             }
             DatumPointConstruction::DistanceOnEdge {
                 edge: edge(input)?,
-                fraction: distance.evaluated_value,
+                fraction: distance.evaluated_value(),
             }
         }
         DesignWorkPointRuleForm::Native { .. } => return None,
@@ -2173,14 +2173,10 @@ fn project_fillet_arm(
                         != 1
                 })
                 || parameters.iter().any(|(_, parameter)| {
-                    if matches!(
+                    matches!(
                         parameter.source_kind(),
                         "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2"
-                    ) {
-                        design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                    } else {
-                        !parameter.evaluated_value.is_finite()
-                    }
+                    ) && design_length(parameter).is_none_or(|value| value.0 <= 0.0)
                 })
         };
         if incomplete_assignment {
@@ -2188,7 +2184,12 @@ fn project_fillet_arm(
                 kind: scope.kind_name().into(),
                 parameters: parameters
                     .iter()
-                    .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
+                    .map(|(_, parameter)| {
+                        (
+                            parameter.name().to_owned(),
+                            parameter.expression().to_owned(),
+                        )
+                    })
                     .collect(),
             }
         } else {
@@ -2255,7 +2256,7 @@ fn project_fillet_arm(
                                     && parameter.record_index == record_index
                             })
                         })
-                        .map(|parameter| parameter.evaluated_value)
+                        .map(|parameter| parameter.evaluated_value())
                         .filter(|weight| weight.is_finite());
                     let edges = construction_groups
                         .iter()
@@ -5140,13 +5141,11 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 
 pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
     (parameter
-        .unit
-        .as_ref()
+        .unit()
         .map(|field| field.value.as_str())
-        .is_some_and(design_length_unit)
-        && parameter.evaluated_value.is_finite())
+        .is_some_and(design_length_unit))
     .then_some(cadmpeg_ir::features::Length(
-        parameter.evaluated_value * 10.0,
+        parameter.evaluated_value() * 10.0,
     ))
 }
 
@@ -5159,7 +5158,7 @@ pub(crate) fn design_angle_unit(unit: &str) -> bool {
 }
 
 pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
-    let unit = parameter.unit.as_ref().map(|field| field.value.as_str());
+    let unit = parameter.unit().map(|field| field.value.as_str());
     if parameter.source_kind().starts_with("Linear Dimension")
         || parameter.source_kind().starts_with("Radius Dimension")
         || parameter.source_kind().starts_with("Radial Dimension")
@@ -5242,13 +5241,7 @@ pub(crate) fn variable_fillet_law(
         });
         match (matches.next(), matches.next()) {
             (None, None) => None,
-            (Some(parameter), None) => {
-                if parameter.evaluated_value.is_finite() {
-                    Some(parameter.evaluated_value)
-                } else {
-                    return None;
-                }
-            }
+            (Some(parameter), None) => Some(parameter.evaluated_value()),
             (None, Some(_)) => return None,
             (Some(_), Some(_)) => return None,
         }
@@ -5284,7 +5277,7 @@ pub(crate) fn variable_fillet_law(
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
         let radius = design_length(radius)?;
-        let parameter = parameter.evaluated_value;
+        let parameter = parameter.evaluated_value();
         if radius.0 < 0.0 || !parameter.is_finite() || !(0.0..1.0).contains(&parameter) {
             return None;
         }
@@ -5337,8 +5330,7 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .iter()
         .filter(|parameter| {
             parameter
-                .unit
-                .as_ref()
+                .unit()
                 .map(|field| field.value.as_str())
                 .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
@@ -6883,12 +6875,12 @@ fn project_fixed_pipe(
     let section_thickness_parameter = unique("SectionThickness")?;
     let section_size = design_length(section_size_parameter)?;
     let section_thickness = design_length(section_thickness_parameter)?;
-    if along.unit.is_some()
-        || against.unit.is_some()
-        || along.evaluated_value != values[0]
-        || against.evaluated_value != values[1]
-        || section_size_parameter.evaluated_value != values[2]
-        || section_thickness_parameter.evaluated_value != values[3]
+    if along.unit().is_some()
+        || against.unit().is_some()
+        || along.evaluated_value() != values[0]
+        || against.evaluated_value() != values[1]
+        || section_size_parameter.evaluated_value() != values[2]
+        || section_thickness_parameter.evaluated_value() != values[3]
         || section_size.0 <= 0.0
         || section_thickness.0 <= 0.0
     {
@@ -8537,8 +8529,7 @@ fn project_coil(
     }
     let dimensionless = |kind: &str| {
         let parameter = unique(kind)?;
-        (parameter.unit.is_none() && parameter.evaluated_value.is_finite())
-            .then_some(parameter.evaluated_value)
+        (parameter.unit().is_none()).then_some(parameter.evaluated_value())
     };
     let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent()? {
         DesignCoilExtent::RevolutionsHeight => (

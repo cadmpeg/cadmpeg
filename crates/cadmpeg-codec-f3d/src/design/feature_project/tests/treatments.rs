@@ -197,10 +197,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         ),
     ];
     distance_angle_parameters[1]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -220,18 +218,26 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
     ));
 
-    distance_angle_parameters[0].source = crate::records::DesignParameterSource::new(
-        "leftDistance".into(),
-        distance_angle_parameters[0].owner_record_index(),
-        distance_angle_parameters[0].family_discriminator(),
-    )
-    .unwrap();
-    distance_angle_parameters[1].source = crate::records::DesignParameterSource::new(
-        "rotateAngle".into(),
-        distance_angle_parameters[1].owner_record_index(),
-        distance_angle_parameters[1].family_discriminator(),
-    )
-    .unwrap();
+    distance_angle_parameters[0]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "leftDistance".into(),
+                distance_angle_parameters[0].owner_record_index(),
+                distance_angle_parameters[0].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    distance_angle_parameters[1]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "rotateAngle".into(),
+                distance_angle_parameters[1].owner_record_index(),
+                distance_angle_parameters[1].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -257,10 +263,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
     ];
     hole_parameters[2]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -296,7 +300,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }]
     ));
 
-    hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
+    hole_parameters[2]
+        .try_set_evaluated_value(118.0_f64.to_radians())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -360,7 +366,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if drill_point_angle.0 == 118.0_f64.to_radians()
     ));
 
-    counterbore_parameters[2].evaluated_value = std::f64::consts::PI;
+    counterbore_parameters[2]
+        .try_set_evaluated_value(std::f64::consts::PI)
+        .unwrap();
     let (features, _) = project_parameter_design(
         &counterbore_parameters,
         &[

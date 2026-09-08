@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod graphics;
+mod parameter;
 
 #[test]
 fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
@@ -80,8 +81,6 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
 }
 
 #[test]
-// Fixture fields are appended from the bounded table of explicit test cases.
-#[allow(clippy::format_push_string)]
 fn material_assignment_preserves_located_and_authored_token_wire() {
     let prefix = r#"{"id":"material#0","asm_body_key":42,"asm_body_key_offset":10,"entity_suffix":985,"entity_suffix_offset":20,"entity_id":"0_985","entity_id_offset":30,"visual_guid":"11111111-2222-3333-4444-555555555555","visual_guid_offset":40"#;
     for field in ["physical_token", "visual_preset"] {
@@ -123,8 +122,6 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
 }
 
 #[test]
-// Fixture fields are appended from the bounded table of explicit test cases.
-#[allow(clippy::format_push_string)]
 fn recipe_design_id_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
     let suffix = r#","recipe_index":0,"record_index":12}"#;
@@ -152,8 +149,6 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
 }
 
 #[test]
-// Fixture fields are appended from the bounded table of explicit test cases.
-#[allow(clippy::format_push_string)]
 fn segment_base_guid_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
     let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
@@ -184,27 +179,17 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
 }
 
 #[test]
-// Fixture fields are appended from the bounded table of explicit test cases.
-#[allow(clippy::format_push_string)]
 fn parameter_unit_preserves_source_and_authored_wire() {
     let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1,"source_ordinal":0,"owner_record_index":2,"expression":"1","expression_offset":40,"source_kind":"Distance","source_kind_offset":60,"kind":"feature""#;
     let suffix =
         r#","name":"d1","name_offset":80,"evaluated_value":1.0,"evaluated_value_offset":90}"#;
-    for value in ["\"\"", "\"mm\""] {
-        for offset in [None, Some(0), Some(70)] {
-            let mut wire = format!("{prefix},\"unit\":{value}");
-            if let Some(offset) = offset {
-                wire.push_str(&format!(",\"unit_offset\":{offset}"));
-            }
-            wire.push_str(suffix);
-            let parsed: crate::records::DesignParameter =
-                serde_json::from_str(&wire).expect("parameter unit");
-            assert_eq!(
-                serde_json::to_string(&parsed).expect("parameter wire"),
-                wire
-            );
-        }
-    }
+    let wire = format!("{prefix},\"unit\":\"mm\",\"unit_offset\":70{suffix}");
+    let parsed: crate::records::DesignParameter =
+        serde_json::from_str(&wire).expect("parameter unit");
+    assert_eq!(
+        serde_json::to_string(&parsed).expect("parameter wire"),
+        wire
+    );
     let wire = format!("{prefix}{suffix}");
     let parsed: crate::records::DesignParameter =
         serde_json::from_str(&wire).expect("dimensionless parameter");

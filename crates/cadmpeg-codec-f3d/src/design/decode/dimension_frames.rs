@@ -1787,9 +1787,9 @@ pub(crate) fn companion_owned_interval<'a>(
                 .into_iter()
                 .filter(|parameter| {
                     native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.byte_offset > companion.byte_offset
+                        && parameter.byte_offset() > companion.byte_offset
                 })
-                .filter_map(|parameter| usize::try_from(parameter.byte_offset).ok()),
+                .filter_map(|parameter| usize::try_from(parameter.byte_offset()).ok()),
         )
         .chain(
             scopes
