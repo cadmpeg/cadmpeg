@@ -401,38 +401,55 @@ impl TryFrom<PointTailWire> for PointTail {
     }
 }
 
+const TRANSFORM_PREFIX: u32 = 0x203;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcTransformPayloadWire",
+    into = "PmDcTransformPayloadWire"
+)]
 pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    #[serde(default, rename = "prefix", with = "transform_prefix")]
     pub(crate) prefix_present: bool,
-    #[serde(flatten)]
     pub(crate) matrix: CompactMatrix,
 }
 
-mod transform_prefix {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[derive(Serialize, Deserialize)]
+struct PmDcTransformPayloadWire {
+    save_version_major: u8,
+    header: PmDcContentHeader,
+    prefix: Option<u32>,
+    #[serde(flatten)]
+    matrix: CompactMatrix,
+}
 
-    pub(super) const VALUE: u32 = 0x203;
-
-    pub(super) fn serialize<S: Serializer>(
-        present: &bool,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        present.then_some(VALUE).serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<bool, D::Error> {
-        match Option::<u32>::deserialize(deserializer)? {
-            None => Ok(false),
-            Some(VALUE) => Ok(true),
-            Some(_) => Err(serde::de::Error::custom(
-                "transform prefix must be 515 or null",
-            )),
+impl From<PmDcTransformPayload> for PmDcTransformPayloadWire {
+    fn from(value: PmDcTransformPayload) -> Self {
+        Self {
+            save_version_major: value.save_version_major,
+            header: value.header,
+            prefix: value.prefix_present.then_some(TRANSFORM_PREFIX),
+            matrix: value.matrix,
         }
+    }
+}
+
+impl TryFrom<PmDcTransformPayloadWire> for PmDcTransformPayload {
+    type Error = &'static str;
+
+    fn try_from(wire: PmDcTransformPayloadWire) -> Result<Self, Self::Error> {
+        let prefix_present = match wire.prefix {
+            None => false,
+            Some(TRANSFORM_PREFIX) => true,
+            Some(_) => return Err("transform prefix must be 515 or null"),
+        };
+        Ok(Self {
+            save_version_major: wire.save_version_major,
+            header: wire.header,
+            prefix_present,
+            matrix: wire.matrix,
+        })
     }
 }
 
@@ -773,7 +790,7 @@ fn parse_ellipse(
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let prefix_present = cursor.peek_u32("transform prefix")? == transform_prefix::VALUE;
+    let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
     if prefix_present {
         cursor.u32("transform prefix")?;
     }
