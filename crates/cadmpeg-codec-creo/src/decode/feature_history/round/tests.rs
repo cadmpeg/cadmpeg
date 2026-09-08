@@ -52,9 +52,9 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         .positional_frames
         .push(crate::surface::OutlinePlane {
             surface_id: 31,
-            origin: std::array::from_fn(|index| frame.apex[index] + frame.axis[index]),
-            normal: frame.axis,
-            u_axis: frame.ref_direction,
+            origin: std::array::from_fn(|index| frame.apex()[index] + frame.axis()[index]),
+            normal: frame.axis(),
+            u_axis: frame.ref_direction(),
             offset: 31,
         });
     scan.features
@@ -105,12 +105,15 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
-                    apex: [0.5, 0.0, 0.0],
-                    axis: [-1.0, 0.0, 0.0],
-                    ref_direction: [0.0, 1.0, 0.0],
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                }),
+                crate::surface::InlineSurfaceCarrier::Cone(
+                    crate::surface::PositionalConeFrame::new(
+                        [0.5, 0.0, 0.0],
+                        [-1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        std::f64::consts::FRAC_PI_4,
+                    )
+                    .expect("valid positional cone frame"),
+                ),
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
@@ -371,11 +374,11 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         },
     )
     .expect("resolved support and envelope cylinder");
-    assert_eq!(frame.origin, [-8.5, 0.0, -3.0]);
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 0.5);
-    assert_eq!(frame.length, Some(2.0));
+    assert_eq!(frame.origin(), [-8.5, 0.0, -3.0]);
+    assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius(), 0.5);
+    assert_eq!(frame.length(), Some(2.0));
     assert!(super::round_support_envelope_cylinder(
         &scan,
         &ir,

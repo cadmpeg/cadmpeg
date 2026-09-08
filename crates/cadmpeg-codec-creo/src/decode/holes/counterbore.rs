@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counterbore dimensions, axis placement, and source cylinder geometry.
 
+use super::placement::HoleCylinder;
 use crate::decode::axis::Axis;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -320,11 +321,22 @@ pub fn unique_counterbore_dimension_tuple(
         .then_some(first)
 }
 
-pub fn counterbore_patch_geometries(
-    scan: &ContainerScan,
+pub fn counterbore_patch_geometries<'a>(
+    scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<Vec<(u32, SurfaceGeometry)>> {
+) -> Option<Vec<(&'a crate::surface::SurfaceRow, HoleCylinder)>> {
+    let resolve_rows = |geometries: Vec<(u32, HoleCylinder)>| {
+        geometries
+            .into_iter()
+            .map(|(id, geometry)| {
+                Some((
+                    crate::surface::unique_surface_row(&scan.surfaces.rows, id)?,
+                    geometry,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+    };
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -335,7 +347,7 @@ pub fn counterbore_patch_geometries(
         bore_diameter,
         counterbore_diameter,
     ) {
-        return Some(geometries);
+        return resolve_rows(geometries);
     }
     if cylinder_sources
         .iter()
@@ -352,6 +364,7 @@ pub fn counterbore_patch_geometries(
         counterbore_diameter,
         counterbore_depth,
     )
+    .and_then(resolve_rows)
 }
 
 pub fn counterbore_cylinder_sources(
@@ -509,12 +522,9 @@ pub fn counterbore_axis_placement_from_sources(
     let [carrier] = carriers.as_slice() else {
         return None;
     };
-    let SurfaceGeometry::Cylinder { origin, axis, .. } = carrier else {
-        unreachable!("cylinder carrier helper returns a cylinder")
-    };
     Some(cadmpeg_ir::features::HolePlacement::Axis {
-        origin: *origin,
-        axis: *axis,
+        origin: carrier.origin,
+        axis: carrier.axis,
     })
 }
 
@@ -914,7 +924,7 @@ pub fn counterbore_source_patch_geometries(
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     bore_diameter: f64,
     counterbore_diameter: f64,
-) -> Option<Vec<(u32, SurfaceGeometry)>> {
+) -> Option<Vec<(u32, HoleCylinder)>> {
     let [first_source, second_source] = cylinder_sources else {
         return None;
     };
@@ -933,16 +943,13 @@ pub fn counterbore_source_patch_geometries(
         }
         _ => return None,
     };
-    let SurfaceGeometry::Cylinder {
+    let HoleCylinder {
         origin,
         axis,
         ref_direction,
         ..
-    } = carrier
-    else {
-        return None;
-    };
-    let geometry = |radius| SurfaceGeometry::Cylinder {
+    } = carrier;
+    let geometry = |radius| HoleCylinder {
         origin,
         axis,
         ref_direction,
@@ -967,7 +974,7 @@ pub fn counterbore_source_corner_patch_geometries(
     bore_diameter: f64,
     counterbore_diameter: f64,
     counterbore_depth: f64,
-) -> Option<Vec<(u32, SurfaceGeometry)>> {
+) -> Option<Vec<(u32, HoleCylinder)>> {
     let [first_source, second_source] = cylinder_sources else {
         return None;
     };
@@ -990,7 +997,7 @@ pub fn counterbore_source_corner_patch_geometries(
     )?;
     let mut ref_direction = [0.0; 3];
     ref_direction[assignment.bore.axis.complement()[0].index()] = 1.0;
-    let geometry = |radius| SurfaceGeometry::Cylinder {
+    let geometry = |radius| HoleCylinder {
         origin: assignment.position,
         axis: assignment.direction,
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -1009,7 +1016,7 @@ pub fn counterbore_source_corner_patch_geometries(
             .enumerate()
             .flat_map(|(source_index, ids)| {
                 let geometry = geometry(radius_for(source_index));
-                ids.iter().copied().map(move |id| (id, geometry.clone()))
+                ids.iter().copied().map(move |id| (id, geometry))
             })
             .collect(),
     )
@@ -1019,16 +1026,29 @@ pub fn complete_cylinder_source_carrier(
     ids: &[u32],
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     radius: f64,
-) -> Option<SurfaceGeometry> {
+) -> Option<HoleCylinder> {
     let carriers = ids
         .iter()
         .map(|id| existing_geometries.get(id))
         .collect::<Option<Vec<_>>>()?;
-    let first = (*carriers.first()?).clone();
-    (matches!(&first, SurfaceGeometry::Cylinder { radius: candidate, .. }
-        if (*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT)
-        && carriers.iter().all(|candidate| **candidate == first))
-    .then_some(first)
+    let first = *carriers.first()?;
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius: candidate,
+    } = first
+    else {
+        return None;
+    };
+    ((*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
+        && carriers.iter().all(|candidate| *candidate == first))
+    .then_some(HoleCylinder {
+        origin: *origin,
+        axis: *axis,
+        ref_direction: *ref_direction,
+        radius: *candidate,
+    })
 }
 
 #[cfg(test)]

@@ -139,3 +139,144 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
         value
     );
 }
+
+#[test]
+fn tessellation_identity_admission() {
+    for id in ["", "mesh id", "mesh\nid"] {
+        assert!(TessellationId::mint(id).is_err());
+        rejects_wire_field("id", id);
+        assert!(Tessellation::new(
+            id,
+            Vec::new(),
+            Vec::new(),
+            TessellationTopology::List,
+            TessellationNormals::None,
+            Vec::new(),
+        )
+        .is_err());
+    }
+    let id = TessellationId::mint("test:mesh:tessellation#0").unwrap();
+    assert_eq!(
+        serde_json::to_value(&id).unwrap(),
+        "test:mesh:tessellation#0"
+    );
+    assert_eq!(
+        serde_json::from_value::<TessellationId>(serde_json::to_value(&id).unwrap()).unwrap(),
+        id
+    );
+}
+
+#[test]
+fn numeric_admission_rejects_non_finite_vertices_and_normals() {
+    let base = mesh();
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut vertices = base.vertices().to_vec();
+        vertices[0].x = invalid;
+        assert!(Tessellation::new(
+            "test:mesh:tessellation#numeric",
+            vertices.clone(),
+            base.triangles().to_vec(),
+            TessellationTopology::List,
+            TessellationNormals::None,
+            Vec::new(),
+        )
+        .is_err());
+        rejects_wire_field("vertices", vertices);
+        for corner in [false, true] {
+            let count = if corner {
+                base.triangles().len() * 3
+            } else {
+                base.vertices().len()
+            };
+            let mut normals = vec![Vector3::new(0.0, 0.0, 1.0); count];
+            normals[0].y = invalid;
+            let shading = if corner {
+                TessellationNormals::PerCorner(normals.clone())
+            } else {
+                TessellationNormals::PerVertex(normals.clone())
+            };
+            assert!(Tessellation::new(
+                "test:mesh:tessellation#numeric",
+                base.vertices().to_vec(),
+                base.triangles().to_vec(),
+                TessellationTopology::List,
+                shading,
+                Vec::new(),
+            )
+            .is_err());
+            rejects_wire_field(if corner { "corner_normals" } else { "normals" }, normals);
+        }
+    }
+}
+
+#[test]
+fn numeric_edits_reject_invalid_values_without_partial_changes() {
+    for corner in [false, true] {
+        let base = mesh();
+        let normals = vec![Vector3::new(0.0, 0.0, 1.0); if corner { 6 } else { 4 }];
+        let mut value = Tessellation::new(
+            "test:mesh:tessellation#numeric",
+            base.vertices().to_vec(),
+            base.triangles().to_vec(),
+            TessellationTopology::List,
+            if corner {
+                TessellationNormals::PerCorner(normals)
+            } else {
+                TessellationNormals::PerVertex(normals)
+            },
+            Vec::new(),
+        )
+        .unwrap();
+        let original = value.clone();
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(value
+                .edit_vertices(|vertices| {
+                    vertices[0].x = 2.0;
+                    vertices[1].z = invalid;
+                })
+                .is_err());
+            assert_eq!(value, original);
+            assert!(value
+                .edit_normals(|normals| {
+                    normals[0].z = -1.0;
+                    normals[1].x = invalid;
+                })
+                .is_err());
+            assert_eq!(value, original);
+        }
+        value
+            .edit_vertices(|vertices| vertices[0].x = f64::MAX)
+            .unwrap();
+        value.edit_normals(|normals| normals[0].z = -2.0).unwrap();
+        assert_eq!(value.vertices()[0].x, f64::MAX);
+        let normals = if corner {
+            value.corner_normals()
+        } else {
+            value.normals()
+        };
+        assert_eq!(normals[0].z, -2.0);
+    }
+}
+
+#[test]
+fn deflection_admission_and_edits_require_finite_non_negative_values() {
+    let mut value = mesh().with_chordal_deflection(Some(0.5)).unwrap();
+    for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(value
+            .clone()
+            .with_chordal_deflection(Some(invalid))
+            .is_err());
+        assert!(value.set_chordal_deflection(Some(invalid)).is_err());
+        assert_eq!(value.chordal_deflection(), Some(0.5));
+        let mut wire = TessellationWire::from(value.clone());
+        wire.chordal_deflection = Some(invalid);
+        assert!(Tessellation::try_from(wire).is_err());
+    }
+    rejects_wire_field("chordal_deflection", -1.0);
+    for deflection in [Some(0.0), Some(f64::MAX), None] {
+        value.set_chordal_deflection(deflection).unwrap();
+        assert_eq!(value.chordal_deflection(), deflection);
+        let wire = serde_json::to_value(&value).unwrap();
+        assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+    }
+}

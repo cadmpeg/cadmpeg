@@ -121,7 +121,7 @@ fn generated_cylinder_section_transform(
         let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
-        correspondences.push(([u, v], frame.origin, frame.axis, parameters.offset));
+        correspondences.push(([u, v], frame.origin(), frame.axis(), parameters.offset));
     }
     let first = correspondences.first()?;
     let normal = normalize(first.2)?;

@@ -17,7 +17,7 @@ const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 struct DependencyInfo {
     dependencies: Vec<String>,
-    allow_partial: Option<i64>,
+    allow_partial: Option<std::num::NonZeroU64>,
     order: usize,
 }
 
@@ -132,14 +132,11 @@ fn parse_document(
         }
         let allow_partial = node
             .attribute("AllowPartial")
-            .map(str::parse::<i64>)
+            .map(str::parse::<std::num::NonZeroU64>)
             .transpose()
-            .map_err(|_| CodecError::Malformed("ObjectDeps AllowPartial is invalid".into()))?;
-        if allow_partial.is_some_and(|value| value <= 0) {
-            return Err(CodecError::Malformed(
-                "ObjectDeps AllowPartial must be positive".into(),
-            ));
-        }
+            .map_err(|_| {
+                CodecError::Malformed("ObjectDeps AllowPartial must be positive".into())
+            })?;
         if dependency_map
             .insert(
                 name.clone(),

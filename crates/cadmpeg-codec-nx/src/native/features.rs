@@ -15,6 +15,8 @@ pub(crate) mod payload_name;
 use payload_name::FeaturePayloadName;
 
 mod reference;
+use crate::om::column_row::ColumnRowSlot;
+use crate::om::datum_csys::DatumCsysSlot;
 use crate::om::header_references::HeaderSlot;
 use reference::ConstructionReference;
 
@@ -351,6 +353,10 @@ pub struct FeatureOperationTerminalFrame {
 
 /// Exact join from an operation terminal ordinal to its state-journal row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureOperationStateJournalUseWire",
+    into = "FeatureOperationStateJournalUseWire"
+)]
 pub struct FeatureOperationStateJournalUse {
     /// Globally unique operation-to-journal relation identity.
     pub id: String,
@@ -367,13 +373,67 @@ pub struct FeatureOperationStateJournalUse {
     /// Zero-based row order within the journal group.
     pub journal_row_ordinal: u32,
     /// Duplicated operation terminal ordinal.
-    pub operation_local_ordinal: u32,
+    operation_local_ordinal: u32,
     /// Matching journal state ordinal.
-    pub journal_state_ordinal: u32,
+    journal_state_ordinal: u32,
     /// Absolute source offset of the operation terminal frame.
     pub operation_source_offset: u64,
     /// Absolute source offset of the matching journal row.
     pub journal_source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationStateJournalUseWire {
+    id: String,
+    section_link: String,
+    operation_label: String,
+    operation_record: String,
+    operation_terminal_frame: String,
+    journal_group: String,
+    journal_row_ordinal: u32,
+    operation_local_ordinal: u32,
+    journal_state_ordinal: u32,
+    operation_source_offset: u64,
+    journal_source_offset: u64,
+}
+
+impl TryFrom<FeatureOperationStateJournalUseWire> for FeatureOperationStateJournalUse {
+    type Error = &'static str;
+    fn try_from(wire: FeatureOperationStateJournalUseWire) -> Result<Self, Self::Error> {
+        if wire.operation_local_ordinal != wire.journal_state_ordinal {
+            return Err("FeatureOperationStateJournalUse.operation_local_ordinal disagrees with journal_state_ordinal");
+        }
+        Ok(Self {
+            id: wire.id,
+            section_link: wire.section_link,
+            operation_label: wire.operation_label,
+            operation_record: wire.operation_record,
+            operation_terminal_frame: wire.operation_terminal_frame,
+            journal_group: wire.journal_group,
+            journal_row_ordinal: wire.journal_row_ordinal,
+            operation_local_ordinal: wire.operation_local_ordinal,
+            journal_state_ordinal: wire.journal_state_ordinal,
+            operation_source_offset: wire.operation_source_offset,
+            journal_source_offset: wire.journal_source_offset,
+        })
+    }
+}
+impl From<FeatureOperationStateJournalUse> for FeatureOperationStateJournalUseWire {
+    fn from(value: FeatureOperationStateJournalUse) -> Self {
+        Self {
+            id: value.id,
+            section_link: value.section_link,
+            operation_label: value.operation_label,
+            operation_record: value.operation_record,
+            operation_terminal_frame: value.operation_terminal_frame,
+            journal_group: value.journal_group,
+            journal_row_ordinal: value.journal_row_ordinal,
+            operation_local_ordinal: value.operation_local_ordinal,
+            journal_state_ordinal: value.journal_state_ordinal,
+            operation_source_offset: value.operation_source_offset,
+            journal_source_offset: value.journal_source_offset,
+        }
+    }
 }
 
 /// Ordered length-framed string from one bounded feature-operation payload.
@@ -634,7 +694,7 @@ pub struct FeatureInputColumnRowUse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
-    pub row_slot: u8,
+    pub row_slot: ColumnRowSlot,
     /// Exact shared target in the native `data_blocks` arena.
     pub data_block: String,
     /// Absolute file offset of the row's compact block index.
@@ -1011,7 +1071,7 @@ pub struct FeatureDatumCsysColumnRowUse {
     /// Owning `DATUM_CSYS` operation label.
     pub operation_label: String,
     /// Zero-based slot in the construction's eight-block lane.
-    pub construction_slot: u8,
+    pub construction_slot: DatumCsysSlot,
     /// Serialized grammar of the referenced column row.
     pub row_kind: ColumnIndexRowKind,
     /// Native row identity in its grammar-specific arena.
@@ -1020,7 +1080,7 @@ pub struct FeatureDatumCsysColumnRowUse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
-    pub row_slot: u8,
+    pub row_slot: ColumnRowSlot,
     /// Exact shared target in the native `data_blocks` arena.
     pub data_block: String,
     /// Absolute file offset of the construction's object-index token.
@@ -1810,7 +1870,7 @@ pub struct FeatureDatumCsysBlockUse {
     /// `DATUM_CSYS` operation owning the construction lane.
     pub construction_operation_label: String,
     /// Zero-based position in the eight-reference construction lane.
-    pub reference_ordinal: u8,
+    pub reference_ordinal: DatumCsysSlot,
     /// Shared offset-store block.
     pub data_block: String,
     /// Matching operation-header input binding.
@@ -4361,7 +4421,7 @@ pub fn feature_operation_state_journal_uses(
             .id
             .strip_prefix("nx:feature-history:operation-state-journal-group#")
             .unwrap_or(group.id.as_str());
-        uses.push(FeatureOperationStateJournalUse {
+        let Ok(usage) = FeatureOperationStateJournalUse::try_from(FeatureOperationStateJournalUseWire {
             id: format!(
                 "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
             ),
@@ -4375,7 +4435,10 @@ pub fn feature_operation_state_journal_uses(
             journal_state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
             journal_source_offset: row.offset(),
-        });
+        }) else {
+            continue;
+        };
+        uses.push(usage);
     }
     uses
 }
@@ -4739,7 +4802,8 @@ pub fn feature_input_block_identity_groups(
 }
 
 type ColumnTableByRow<'a> = BTreeMap<&'a str, Option<&'a str>>;
-type ColumnSlotsByBlock<'a> = BTreeMap<&'a str, Vec<(&'a str, ColumnIndexRowKind, usize, u64)>>;
+type ColumnSlotsByBlock<'a> =
+    BTreeMap<&'a str, Vec<(&'a str, ColumnIndexRowKind, ColumnRowSlot, u64)>>;
 
 fn column_relations_by_block<'a>(
     index_rows: &'a [DataBlockIndexRow],
@@ -4761,7 +4825,7 @@ fn column_relations_by_block<'a>(
     }
     let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
-        for (slot, token) in row.frame.indices().into_iter().enumerate() {
+        for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
             slots_by_block.entry(token.target).or_default().push((
                 row.id.as_str(),
                 ColumnIndexRowKind::Index,
@@ -4771,9 +4835,9 @@ fn column_relations_by_block<'a>(
         }
     }
     for row in linked_rows {
-        for (slot, token) in std::iter::once(row.frame.target_index())
-            .chain(row.frame.indices())
-            .enumerate()
+        for (slot, token) in ColumnRowSlot::ALL
+            .into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
             slots_by_block.entry(token.target).or_default().push((
                 row.id.as_str(),
@@ -4784,9 +4848,9 @@ fn column_relations_by_block<'a>(
         }
     }
     for row in target_rows {
-        for (slot, token) in std::iter::once(row.frame.target_index())
-            .chain(row.frame.indices())
-            .enumerate()
+        for (slot, token) in ColumnRowSlot::ALL
+            .into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
             slots_by_block.entry(token.target).or_default().push((
                 row.id.as_str(),
@@ -4833,7 +4897,7 @@ pub fn feature_input_column_row_uses(
                             .get(row)
                             .and_then(|table| *table)
                             .map(str::to_string),
-                        row_slot: *slot as u8,
+                        row_slot: *slot,
                         data_block: input.data_block.clone(),
                         source_offset: *source_offset,
                     },
@@ -4859,10 +4923,7 @@ pub fn feature_datum_csys_column_row_uses(
     constructions
         .iter()
         .flat_map(|construction| {
-            construction
-                .frame
-                .references()
-                .enumerate()
+            DatumCsysSlot::ALL.into_iter().zip(construction.frame.references())
                 .flat_map(|(construction_slot, (_, data_block, source_offset))| {
                     slots_by_block
                         .get(data_block.as_str())
@@ -4881,14 +4942,14 @@ pub fn feature_datum_csys_column_row_uses(
                                 ),
                                 construction: construction.id.clone(),
                                 operation_label: construction.operation_label.clone(),
-                                construction_slot: construction_slot as u8,
+                                construction_slot,
                                 row_kind: *row_kind,
                                 column_row: (*row).to_string(),
                                 column_table: table_by_row
                                     .get(row)
                                     .and_then(|table| *table)
                                     .map(str::to_string),
-                                row_slot: *row_slot as u8,
+                                row_slot: *row_slot,
                                 data_block: data_block.clone(),
                                 construction_source_offset: source_offset,
                                 row_source_offset: *row_source_offset,
@@ -4914,7 +4975,7 @@ pub fn feature_input_column_targets(
                 .iter()
                 .filter(|use_| {
                     use_.input_block == input.id
-                        && use_.row_slot == 0
+                        && use_.row_slot == ColumnRowSlot::Zero
                         && use_.row_kind != ColumnIndexRowKind::Index
                 })
                 .filter_map(|use_| Some((use_, use_.column_table.as_ref()?)))
@@ -5390,7 +5451,10 @@ pub fn feature_datum_csys_block_uses(
 ) -> Vec<FeatureDatumCsysBlockUse> {
     let mut uses = Vec::new();
     for construction in constructions {
-        for (reference_ordinal, reference) in construction.frame.members().iter().enumerate() {
+        for (reference_ordinal, reference) in DatumCsysSlot::ALL
+            .into_iter()
+            .zip(construction.frame.members())
+        {
             let data_block = &reference.1;
             for input in inputs
                 .iter()
@@ -5411,7 +5475,7 @@ pub fn feature_datum_csys_block_uses(
                     ),
                     construction: construction.id.clone(),
                     construction_operation_label: construction.operation_label.clone(),
-                    reference_ordinal: reference_ordinal as u8,
+                    reference_ordinal,
                     data_block: data_block.clone(),
                     input_binding: input.id.clone(),
                     input_operation_label: input.operation_label.clone(),

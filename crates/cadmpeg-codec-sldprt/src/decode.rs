@@ -2817,10 +2817,11 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model.tessellations.push(
-                mesh.into_tessellation(id)
-                    .expect("decoded SLDPRT display mesh is a valid tessellation"),
-            );
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(id).map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?);
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
@@ -2872,7 +2873,7 @@ fn build_geometry_ir(
     );
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
-    ));
+    )?);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
         annotation_builder.derived(&id, "body").derived(id, "faces");

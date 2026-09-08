@@ -80,7 +80,6 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         edges.insert(
             edge_ref,
             E5Edge {
-                record_id: edge_ref,
                 support: 0,
                 start_vertex,
                 end_vertex,

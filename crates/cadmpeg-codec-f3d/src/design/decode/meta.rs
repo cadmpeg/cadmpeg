@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
-use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
 
@@ -42,17 +42,34 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
+struct MetaStreamEntry<'a> {
+    entry: &'a ContainerEntry,
+    prefix: &'a str,
+}
+
+impl<'a> MetaStreamEntry<'a> {
+    fn from_design_entry(scan: &ContainerScan, entry: &'a ContainerEntry) -> Option<Self> {
+        if !scan.is_design_stream(entry, ContainerRole::Metastream) {
+            return None;
+        }
+        Some(Self {
+            entry,
+            prefix: entry.name.strip_suffix("MetaStream.dat")?,
+        })
+    }
+}
+
 /// Decode the type table of every Design `MetaStream` entry.
 pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
+        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&entry.name)?;
+        let meta = scan.parsed_metastream(&entry.entry.name)?;
         out.extend(meta.types.iter().cloned().map(|mut design_type| {
-            design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
+            design_type.id = ids::native_design_type_id(&entry.entry.name, design_type.byte_offset);
             design_type
         }));
     }
@@ -93,9 +110,9 @@ pub fn decode_component_naming_spaces(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
+        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&meta_entry.name)?;
+        let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
         let component_entities = meta
             .types
             .iter()
@@ -119,10 +136,7 @@ pub fn decode_component_naming_spaces(
         if component_entities.is_empty() {
             continue;
         }
-        let prefix = meta_entry
-            .name
-            .strip_suffix("MetaStream.dat")
-            .expect("filtered MetaStream entry has the expected basename");
+        let prefix = meta_entry.prefix;
         let bulk_name = format!("{prefix}BulkStream.dat");
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
@@ -544,9 +558,12 @@ pub fn decode_feature_timelines(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
+        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
+        let meta = crate::metastream::parse(
+            scan.entry_bytes(&meta_entry.entry.name)?,
+            &meta_entry.entry.name,
+        )?;
         let timeline_types = meta
             .types
             .iter()
@@ -586,10 +603,7 @@ pub fn decode_feature_timelines(
                 "Design MetaStream record offsets are not strictly increasing".into(),
             ));
         }
-        let prefix = meta_entry
-            .name
-            .strip_suffix("MetaStream.dat")
-            .expect("filtered MetaStream entry has the expected basename");
+        let prefix = meta_entry.prefix;
         let bulk_name = format!("{prefix}BulkStream.dat");
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();

@@ -590,6 +590,11 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     assert_eq!(relation.journal_state_ordinal, 7);
     assert_eq!(relation.operation_source_offset, 420);
     assert_eq!(relation.journal_source_offset, 520);
+    let mut wire = serde_json::to_value(relation).unwrap();
+    let admitted: FeatureOperationStateJournalUse = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(&admitted, relation);
+    wire["journal_state_ordinal"] = serde_json::json!(8);
+    assert!(serde_json::from_value::<FeatureOperationStateJournalUse>(wire).is_err());
 }
 
 #[test]
