@@ -61,7 +61,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
                 Vector3::new(1.0, 0.0, 0.0),
                 1.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         ),
         source_object: None,
     }
@@ -76,7 +76,7 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
                 [0.0, 0.0, 1.0].into(),
                 [1.0, 0.0, 0.0].into(),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     }
@@ -218,7 +218,7 @@ fn counterbore_source_patches_require_a_complete_carrier_pair() {
             Vector3::new(1.0, 0.0, 0.0),
             0.3125,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let sources = vec![vec![10, 11], vec![30, 31]];
     let existing = BTreeMap::from([(30, carrier)]);
@@ -260,7 +260,7 @@ fn corner_envelopes_construct_dimensioned_source_cylinders() {
                 Vector3::new(1.0, 0.0, 0.0),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         )
     };
     assert_eq!(

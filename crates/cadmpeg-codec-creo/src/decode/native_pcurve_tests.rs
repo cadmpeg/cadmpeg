@@ -30,7 +30,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -59,7 +59,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let cylinder = SurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::CylinderSurface::try_new(
@@ -68,7 +68,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let cone = SurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -79,7 +79,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             0.5,
             0.25,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let sphere = SurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
@@ -88,7 +88,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
 
     assert!(matches!(
@@ -141,7 +141,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             3.0,
             1.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     assert!(
         matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]), Some(CurveGeometry::Circle(circle_curve))
@@ -194,7 +194,7 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
             Point3::new(a[0], a[1], a[2]),
             Vector3::new(0.0, 1.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert_eq!(
         solve_pcurve_vertex_domains(
@@ -234,7 +234,7 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
             Point3::new(9.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let constraints = [([1, 2], [witness, adjacent])];
     let analytic_domains = BTreeMap::from([(1, vec![[9.0, 0.0, 0.0]])]);
@@ -322,7 +322,7 @@ fn plane() -> SurfaceGeometry {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     )
 }
 
@@ -391,7 +391,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     assert_eq!(
         unique_oriented_native_pcurve(
@@ -421,7 +421,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
             Vector3::new(0.0, 1.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(
         matches!(planar_curve_pcurve(&plane(), &circle), Some(PcurveGeometry::Circle(circle_pcurve))
@@ -460,7 +460,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
             Point3::new(0.0, 0.0, 3.1),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert!(planar_curve_pcurve(&plane(), &off_plane).is_none());
 }
@@ -474,7 +474,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let circle = CurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -483,7 +483,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
             Vector3::new(0.0, 1.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cylinder pcurve");
     let PcurveGeometry::Line(line_pcurve) = &pcurve else {
@@ -502,7 +502,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
             Vector3::new(0.0, 1.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(surface_of_revolution_parallel_pcurve(&surface, &off_axis).is_none());
 }
@@ -518,7 +518,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
             1.0,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     for (height, radius, expected_phase) in [(3.0, 5.0, 0.0), (-3.0, 1.0, std::f64::consts::PI)] {
         let circle = CurveGeometry::Circle(
@@ -528,7 +528,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
                 Vector3::new(1.0, 0.0, 0.0),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         let pcurve =
             surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cone section pcurve");
@@ -552,7 +552,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
             0.5,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let circle = CurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -561,7 +561,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
             Vector3::new(1.0, 0.0, 0.0),
             5.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(surface_of_revolution_parallel_pcurve(&elliptical, &circle).is_none());
     for (height, major_radius, minor_radius, expected_phase) in
@@ -575,7 +575,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
                 major_radius,
                 minor_radius,
             )
-            .unwrap(),
+            .expect("valid EllipseCurve fixture"),
         );
         let pcurve = surface_of_revolution_parallel_pcurve(&elliptical, &ellipse)
             .expect("elliptical cone parallel pcurve");
@@ -600,7 +600,7 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
             Vector3::new(1.0, 0.0, 0.0),
             5.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     for axial in [-3.0, 3.0] {
         let circle = CurveGeometry::Circle(
@@ -610,7 +610,7 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
                 Vector3::new(0.0, 1.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
             .expect("sphere latitude pcurve");
@@ -631,7 +631,7 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
             Vector3::new(1.0, 0.0, 0.0),
             4.1,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(surface_of_revolution_parallel_pcurve(&surface, &invalid_circle).is_none());
 }
@@ -650,7 +650,7 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
                 major_radius,
                 minor_radius,
             )
-            .unwrap(),
+            .expect("valid TorusSurface fixture"),
         );
         let circle = CurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -659,7 +659,7 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
                 Vector3::new(1.0, 0.0, 0.0),
                 circle_radius,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
         let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
             .expect("torus parallel pcurve");
@@ -686,7 +686,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
             4.0,
             1.5,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     let circle = CurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -695,7 +695,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
             Vector3::new(0.0, 0.0, 1.0),
             1.5,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let pcurve = meridian_circle_pcurve(&surface, &circle).expect("meridian pcurve");
     let PcurveGeometry::Line(line_pcurve) = &pcurve else {
@@ -714,7 +714,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
             Vector3::new(0.0, 0.0, 1.0),
             1.5,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(meridian_circle_pcurve(&surface, &displaced).is_none());
 }
@@ -728,7 +728,7 @@ fn projects_sphere_meridians_through_both_poles() {
             Vector3::new(1.0, 0.0, 0.0),
             5.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let circle = CurveGeometry::Circle(
         cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -737,7 +737,7 @@ fn projects_sphere_meridians_through_both_poles() {
             Vector3::new(0.0, 0.0, 1.0),
             5.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let pcurve = meridian_circle_pcurve(&surface, &circle).expect("sphere meridian pcurve");
     let PcurveGeometry::Line(line_pcurve) = &pcurve else {
@@ -767,7 +767,7 @@ fn projects_sphere_meridians_through_both_poles() {
             Vector3::new(0.0, 0.0, 1.0),
             4.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(meridian_circle_pcurve(&surface, &small_circle).is_none());
 }
@@ -781,14 +781,16 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let cylinder_line = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 4.0, 8.0),
-            Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+            Vector3::new(0.0, 0.0, -2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let pcurve =
         ruled_generator_line_pcurve(&cylinder, &cylinder_line).expect("cylinder generator pcurve");
@@ -803,9 +805,11 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let tiny_skew = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(1.0, 4.0, 8.0),
-            Vector3::new(1e-13, 0.0, 1e-13).unit().unwrap(),
+            Vector3::new(1e-13, 0.0, 1e-13)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert!(ruled_generator_line_pcurve(&cylinder, &tiny_skew).is_none());
 
@@ -818,14 +822,16 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
             1.0,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let cone_line = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(0.0, 5.0, 3.0),
-            Vector3::new(0.0, 2.0, 2.0).unit().unwrap(),
+            Vector3::new(0.0, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let pcurve = ruled_generator_line_pcurve(&cone, &cone_line).expect("cone generator pcurve");
     let PcurveGeometry::Line(line_pcurve) = &pcurve else {
@@ -847,7 +853,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
             0.5,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let root_half = std::f64::consts::FRAC_1_SQRT_2;
     let elliptical_generator = CurveGeometry::Line(
@@ -855,9 +861,9 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
             Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
             Vector3::new(2.0 * root_half, root_half, 2.0)
                 .unit()
-                .unwrap(),
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let pcurve = ruled_generator_line_pcurve(&elliptical_cone, &elliptical_generator)
         .expect("elliptical cone generator pcurve");
@@ -879,9 +885,11 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let skew = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(0.0, 5.0, 3.0),
-            Vector3::new(0.1, 2.0, 2.0).unit().unwrap(),
+            Vector3::new(0.1, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     assert!(ruled_generator_line_pcurve(&cone, &skew).is_none());
 }

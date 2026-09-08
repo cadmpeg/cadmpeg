@@ -15,7 +15,7 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
             2.0,
             5.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),

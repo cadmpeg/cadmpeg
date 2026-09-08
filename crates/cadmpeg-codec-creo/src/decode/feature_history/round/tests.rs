@@ -135,7 +135,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -161,8 +161,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             let (origin, normal, u_axis) = plane_surface.parts();
             let mut origin = *origin;
             origin.x = 0.25;
-            *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred plane geometry"),
     }
@@ -280,7 +280,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                     1.0,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             ),
             source_object: None,
         },
@@ -293,7 +293,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -360,7 +360,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -372,8 +372,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             let (origin, normal, u_axis) = plane_surface.parts();
             let mut origin = *origin;
             origin.x = -8.5;
-            *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred support plane"),
     }
@@ -384,8 +384,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             let (origin, normal, u_axis) = plane_surface.parts();
             let mut origin = *origin;
             origin.x = -9.0;
-            *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred support plane"),
     }
@@ -497,7 +497,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -511,7 +511,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     3.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -573,7 +573,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     0.5,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });
@@ -630,7 +630,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     radius,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });
@@ -645,7 +645,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         let radius = 0.75;
         *cylinder_surface =
             cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-                .unwrap();
+                .expect("valid CylinderSurface fixture");
     }
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
     ir.model.surfaces.pop();

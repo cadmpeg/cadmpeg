@@ -53,6 +53,8 @@ const EPS_FILLET_CIRCLE: f64 = 1.0e-12;
 
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
+const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
+
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::FeatureSegment {
@@ -427,7 +429,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -442,7 +444,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     1.0,
                     0.5,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             ),
             source_object: None,
         },
@@ -455,7 +457,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid SphereSurface fixture"),
             ),
             source_object: None,
         },
@@ -533,7 +535,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             *ratio,
             *half_angle,
         )
-        .unwrap();
+        .expect("valid ConeSurface fixture");
     }
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
     if let SurfaceGeometry::Cone(cone_surface) = &mut ir.model.surfaces[1].geometry {
@@ -548,7 +550,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             *ratio,
             *half_angle,
         )
-        .unwrap();
+        .expect("valid ConeSurface fixture");
     }
     let SurfaceGeometry::Sphere(sphere_surface) = &mut ir.model.surfaces[2].geometry else {
         unreachable!();
@@ -558,7 +560,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     center.z = 1.0;
     *sphere_surface =
         cadmpeg_ir::geometry::SphereSurface::try_new(center, *axis, *ref_direction, *radius)
-            .unwrap();
+            .expect("valid SphereSurface fixture");
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
 }
 
@@ -1668,17 +1670,13 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         minor_radius: 3.0 / 2.0_f64.sqrt(),
     });
     let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
-    assert!(match tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                (center.z - 1.5).abs() < 1.0e-12 && (radius - 3.5).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            (center.z - 1.5).abs() < EPS_CONIC_INTERSECTION && (radius - 3.5).abs() < EPS_CONIC_INTERSECTION
+        })
+    );
     assert!(
         matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_torus_circle"))
         if {
@@ -1718,22 +1716,16 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
     assert_eq!(candidates.len(), 2);
     assert!(resolve_curve_candidates(candidates.clone(), None).is_none());
     assert!(
-        match select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]) {
-            Some((
-                CurveGeometry::Circle(circle_curve),
-                "axis_containing_plane_torus_meridian_circle",
-            )) if {
-                let (center, _, _, radius) = circle_curve.parts();
-                (center.x - 3.0).abs() < 1.0e-12
-                    && center.y.abs() < 1.0e-12
-                    && center.z.abs() < 1.0e-12
-                    && (radius - 1.0).abs() < 1.0e-12
-            } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]), Some((
+            CurveGeometry::Circle(circle_curve),
+            "axis_containing_plane_torus_meridian_circle",
+        )) if {
+            let (center, _, _, radius) = circle_curve.parts();
+            (center.x - 3.0).abs() < EPS_CONIC_INTERSECTION
+                && center.y.abs() < EPS_CONIC_INTERSECTION
+                && center.z.abs() < EPS_CONIC_INTERSECTION
+                && (radius - 1.0).abs() < EPS_CONIC_INTERSECTION
+        })
     );
 
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
@@ -1859,19 +1851,15 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert_eq!(candidates.len(), 2);
     let selected = select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 3.0, 4.0]])
         .expect("selected coaxial elliptical-cone section");
-    assert!(match &selected {
-        (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
-            if {
-                let (center, _, _, major_radius, minor_radius) = ellipse_curve.parts();
-                (center.z - 4.0).abs() < 1.0e-12
-                    && (major_radius - 6.0).abs() < 1.0e-12
-                    && (minor_radius - 3.0).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(&selected, (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
+        if {
+            let (center, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            (center.z - 4.0).abs() < EPS_CONIC_INTERSECTION
+                && (major_radius - 6.0).abs() < EPS_CONIC_INTERSECTION
+                && (minor_radius - 3.0).abs() < EPS_CONIC_INTERSECTION
+        })
+    );
     for parameter in [-1.0, 0.0, 1.0] {
         let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
             .expect("coaxial cone ellipse point");
@@ -1905,19 +1893,15 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert_eq!(candidates.len(), 2);
     let selected = select_unique_curve_candidate(candidates, [[14.0, 0.0, 12.0], [0.0, 7.0, 12.0]])
         .expect("selected reciprocal-frame cone section");
-    assert!(match &selected {
-        (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
-            if {
-                let (center, _, _, major_radius, minor_radius) = ellipse_curve.parts();
-                (center.z - 12.0).abs() < 1.0e-12
-                    && (major_radius - 14.0).abs() < 1.0e-12
-                    && (minor_radius - 7.0).abs() < 1.0e-12
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(&selected, (CurveGeometry::Ellipse(ellipse_curve), "coaxial_cones_ellipse")
+        if {
+            let (center, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            (center.z - 12.0).abs() < EPS_CONIC_INTERSECTION
+                && (major_radius - 14.0).abs() < EPS_CONIC_INTERSECTION
+                && (minor_radius - 7.0).abs() < EPS_CONIC_INTERSECTION
+        })
+    );
     for parameter in [-1.0, 0.0, 1.0] {
         let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
             .expect("reciprocal-frame section point");

@@ -1337,7 +1337,7 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     assert_eq!(
         cylinder_from_complementary_outline_bounds(&plane, bounds),
@@ -1348,7 +1348,7 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
                 Vector3::new(1.0, 0.0, 0.0),
                 0.3125
             )
-            .unwrap()
+            .expect("valid CylinderSurface fixture")
         ))
     );
 }
@@ -1361,7 +1361,7 @@ fn split_outline_carrier_requires_complementary_square_bounds() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     assert!(cylinder_from_complementary_outline_bounds(
         &plane,
@@ -1689,7 +1689,7 @@ fn geometry_signal_excludes_opaque_carriers() {
             },
             None,
         )
-        .unwrap(),
+        .expect("valid ProceduralSurface fixture"),
     );
 
     assert!(has_transferred_geometry(&ir));

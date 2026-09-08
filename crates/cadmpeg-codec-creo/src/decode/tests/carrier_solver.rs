@@ -301,17 +301,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
     let cylinder_sphere_tangent_candidates =
         coaxial_cylinder_sphere_circle_candidates(cylinder, sphere);
-    assert!(match cylinder_sphere_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_sphere_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(cylinder_sphere_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_sphere_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
+        })
+    );
     assert_eq!(
         solve_carriers(&[cylinder, sphere, tangent]),
         Some([2.0, 0.0, 0.0])
@@ -546,17 +542,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
     let cone_sphere_tangent_candidates =
         coaxial_cone_sphere_circle_candidates(cone, cone_tangent_sphere);
-    assert!(match cone_sphere_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_cone_sphere_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                center.z == -1.0 && *radius == 1.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(cone_sphere_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cone_sphere_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            center.z == -1.0 && *radius == 1.0
+        })
+    );
     let cone_sphere_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [1.0, 0.0, 0.0],
         normal: [1.0, 0.0, 0.0],
@@ -690,46 +682,32 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             }));
     let plane_torus_tangent_candidates =
         axis_normal_plane_torus_circle_candidates(torus_tangent, torus);
-    assert!(match plane_torus_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "plane_torus_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 2.0) && *radius == 5.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(plane_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "plane_torus_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 2.0) && *radius == 5.0
+        })
+    );
     let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
     assert!(
-        match carrier_intersection_curve(outer_tangent_cylinder, torus) {
-            Some((
-                CurveGeometry::Circle(circle_curve),
-                "coaxial_cylinder_torus_tangent_circle",
-            )) if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
-            } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(carrier_intersection_curve(outer_tangent_cylinder, torus), Some((
+            CurveGeometry::Circle(circle_curve),
+            "coaxial_cylinder_torus_tangent_circle",
+        )) if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        })
     );
     let cylinder_torus_tangent_candidates =
         coaxial_cylinder_torus_circle_candidates(outer_tangent_cylinder, torus);
-    assert!(match cylinder_torus_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_torus_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(cylinder_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_torus_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        })
+    );
     let secant_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 6.0);
     let cylinder_torus_candidates =
         coaxial_cylinder_torus_circle_candidates(secant_cylinder, torus);
@@ -766,17 +744,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
     let sphere_torus_tangent_candidates =
         coaxial_sphere_torus_circle_candidates(torus_tangent_sphere, torus);
-    assert!(match sphere_torus_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_sphere_torus_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 0.0) && *radius == 3.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(sphere_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_sphere_torus_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 0.0) && *radius == 3.0
+        })
+    );
     let torus_secant_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
         ref_direction: [1.0, 0.0, 0.0],
@@ -859,17 +833,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         })
     );
     let tori_tangent_candidates = coaxial_tori_circle_candidates(torus, second_torus);
-    assert!(match tori_tangent_candidates.as_slice() {
-        [(CurveGeometry::Circle(circle_curve), "coaxial_tori_tangent_circle")]
-            if {
-                let (center, _, _, radius) = circle_curve.parts();
-                *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
-            } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(
+        matches!(tori_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_tori_tangent_circle")]
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        })
+    );
     let secant_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
         axis: [0.0, 0.0, 1.0],

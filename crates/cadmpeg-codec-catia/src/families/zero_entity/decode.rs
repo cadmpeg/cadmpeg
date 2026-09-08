@@ -996,7 +996,7 @@ mod tests {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(corner, Vector3::new(-1.0, 0.0, 0.0))
-                    .unwrap(),
+                    .expect("valid LineCurve fixture"),
             ),
             source_object: None,
         });
@@ -1057,7 +1057,7 @@ mod tests {
             &support_curve_ids,
             None,
         )
-        .unwrap();
+        .expect("closed wire fixture transfer");
 
         assert_eq!(counts.edges, 2);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
@@ -1078,7 +1078,8 @@ mod tests {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).unwrap(),
+                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
+                        .expect("valid LineCurve fixture"),
                 ),
                 source_object: None,
             });
@@ -1168,7 +1169,7 @@ mod tests {
             &support_curve_ids,
             Some(&ownership_root),
         )
-        .unwrap();
+        .expect("closed wire fixture transfer");
 
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.owned_bodies, 1);
@@ -1234,7 +1235,7 @@ mod tests {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid CircleCurve fixture"),
             ),
             source_object: None,
         });
@@ -1245,7 +1246,7 @@ mod tests {
                     corner,
                     first.vector_from(corner).scale(1.0 / chord),
                 )
-                .unwrap(),
+                .expect("valid LineCurve fixture"),
             ),
             source_object: None,
         });
@@ -1309,7 +1310,7 @@ mod tests {
             &support_curve_ids,
             None,
         )
-        .unwrap();
+        .expect("closed wire fixture transfer");
 
         assert_eq!(counts.loops, 1);
         assert_eq!(
@@ -1491,7 +1492,7 @@ mod tests {
             &HashMap::new(),
             None,
         )
-        .unwrap();
+        .expect("closed wire fixture transfer");
 
         assert_eq!(counts, WireTransferCounts::default());
         assert!(ir.model.bodies.is_empty());

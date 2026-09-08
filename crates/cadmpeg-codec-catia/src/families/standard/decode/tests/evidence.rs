@@ -72,7 +72,7 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         )
     };
     let edge_faces = [[0, 0]];
@@ -299,7 +299,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             tiny,
             std::f64::consts::FRAC_PI_6,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
@@ -313,7 +313,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             Vector3::new(1.0, 0.0, 0.0),
             -tiny,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
@@ -327,7 +327,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             Vector3::new(1.0, 0.0, 0.0),
             -2.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let signed_sphere_point =
         surface_point(&signed_sphere, 0.5, 0.25).expect("signed sphere point");
@@ -341,7 +341,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
             5.0,
             -2.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point");
     assert!(point_on_surface(torus_point, &torus));
@@ -782,7 +782,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     };
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
@@ -793,7 +793,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             )),
             crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -801,7 +801,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             )),
         ],
         pcurves: [pcurve.clone(), pcurve],
@@ -848,7 +848,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .collect::<Vec<_>>();
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
@@ -859,7 +859,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             )),
             crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -867,7 +867,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             )),
         ],
         pcurves: [pcurve.clone(), pcurve],
@@ -886,14 +886,14 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
                     Point2::new(5.0, 0.0),
                     Point2::new(-1.0, 0.0)
                 )
-                .unwrap()
+                .expect("valid LinePcurve fixture")
             ),
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(
                     Point2::new(5.0, 0.0),
                     Point2::new(-1.0, 0.0)
                 )
-                .unwrap()
+                .expect("valid LinePcurve fixture")
             ),
         ])
     );
@@ -905,7 +905,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     let mut reversed = native.clone();
     reversed.pcurves[1] = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(5.0, 0.0), Point2::new(-1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
         standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None),
@@ -926,7 +926,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     let mut disagreeing = native.clone();
     disagreeing.pcurves[1] = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
         standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
@@ -980,7 +980,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -1139,7 +1139,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         ),
         source_object: None,
     });
@@ -1185,11 +1185,11 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     let native = StandardEdgeSupport {
         surface_object_ids: [20, 21],
@@ -1217,7 +1217,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     let mut disagreeing = native.clone();
     disagreeing.pcurves[1] = PcurveGeometry::Line(
         cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
     );
     assert!(native_support_circle_param_range(
         &disagreeing,
@@ -1385,7 +1385,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
                     normal,
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -1450,7 +1450,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -1524,7 +1524,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
                     Vector3::new(1.0, 0.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });

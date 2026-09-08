@@ -591,7 +591,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };
@@ -1069,7 +1069,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };
@@ -1273,7 +1273,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -1637,7 +1637,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 Vector3::new(1.0, 0.0, 0.0),
                 1.5,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         ),
     };
 
@@ -1691,7 +1691,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
             Vector3::new(1.0, 0.0, 0.0),
             4.5,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
 
     assert_eq!(
@@ -1708,7 +1708,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
     let ref_direction = Vector3::new(0.0, 0.0, 1.0);
     *cylinder_surface =
         cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, ref_direction, *radius)
-            .unwrap();
+            .expect("valid CylinderSurface fixture");
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None

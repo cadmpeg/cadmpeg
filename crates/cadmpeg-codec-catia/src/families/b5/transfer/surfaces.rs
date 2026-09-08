@@ -886,7 +886,7 @@ mod tests {
                                 Vector3::new(1.0, 0.0, 0.0),
                                 Vector3::new(0.0, 1.0, 0.0),
                             )
-                            .unwrap(),
+                            .expect("valid PlaneSurface fixture"),
                         ),
                         pcurve: pcurve(0.0),
                         pcurve_parameter_range: [0.0, 1.0],
@@ -900,7 +900,7 @@ mod tests {
                                 Vector3::new(0.0, 1.0, 0.0),
                                 Vector3::new(1.0, 0.0, 0.0),
                             )
-                            .unwrap(),
+                            .expect("valid PlaneSurface fixture"),
                         ),
                         pcurve: pcurve(1.0),
                         pcurve_parameter_range: [0.25, 0.75],
@@ -925,7 +925,7 @@ mod tests {
             30,
             extrusion,
         )
-        .unwrap();
+        .expect("extrusion fixture transfer");
 
         assert!(matches!(
             &ir.model.curves[0].geometry,

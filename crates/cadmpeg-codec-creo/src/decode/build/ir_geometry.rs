@@ -742,7 +742,7 @@ mod tests {
                     Vector3::new(1.0, 0.0, 0.0),
                     5.0,
                 )
-                .unwrap(),
+                .expect("valid CircleCurve fixture"),
             ),
             source_object: None,
         });
@@ -755,7 +755,7 @@ mod tests {
                     Vector3::new(1.0, 0.0, 0.0),
                     5.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });

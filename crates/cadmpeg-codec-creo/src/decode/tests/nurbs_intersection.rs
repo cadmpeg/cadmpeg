@@ -134,7 +134,7 @@ fn source_ir() -> CadIr {
                     Vector3::new(1.0, 0.0, 0.0),
                     3.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -146,7 +146,7 @@ fn source_ir() -> CadIr {
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -158,7 +158,7 @@ fn source_ir() -> CadIr {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         },
@@ -171,7 +171,7 @@ fn source_ir() -> CadIr {
                     Vector3::new(1.0, 0.0, 0.0),
                     3.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },

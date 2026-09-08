@@ -2944,7 +2944,7 @@ mod tests {
             &crate::wire::records::consolidated_records(&bytes),
             &HashMap::new(),
         )
-        .unwrap();
+        .expect("freeform fixture transfer");
 
         assert!(matches!(
             ir.model.curves.as_slice(),
@@ -3012,12 +3012,12 @@ mod tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             )
         };
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .unwrap(),
+                .expect("valid LinePcurve fixture"),
         );
         let resolved = plane(0.0);
         let matching = plane(0.001);
@@ -3056,7 +3056,7 @@ mod tests {
                     1.0,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             )
         };
         let apex_form = cone(Point3::new(111.0, 0.0, 0.0), 0.0);
@@ -3078,7 +3078,7 @@ mod tests {
                     1.0,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             )
         };
         let source = cone(Point3::new(107.5, 0.0, 0.0), 3.5);
@@ -3088,7 +3088,7 @@ mod tests {
                 Point2::new(0.25, 1.5),
                 Point2::new(2.0, -0.5),
             )
-            .unwrap(),
+            .expect("valid LinePcurve fixture"),
         );
         assert_eq!(
             rechart_equivalent_surface_pcurve(&pcurve, &source, &target)
@@ -3098,7 +3098,7 @@ mod tests {
                     Point2::new(0.25, 5.0),
                     Point2::new(2.0, -0.5)
                 )
-                .unwrap()
+                .expect("valid LinePcurve fixture")
             ))
         );
     }
@@ -3115,7 +3115,7 @@ mod tests {
                     1.0,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             )
         };
         let shift = f64::MAX * 0.5;
@@ -3170,7 +3170,7 @@ mod tests {
             .next()
             .expect("one exact cylinder")
             .surface_geometry()
-            .unwrap();
+            .expect("valid cylinder fixture");
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
@@ -3279,11 +3279,11 @@ mod tests {
                         [0.0, 1.0],
                         std::array::from_fn(|_| Vec::new()),
                     )
-                    .unwrap(),
+                    .expect("valid IntcurveSupportContext fixture"),
                     discontinuity_flag: false,
                 },
             )
-            .unwrap(),
+            .expect("valid ProceduralCurve fixture"),
         );
 
         let attached = append_resolved_consolidated_surface_curves(
@@ -3295,7 +3295,7 @@ mod tests {
             &[],
             &HashMap::new(),
         )
-        .unwrap();
+        .expect("consolidated curve fixture transfer");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
         assert_eq!(ir.model.pcurves.len(), 0);
@@ -3345,7 +3345,7 @@ mod tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
@@ -3359,7 +3359,7 @@ mod tests {
             &[],
             &HashMap::new(),
         )
-        .unwrap();
+        .expect("consolidated curve fixture transfer");
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3401,7 +3401,7 @@ mod tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
@@ -3415,7 +3415,7 @@ mod tests {
             &[],
             &HashMap::from([(0x5678, Some(0x1234))]),
         )
-        .unwrap();
+        .expect("consolidated curve fixture transfer");
 
         assert_eq!(counts.standard_edges, 0);
         let [procedural] = ir.model.procedural_curves.as_slice() else {
@@ -3444,7 +3444,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
             ),
             (
@@ -3455,7 +3455,7 @@ mod tests {
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid PlaneSurface fixture"),
                 ),
             ),
             ("unknown", SurfaceGeometry::Unknown { record: None }),
@@ -3524,7 +3524,7 @@ mod tests {
                 Vector3::new(0.0, -1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let support_ids = [
             SurfaceId::mint("catia:test:surface#standard-plane%230".to_string())
@@ -3555,11 +3555,11 @@ mod tests {
                         [0.0, 1.0],
                         std::array::from_fn(|_| Vec::new()),
                     )
-                    .unwrap(),
+                    .expect("valid IntcurveSupportContext fixture"),
                     discontinuity_flag: false,
                 },
             )
-            .unwrap(),
+            .expect("valid ProceduralCurve fixture"),
         );
 
         let attached = append_resolved_consolidated_surface_curves(
@@ -3571,7 +3571,7 @@ mod tests {
             &[],
             &HashMap::new(),
         )
-        .unwrap();
+        .expect("consolidated curve fixture transfer");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -3599,7 +3599,8 @@ mod tests {
         let u_axis = Vector3::new(0.0, 1.0, 0.0);
         let normal = Vector3::new(1.0, 0.0, 0.0);
         let target = SurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
+                .expect("valid PlaneSurface fixture"),
         );
         // Sites in the target chart, deliberately not collinear so the
         // isometry between the charts is uniquely determined.
@@ -3761,19 +3762,15 @@ mod tests {
         let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(match carriers.as_slice() {
-            [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
-                if {
-                    let (center, axis, ref_direction, _) = sphere_surface.parts();
-                    (*sphere_surface.parts().3 == 5.0)
-                        && (*center == Point3::new(1.0, 2.0, 3.0)
-                            && *axis == Vector3::new(0.0, 0.0, 1.0)
-                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-                }) =>
-                true,
-            _ => false,
-        });
+        assert!(matches!(carriers.as_slice(), [carrier]
+        if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
+        if {
+            let (center, axis, ref_direction, _) = sphere_surface.parts();
+            (*sphere_surface.parts().3 == 5.0)
+                && (*center == Point3::new(1.0, 2.0, 3.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+        })));
     }
 
     #[test]
@@ -3781,20 +3778,16 @@ mod tests {
         let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(match carriers.as_slice() {
-            [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
-                if {
-                    let (center, axis, ref_direction, _, _) = torus_surface.parts();
-                    (*torus_surface.parts().3 == 7.0)
-                        && (*torus_surface.parts().4 == 2.0)
-                        && (*center == Point3::new(1.0, 2.0, 3.0)
-                            && *axis == Vector3::new(0.0, 0.0, 1.0)
-                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-                }) =>
-                true,
-            _ => false,
-        });
+        assert!(matches!(carriers.as_slice(), [carrier]
+        if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
+        if {
+            let (center, axis, ref_direction, _, _) = torus_surface.parts();
+            (*torus_surface.parts().3 == 7.0)
+                && (*torus_surface.parts().4 == 2.0)
+                && (*center == Point3::new(1.0, 2.0, 3.0)
+                    && *axis == Vector3::new(0.0, 0.0, 1.0)
+                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+        })));
     }
 
     #[test]
@@ -3802,18 +3795,14 @@ mod tests {
         let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
-        assert!(match carriers.as_slice() {
-            [carrier]
-                if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-                if {
-                    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
-                    (*cylinder_surface.parts().3 == 4.0)
-                        && (*origin == Point3::new(0.0, 0.0, 0.0)
-                            && *axis == Vector3::new(0.0, 1.0, 0.0)
-                            && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
-                }) =>
-                true,
-            _ => false,
-        });
+        assert!(matches!(carriers.as_slice(), [carrier]
+        if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+            (*cylinder_surface.parts().3 == 4.0)
+                && (*origin == Point3::new(0.0, 0.0, 0.0)
+                    && *axis == Vector3::new(0.0, 1.0, 0.0)
+                    && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
+        })));
     }
 }

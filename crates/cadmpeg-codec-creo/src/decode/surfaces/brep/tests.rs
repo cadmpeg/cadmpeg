@@ -393,7 +393,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let make_loop = |first_curve| crate::topology::Loop {
         face_id: std::num::NonZeroU32::new(5),
@@ -479,7 +479,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let outer = crate::topology::Loop {
         face_id: std::num::NonZeroU32::new(5),
@@ -539,7 +539,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
                 Vector3::new(1.0, 0.0, 0.0),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         ),
         source_object: None,
     };
@@ -725,7 +725,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -741,8 +741,11 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         let curve = Curve {
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(origin, direction.unit().unwrap())
-                    .unwrap(),
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    origin,
+                    direction.unit().expect("valid LineCurve fixture"),
+                )
+                .expect("valid LineCurve fixture"),
             ),
             source_object: None,
         };
@@ -818,7 +821,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -830,7 +833,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });

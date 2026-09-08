@@ -12,9 +12,9 @@ fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2])
                 .unit()
-                .unwrap(),
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     )
 }
 
@@ -52,7 +52,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     let tangent = line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]);
@@ -76,7 +76,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             3.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     );
     assert_eq!(
         line_conic_intersections(&secant, &ellipse),
@@ -90,7 +90,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid ParabolaCurve fixture"),
     );
     assert_eq!(
         line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
@@ -109,7 +109,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
             2.0,
             1.0,
         )
-        .unwrap(),
+        .expect("valid HyperbolaCurve fixture"),
     );
     let hyperbola_points =
         line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
@@ -139,7 +139,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
                 Vector3::new(reference[0], reference[1], reference[2]),
                 radius,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         )
     };
     let first = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
@@ -176,7 +176,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             3.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     );
     let ellipse_points = conic_conic_intersections(&first, &ellipse);
     assert_eq!(ellipse_points.len(), 2);
@@ -187,11 +187,13 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         cadmpeg_ir::geometry::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 1.0, 0.0).unit().unwrap(),
+            Vector3::new(1.0, 1.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
             3.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     );
     let larger_circle = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.5);
     let diagonal_points = conic_conic_intersections(&larger_circle, &diagonal_ellipse);
@@ -208,7 +210,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid ParabolaCurve fixture"),
     );
     let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
     let tangent_points = conic_conic_intersections(&parabola, &tangent_circle);

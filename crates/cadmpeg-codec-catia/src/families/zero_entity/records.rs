@@ -2334,7 +2334,7 @@ mod tests {
                 1.0,
                 half_angle,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let pcurve = test_pcurve(vec![Point2::new(0.0, 1.0), Point2::new(0.5, 2.0)]);
         let Some(ProceduralCurveDefinition::Helix(helix_payload)) =
@@ -2405,7 +2405,7 @@ mod tests {
                 1.0,
                 std::f64::consts::FRAC_PI_4,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let endpoints = [[0.0, -2.0], [1.0, -2.0]];
         let pcurve = test_pcurve(
@@ -2434,7 +2434,8 @@ mod tests {
         let x = Vector3::new(1.0, 0.0, 0.0);
         let z = Vector3::new(0.0, 0.0, 1.0);
         let cylinder = SurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(origin, z, x, 2.0).unwrap(),
+            cadmpeg_ir::geometry::CylinderSurface::try_new(origin, z, x, 2.0)
+                .expect("valid CylinderSurface fixture"),
         );
         let cone = SurfaceGeometry::Cone(
             cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -2445,10 +2446,11 @@ mod tests {
                 1.0,
                 std::f64::consts::FRAC_PI_4,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let torus = SurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(origin, z, x, 4.0, 2.0).unwrap(),
+            cadmpeg_ir::geometry::TorusSurface::try_new(origin, z, x, 4.0, 2.0)
+                .expect("valid TorusSurface fixture"),
         );
 
         let cylinder_point =
@@ -2482,7 +2484,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 2.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
         assert_eq!(
             zero_entity_neutral_pcurve(&cylinder, &pcurve),
@@ -2501,7 +2503,7 @@ mod tests {
                 1.0,
                 0.25,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&cone, &pcurve)
         else {
@@ -2518,7 +2520,7 @@ mod tests {
                 4.0,
                 2.0,
             )
-            .unwrap(),
+            .expect("valid TorusSurface fixture"),
         );
         let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&torus, &pcurve)
         else {

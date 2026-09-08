@@ -628,7 +628,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -716,7 +716,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
                 Vector3::new(1.0, 0.0, 0.0),
                 0.5,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         ),
         source_object: None,
     });
@@ -737,7 +737,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -755,7 +755,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         let radius = 0.75;
         *cylinder_surface =
             cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-                .unwrap();
+                .expect("valid CylinderSurface fixture");
     }
     assert_eq!(round_constant_radius(&scan, &ir, 913), None);
 }
@@ -789,7 +789,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
                     Vector3::new(1.0, 0.0, 0.0),
                     radius,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });
@@ -916,7 +916,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -973,7 +973,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
                     Vector3::new(1.0, 0.0, 0.0),
                     radius,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });
@@ -992,7 +992,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -1053,7 +1053,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
                     Vector3::new(1.0, 0.0, 0.0),
                     radius,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         });
@@ -1072,7 +1072,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -1448,7 +1448,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                 normal,
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };
@@ -1465,7 +1465,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             ),
             source_object: None,
         },
@@ -1672,7 +1672,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         std::f64::consts::FRAC_1_SQRT_2,
     );
     let u_axis = Vector3::new(1.0, 0.0, 0.0);
-    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(*origin, normal, u_axis).unwrap();
+    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(*origin, normal, u_axis)
+        .expect("valid PlaneSurface fixture");
     assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
@@ -1839,7 +1840,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };
@@ -1901,7 +1902,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     };

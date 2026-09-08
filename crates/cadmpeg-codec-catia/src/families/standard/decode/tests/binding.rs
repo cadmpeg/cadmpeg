@@ -200,7 +200,7 @@ fn same_cone_generator_requires_an_apex_collinear_endpoint_pair() {
             1.0,
             std::f64::consts::FRAC_PI_4,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     assert!(same_cone_generator_pair(
         &cone,
@@ -303,7 +303,7 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let right = SurfaceGeometry::Unknown { record: None };
     assert_eq!(
@@ -460,7 +460,7 @@ fn coincident_planes_do_not_impose_a_line_direction() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     assert!(intersection_line_direction(&plane, &plane).is_none());
 }
@@ -473,7 +473,7 @@ fn plane_intersection_preserves_tiny_nonzero_direction() {
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let right = SurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -481,7 +481,7 @@ fn plane_intersection_preserves_tiny_nonzero_direction() {
             Vector3::new(1.0, 1e-200, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     assert_eq!(
         intersection_line_direction(&left, &right),
@@ -513,7 +513,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
                 Vector3::new(1.0, 0.0, 0.0),
                 1.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         )
     };
     let containing_plane = SurfaceGeometry::Plane(
@@ -522,7 +522,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let transverse_plane = SurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -530,7 +530,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let axial = cylinder(Vector3::new(0.0, 0.0, 1.0));
     let oblique = cylinder(Vector3::new(0.0, 1.0, 0.0));
@@ -680,7 +680,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -735,7 +735,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -760,7 +760,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
                 cadmpeg_ir::math::Point2::new(1.0, 2.0),
                 cadmpeg_ir::math::Point2::new(3.0, 4.0)
             )
-            .unwrap()
+            .expect("valid LinePcurve fixture")
         )
     );
 }
@@ -789,7 +789,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
-                .unwrap(),
+                .expect("valid PlaneSurface fixture"),
             ),
             source_object: None,
         });
@@ -850,7 +850,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             &[None],
             &[],
         )
-        .unwrap();
+        .expect("standard topology fixture transfer");
 
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
@@ -883,7 +883,7 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
@@ -900,7 +900,7 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
             Vector3::new(1.0, 0.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let start = Point3::new(radius, 0.0, 0.0);
     let end = Point3::new(0.0, radius, 0.0);
@@ -923,7 +923,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
@@ -941,7 +941,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
             Vector3::new(1.0, 0.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     let (geometry, range) =
         standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
@@ -974,7 +974,7 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
             Vector3::new(1.0, 0.0, 0.0),
             5.0,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let section_radius = 21.0_f64.sqrt();
     let support = StandardCurveSupport {
@@ -1012,7 +1012,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         ),
         source_object: None,
     });
@@ -1038,26 +1038,19 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     );
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
-    assert!(match ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| candidate.id == curve)
-    {
-        Some(Curve {
-            geometry: CurveGeometry::Circle(circle_curve),
-            ..
-        }) if {
-            let (_, axis, ref_direction, radius) = circle_curve.parts();
-            *axis == Vector3::new(0.0, 0.0, 1.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 2.0
-        } =>
-        {
-            true
-        }
-        _ => false,
-    });
+    assert!(matches!(ir
+    .model
+    .curves
+    .iter()
+    .find(|candidate| candidate.id == curve), Some(Curve {
+        geometry: CurveGeometry::Circle(circle_curve),
+        ..
+    }) if {
+        let (_, axis, ref_direction, radius) = circle_curve.parts();
+        *axis == Vector3::new(0.0, 0.0, 1.0)
+            && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+            && *radius == 2.0
+    }));
 }
 
 #[test]
@@ -1068,7 +1061,7 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let center = Point3::new(0.0, 0.0, 1.0);
     let radius = 2.0_f64.sqrt();
@@ -1085,7 +1078,7 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
             Vector3::new(0.0, 1.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(standard_pcurve_geometry(
         &surface,
@@ -1106,7 +1099,7 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let center = Point3::new(0.0, 0.0, 0.0);
     let radius = 2.0;
@@ -1123,7 +1116,7 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
             Vector3::new(0.0, 1.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid CircleCurve fixture"),
     );
     assert!(standard_pcurve_geometry(
         &surface,
@@ -1144,7 +1137,7 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1157,9 +1150,11 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
     let carrier = CurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
             start,
-            Vector3::new(3.0, 4.0, 0.0).unit().unwrap(),
+            Vector3::new(3.0, 4.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
         )
-        .unwrap(),
+        .expect("valid LineCurve fixture"),
     );
     let (geometry, range) =
         standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
@@ -1170,7 +1165,7 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
         geometry,
         PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
-                .unwrap()
+                .expect("valid LinePcurve fixture")
         )
     );
 }
@@ -1183,7 +1178,7 @@ fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
+        .expect("valid PlaneSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1214,7 +1209,7 @@ fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
                 1.0,
                 half_angle,
             )
-            .unwrap(),
+            .expect("valid ConeSurface fixture"),
         );
         let support = StandardCurveSupport {
             pos: 0,
@@ -1241,7 +1236,7 @@ fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
                     cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
                     cadmpeg_ir::math::Point2::new(0.0, height)
                 )
-                .unwrap()
+                .expect("valid LinePcurve fixture")
             )
         );
     }
@@ -1260,7 +1255,7 @@ fn standard_cone_latitude_inverts_to_isoparametric_line() {
             1.0,
             half_angle,
         )
-        .unwrap(),
+        .expect("valid ConeSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1288,7 +1283,7 @@ fn standard_cone_latitude_inverts_to_isoparametric_line() {
                 cadmpeg_ir::math::Point2::new(0.0, 2.0),
                 cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0)
             )
-            .unwrap()
+            .expect("valid LinePcurve fixture")
         )
     );
 }
@@ -1302,7 +1297,7 @@ fn standard_cylinder_witness_selects_complementary_arc() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1329,7 +1324,7 @@ fn standard_cylinder_witness_selects_complementary_arc() {
                 cadmpeg_ir::math::Point2::new(0.0, 3.0),
                 cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,)
             )
-            .unwrap()
+            .expect("valid LinePcurve fixture")
         )
     );
 }
@@ -1343,7 +1338,7 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
         )
-        .unwrap(),
+        .expect("valid CylinderSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1370,7 +1365,7 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
                 cadmpeg_ir::math::Point2::new(std::f64::consts::PI, 3.0),
                 cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0)
             )
-            .unwrap()
+            .expect("valid LinePcurve fixture")
         )
     );
 }
@@ -1385,7 +1380,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
             5.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1439,7 +1434,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
             5.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid TorusSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1498,7 +1493,7 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
             Vector3::new(1.0, 0.0, 0.0),
             radius,
         )
-        .unwrap(),
+        .expect("valid SphereSurface fixture"),
     );
     let support = StandardCurveSupport {
         pos: 0,
@@ -1540,7 +1535,7 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
             4.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid EllipseCurve fixture"),
     );
     let start = curve_point(&geometry, 0.0).expect("ellipse start");
     let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");

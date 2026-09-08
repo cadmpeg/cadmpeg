@@ -435,7 +435,7 @@ mod consolidated_revolution_binding_tests {
                 2.0,
                 3.0,
             )
-            .unwrap(),
+            .expect("valid TorusSurface fixture"),
         );
         let profile_end = std::f64::consts::PI - 0.5;
         let positions = [
@@ -533,11 +533,11 @@ mod consolidated_revolution_binding_tests {
                             [0.0, 1.0],
                             std::array::from_fn(|_| Vec::new()),
                         )
-                        .unwrap(),
+                        .expect("valid IntcurveSupportContext fixture"),
                         discontinuity_flag: false,
                     },
                 )
-                .unwrap(),
+                .expect("valid ProceduralCurve fixture"),
             )
             .expect("attach construction to its fixture carrier");
 
@@ -695,7 +695,7 @@ mod consolidated_analytic_refinement_tests {
                 7.0,
                 2.0,
             )
-            .unwrap(),
+            .expect("valid TorusSurface fixture"),
         );
         let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
         let refined = refine_consolidated_analytic_surfaces(
@@ -727,7 +727,7 @@ mod consolidated_analytic_refinement_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 5.0,
             )
-            .unwrap(),
+            .expect("valid SphereSurface fixture"),
         );
         let mut unique = vec![Some(coarse.clone())];
         assert_eq!(
@@ -768,7 +768,7 @@ mod consolidated_analytic_refinement_tests {
                     Vector3::new(0.0, 1.0, 0.0),
                     2.0,
                 )
-                .unwrap(),
+                .expect("valid CylinderSurface fixture"),
             )),
             Some(SurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
@@ -779,7 +779,7 @@ mod consolidated_analytic_refinement_tests {
                     1.0,
                     f64::from(0.25_f32),
                 )
-                .unwrap(),
+                .expect("valid ConeSurface fixture"),
             )),
         ];
         assert_eq!(
@@ -9235,12 +9235,14 @@ mod circle_axis_tests {
     #[test]
     fn circle_axes_follow_exact_carrier_sections() {
         let plane = SurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin(), z(), x()).unwrap(),
+            cadmpeg_ir::geometry::PlaneSurface::try_new(origin(), z(), x())
+                .expect("valid PlaneSurface fixture"),
         );
         assert_eq!(circle_axis_from_carrier(origin(), 2.0, &plane), Some(z()));
 
         let cylinder = SurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(origin(), z(), x(), 2.0).unwrap(),
+            cadmpeg_ir::geometry::CylinderSurface::try_new(origin(), z(), x(), 2.0)
+                .expect("valid CylinderSurface fixture"),
         );
         assert_eq!(
             circle_axis_from_carrier(origin(), 2.0, &cylinder),
@@ -9249,7 +9251,8 @@ mod circle_axis_tests {
         assert_eq!(circle_axis_from_carrier(origin(), 3.0, &cylinder), None);
 
         let sphere = SurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 5.0).unwrap(),
+            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 5.0)
+                .expect("valid SphereSurface fixture"),
         );
         assert_eq!(
             circle_axis_from_carrier(Point3::new(0.0, 0.0, 3.0), 4.0, &sphere),
@@ -9259,7 +9262,8 @@ mod circle_axis_tests {
 
         let tiny = 1e-200;
         let unit_sphere = SurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 1.0).unwrap(),
+            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 1.0)
+                .expect("valid SphereSurface fixture"),
         );
         assert_eq!(
             circle_axis_from_carrier(Point3::new(tiny, 0.0, 0.0), 1.0, &unit_sphere),
@@ -9267,7 +9271,8 @@ mod circle_axis_tests {
         );
 
         let torus = SurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(origin(), z(), x(), 10.0, 2.0).unwrap(),
+            cadmpeg_ir::geometry::TorusSurface::try_new(origin(), z(), x(), 10.0, 2.0)
+                .expect("valid TorusSurface fixture"),
         );
         assert_eq!(
             circle_axis_from_carrier(Point3::new(10.0, 0.0, 0.0), 2.0, &torus),
@@ -9283,7 +9288,8 @@ mod circle_axis_tests {
     fn centered_sphere_does_not_override_a_cylinder_axis() {
         let center = Point3::new(1e-10, 0.0, -1e-10);
         let sphere = SurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 3.175).unwrap(),
+            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 3.175)
+                .expect("valid SphereSurface fixture"),
         );
         let cylinder = SurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
@@ -9292,7 +9298,7 @@ mod circle_axis_tests {
                 x(),
                 3.175,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
 
         assert_eq!(

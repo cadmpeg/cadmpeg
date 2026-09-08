@@ -1828,7 +1828,7 @@ mod tests {
     fn scales_pcurve_coordinates_per_surface_axis() {
         let mut geometry = PcurveGeometry::Line(
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
-                .unwrap(),
+                .expect("valid LinePcurve fixture"),
         );
 
         assert!(geometry.try_scale_coordinates([25.4, 1.0]).is_ok());
@@ -1849,7 +1849,7 @@ mod tests {
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 4.0,
             )
-            .unwrap(),
+            .expect("valid CylinderSurface fixture"),
         );
         let mut curve = CurveGeometry::Circle(
             cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -1858,7 +1858,7 @@ mod tests {
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 5.0,
             )
-            .unwrap(),
+            .expect("valid CircleCurve fixture"),
         );
 
         scale_surface_geometry(&mut surface, 25.4).expect("finite surface scaling");

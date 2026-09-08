@@ -834,7 +834,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let range = circle_parameter_range_from_surface_branch(
             &surface,
@@ -859,7 +859,7 @@ mod route_tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid PlaneSurface fixture"),
         );
         let args = || {
             (
@@ -984,7 +984,7 @@ mod route_tests {
                         Point3::new(0.0, 0.0, f64::from(key)),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
-                    .unwrap(),
+                    .expect("valid LineCurve fixture"),
                 ),
                 source_object: None,
             });
@@ -1100,7 +1100,7 @@ mod route_tests {
                         ),
                     },
                 )
-                .unwrap(),
+                .expect("valid ProceduralCurve fixture"),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1119,7 +1119,7 @@ mod route_tests {
                     },
                     None,
                 )
-                .unwrap(),
+                .expect("valid ProceduralSurface fixture"),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1142,14 +1142,14 @@ mod route_tests {
                     },
                     None,
                 )
-                .unwrap(),
+                .expect("valid ProceduralSurface fixture"),
             )
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model.procedural_curves[0]
             .replace_definition(ProceduralCurveDefinition::Exact)
-            .unwrap();
+            .expect("valid replacement fixture definition");
         ir.model.procedural_surfaces[0]
             .replace_definition(ProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
@@ -1157,7 +1157,7 @@ mod route_tests {
                     extension: 0,
                 },
             })
-            .unwrap();
+            .expect("valid replacement fixture definition");
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }
