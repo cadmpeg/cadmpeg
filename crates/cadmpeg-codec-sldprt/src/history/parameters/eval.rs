@@ -7,6 +7,11 @@ use std::collections::HashMap;
 use super::ParameterAliasView;
 use crate::history::literals::parse_parameter_literal;
 
+enum Token {
+    Quoted(String),
+    Bare(String),
+}
+
 pub(crate) struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
@@ -131,54 +136,44 @@ impl<'a> ParameterExpressionParser<'a> {
             self.skip_space();
             return self.take(')').then_some(value);
         }
-        let (token, quoted) = self.token()?;
-        if !quoted {
+        let token = self.token()?;
+        if let Token::Bare(token) = &token {
             self.skip_space();
             if self.take('(') {
-                if token.eq_ignore_ascii_case("iif") {
-                    let condition = self.comparison()?;
-                    self.skip_space();
-                    if !self.take(',') {
-                        return None;
+                let function = ParameterFunction::parse(token)?;
+                let mut arguments = Vec::with_capacity(function.argument_count());
+                for index in 0..function.argument_count() {
+                    if index != 0 {
+                        self.skip_space();
+                        if !self.take(',') {
+                            return None;
+                        }
                     }
-                    let when_true = self.comparison()?;
-                    self.skip_space();
-                    if !self.take(',') {
-                        return None;
-                    }
-                    let when_false = self.comparison()?;
-                    self.skip_space();
-                    if !self.take(')') {
-                        return None;
-                    }
-                    return conditional_parameter_value(&condition, when_true, when_false);
+                    arguments.push(self.comparison()?);
                 }
-                let argument = self.comparison()?;
                 self.skip_space();
                 if !self.take(')') {
                     return None;
                 }
-                return apply_parameter_function(&token, &argument)
-                    .filter(parameter_value_is_finite);
+                return function.apply(&arguments);
             }
             if token.eq_ignore_ascii_case("pi") {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
             }
         }
-        let referenced = || {
+        let referenced = |token: &str| {
             self.aliases
-                .get(&token)
+                .get(token)
                 .and_then(Clone::clone)
                 .and_then(|id| self.values.get(&id).cloned())
         };
-        if quoted {
-            referenced()
-        } else {
-            parse_parameter_literal(&token).or_else(referenced)
+        match token {
+            Token::Quoted(token) => referenced(&token),
+            Token::Bare(token) => parse_parameter_literal(&token).or_else(|| referenced(&token)),
         }
     }
 
-    fn token(&mut self) -> Option<(String, bool)> {
+    fn token(&mut self) -> Option<Token> {
         let rest = &self.input[self.offset..];
         if let Some((marker, prefix)) = [
             ("<MOD-DIAM>", "<MOD-DIAM>"),
@@ -190,8 +185,10 @@ impl<'a> ParameterExpressionParser<'a> {
         .find(|(marker, _)| rest.starts_with(marker))
         {
             self.offset += marker.len();
-            let (value, quoted) = self.token()?;
-            return (!quoted).then(|| (format!("{prefix}{value}"), false));
+            let Token::Bare(value) = self.token()? else {
+                return None;
+            };
+            return Some(Token::Bare(format!("{prefix}{value}")));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -203,7 +200,7 @@ impl<'a> ParameterExpressionParser<'a> {
                     self.offset += 2;
                 } else if rest.starts_with('"') {
                     self.offset += 1;
-                    return Some((value, true));
+                    return Some(Token::Quoted(value));
                 } else {
                     let character = rest.chars().next()?;
                     value.push(character);
@@ -227,7 +224,7 @@ impl<'a> ParameterExpressionParser<'a> {
             }
             self.offset += character.len_utf8();
         }
-        (self.offset > start).then(|| (self.input[start..self.offset].to_string(), false))
+        (self.offset > start).then(|| Token::Bare(self.input[start..self.offset].to_string()))
     }
 
     fn skip_space(&mut self) {
@@ -486,77 +483,146 @@ pub(crate) fn integer_power_real(base: i64, exponent: i64) -> f64 {
     value.recip()
 }
 
-pub(crate) fn apply_parameter_function(
-    name: &str,
-    argument: &ParameterValue,
-) -> Option<ParameterValue> {
-    let name = name.to_ascii_lowercase();
-    Some(match name.as_str() {
-        "abs" => match argument {
-            ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(value.abs())),
-            ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
-            ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
-            ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
-            ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
-        },
-        "sin" | "cos" | "tan" | "sec" | "cosec" | "cotan" => {
-            let ParameterValue::Angle(Angle(angle)) = argument else {
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ParameterFunction {
+    Iif,
+    Abs,
+    Sin,
+    Cos,
+    Tan,
+    Sec,
+    Cosec,
+    Cotan,
+    Arcsin,
+    Arccos,
+    Atn,
+    Arcsec,
+    Arccosec,
+    Arccotan,
+    Exp,
+    Log,
+    Sqr,
+    Int,
+    Sgn,
+}
+
+impl ParameterFunction {
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "iif" => Self::Iif,
+            "abs" => Self::Abs,
+            "sin" => Self::Sin,
+            "cos" => Self::Cos,
+            "tan" => Self::Tan,
+            "sec" => Self::Sec,
+            "cosec" => Self::Cosec,
+            "cotan" => Self::Cotan,
+            "arcsin" => Self::Arcsin,
+            "arccos" => Self::Arccos,
+            "atn" => Self::Atn,
+            "arcsec" => Self::Arcsec,
+            "arccosec" => Self::Arccosec,
+            "arccotan" => Self::Arccotan,
+            "exp" => Self::Exp,
+            "log" => Self::Log,
+            "sqr" => Self::Sqr,
+            "int" => Self::Int,
+            "sgn" => Self::Sgn,
+            _ => return None,
+        })
+    }
+
+    fn argument_count(self) -> usize {
+        match self {
+            Self::Iif => 3,
+            _ => 1,
+        }
+    }
+
+    pub(crate) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
+        let unary = || {
+            let [argument] = arguments else {
                 return None;
             };
-            ParameterValue::Real(match name.as_str() {
-                "sin" => angle.sin(),
-                "cos" => angle.cos(),
-                "tan" => angle.tan(),
-                "sec" => angle.cos().recip(),
-                "cosec" => angle.sin().recip(),
-                "cotan" => angle.tan().recip(),
-                _ => unreachable!(),
-            })
-        }
-        "arcsin" | "arccos" | "atn" | "arcsec" | "arccosec" | "arccotan" => {
-            let value = real_parameter_value(argument)?;
-            ParameterValue::Angle(Angle(match name.as_str() {
-                "arcsin" => value.asin(),
-                "arccos" => value.acos(),
-                "atn" => value.atan(),
-                "arcsec" => value.recip().acos(),
-                "arccosec" => value.recip().asin(),
-                "arccotan" => value.recip().atan(),
-                _ => unreachable!(),
-            }))
-        }
-        "exp" => ParameterValue::Real(real_parameter_value(argument)?.exp()),
-        "log" => ParameterValue::Real(real_parameter_value(argument)?.ln()),
-        "sqr" => ParameterValue::Real(real_parameter_value(argument)?.sqrt()),
-        "int" => match argument {
-            ParameterValue::Integer(value) => ParameterValue::Integer(*value),
-            ParameterValue::Real(value) => {
-                let value = value.trunc();
-                if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+            Some(argument)
+        };
+        let angle = || {
+            let ParameterValue::Angle(Angle(value)) = unary()? else {
+                return None;
+            };
+            Some(*value)
+        };
+        Some(match self {
+            Self::Iif => {
+                let [condition, when_true, when_false] = arguments else {
+                    return None;
+                };
+                return conditional_parameter_value(
+                    condition,
+                    when_true.clone(),
+                    when_false.clone(),
+                );
+            }
+            Self::Abs => match unary()? {
+                ParameterValue::Length(Length(value)) => {
+                    ParameterValue::Length(Length(value.abs()))
+                }
+                ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
+                ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
+                ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
+                ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
+            },
+            Self::Sin => ParameterValue::Real(angle()?.sin()),
+            Self::Cos => ParameterValue::Real(angle()?.cos()),
+            Self::Tan => ParameterValue::Real(angle()?.tan()),
+            Self::Sec => ParameterValue::Real(angle()?.cos().recip()),
+            Self::Cosec => ParameterValue::Real(angle()?.sin().recip()),
+            Self::Cotan => ParameterValue::Real(angle()?.tan().recip()),
+            Self::Arcsin => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.asin())),
+            Self::Arccos => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.acos())),
+            Self::Atn => ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.atan())),
+            Self::Arcsec => {
+                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().acos()))
+            }
+            Self::Arccosec => {
+                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().asin()))
+            }
+            Self::Arccotan => {
+                ParameterValue::Angle(Angle(real_parameter_value(unary()?)?.recip().atan()))
+            }
+            Self::Exp => ParameterValue::Real(real_parameter_value(unary()?)?.exp()),
+            Self::Log => ParameterValue::Real(real_parameter_value(unary()?)?.ln()),
+            Self::Sqr => ParameterValue::Real(real_parameter_value(unary()?)?.sqrt()),
+            Self::Int => match unary()? {
+                ParameterValue::Integer(value) => ParameterValue::Integer(*value),
+                ParameterValue::Real(value) => {
+                    let value = value.trunc();
+                    if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                        return None;
+                    }
+                    ParameterValue::Integer(value as i64)
+                }
+                ParameterValue::Length(_)
+                | ParameterValue::Angle(_)
+                | ParameterValue::Boolean(_)
+                | ParameterValue::String(_) => {
                     return None;
                 }
-                ParameterValue::Integer(value as i64)
+            },
+            Self::Sgn => {
+                let value = parameter_numeric_value(unary()?)?;
+                if !value.is_finite() {
+                    return None;
+                }
+                ParameterValue::Integer(match value.partial_cmp(&0.0)? {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                })
             }
-            ParameterValue::Length(_)
-            | ParameterValue::Angle(_)
-            | ParameterValue::Boolean(_)
-            | ParameterValue::String(_) => {
-                return None;
-            }
-        },
-        "sgn" => {
-            let value = parameter_numeric_value(argument)?;
-            if !value.is_finite() {
-                return None;
-            }
-            ParameterValue::Integer(match value.partial_cmp(&0.0)? {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            })
-        }
-        _ => return None,
-    })
+        })
+        .filter(parameter_value_is_finite)
+    }
 }
 
 pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {

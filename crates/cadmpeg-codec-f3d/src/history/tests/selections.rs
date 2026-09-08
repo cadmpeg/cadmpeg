@@ -1348,7 +1348,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use cadmpeg_ir::features::ProfileRef;
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
-        let member_offsets = vec![0; members.len()];
+        let member_offsets = (0..members.len())
+            .map(|index| index as u64 * 11)
+            .collect::<Vec<_>>();
         serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!(
                 "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
@@ -1363,9 +1365,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 279_172_874_240_u64,
@@ -1482,10 +1484,16 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         [0, 1]
     );
     let mut repeated_child = groups.clone();
-    repeated_child[0].members.push(crate::records::Located {
-        value: 110,
-        offset: 0,
-    });
+    let repeated_members = repeated_child[0]
+        .members()
+        .iter()
+        .copied()
+        .chain([crate::records::Located {
+            value: 110,
+            offset: repeated_child[0].members().last().unwrap().offset + 11,
+        }])
+        .collect();
+    repeated_child[0].try_set_members(repeated_members).unwrap();
     assert!(
         crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child).is_none()
     );
@@ -1668,8 +1676,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
             "frame": {"member_count_offset": 0, "opaque_index": 1,
-                "opaque_index_offset": 0, "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0, "variant": false},
+                "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22, "variant": false},
             "role": 21_474_836_480u64, "role_offset": 0,
             "paired_class_tag": "261", "paired_byte_offset": 0
         }))

@@ -28,6 +28,7 @@ use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
@@ -732,7 +733,7 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
 pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
-        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x81e7)
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7)
     )
 }
 
@@ -917,11 +918,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                             )
                         })
                         .or_else(|| {
-                            (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
-                                .then(|| {
-                                    points.get(usize::from(first_operand.entity_index)).copied()
-                                })
-                                .flatten()
+                            (first_operand.kind
+                                == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
+                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
+                            .flatten()
                         })
                 })
                 .flatten();
@@ -1618,7 +1618,7 @@ pub(super) fn implicit_circle_marker<'a>(
     // Only 83fe defines an ordered center/radial point roster. Other native
     // carriers may use the relation-qualified witness tiers above, but their
     // point-marker order does not identify a circular-dimension pair.
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+    if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) {
         return None;
     }
 
@@ -1814,7 +1814,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     operand: &FeatureInputOperand,
     expected_radius: f64,
 ) -> Option<&'a SketchInputEntity> {
-    if operand.kind != FeatureInputOperandKind::Native(0x836e)
+    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E)
         || operand.entity_ref.is_some()
         || !expected_radius.is_finite()
         || expected_radius <= 0.0
@@ -1875,7 +1875,9 @@ fn point_dimension_marker_matches_operand(
     };
     let address = u32::from(operand.entity_index);
     let identity_matches = match operand.kind {
-        FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) => {
+            marker.object_index == Some(address)
+        }
         FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
         _ => false,
     };
@@ -2787,7 +2789,7 @@ mod relation_geometry_tests {
         let operand = |offset: u64, entity_index: u16| FeatureInputOperand {
             offset,
             reference_ref: format!("reference-{offset}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };
@@ -3028,7 +3030,7 @@ mod relation_geometry_tests {
                 .map(|(index, entity_index)| FeatureInputOperand {
                     offset: 40 + index as u64,
                     reference_ref: format!("reference-{index}"),
-                    kind: FeatureInputOperandKind::Native(0x812a),
+                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
                     entity_index,
                     entity_ref: None,
                 })
@@ -3343,7 +3345,7 @@ mod relation_geometry_tests {
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),
             reference_ref: format!("reference-{entity_index}"),
-            kind: FeatureInputOperandKind::Native(0x8100),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
             entity_ref: None,
         };

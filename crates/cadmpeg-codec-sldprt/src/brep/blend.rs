@@ -20,17 +20,17 @@ const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 #[derive(Debug, Clone)]
 pub(crate) struct BlendCarrier {
     /// Stream-local surface carrier attribute.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Tag-byte offset in the stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Ordered support references.
-    pub supports: [BlendSupportRef; 2],
+    pub(crate) supports: [BlendSupportRef; 2],
     /// Stored center/spine curve attribute.
-    pub spine: u16,
+    pub(crate) spine: u16,
     /// Signed rolling-ball radius in millimetres.
-    pub signed_radius: f64,
+    pub(crate) signed_radius: f64,
     /// Whether each support uses the opposite natural-normal side.
-    pub reversed: [bool; 2],
+    pub(crate) reversed: [bool; 2],
 }
 
 /// Reference used by one rolling-ball support side.
@@ -46,9 +46,9 @@ pub(crate) enum BlendSupportRef {
 #[derive(Debug, Clone)]
 pub(crate) struct SupportPairCarrier {
     /// Ordered candidate surface-carrier attributes.
-    pub supports: [u16; 2],
+    pub(crate) supports: [u16; 2],
     /// Intersection-curve attribute.
-    pub intersection: u16,
+    pub(crate) intersection: u16,
 }
 
 #[derive(PartialEq, Eq)]

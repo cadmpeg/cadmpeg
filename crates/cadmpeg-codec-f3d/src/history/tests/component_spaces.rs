@@ -72,18 +72,21 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             context_uuid_offset: 112,
         },
     ];
-    let binding = |at, entity_suffix, blob_name: &str| crate::records::DesignBodyBinding {
-        id: crate::ids::native_design_body_binding_id(design_stream, at),
-        stream: design_stream.into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 1,
-        asm_body_key_offset: at,
-        entity_suffix,
-        entity_suffix_offset: at + 8,
-        blob_name: blob_name.into(),
-        blob_name_offset: at + 16,
-        body: None,
+    let binding = |at, entity_suffix, blob_name: &str| {
+        crate::records::DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+            id: crate::ids::native_design_body_binding_id(design_stream, at),
+            stream: design_stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: at,
+            entity_suffix,
+            entity_suffix_offset: at + 8,
+            blob_name: blob_name.into(),
+            blob_name_offset: at + 16,
+            body: None,
+        })
+        .unwrap()
     };
     let body_bindings = vec![
         binding(200, 15, "BREP.a.smbh"),

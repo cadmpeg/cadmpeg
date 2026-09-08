@@ -539,27 +539,33 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
 
 #[test]
 fn retains_parameter_when_owner_frame_has_no_scope_binding() {
-    let parameter = crate::records::DesignParameter {
-        id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 7,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None)
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 7,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "AlongDistance".into(),
+                Some(8),
+                None,
+            )
             .unwrap(),
-        expression: "12.5 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+            expression: "12.5 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "distance".into(),
-        name_offset: 0,
-        evaluated_value: 1.25,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "distance".into(),
+            name_offset: 80,
+            evaluated_value: 1.25,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
         crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())

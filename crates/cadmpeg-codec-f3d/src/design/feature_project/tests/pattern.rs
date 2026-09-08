@@ -24,37 +24,45 @@ fn group(
     record_index: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    DesignConstructionOperandGroup {
-        id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
-        scope_record_index,
-        scope_reference_ordinal: 1,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("313".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: record_index + 1,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 99,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: format!(
+                "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
+            ),
+            scope_record_index,
+            scope_reference_ordinal: 1,
+            record_index,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("313".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: record_index + 1,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 99,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("263".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("263".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    }
+    )
+    .unwrap()
 }
 
 fn rectangular_scope() -> DesignParameterScope {
@@ -66,15 +74,20 @@ fn rectangular_scope() -> DesignParameterScope {
     if let crate::records::feature::DesignScopePayload::RPattern(slot)
     | crate::records::feature::DesignScopePayload::RectangularPattern(slot) = &mut scope.payload
     {
-        *slot = Some(DesignRectangularPatternConstruction {
-            u_count: 3,
-            v_count: 1,
-            u_extent: 10.0,
-            v_extent: 0.0,
-            owner_record_indices: [11, 12, 13, 14],
-            value_offsets: [101, 102, 103, 104],
-            instances: None,
-        });
+        *slot = Some(
+            DesignRectangularPatternConstruction::try_from(
+                crate::records::feature::DesignRectangularPatternConstructionWire {
+                    u_count: 3,
+                    v_count: 1,
+                    u_extent: 10.0,
+                    v_extent: 0.0,
+                    owner_record_indices: [11, 12, 13, 14],
+                    value_offsets: [101, 102, 103, 104],
+                    instances: None,
+                },
+            )
+            .unwrap(),
+        );
     }
     scope
 }

@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -198,10 +199,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         ),
     ];
     distance_angle_parameters[1]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -221,18 +220,26 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
     ));
 
-    distance_angle_parameters[0].source = crate::records::DesignParameterSource::new(
-        "leftDistance".into(),
-        distance_angle_parameters[0].owner_record_index(),
-        distance_angle_parameters[0].family_discriminator(),
-    )
-    .unwrap();
-    distance_angle_parameters[1].source = crate::records::DesignParameterSource::new(
-        "rotateAngle".into(),
-        distance_angle_parameters[1].owner_record_index(),
-        distance_angle_parameters[1].family_discriminator(),
-    )
-    .unwrap();
+    distance_angle_parameters[0]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "leftDistance".into(),
+                distance_angle_parameters[0].owner_record_index(),
+                distance_angle_parameters[0].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    distance_angle_parameters[1]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "rotateAngle".into(),
+                distance_angle_parameters[1].owner_record_index(),
+                distance_angle_parameters[1].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -258,10 +265,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
     ];
     hole_parameters[2]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -297,7 +302,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }]
     ));
 
-    hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
+    hole_parameters[2]
+        .try_set_evaluated_value(118.0_f64.to_radians())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -361,7 +368,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if drill_point_angle.0 == 118.0_f64.to_radians()
     ));
 
-    counterbore_parameters[2].evaluated_value = std::f64::consts::PI;
+    counterbore_parameters[2]
+        .try_set_evaluated_value(std::f64::consts::PI)
+        .unwrap();
     let (features, _) = project_parameter_design(
         &counterbore_parameters,
         &[
@@ -520,43 +529,51 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if parameters.len() == 2
     ));
 
-    let construction_group =
-        |record_index, scope_reference_ordinal| DesignConstructionOperandGroup {
-            id: format!("f3d:native:construction-group#{record_index}"),
-            scope_record_index: 22,
-            scope_reference_ordinal,
-            record_index,
-            byte_offset: 1_000 + u64::from(scope_reference_ordinal),
-            class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
-                value: record_index + 100,
-                offset: 1_026 + u64::from(scope_reference_ordinal),
-            }],
-            lost_edge_references: Vec::new(),
-            frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-                member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
-                auxiliary_records: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_records: vec![crate::records::Located {
-                    value: record_index + 1,
-                    offset: 1_050 + u64::from(scope_reference_ordinal),
+    let construction_group = |record_index, scope_reference_ordinal| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:native:construction-group#{record_index}"),
+                scope_record_index: 22,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 1_000 + u64::from(scope_reference_ordinal),
+                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: record_index + 100,
+                    offset: 1_026 + u64::from(scope_reference_ordinal),
                 }],
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 100,
-                opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
-                opaque_scalar: 0.5,
-                opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
-                variant: false,
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: vec![crate::records::Located {
+                            value: record_index + 1,
+                            offset: 1_050 + u64::from(scope_reference_ordinal),
+                        }],
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 100,
+                        opaque_index_offset: 1_078 + u64::from(scope_reference_ordinal),
+                        opaque_scalar: 0.5,
+                        opaque_scalar_offset: 1_082 + u64::from(scope_reference_ordinal),
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+                role_offset: 1_060 + u64::from(scope_reference_ordinal),
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
             },
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
-            role_offset: 1_060 + u64::from(scope_reference_ordinal),
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-            paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
-        };
+        )
+        .unwrap()
+    };
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]
         .lost_edge_references
@@ -620,36 +637,45 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             opposite_angle_offset: 0,
         });
     }
-    let group = |record_index, member, role| DesignConstructionOperandGroup {
-        id: format!("{stream}:design-construction-operand-group#{record_index}"),
-        scope_record_index: 100,
-        scope_reference_ordinal: 0,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: member,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+    let group = |record_index, member, role| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("{stream}:design-construction-operand-group#{record_index}"),
+                scope_record_index: 100,
+                scope_reference_ordinal: 0,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: member,
+                    offset: 0,
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
+            },
+        )
+        .unwrap()
     };
     let groups = [
         group(101, 111, DesignOperandRole::ROLE_0X10),
@@ -944,47 +970,56 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
-    let group = |record_index, ordinal, members: Vec<u32>| DesignConstructionOperandGroup {
-        id: format!("f3d:native:construction-group#{record_index}"),
-        scope_record_index: 12,
-        scope_reference_ordinal: ordinal,
-        record_index,
-        byte_offset: 1000 + u64::from(ordinal) * 200,
-        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+    let group = |record_index, ordinal, members: Vec<u32>| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:native:construction-group#{record_index}"),
+                scope_record_index: 12,
+                scope_reference_ordinal: ordinal,
+                record_index,
+                byte_offset: 1000 + u64::from(ordinal) * 200,
+                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
 
-        members: members
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| crate::records::Located {
-                value,
-                offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
-            })
-            .collect(),
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 1021 + u64::from(ordinal) * 200,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 300 + ordinal,
-                offset: 1100 + u64::from(ordinal) * 200,
-            }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 100,
-            opaque_index_offset: 1128 + u64::from(ordinal) * 200,
-            opaque_scalar: 0.5,
-            opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_B,
-        ),
-        role_offset: 1110 + u64::from(ordinal) * 200,
+                members: members
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| crate::records::Located {
+                        value,
+                        offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
+                    })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 1021 + u64::from(ordinal) * 200,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: vec![crate::records::Located {
+                            value: 300 + ordinal,
+                            offset: 1100 + u64::from(ordinal) * 200,
+                        }],
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 100,
+                        opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+                        opaque_scalar: 0.5,
+                        opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+                role_offset: 1110 + u64::from(ordinal) * 200,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+            },
+        )
+        .unwrap()
     };
     let mut operand_groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
     let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
@@ -1516,10 +1551,18 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 202, 203, 300]);
     patch_scope.payload = crate::records::feature::DesignScopePayload::SurfacePatch(Vec::new());
-    patch_group.members = vec![200, 201, 202, 203]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    patch_group
+        .try_set_members(
+            vec![200, 201, 202, 203]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     let grouped_projection = crate::design::feature_project::project_surface_patch(
         &patch_scope,
         std::slice::from_ref(&patch_group),
@@ -1660,20 +1703,19 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
 
 #[test]
 fn fillet_unit_conversion_rejects_finite_overflow() {
-    let parameter = |kind| {
+    let parameter = |kind, value| {
         parse_design_parameter(&parameter_record(
             Some(1),
             "1 mm",
             kind,
             Some("mm"),
             "radius",
-            1.0,
+            value,
         ))
         .unwrap()
     };
-    let mut start = parameter("StartRadius");
-    start.evaluated_value = f64::MAX;
-    let end = parameter("EndRadius");
+    let start = parameter("StartRadius", f64::MAX);
+    let end = parameter("EndRadius", 1.0);
     assert!(crate::design::feature_project::design_length(&start).is_none());
     assert!(
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()

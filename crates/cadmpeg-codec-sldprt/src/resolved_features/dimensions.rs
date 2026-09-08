@@ -21,6 +21,7 @@ use super::transforms::{
 };
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -391,7 +392,7 @@ fn dimensioned_relation_carrier<'a>(
             construction: Some(true),
         });
     }
-    if operand.kind == FeatureInputOperandKind::Native(0x836e) {
+    if operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E) {
         let marker = declared_entity_handle_indexed_circle_dimension_center(
             lanes, feature, operand, radius,
         )?;
@@ -403,7 +404,7 @@ fn dimensioned_relation_carrier<'a>(
     }
     if matches!(
         operand.kind,
-        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4 | NativeOperandTag::TAG_80D5)
     ) {
         let marker = declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
         return Some(DimensionedRelationCarrier {

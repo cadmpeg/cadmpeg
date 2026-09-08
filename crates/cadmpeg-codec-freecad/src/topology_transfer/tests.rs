@@ -926,13 +926,16 @@ Co 1001000 +2 0 *
         .expect("GUI properties");
     assert_eq!(gui_providers.len(), 1);
     assert_eq!(
-        gui_providers[0].object.as_deref(),
+        gui_providers[0]
+            .object
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
-        .all(|property| property.raw_xml.starts_with("<Property")));
+        .all(|property| property.xml.text().starts_with("<Property")));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

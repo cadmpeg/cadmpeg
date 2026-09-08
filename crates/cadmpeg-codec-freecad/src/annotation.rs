@@ -36,7 +36,7 @@ pub(crate) fn transfer(
                 .get(object.id.as_str())
                 .cloned()
                 .unwrap_or_default();
-            owned.sort_by_key(|property| (property.byte_start, property.byte_end));
+            owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
             let references = owned
                 .iter()
                 .filter(|property| !property.links().is_empty())
@@ -45,7 +45,7 @@ pub(crate) fn transfer(
             let parameters = owned
                 .iter()
                 .filter(|property| property.links().is_empty())
-                .map(|property| (property.name.clone(), property.raw_xml.clone()))
+                .map(|property| (property.name.clone(), property.xml.text().to_owned()))
                 .collect();
             SemanticAnnotationRecord {
                 id: crate::native::native_id("annotation", &object.name),
@@ -453,7 +453,7 @@ fn direct_value_attributes(
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id
@@ -513,7 +513,7 @@ fn strict_text_values(
             .filter(|value| !value.trim().is_empty())
             .collect());
     }
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id

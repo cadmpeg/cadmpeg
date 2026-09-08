@@ -207,17 +207,17 @@ const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeN
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct SldprtNative {
+pub(crate) struct SldprtNative {
     /// Parametric construction-history timelines decoded from the source part.
-    pub feature_histories: Vec<FeatureHistory>,
+    pub(crate) feature_histories: Vec<FeatureHistory>,
     /// Native feature-input byte streams retained for parametric replay and rewrite.
-    pub feature_input_lanes: Vec<FeatureInputLane>,
+    pub(crate) feature_input_lanes: Vec<FeatureInputLane>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
-    pub pmi_dimensions: Vec<PmiDimension>,
+    pub(crate) pmi_dimensions: Vec<PmiDimension>,
 }
 
 impl SldprtNative {
-    pub fn load(
+    pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut native = Self {
@@ -694,7 +694,7 @@ impl SldprtNative {
         Ok(native)
     }
 
-    pub fn store(
+    pub(crate) fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {

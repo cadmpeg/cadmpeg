@@ -226,20 +226,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
-        let valid_object_bytes = match &object.data {
-            Some(data) => {
-                data.byte_start < data.byte_end
-                    && data.byte_end - data.byte_start == data.raw_xml.len() as u64
-            }
-            None => true,
-        };
-        if !valid_object_bytes {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} has inconsistent retained object bytes", object.id),
-                Some(object.id.clone()),
-            ));
-        }
         for dependency in &object.dependencies {
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
@@ -273,13 +259,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
         });
-        let non_finite = attachment
-            .placement
-            .iter()
-            .chain(attachment.offset.iter())
-            .flat_map(|matrix| matrix.iter().flatten())
-            .any(|value| !value.is_finite());
-        if !object_ids.contains(attachment.object.as_str()) || missing_support || non_finite {
+        if !object_ids.contains(attachment.object.as_str()) || missing_support {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -316,20 +296,15 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for document in &gui_documents {
-        if document.states.iter().enumerate().any(|(order, state)| {
-            state.order != order
-                || state.byte_start >= state.byte_end
-                || state
-                    .side_entries
-                    .iter()
-                    .any(|entry| !entry_names.contains(entry.as_str()))
+        if document.states.iter().any(|state| {
+            state
+                .side_entries
+                .iter()
+                .any(|entry| !entry_names.contains(entry.as_str()))
         }) {
             findings.push(finding(
                 Check::NativeLinks,
-                format!(
-                    "{} has invalid GUI state order, span, or asset",
-                    document.id
-                ),
+                format!("{} has a missing GUI state asset", document.id),
                 Some(document.id.clone()),
             ));
         }
@@ -338,7 +313,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         if provider
             .object
             .as_ref()
-            .is_some_and(|object| !object.is_empty() && !object_ids.contains(object.as_str()))
+            .is_some_and(|object| !object_ids.contains(object.as_str()))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -397,30 +372,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let invalid_array_count = node.element_count().is_some_and(|count| {
-            count < 0
-                || [
-                    node.element_transforms().len(),
-                    node.element_scales().len(),
-                    node.element_objects().len(),
-                ]
-                .into_iter()
-                .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
-        });
-        let non_finite_array = node
-            .element_transforms()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(node.element_scales().iter().flatten())
-            .any(|value| !value.is_finite());
-        if invalid_array_count || non_finite_array {
-            findings.push(finding(
-                Check::Counts,
-                format!("{} has invalid link-array count or values", node.id),
-                Some(node.id.clone()),
-            ));
-        }
     }
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
@@ -430,14 +381,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
             });
-        let invalid_frames = joint
-            .placements()
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(joint.offsets().iter().flatten().flatten())
-            .any(|value| !value.is_finite());
-        if missing_link || invalid_frames {
+        if missing_link {
             findings.push(finding(
                 Check::NativeLinks,
                 format!(
@@ -593,21 +537,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(table.id.clone()),
             ));
         }
-        let mut known_string_ids = HashSet::new();
-        for entry in &table.entries {
-            if !known_string_ids.insert(entry.string_id)
-                || entry
-                    .components
-                    .iter()
-                    .any(|id| !known_string_ids.contains(id))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} has duplicate or forward string-id references", table.id),
-                    Some(table.id.clone()),
-                ));
-            }
-        }
     }
     let topology_ids = ir
         .model
@@ -649,7 +578,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         {
             if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
                 let known_ids = table
-                    .entries
+                    .entries()
                     .iter()
                     .map(|entry| entry.string_id)
                     .collect::<HashSet<_>>();
@@ -788,7 +717,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for (name, mut spans) in logical_by_entry {
-        spans.sort_by_key(|span| span.start);
+        spans.sort_by_key(|span| span.span.start());
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
@@ -824,11 +753,12 @@ fn validate_span_chain(
     findings: &mut Vec<Finding>,
 ) {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|span| span.start);
-    let valid = ordered.first().is_some_and(|span| span.start == 0)
-        && ordered.iter().all(|span| span.start < span.end)
-        && ordered.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.end == end));
+    ordered.sort_by_key(|span| span.span.start());
+    let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
+        && ordered
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -845,10 +775,11 @@ fn validate_logical_chain(
     findings: &mut Vec<Finding>,
 ) {
     let valid = expected_end.is_some()
-        && spans.first().is_some_and(|span| span.start == 0)
-        && spans.iter().all(|span| span.start < span.end)
-        && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.end == end));
+        && spans.first().is_some_and(|span| span.span.start() == 0)
+        && spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
+        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.span.end() == end));
     if !valid {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -902,7 +833,7 @@ impl CodecBackend for FcstdCodec {
         );
         attributes.insert(
             "document_kind".into(),
-            scan.document.document_kind.as_str().to_owned(),
+            scan.document.document_kind().as_str().to_owned(),
         );
         attributes.insert(
             "application_domains".into(),
@@ -914,7 +845,7 @@ impl CodecBackend for FcstdCodec {
             scan.ledger.len().to_string(),
         );
         if let Some(last) = scan.ledger.last() {
-            attributes.insert("physical_archive_bytes".into(), last.end.to_string());
+            attributes.insert("physical_archive_bytes".into(), last.span.end().to_string());
         }
         if let Some(value) = &scan.document.program_version {
             attributes.insert("program_version".into(), value.clone());
@@ -1009,9 +940,7 @@ impl CodecBackend for FcstdCodec {
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 document_bytes,
-                scan.document.file_version.parse::<usize>().map_err(|_| {
-                    CodecError::Malformed("Document.xml FileVersion is invalid".into())
-                })?,
+                scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
             )?;
@@ -1169,7 +1098,7 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("logical_ledger", &logical_ledger)?;
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
                 &scan.ledger,
                 &entry_records,
@@ -1183,7 +1112,7 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;
         } else {
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
             ir.native
                 .namespace_mut("fcstd")

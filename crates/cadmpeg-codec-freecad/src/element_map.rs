@@ -91,15 +91,18 @@ pub(crate) fn parse(
             parse_count(data_node, "StringHasher")?
         };
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
-        tables.push(StringTableRecord {
-            id: crate::native::native_id("string-table", index.to_string()),
-            index,
-            owner_property,
-            save_all,
-            threshold,
-            source_entry: source_entry.map(str::to_owned),
-            entries,
-        });
+        tables.push(
+            StringTableRecord::try_new(
+                crate::native::native_id("string-table", index.to_string()),
+                index,
+                owner_property,
+                save_all,
+                threshold,
+                source_entry.map(str::to_owned),
+                entries,
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
 
     let mut maps = Vec::new();
@@ -107,7 +110,7 @@ pub(crate) fn parse(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        let property_xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        let property_xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid shape property XML {}: {error}",
                 property.id
@@ -233,7 +236,7 @@ fn owning_property(
     let start = node.range().start as u64;
     let mut owners = properties
         .iter()
-        .filter(|property| property.byte_start <= start && start < property.byte_end);
+        .filter(|property| property.xml.start() <= start && start < property.xml.end());
     let Some(owner) = owners.next() else {
         return Ok(None);
     };
@@ -1187,9 +1190,7 @@ mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: raw_xml.into(),
-            byte_start: 0,
-            byte_end: raw_xml.len() as u64,
+            xml: crate::native::RetainedXml::from_text(raw_xml.into(), 0).unwrap(),
         }
     }
 
@@ -1252,7 +1253,7 @@ mod tests {
         )
         .expect("legacy string table carrier");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].payload, "legacy");
+        assert_eq!(tables[0].entries()[0].payload, "legacy");
         assert!(maps.is_empty());
     }
 
@@ -1590,7 +1591,7 @@ Co 1001000 +2 0 *
             .arena_as::<crate::native::StringTableRecord>("string_tables")
             .expect("required invariant");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].string_id, 10);
+        assert_eq!(tables[0].entries()[0].string_id, 10);
         let maps = namespace
             .arena_as::<crate::native::ElementMapRecord>("element_maps")
             .expect("required invariant");
@@ -1759,10 +1760,10 @@ Co 1001000 +2 0 *
             .expect("test XML");
         let node = xml.root_element().first_element_child().expect("hasher");
         let mut first = test_property("App::PropertyString", "<Property/>");
-        first.byte_end = 1000;
+        first.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
         let mut second = test_property("App::PropertyString", "<Property/>");
         second.id = "fcstd:test:property#Other".into();
-        second.byte_end = 1000;
+        second.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
 
         assert!(matches!(
             owning_property(node, &[first, second]),
