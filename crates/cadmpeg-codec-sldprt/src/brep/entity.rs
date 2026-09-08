@@ -224,8 +224,8 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
     let mut unresolved_face_colors = 0;
     for face in &entities {
         let named_face_color =
-            definitions.names.get(&face.disc).map(String::as_str) == Some(FACE_COLOR_FAMILY);
-        let unnamed_definition = !definitions.ids.contains(&face.disc);
+            definitions.get(&face.disc).and_then(Option::as_deref) == Some(FACE_COLOR_FAMILY);
+        let unnamed_definition = !definitions.contains_key(&face.disc);
         let linked_attr = face.refs.get(5).copied().filter(|attr| *attr > 1);
         let unnamed_face_color = unnamed_definition
             && (linked_attr

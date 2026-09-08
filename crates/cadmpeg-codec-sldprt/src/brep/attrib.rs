@@ -14,7 +14,7 @@
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::View;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
@@ -79,14 +79,8 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
     buf.get(at) == Some(&0) && buf.get(at + 1).is_some_and(|tag| NODE_TAGS.contains(tag))
 }
 
-/// The stream-local attribute definitions that have a valid `KEY/ATTRIB_DEF`
-/// pairing. `ids` includes withheld conflicts; `names` contains only unique
-/// family names.
-#[derive(Debug, Default)]
-pub(crate) struct DefinitionTable {
-    pub(crate) ids: HashSet<u16>,
-    pub(crate) names: HashMap<u16, String>,
-}
+/// Stream-local attribute definitions with unique names or withheld conflicts.
+pub(crate) type DefinitionTable = HashMap<u16, Option<String>>;
 
 /// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
 fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
@@ -152,20 +146,23 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
 
 /// Resolve the stream-local attribute-definition table.
 pub(crate) fn definition_table(buf: &[u8]) -> DefinitionTable {
-    let candidates = definition_candidates(buf);
-    let ids = candidates.keys().copied().collect();
-    let names = candidates
+    definition_candidates(buf)
         .into_iter()
-        .filter_map(|(node, family)| {
-            family.and_then(|family| String::from_utf8(family).ok().map(|family| (node, family)))
+        .map(|(node, family)| {
+            (
+                node,
+                family.and_then(|family| String::from_utf8(family).ok()),
+            )
         })
-        .collect();
-    DefinitionTable { ids, names }
+        .collect()
 }
 
 /// Map definition-record node ids to their stored family names.
 pub(crate) fn named_definitions(buf: &[u8]) -> HashMap<u16, String> {
-    definition_table(buf).names
+    definition_table(buf)
+        .into_iter()
+        .filter_map(|(node, name)| name.map(|name| (node, name)))
+        .collect()
 }
 
 /// Map definition-record node ids to the two supported native attribute
@@ -496,8 +493,8 @@ mod tests {
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
         assert!(!definitions(&body).contains_key(&16));
         let table = definition_table(&body);
-        assert!(table.ids.contains(&16));
-        assert!(!table.names.contains_key(&16));
+        assert!(table.contains_key(&16));
+        assert!(table.get(&16).is_some_and(Option::is_none));
     }
 
     #[test]
