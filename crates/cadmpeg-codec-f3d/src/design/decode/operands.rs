@@ -1954,13 +1954,6 @@ impl ConstructionOperandGroupParse {
     }
 }
 
-/// Interpret the role of a counted group owned by an Extrude scope.
-///
-/// The `0x12` face-group role is a legacy spelling of the one-sided-to-face
-/// termination group. Class-296 two-sided-to-faces scopes use the same role
-/// for their termination groups. It is also a valid Thicken role, so the
-/// extent and exact-layout gates are part of this admission rule rather than
-/// a global role alias.
 /// Extrude operand role before the ordered face groups are separated into
 /// start and termination uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1970,6 +1963,13 @@ enum PendingExtrudeRole {
     Faces,
 }
 
+/// Interpret the role of a counted group owned by an Extrude scope.
+///
+/// The `0x12` face-group role is a legacy spelling of the one-sided-to-face
+/// termination group. Class-296 two-sided-to-faces scopes use the same role
+/// for their termination groups. It is also a valid Thicken role, so the
+/// extent and exact-layout gates are part of this admission rule rather than
+/// a global role alias.
 fn extrude_operand_role(
     scope: &DesignParameterScope,
     role: DesignOperandRole,
