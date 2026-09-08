@@ -235,9 +235,8 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         result_type: "Real".to_string(),
     };
     let reference = |entity_id: u32| {
-        crate::native::CatiaEntityReference::from_parts(
+        crate::native::CatiaEntityReference::resolved_or_unresolved(
             entity_id,
-            false,
             Some(format!("entity-{entity_id}")),
             Some("param".to_string()),
         )
@@ -353,9 +352,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         parameter_entity.entity_id,
-                        false,
                         Some(parameter_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -452,9 +450,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
             crate::native::CatiaRelationProgramInstance {
                 framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                    context_entity: crate::native::CatiaEntityReference::from_parts(
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         output_entity.entity_id,
-                        false,
                         Some(output_entity.id.clone()),
                         Some("paramout".to_string()),
                     ),
@@ -467,9 +464,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         input_entity.entity_id,
-                        false,
                         Some(input_entity.id.clone()),
                         Some("param".to_string()),
                     ),

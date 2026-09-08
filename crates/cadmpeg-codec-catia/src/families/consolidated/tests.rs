@@ -71,7 +71,7 @@ fn consolidated_edge_block_does_not_cross_an_unframed_gap() {
     let source = a5_edge_block_stream();
     let records = crate::wire::records::consolidated_records(&source);
     assert_eq!(records.len(), 3);
-    let split = records[0].range.end;
+    let split = records[0].range().unwrap().end;
     let mut bytes = source[..split].to_vec();
     bytes.push(0);
     bytes.extend_from_slice(&source[split..]);
@@ -476,9 +476,12 @@ fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
         ),
         (2, 0x03, 0x20)
     );
-    assert_eq!(records[0].range, 0..first.len());
+    assert_eq!(records[0].range(), Some(0..first.len()));
     assert_eq!(records[1].family, ConsolidatedFamily::B);
-    assert_eq!(records[1].range, first.len()..first.len() + second.len());
+    assert_eq!(
+        records[1].range(),
+        Some(first.len()..first.len() + second.len())
+    );
 }
 
 #[test]
@@ -491,8 +494,8 @@ fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent(
 
     let records = crate::wire::records::consolidated_records(&outer);
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].range, 0..sibling_start);
-    assert_eq!(records[1].range, sibling_start..outer.len());
+    assert_eq!(records[0].range(), Some(0..sibling_start));
+    assert_eq!(records[1].range(), Some(sibling_start..outer.len()));
 }
 
 #[test]
@@ -756,7 +759,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         &spanning,
         [[0..split, split..spanning.len()]],
     );
-    assert!(!records[1].physically_contiguous);
+    assert!(records[1].range().is_none());
     let endpoints =
         crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
             &spanning, &records,

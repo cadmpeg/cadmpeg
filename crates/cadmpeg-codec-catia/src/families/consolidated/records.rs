@@ -557,9 +557,9 @@ pub(crate) fn consolidated_edge_blocks_from_records(
                 && parameter_record.family == ConsolidatedFamily::B
                 && parameter_record.class == 0x23
             {
-                let first = pcurves.get(&first_record.range.start)?;
-                let second = pcurves.get(&second_record.range.start)?;
-                let parameters = parameters.get(&parameter_record.range.start)?;
+                let first = pcurves.get(&first_record.byte_offset())?;
+                let second = pcurves.get(&second_record.byte_offset())?;
+                let parameters = parameters.get(&parameter_record.byte_offset())?;
                 let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
                     && first.range == parameters.range;
@@ -616,9 +616,9 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
                 && node.family == ConsolidatedFamily::B
                 && node.class == 0x5e
             {
-                let use_run = use_runs.get(&use0.range.start)?;
+                let use_run = use_runs.get(&use0.byte_offset())?;
                 Some(ConsolidatedTopologyEdgeRun {
-                    edge: edges.get(&pcurve0.range.start)?.clone(),
+                    edge: edges.get(&pcurve0.byte_offset())?.clone(),
                     node: use_run.node,
                 })
             } else {
@@ -675,7 +675,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             {
                 return None;
             }
-            let use_run = use_runs.get(&use0.range.start)?;
+            let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.clone()?;
             match definition.data()? {
                 ConsolidatedEdgeDefinitionData::Scalar { values, .. } if values.len() == 8 => {}
@@ -684,9 +684,9 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             Some(ConsolidatedAnalyticCircleEdgeRun {
                 descriptor: ConsolidatedRawFrame::from_record(
                     parameter,
-                    data[parameter.payload.clone()].to_vec(),
+                    data[parameter.payload()?].to_vec(),
                 ),
-                circle: circles.get(&circle.range.start)?.clone(),
+                circle: circles.get(&circle.byte_offset())?.clone(),
                 #[cfg(test)]
                 definition,
                 node: use_run.node,
@@ -738,7 +738,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             {
                 return None;
             }
-            let use_run = use_runs.get(&use0.range.start)?;
+            let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.clone()?;
             if !matches!(
                 definition.data(),
@@ -750,7 +750,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
                 return None;
             }
             Some(ConsolidatedClass25EdgeRun {
-                descriptor: descriptors.get(&descriptor.range.start)?.clone(),
+                descriptor: descriptors.get(&descriptor.byte_offset())?.clone(),
                 node: use_run.node,
             })
         })
@@ -797,10 +797,10 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             {
                 return None;
             }
-            let node = *nodes.get(&node.range.start)?;
+            let node = *nodes.get(&node.byte_offset())?;
             let uses = [
-                uses.get(&use0.range.start)?.clone(),
-                uses.get(&use1.range.start)?.clone(),
+                uses.get(&use0.byte_offset())?.clone(),
+                uses.get(&use1.byte_offset())?.clone(),
             ];
             let identity_chain_consistent = node
                 .curve_ref
@@ -817,7 +817,6 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .filter(|record| {
                     record.source_index == use0.source_index
                         && record.source_range.end == use0.source_range.start
-                        && record.physically_contiguous
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
                 })
@@ -825,7 +824,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     Some(ConsolidatedEdgeDefinition {
                         frame: ConsolidatedRawFrame::from_record(
                             record,
-                            data[record.payload.clone()].to_vec(),
+                            data[record.payload()?].to_vec(),
                         ),
                         class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
                     })
@@ -853,14 +852,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         {
             return None;
         }
-        let node = *nodes.get(&node_record.range.start)?;
+        let node = *nodes.get(&node_record.byte_offset())?;
         let uses = [
-            uses.get(&use0.range.start)?.clone(),
-            uses.get(&use1.range.start)?.clone(),
+            uses.get(&use0.byte_offset())?.clone(),
+            uses.get(&use1.byte_offset())?.clone(),
         ];
         let definition_data = consolidated_edge_definition_data(
             definition_record.class,
-            &data[definition_record.payload.clone()],
+            &data[definition_record.payload()?],
         );
         let identity_chain_consistent = match &definition_data {
             Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
@@ -882,7 +881,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             definition: Some(ConsolidatedEdgeDefinition {
                 frame: ConsolidatedRawFrame::from_record(
                     definition_record,
-                    data[definition_record.payload.clone()].to_vec(),
+                    data[definition_record.payload()?].to_vec(),
                 ),
                 class: ConsolidatedEdgeDefinitionClass::try_from(definition_record.class).ok()?,
             }),
@@ -901,7 +900,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
     let indices = records
         .iter()
         .enumerate()
-        .map(|(index, record)| (record.range.start, index))
+        .map(|(index, record)| (record.byte_offset(), index))
         .collect::<BTreeMap<_, _>>();
     let nodes = b2_edge_nodes_from_records(data, records)
         .into_iter()
@@ -935,7 +934,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             if target.family != ConsolidatedFamily::B || target.class != 0x5e {
                 continue;
             }
-            let Some(&node) = nodes.get(&target.range.start) else {
+            let Some(&node) = nodes.get(&target.byte_offset()) else {
                 continue;
             };
             if owned
@@ -1036,7 +1035,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         .enumerate()
         .filter_map(|(index, record)| {
             by_pos
-                .get(&record.range.start)
+                .get(&record.byte_offset())
                 .copied()
                 .map(|node| (index, node))
         })
@@ -1074,7 +1073,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             };
             Some(ConsolidatedCompactEdgeEndpoints {
                 node,
-                endpoint_records: [records[start].range.start, records[end].range.start],
+                endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
             })
         })
         .collect::<Vec<_>>();
@@ -1100,11 +1099,11 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
     let record_indices = records
         .iter()
         .enumerate()
-        .map(|(index, record)| (record.range.start, index))
+        .map(|(index, record)| (record.byte_offset(), index))
         .collect::<BTreeMap<_, _>>();
     let record_sources = records
         .iter()
-        .map(|record| (record.range.start, record.source_index))
+        .map(|record| (record.byte_offset(), record.source_index))
         .collect::<HashMap<_, _>>();
     let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
     for target in b2_owner_identity_targets_from_records(data, records) {
@@ -1123,7 +1122,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 let &first_edge_index = record_indices.get(&first_edge_pos)?;
                 let node_index = first_edge_index.checked_sub(1)?;
                 let node_record = records.get(node_index)?;
-                let face_node = face_nodes.get(&node_record.range.start)?;
+                let face_node = face_nodes.get(&node_record.byte_offset())?;
                 if !matches!(face_node.terminal, [0x27, 0x03 | 0x05]) {
                     return None;
                 }
@@ -1143,7 +1142,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 if edges.iter().any(|edge| {
                     !span
                         .iter()
-                        .any(|record| record.range.start == edge.target_pos)
+                        .any(|record| record.byte_offset() == edge.target_pos)
                 }) {
                     return None;
                 }
@@ -1743,7 +1742,7 @@ fn object_stream_vertex_row_ranges_from_records(
 ) -> Vec<Range<usize>> {
     let mut ranges = records
         .iter()
-        .map(|record| record.range.clone())
+        .filter_map(crate::wire::records::ConsolidatedRecord::range)
         .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {

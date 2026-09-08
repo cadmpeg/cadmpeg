@@ -312,9 +312,9 @@ pub(crate) fn transfer_closed_face_topology(
     let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
     for (vertex_index, locus) in endpoint_loci.iter().enumerate() {
         for &(edge_index, endpoint_index) in &locus.incident_endpoint_pair_endpoints {
-            let endpoint_index = usize::from(endpoint_index);
+            let edge_index = edge_index.ordinal();
+            let endpoint_index = usize::from(u8::from(endpoint_index));
             if edge_index >= edge_candidates.len()
-                || endpoint_index >= 2
                 || vertex_for_endpoint
                     .insert((edge_index, endpoint_index), vertex_index)
                     .is_some()
