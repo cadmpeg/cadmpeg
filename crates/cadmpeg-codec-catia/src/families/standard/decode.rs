@@ -3804,8 +3804,8 @@ fn attach_standard_topology(
     {
         let e5_edges = e5_topology
             .edges
-            .into_values()
-            .map(|edge| (edge.record_id, [edge.start_vertex, edge.end_vertex]));
+            .into_iter()
+            .map(|(record_id, edge)| (record_id, [edge.start_vertex, edge.end_vertex]));
         if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
         }

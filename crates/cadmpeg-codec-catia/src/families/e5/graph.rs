@@ -97,9 +97,6 @@ impl E5CurveSupportKind {
 /// A class-`0xc0`/`0xc1` curve-support record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5CurveSupport {
-    /// This record's stream-assigned `record_id`, used to resolve
-    /// `E5Edge::support` references.
-    pub record_id: u32,
     /// Boundary or intersection pcurve layout.
     pub kind: E5CurveSupportKind,
     /// Raw mode byte following the pcurve reference lane; meaning not
@@ -125,8 +122,6 @@ impl E5CurveSupport {
 /// references each paired with a bound parameter ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct E5Bounds {
-    /// This record's stream-assigned `record_id`.
-    pub record_id: u32,
     /// Ordered `(representation, parameter, code)` entries, one per
     /// referenced representation.
     pub entries: Vec<E5BoundEntry>,
@@ -378,8 +373,6 @@ pub struct E5OrientedMember {
 /// <param_end>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Edge {
-    /// This edge-use record's `record_id`.
-    pub record_id: u32,
     /// `record_id` of the owning [`E5CurveSupport`].
     pub support: u32,
     /// `record_id` of the class-`0xfe` start vertex.
@@ -720,7 +713,6 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
     }
     position = view.position();
     Some(E5CurveSupport {
-        record_id: record.id,
         kind: E5CurveSupportKind::from_parts(record.class == 0xc1, pcurves)?,
         mode,
         range,
@@ -751,10 +743,7 @@ fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
             code,
         });
     }
-    view.is_empty().then_some(E5Bounds {
-        record_id: record.id,
-        entries,
-    })
+    view.is_empty().then_some(E5Bounds { entries })
 }
 
 fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
@@ -1510,7 +1499,6 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
     let parameter_end = wire::object_ref(record.payload, &mut position, false)?;
     let tail = record.payload[position..].to_vec();
     Some(E5Edge {
-        record_id: record.id,
         support,
         start_vertex,
         end_vertex,
@@ -1682,14 +1670,13 @@ mod tests {
                 range: [0.0, 1.0],
             },
         )]);
-        let support = |record_id, pcurves: [u32; 2]| E5CurveSupport {
-            record_id,
+        let support = |pcurves: [u32; 2]| E5CurveSupport {
             kind: E5CurveSupportKind::Intersection(pcurves),
             mode: 0,
             range: [0.0, 1.0],
             tail: Vec::new(),
         };
-        let supports = BTreeMap::from([(1, support(1, [2, 3])), (2, support(2, [1, 3]))]);
+        let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
         assert!(!curve_support_reference_closes(1, &pcurves, &supports));
     }
 
@@ -1804,7 +1791,6 @@ mod tests {
             (
                 1,
                 E5Edge {
-                    record_id: 1,
                     support: 0,
                     start_vertex: 10,
                     end_vertex: 20,
@@ -1816,7 +1802,6 @@ mod tests {
             (
                 2,
                 E5Edge {
-                    record_id: 2,
                     support: 0,
                     start_vertex: 20,
                     end_vertex: 10,
@@ -1867,7 +1852,6 @@ mod tests {
             (
                 1,
                 E5Edge {
-                    record_id: 1,
                     support: 100,
                     start_vertex: 20,
                     end_vertex: 21,
@@ -1879,7 +1863,6 @@ mod tests {
             (
                 2,
                 E5Edge {
-                    record_id: 2,
                     support: 101,
                     start_vertex: 21,
                     end_vertex: 20,
@@ -1893,7 +1876,6 @@ mod tests {
             (
                 100,
                 E5CurveSupport {
-                    record_id: 100,
                     kind: E5CurveSupportKind::Intersection([10, 12]),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -1903,7 +1885,6 @@ mod tests {
             (
                 101,
                 E5CurveSupport {
-                    record_id: 101,
                     kind: E5CurveSupportKind::Intersection([11, 13]),
                     mode: 0,
                     range: [1.0, 2.0],
@@ -1915,7 +1896,6 @@ mod tests {
             (
                 30,
                 E5Bounds {
-                    record_id: 30,
                     entries: vec![E5BoundEntry {
                         representation: 10,
                         parameter: 0.0,
@@ -1926,7 +1906,6 @@ mod tests {
             (
                 31,
                 E5Bounds {
-                    record_id: 31,
                     entries: vec![E5BoundEntry {
                         representation: 10,
                         parameter: 1.0,
@@ -1937,7 +1916,6 @@ mod tests {
             (
                 32,
                 E5Bounds {
-                    record_id: 32,
                     entries: vec![E5BoundEntry {
                         representation: 11,
                         parameter: 0.0,
@@ -1948,7 +1926,6 @@ mod tests {
             (
                 33,
                 E5Bounds {
-                    record_id: 33,
                     entries: vec![E5BoundEntry {
                         representation: 11,
                         parameter: 1.0,
@@ -2006,7 +1983,6 @@ mod tests {
     #[test]
     fn edge_parameters_resolve_one_entry_from_each_bound() {
         let edge = E5Edge {
-            record_id: 1,
             support: 0,
             start_vertex: 0,
             end_vertex: 0,
@@ -2014,8 +1990,7 @@ mod tests {
             parameter_end: 11,
             tail: Vec::new(),
         };
-        let bound = |record_id, parameter| E5Bounds {
-            record_id,
+        let bound = |parameter| E5Bounds {
             entries: vec![E5BoundEntry {
                 representation: 20,
                 parameter,
@@ -2027,7 +2002,7 @@ mod tests {
             faces: Vec::new(),
             edges: BTreeMap::from([(1, edge)]),
             pcurves: BTreeMap::new(),
-            bounds: BTreeMap::from([(10, bound(10, 0.25)), (11, bound(11, 0.75))]),
+            bounds: BTreeMap::from([(10, bound(0.25)), (11, bound(0.75))]),
             curve_supports: BTreeMap::new(),
             vertex_refs: Vec::new(),
         };
