@@ -28,18 +28,18 @@ fn marker(
     kind: SketchInputKind,
     coordinates_m: Option<[f64; 2]>,
 ) -> SketchInputEntity {
-    SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m,
-        links: None,
+    {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     }
 }
 
@@ -187,18 +187,23 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             radius: Length(2.0),
         },
     );
-    let marker = SketchInputEntity {
-        id: "line-marker".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let marker = {
+        let marker_id: String = "line-marker".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = HashMap::from([(marker.id.as_str(), &marker)]);
     let loci = HashMap::from([(

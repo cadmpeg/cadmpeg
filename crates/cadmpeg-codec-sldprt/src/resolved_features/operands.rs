@@ -96,7 +96,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                     .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
             })
             .collect::<Vec<_>>();
-        points.sort_unstable_by_key(|entity| entity.offset);
+        points.sort_unstable_by_key(|entity| entity.offset());
         return points
             .get(usize::from(address))
             .copied()
@@ -305,7 +305,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         .copied()
         .filter(|entity| operand_accepts_marker(kind, entity.kind))
         .collect::<Vec<_>>();
-    compatible.sort_unstable_by_key(|entity| entity.offset);
+    compatible.sort_unstable_by_key(|entity| entity.offset());
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
         if let Some(entity) = compatible
@@ -539,7 +539,7 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
                 )
         })
         .collect::<Vec<_>>();
-    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
     endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
     let [endpoint] = endpoints.as_slice() else {
         return None;

@@ -48,18 +48,18 @@ fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
 
 #[test]
 fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
-    let entity = |id: &str, offset, coordinates_m, kind, object_index| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m, kind, object_index| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle, None);
     let first = entity(

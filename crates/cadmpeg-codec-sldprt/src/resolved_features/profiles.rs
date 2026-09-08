@@ -314,7 +314,7 @@ pub(crate) fn project_compact_sketch_profiles(
                             .filter(|marker| {
                                 marker.feature_ref.as_deref() == Some(feature.id.as_str())
                             })
-                            .map(|marker| marker.offset)
+                            .map(|marker| marker.offset())
                             .min()
                     })?;
                 Some((start, *feature))
@@ -396,15 +396,15 @@ pub(crate) fn project_compact_sketch_profiles(
                 let Some(first_marker) = owned_markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.offset <= line_class.offset)
-                    .max_by_key(|marker| marker.offset)
+                    .filter(|marker| marker.offset() <= line_class.offset)
+                    .max_by_key(|marker| marker.offset())
                 else {
                     continue;
                 };
                 owned_markers
                     .iter()
                     .copied()
-                    .skip_while(|marker| marker.offset < first_marker.offset)
+                    .skip_while(|marker| marker.offset() < first_marker.offset())
                     .take_while(|marker| marker.coordinates_m.is_some())
                     .collect::<Vec<_>>()
             } else {
@@ -710,7 +710,7 @@ fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInp
     let Some(feature_ref) = marker.feature_ref.as_deref() else {
         return false;
     };
-    let Some(offset) = usize::try_from(marker.offset).ok() else {
+    let Some(offset) = usize::try_from(marker.offset()).ok() else {
         return false;
     };
     let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else {
@@ -778,7 +778,7 @@ pub(crate) fn project_marker_backed_sketches(
                             .filter(|marker| {
                                 marker.feature_ref.as_deref() == Some(feature.id.as_str())
                             })
-                            .map(|marker| marker.offset)
+                            .map(|marker| marker.offset())
                             .min()
                     })?;
                 Some((start, *feature))
@@ -812,7 +812,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .iter()
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                        && marker.offset < end
+                        && marker.offset() < end
                 })
                 .collect::<Vec<_>>();
             let context_start = object_index
@@ -861,7 +861,7 @@ pub(crate) fn project_marker_backed_sketches(
                             | SketchInputKind::ConstrainedPoint
                             | SketchInputKind::LineOrCircle
                             | SketchInputKind::Arc
-                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                    ) && usize::try_from(marker.offset()).ok().is_none_or(|offset| {
                         !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
                             && !auxiliary_profile_record(&lane.native_payload, offset)
                             && !relation_reference_curve_record(
@@ -877,7 +877,7 @@ pub(crate) fn project_marker_backed_sketches(
                 let has_unbound_marker = lane
                     .sketch_entities
                     .iter()
-                    .any(|marker| marker.offset > start as u64 && marker.offset < end as u64);
+                    .any(|marker| marker.offset() > start as u64 && marker.offset() < end as u64);
                 if object_markers.is_empty()
                     && !has_unbound_marker
                     && !marker_owners.contains(native_feature.id.as_str())
@@ -980,13 +980,15 @@ pub(crate) fn project_marker_backed_sketches(
                         ))
                     };
                     let is_recovered_legacy_profile_point = |endpoint: &SketchInputEntity| {
-                        usize::try_from(endpoint.offset).ok().is_some_and(|offset| {
-                            legacy_140_profile_point_variant_coordinates(
-                                &lane.native_payload,
-                                offset,
-                            )
-                            .is_some()
-                        })
+                        usize::try_from(endpoint.offset())
+                            .ok()
+                            .is_some_and(|offset| {
+                                legacy_140_profile_point_variant_coordinates(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                                .is_some()
+                            })
                     };
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
@@ -1134,7 +1136,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     .or_else(|| {
                                         compact_legacy_142_profile_curve_endpoints(
                                             &lane.native_payload,
-                                            usize::try_from(marker.offset).ok()?,
+                                            usize::try_from(marker.offset()).ok()?,
                                         )
                                     })
                                 {
@@ -1242,7 +1244,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     bounds: None,
                                 }
                             } else if let Some([center, start, end]) =
-                                usize::try_from(marker.offset).ok().and_then(|offset| {
+                                usize::try_from(marker.offset()).ok().and_then(|offset| {
                                     inline_arc_coordinates(&lane.native_payload, offset)
                                 })
                             {
@@ -1276,7 +1278,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         return None;
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
-                                    let offset = usize::try_from(marker.offset).ok()?;
+                                    let offset = usize::try_from(marker.offset()).ok()?;
                                     if extended_wide_construction_line_roster_indices(
                                         &lane.native_payload,
                                         offset,
@@ -1494,24 +1496,29 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                     if matches!(geometry, SketchGeometry::Native { .. })
                         && marker.coordinates_m.is_some()
-                        && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        && usize::try_from(marker.offset()).ok().is_none_or(|offset| {
                             !marker_is_geometry_locus(&lane.native_payload, offset)
                         })
                     {
                         return None;
                     }
-                    let construction = usize::try_from(marker.offset).ok().is_some_and(|offset| {
-                        (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
-                            && !(matches!(&geometry, SketchGeometry::Circle { .. })
-                                && marker_profile_curve_role(&lane.native_payload, offset)
-                                    == Some(1))
-                    });
+                    let construction =
+                        usize::try_from(marker.offset()).ok().is_some_and(|offset| {
+                            (marker_is_selected_construction_line(&lane.native_payload, offset)
+                                || current_compact_roster_selected_axis(
+                                    &lane.native_payload,
+                                    offset,
+                                ))
+                                && !(matches!(&geometry, SketchGeometry::Circle { .. })
+                                    && marker_profile_curve_role(&lane.native_payload, offset)
+                                        == Some(1))
+                        });
                     Some(
                         SketchEntity::new(
                             SketchEntityId(format!(
                                 "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
-                                native_feature.ordinal, marker.ordinal
+                                native_feature.ordinal,
+                                marker.ordinal()
                             )),
                             sketch_id.clone(),
                             geometry,
@@ -1526,7 +1533,7 @@ pub(crate) fn project_marker_backed_sketches(
                 let rectangle_marker_refs = object_markers
                     .iter()
                     .filter_map(|marker| {
-                        let offset = usize::try_from(marker.offset).ok()?;
+                        let offset = usize::try_from(marker.offset()).ok()?;
                         compact_legacy_curve_endpoint_indices(&lane.native_payload, offset)
                             .or_else(|| {
                                 compact_legacy_code_one_line_endpoint_indices(
@@ -2429,7 +2436,7 @@ fn legacy_config_hex_sketch(
             marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
         })
         .collect::<Vec<_>>();
-    curves.sort_unstable_by_key(|marker| marker.offset);
+    curves.sort_unstable_by_key(|marker| marker.offset());
     let [horizontal_curve, vertical_curve, construction_circle, line0, line1, line2, line3, line4, line5] =
         curves.as_slice()
     else {
@@ -2437,10 +2444,10 @@ fn legacy_config_hex_sketch(
     };
     if [horizontal_curve, vertical_curve, construction_circle]
         .iter()
-        .any(|marker| marker.offset >= line0.offset)
+        .any(|marker| marker.offset() >= line0.offset())
         || vertices
             .windows(2)
-            .any(|pair| pair[0].offset >= pair[1].offset)
+            .any(|pair| pair[0].offset() >= pair[1].offset())
     {
         return None;
     }
@@ -2566,11 +2573,11 @@ fn legacy_config_collinear_sketch(
             marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
         })
         .collect::<Vec<_>>();
-    curves.sort_unstable_by_key(|marker| marker.offset);
+    curves.sort_unstable_by_key(|marker| marker.offset());
     let [negative_curve, first_curve, second_curve, third_curve] = curves.as_slice() else {
         return None;
     };
-    let negative_offset = usize::try_from(negative_curve.offset).ok()?;
+    let negative_offset = usize::try_from(negative_curve.offset()).ok()?;
     if lane
         .native_payload
         .get(negative_offset + 56..negative_offset + 58)
@@ -2597,7 +2604,7 @@ fn legacy_config_collinear_sketch(
         .copied()
         .filter(|marker| marker.object_index.is_none())
         .filter_map(|marker| Some((marker, marker.coordinates_m?)))
-        .min_by_key(|(marker, _)| marker.offset)?;
+        .min_by_key(|(marker, _)| marker.offset())?;
     chain.push(origin);
     chain.sort_by(|left, right| left.1[0].total_cmp(&right.1[0]));
     chain.dedup_by(|left, right| {
@@ -2727,18 +2734,23 @@ mod detached_legacy_sketch_tests {
         kind: SketchInputKind,
         coordinates_m: Option<[f64; 2]>,
     ) -> SketchInputEntity {
-        SketchInputEntity {
-            id: format!("marker-{ordinal}"),
-            parent: "sldprt:feature-input:config-objects#1".into(),
-            feature_ref: Some("feature".into()),
-            ordinal,
-            offset: u64::from(ordinal) * 100,
-            object_index,
-            local_id: None,
-            kind,
-            state_value: None,
-            coordinates_m,
-            links: None,
+        {
+            let marker_id: String = format!("marker-{ordinal}");
+            let marker_parent: String = "sldprt:feature-input:config-objects#1".into();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                ordinal,
+                u64::from(ordinal) * 100,
+                kind,
+            );
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker.object_index = object_index;
+            constructed_marker.local_id = None;
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.links = None;
+            constructed_marker
         }
     }
 
@@ -2788,7 +2800,7 @@ mod detached_legacy_sketch_tests {
         let feature_id = "feature";
         let class_id = "class";
         let mut carrier = marker(0, None, SketchInputKind::LineOrCircle, None);
-        carrier.offset = 0;
+        carrier = carrier.with_test_position(carrier.ordinal(), 0);
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
@@ -2860,7 +2872,7 @@ mod detached_legacy_sketch_tests {
         };
         let mut detached = marker(1, Some(1), SketchInputKind::Point, Some([1.0, 2.0]));
         detached.feature_ref = None;
-        detached.offset = 100;
+        detached = detached.with_test_position(detached.ordinal(), 100);
         let mut lane = FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
@@ -2981,7 +2993,7 @@ mod detached_legacy_sketch_tests {
         let lane_id = "sldprt:feature-input:resolved-features#1";
         let mut unbound = marker(0, Some(1), SketchInputKind::Point, Some([0.0, 0.0]));
         unbound.feature_ref = None;
-        unbound.offset = 20;
+        unbound = unbound.with_test_position(unbound.ordinal(), 20);
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
