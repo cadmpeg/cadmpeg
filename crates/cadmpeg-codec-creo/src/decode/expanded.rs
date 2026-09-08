@@ -212,17 +212,7 @@ pub(crate) fn fc05_cylinder_cap_pair_records(
         .map(|record| CreoFc05CylinderCapPairRecord {
             id: format!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
             surface_id: record.surface_id,
-            curve_ids: record.cap_edges.iter().map(|edge| edge.curve_id).collect(),
-            cap_plane_ids: record
-                .cap_edges
-                .iter()
-                .map(|edge| edge.cap_plane_id)
-                .collect(),
-            curve_cap_ordinates_row_frame: record
-                .cap_edges
-                .iter()
-                .map(|edge| edge.cap_ordinate_row_frame)
-                .collect(),
+            cap_edges: record.cap_edges.clone(),
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
             reference_direction_row_frame: record.reference_direction_row_frame,
