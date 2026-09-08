@@ -169,33 +169,44 @@ pub(super) enum CommandReportBody<'a> {
     Refused(&'a ConversionRefusal),
 }
 
-impl<'a> CommandReportBody<'a> {
-    fn command_report(self, command: &'static str) -> CommandReport<'a, Self> {
-        match self {
-            Self::Ok { .. } => CommandReport::ok(command, self),
-            Self::Refused(refusal) => CommandReport::refused(command, self, refusal),
-        }
+impl CommandReportBody<'_> {
+    fn command_report(self, command: &'static str) -> CommandReport<Self> {
+        CommandReport::new(command, self)
     }
 }
 
 impl Serialize for CommandReportBody<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let reports = match self {
+        #[derive(Serialize)]
+        struct Reports<'a> {
+            decode_report: Option<&'a DecodeReport>,
+            check_report: Option<&'a ValidationReport>,
+            export: Option<&'a ExportReport>,
+        }
+        match self {
             Self::Ok {
                 decode_report,
                 check_report,
                 export,
-            } => (*decode_report, *check_report, *export),
+            } => Payload::Ok(Reports {
+                decode_report: *decode_report,
+                check_report: *check_report,
+                export: *export,
+            })
+            .serialize(serializer),
             Self::Refused(refusal) => {
                 let reports = refusal.evidence().reports;
-                (reports.decode, reports.check, reports.export)
+                Payload::Refused(
+                    Reports {
+                        decode_report: reports.decode,
+                        check_report: reports.check,
+                        export: reports.export,
+                    },
+                    refusal,
+                )
+                .serialize(serializer)
             }
-        };
-        let mut state = serializer.serialize_struct("CommandReportBody", 3)?;
-        state.serialize_field("decode_report", &reports.0)?;
-        state.serialize_field("check_report", &reports.1)?;
-        state.serialize_field("export", &reports.2)?;
-        state.end()
+        }
     }
 }
 
@@ -275,56 +286,49 @@ enum CommandStatus {
     Refused,
 }
 
-enum Outcome<'a> {
-    Ok,
-    Refused(crate::application::refusal::RefusalReport<'a>),
+enum Payload<'a, P> {
+    Ok(P),
+    Refused(P, &'a ConversionRefusal),
 }
 
-impl Serialize for Outcome<'_> {
+impl<P: Serialize> Serialize for Payload<'_, P> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("CommandOutcome", 2)?;
-        match self {
-            Self::Ok => {
-                state.serialize_field("status", &CommandStatus::Ok)?;
-                state.serialize_field(
-                    "refusal",
-                    &Option::<&crate::application::refusal::RefusalReport<'_>>::None,
-                )?;
-            }
-            Self::Refused(refusal) => {
-                state.serialize_field("status", &CommandStatus::Refused)?;
-                state.serialize_field("refusal", refusal)?;
-            }
+        #[derive(Serialize)]
+        struct Fields<'a, P> {
+            status: CommandStatus,
+            refusal: Option<crate::application::refusal::RefusalReport<'a>>,
+            #[serde(flatten)]
+            payload: P,
         }
-        state.end()
+        let fields = match self {
+            Self::Ok(payload) => Fields {
+                status: CommandStatus::Ok,
+                refusal: None,
+                payload,
+            },
+            Self::Refused(payload, refusal) => Fields {
+                status: CommandStatus::Refused,
+                refusal: Some(refusal.report()),
+                payload,
+            },
+        };
+        fields.serialize(serializer)
     }
 }
 
 #[derive(Serialize)]
-struct CommandReport<'a, P> {
+struct CommandReport<P> {
     command: &'static str,
     generator: String,
-    #[serde(flatten)]
-    outcome: Outcome<'a>,
     #[serde(flatten)]
     payload: P,
 }
 
-impl<'a, P> CommandReport<'a, P> {
-    fn ok(command: &'static str, payload: P) -> Self {
+impl<P> CommandReport<P> {
+    fn new(command: &'static str, payload: P) -> Self {
         Self {
             command,
             generator: generator(),
-            outcome: Outcome::Ok,
-            payload,
-        }
-    }
-
-    fn refused(command: &'static str, payload: P, refusal: &'a ConversionRefusal) -> Self {
-        Self {
-            command,
-            generator: generator(),
-            outcome: Outcome::Refused(refusal.report()),
             payload,
         }
     }
@@ -334,8 +338,9 @@ pub(crate) fn command_report_json<P: Serialize>(
     command: &'static str,
     payload: P,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::ok(
-        command, payload,
+    Ok(serde_json::to_string_pretty(&CommandReport::new(
+        command,
+        Payload::Ok(payload),
     ))?)
 }
 
@@ -344,8 +349,9 @@ pub(crate) fn refused_command_report_json<P: Serialize>(
     payload: P,
     refusal: &ConversionRefusal,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::refused(
-        command, payload, refusal,
+    Ok(serde_json::to_string_pretty(&CommandReport::new(
+        command,
+        Payload::Refused(payload, refusal),
     ))?)
 }
 
@@ -355,7 +361,11 @@ pub(super) fn write_json_report<P: Serialize>(
     command: &'static str,
     payload: &P,
 ) -> Result<()> {
-    write_serialized_report(input, output, &CommandReport::ok(command, payload))
+    write_serialized_report(
+        input,
+        output,
+        &CommandReport::new(command, Payload::Ok(payload)),
+    )
 }
 
 pub(super) fn write_refused_json_report<P: Serialize>(
@@ -368,7 +378,7 @@ pub(super) fn write_refused_json_report<P: Serialize>(
     write_serialized_report(
         input,
         output,
-        &CommandReport::refused(command, payload, refusal),
+        &CommandReport::new(command, Payload::Refused(payload, refusal)),
     )
 }
 
