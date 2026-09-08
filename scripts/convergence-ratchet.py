@@ -234,14 +234,27 @@ ENDIAN_EXCEPTIONS = {"reconstructed-scalar", "packed-color-order"}
 ENDIAN_MARKER = re.compile(r"^\s*// endian-exception: ([a-z-]+)\s*$")
 
 
+def endian_markers(path: Path) -> dict[int, str]:
+    """Read standalone line comments, excluding lookalikes inside Rust literals."""
+    source = path.read_text(encoding="utf-8")
+    markers = {}
+    for token in RUST_NON_CODE.finditer(source):
+        marker = ENDIAN_MARKER.fullmatch(token[0])
+        if marker is None:
+            continue
+        start = source.rfind("\n", 0, token.start()) + 1
+        if not source[start:token.start()].strip():
+            markers[source.count("\n", 0, token.start())] = marker[1]
+    return markers
+
+
 def unapproved_endian_calls(path: Path) -> int:
     """Each exception admits exactly one call on the immediately following line."""
-    raw = path.read_text(encoding="utf-8").splitlines()
+    markers = endian_markers(path)
     total = 0
     for index, line in enumerate(metric_source_text(path).splitlines()):
         count = len(FROM_ENDIAN.findall(line))
-        marker = ENDIAN_MARKER.fullmatch(raw[index - 1]) if index else None
-        if marker and marker[1] in ENDIAN_EXCEPTIONS:
+        if markers.get(index - 1) in ENDIAN_EXCEPTIONS:
             count = max(0, count - 1)
         total += count
     return total
@@ -251,12 +264,9 @@ def check_endian_exceptions() -> list[str]:
     failures = []
     for path in iter_src_files("crates/**/src/**/*.rs"):
         code = metric_source_text(path).splitlines()
-        for index, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
-            marker = ENDIAN_MARKER.fullmatch(line)
-            if marker is None:
-                continue
+        for index, reason in endian_markers(path).items():
             following = code[index + 1] if index + 1 < len(code) else ""
-            if marker[1] not in ENDIAN_EXCEPTIONS or len(FROM_ENDIAN.findall(following)) != 1:
+            if reason not in ENDIAN_EXCEPTIONS or len(FROM_ENDIAN.findall(following)) != 1:
                 failures.append(f"{relative_path(path)}:{index + 1}: invalid or stale endian exception")
     return failures
 

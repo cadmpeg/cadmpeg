@@ -572,6 +572,16 @@ class LedgerRoundTrip(unittest.TestCase):
 
 
 class EndianExceptions(TempRepoCase):
+    def test_literal_cannot_supply_an_exception(self) -> None:
+        path = self.write("crates/demo/src/lib.rs", '''fn f() {
+    let text = r#"
+// endian-exception: reconstructed-scalar
+"#; f64::from_be_bytes(raw);
+}
+''')
+        self.assertEqual(ratchet.unapproved_endian_calls(path), 1)
+        self.assertEqual(ratchet.check_endian_exceptions(), [])
+
     def test_exception_does_not_admit_another_call(self) -> None:
         path = self.write("crates/demo/src/lib.rs", """fn f() {
     // endian-exception: reconstructed-scalar
