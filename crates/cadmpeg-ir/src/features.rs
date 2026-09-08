@@ -1138,8 +1138,12 @@ pub struct ConfigurationFeatureState {
     /// Whether evaluation produced bodies or was suppressed.
     pub evaluation: ConfigurationEvaluation,
     /// Earlier features consumed during regeneration in source operand order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<FeatureId>,
+    #[serde(
+        default,
+        skip_serializing_if = "DistinctMembers::is_empty",
+        deserialize_with = "deserialize_dependencies"
+    )]
+    pub dependencies: DistinctMembers<FeatureId>,
     /// Evaluated construction semantics in the configuration.
     pub definition: FeatureDefinition,
 }
@@ -1155,8 +1159,8 @@ pub enum ConfigurationEvaluation {
     /// whose neutral result is carried by the surrounding topology.
     Active {
         /// Bodies produced or modified in the configuration.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        outputs: Vec<BodyId>,
+        #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+        outputs: DistinctMembers<BodyId>,
     },
 }
 
@@ -1176,7 +1180,11 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
         }
         Ok(match Wire::deserialize(deserializer)? {
             Wire::Suppressed {} => Self::Suppressed,
-            Wire::Active { outputs } => Self::Active { outputs },
+            Wire::Active { outputs } => Self::Active {
+                outputs: outputs
+                    .try_into()
+                    .map_err(|error| serde::de::Error::custom(format!("outputs: {error}")))?,
+            },
         })
     }
 }

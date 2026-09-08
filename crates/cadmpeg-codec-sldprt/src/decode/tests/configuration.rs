@@ -403,7 +403,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
             feature,
             ConfigurationFeatureState {
                 evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 definition,
             },
         )]),

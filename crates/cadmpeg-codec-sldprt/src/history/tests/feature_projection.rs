@@ -44,9 +44,9 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
                 consumer.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: vec![predecessor.clone()],
+                    dependencies: (vec![predecessor.clone()]).try_into().unwrap(),
                     definition: ir.model.features[0].definition.clone(),
                 },
             )]),

@@ -2047,7 +2047,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature.as_str(),
                 );
             }
-            let mut dependencies = HashSet::new();
             for dependency in &state.dependencies {
                 match features.get(dependency.as_str()) {
                     None => ref_error(
@@ -2073,17 +2072,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         });
                     }
                     Some(_) => {}
-                }
-                if !dependencies.insert(dependency) {
-                    findings.push(Finding {
-                        check: Check::Counts,
-                        severity: Severity::Error,
-                        message: format!(
-                            "configuration feature state repeats dependency `{}`",
-                            dependency.as_str()
-                        ),
-                        entity: Some(configuration.id.as_str().to_owned()),
-                    });
                 }
             }
             for reference in regeneration_references(&state.definition) {
@@ -2124,7 +2112,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     Some(_) => {}
                 }
             }
-            let mut outputs = HashSet::new();
             for output in state.evaluation.outputs() {
                 if ids.bodies(output.as_str()).is_none() {
                     ref_error(
@@ -2133,17 +2120,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         "configuration feature output",
                         output.as_str(),
                     );
-                }
-                if !outputs.insert(output) {
-                    findings.push(Finding {
-                        check: Check::Counts,
-                        severity: Severity::Error,
-                        message: format!(
-                            "configuration feature state repeats output body `{}`",
-                            output.as_str()
-                        ),
-                        entity: Some(configuration.id.as_str().to_owned()),
-                    });
                 }
             }
         }

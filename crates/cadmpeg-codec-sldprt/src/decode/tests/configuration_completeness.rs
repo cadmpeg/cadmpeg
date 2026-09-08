@@ -155,18 +155,22 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: (ordinal == 0)
+                        outputs: ((ordinal == 0)
                             .then(|| {
                                 BodyId::mint("test:model:entity#missing-output")
                                     .expect("identity grammar")
                             })
                             .into_iter()
-                            .collect(),
+                            .collect::<Vec<_>>())
+                        .try_into()
+                        .unwrap(),
                     },
-                    dependencies: (ordinal == 0)
+                    dependencies: ((ordinal == 0)
                         .then(|| FeatureId::mint("missing-dependency").expect("identity grammar"))
                         .into_iter()
-                        .collect(),
+                        .collect::<Vec<_>>())
+                    .try_into()
+                    .unwrap(),
                     definition,
                 },
             )]),
@@ -296,9 +300,9 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: FeatureDefinition::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
@@ -309,9 +313,9 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 hole_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: FeatureDefinition::Hole {
                         profile: None,
                         profile_filter: None,
@@ -537,7 +541,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-            dependencies: vec![FeatureId::mint("dependency").expect("identity grammar")],
+            dependencies: (vec![FeatureId::mint("dependency").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: Vec::new(),
@@ -557,7 +563,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .get_mut(&feature_id)
         .expect("active feature state")
         .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
-        outputs: Vec::new(),
+        outputs: Default::default(),
     };
     snapshot_active_configuration(&mut ir);
     assert_eq!(

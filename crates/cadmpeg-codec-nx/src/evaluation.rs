@@ -1230,9 +1230,9 @@ mod tests {
                     feature.id.clone(),
                     ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: feature.outputs.clone(),
+                            outputs: (feature.outputs.clone()).try_into().unwrap(),
                         },
-                        dependencies: feature.dependencies.clone(),
+                        dependencies: (feature.dependencies.clone()).try_into().unwrap(),
                         definition: feature.definition.clone(),
                     },
                 )

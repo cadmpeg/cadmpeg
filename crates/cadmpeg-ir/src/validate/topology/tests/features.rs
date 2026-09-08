@@ -731,9 +731,9 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
             extrude.clone(),
             ConfigurationFeatureState {
                 evaluation: crate::features::ConfigurationEvaluation::Active {
-                    outputs: Vec::new(),
+                    outputs: Default::default(),
                 },
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 definition: ir.model.features[1].definition.clone(),
             },
         )]),
@@ -758,7 +758,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .feature_states
         .get_mut(&extrude)
         .expect("configured extrude");
-    state.dependencies.push(source);
+    state.dependencies.insert(source);
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
 }
 
@@ -1080,9 +1080,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 feature,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: ir.model.features[index].definition.clone(),
                 },
             )
@@ -1125,14 +1125,14 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             .get_mut(feature)
             .expect("configuration feature state")
             .dependencies
-            .push(source.clone());
+            .insert(source.clone());
     }
     ir.model.configurations[0]
         .feature_states
         .get_mut(&instance)
         .expect("block-instance state")
         .dependencies
-        .push(block);
+        .insert(block);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
 }

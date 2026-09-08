@@ -253,9 +253,9 @@ mod tests {
                 feature_id,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: Default::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: Default::default(),
                     definition: FeatureDefinition::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },
