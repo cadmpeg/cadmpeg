@@ -3601,6 +3601,12 @@ fn take_relation_reference(
     })
 }
 
+#[derive(Clone, Copy)]
+enum AuxiliaryRelationReference {
+    Absent,
+    Present(crate::records::Located<u32, usize>),
+}
+
 /// Take one reference member that the class may leave absent, recording it in
 /// the auxiliary run when it is present. An absent reference is one zero byte
 /// and names nothing, so it contributes no entry.
@@ -3608,18 +3614,18 @@ fn take_auxiliary_relation_reference(
     payload: &[u8],
     cursor: &mut usize,
     auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
-) -> Option<Option<crate::records::Located<u32, usize>>> {
+) -> Option<AuxiliaryRelationReference> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
     let Some(target) = reference.target() else {
-        return Some(None);
+        return Some(AuxiliaryRelationReference::Absent);
     };
     let located = crate::records::Located {
         value: u32::try_from(target).ok()?,
         offset: at + 1,
     };
     auxiliary_references.push(located);
-    Some(Some(located))
+    Some(AuxiliaryRelationReference::Present(located))
 }
 
 /// Skip the two tables both pattern classes write after their own leading
@@ -3720,15 +3726,16 @@ fn parse_relation_class_members(
                 take!()?;
             }
             skip_pattern_tables(payload, cursor)?;
-            let mut clauses = [None; 4];
+            let mut clauses = [AuxiliaryRelationReference::Absent; 4];
             for pair in clauses.chunks_exact_mut(2) {
                 *cursor += 4;
                 pair[0] = take!()?;
                 *cursor += 32;
                 pair[1] = take!()?;
             }
+            use AuxiliaryRelationReference::Present;
             let clauses = match clauses {
-                [Some(a), Some(b), Some(c), Some(d)] => Some([a, b, c, d]),
+                [Present(a), Present(b), Present(c), Present(d)] => Some([a, b, c, d]),
                 _ => None,
             };
             RelationClassMembers::Rectangular {
