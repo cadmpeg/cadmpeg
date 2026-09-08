@@ -73,7 +73,7 @@ pub(crate) fn attach_expanded_sections(
             ),
             field: array.field.clone(),
             expanded_offset: array.offset,
-            count: array.count,
+            count: array.values.len(),
             values: array.values.clone(),
         })
         .collect::<Vec<_>>();

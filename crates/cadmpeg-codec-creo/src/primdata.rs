@@ -10,8 +10,6 @@ pub struct PrimitiveScalarArray {
     pub field: String,
     /// Byte offset of the named-record header in the expanded section.
     pub offset: usize,
-    /// Declared scalar count.
-    pub count: u32,
     /// Completely decoded scalar values.
     pub values: Vec<f64>,
 }
@@ -243,7 +241,6 @@ pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
                 arrays.push(PrimitiveScalarArray {
                     field: (*field).to_string(),
                     offset,
-                    count,
                     values,
                 });
             }
@@ -312,7 +309,7 @@ mod tests {
         let bytes = named("mv_p_NxNyNzxyz", &tuple, 6);
         let arrays = scalar_arrays(&bytes);
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].count, 6);
+        assert_eq!(arrays[0].values.len(), 6);
     }
 
     #[test]
@@ -378,13 +375,11 @@ mod tests {
         let xyz = PrimitiveScalarArray {
             field: "mv_p_xyz".to_string(),
             offset: 10,
-            count: 9,
             values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         };
         let normal_xyz = PrimitiveScalarArray {
             field: "mv_p_NxNyNzxyz".to_string(),
             offset: 20,
-            count: 18,
             values: vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
@@ -407,13 +402,11 @@ mod tests {
         let xyz = PrimitiveScalarArray {
             field: "mv_p_xyz".to_string(),
             offset: 10,
-            count: 9,
             values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         };
         let conflicting_xyz = PrimitiveScalarArray {
             field: "mv_p_NxNyNzxyz".to_string(),
             offset: 20,
-            count: 18,
             values: vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
