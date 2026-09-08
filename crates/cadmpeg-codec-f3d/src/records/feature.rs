@@ -8578,7 +8578,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Byte offset of `tag_body_based_on_faces`.
@@ -8593,7 +8593,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `scope_reference`.
         scope_reference_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Byte offset of `tag_body_based_on_faces`.
@@ -8728,7 +8728,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Stored body-source property value.
@@ -8769,7 +8769,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `scope_reference`.
         scope_reference_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Stored body-source property value.

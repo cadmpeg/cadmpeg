@@ -353,6 +353,17 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                         .expect("legacy wire"),
                     wire
                 );
+                for guid in ["_".repeat(38), "invalid".into()] {
+                    let changed = wire.replace("11111111-2222-3333-4444-555555555555", &guid);
+                    let decoded = serde_json::from_str::<
+                        crate::records::feature::DesignBaseFeatureConstruction,
+                    >(&changed);
+                    if guid == "invalid" {
+                        assert!(decoded.is_err());
+                    } else {
+                        assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), changed);
+                    }
+                }
                 let value: serde_json::Value = serde_json::from_str(&wire).expect("legacy JSON");
                 if form == "compact_one_body" {
                     for mode in [1_u8, 2, u8::MAX] {
@@ -464,6 +475,17 @@ fn direct_base_feature_emits_its_single_body_reference_views() {
         serde_json::to_string(&parsed).expect("direct body wire"),
         wire
     );
+    for guid in ["_".repeat(38), "invalid".into()] {
+        let changed = wire.replace("fcec56e3-832f-4468-88a4-d710e62e629f", &guid);
+        let decoded = serde_json::from_str::<crate::records::feature::DesignBaseFeatureConstruction>(
+            &changed,
+        );
+        if guid == "invalid" {
+            assert!(decoded.is_err());
+        } else {
+            assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), changed);
+        }
+    }
     assert_eq!(parsed.body_entity_suffixes().collect::<Vec<_>>(), [201]);
     assert_eq!(parsed.body_reference_records().collect::<Vec<_>>(), [201]);
     for (field, old, new) in [

@@ -1033,7 +1033,10 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     );
     assert_eq!(*auxiliary_record, 202);
     assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
-    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(
+        envelope_guid.as_str(),
+        "fcec56e3-832f-4468-88a4-d710e62e629f"
+    );
     assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
     assert_eq!(
         *tag_body_based_on_faces_offset,
@@ -1295,7 +1298,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     assert_eq!(*scope_reference, 196);
     assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
-    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(
+        envelope_guid.as_str(),
+        "fcec56e3-832f-4468-88a4-d710e62e629f"
+    );
     assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
     assert_eq!(
         serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],

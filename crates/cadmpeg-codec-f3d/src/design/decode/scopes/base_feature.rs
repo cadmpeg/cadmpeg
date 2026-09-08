@@ -1,4 +1,4 @@
-use crate::bytes::{is_guid_relaxed, lp_utf16_bounded};
+use crate::bytes::lp_utf16_bounded;
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
@@ -235,8 +235,8 @@ fn exact_base_feature_legacy_compact(
         start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
         guid_code_units..=guid_code_units,
     )?;
-    if !is_guid_relaxed(&envelope_guid)
-        || guid_end != start + class_452_compact::ZERO_RUN_AFTER_GUID
+    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    if guid_end != start + class_452_compact::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_compact::ZERO_RUN_AFTER_GUID
                 ..start + class_452_compact::REFERENCE_COUNT,
@@ -406,8 +406,8 @@ fn exact_base_feature_legacy_expanded(
         start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT,
         guid_code_units..=guid_code_units,
     )?;
-    if !is_guid_relaxed(&envelope_guid)
-        || guid_end != start + class_452_expanded::ZERO_RUN_AFTER_GUID
+    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    if guid_end != start + class_452_expanded::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_expanded::ZERO_RUN_AFTER_GUID
                 ..start + class_452_expanded::REFERENCE_COUNT,
@@ -613,8 +613,8 @@ fn exact_base_feature_direct_body_based_on_faces(
         Some(id) => u32::try_from(id).ok() == Some(previous_history_state_id),
         None => previous_history_state_id == u32::MAX,
     };
-    if !is_guid_relaxed(&envelope_guid)
-        || guid_end != start + class_377::ZERO_RUN_3
+    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    if guid_end != start + class_377::ZERO_RUN_3
         || bytes.get(start + class_377::ZERO_RUN_3..start + class_377::REFERENCE_COUNT)? != [0; 3]
         || View::u32_le_at(bytes, start + class_377::REFERENCE_COUNT)?
             != class_377::REFERENCE_COUNT_VALUE
