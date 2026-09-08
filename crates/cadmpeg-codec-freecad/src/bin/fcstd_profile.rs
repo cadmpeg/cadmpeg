@@ -29,6 +29,7 @@ struct Profile {
     fixtures: Vec<FixtureProfile>,
     observed: Observed,
     source_less_write: SourceLessWriteProfile,
+    #[serde(serialize_with = "serialize_gates")]
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
 }
@@ -93,11 +94,38 @@ struct Observed {
     neutral_arenas: BTreeSet<String>,
 }
 
-#[derive(Serialize)]
 struct Gate {
     level: String,
-    passed: bool,
     assertions: Vec<Assertion>,
+}
+
+impl Gate {
+    fn assertions_passed(&self) -> bool {
+        self.assertions.iter().all(|assertion| assertion.passed)
+    }
+}
+
+fn serialize_gates<S: serde::Serializer>(gates: &[Gate], serializer: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+
+    #[derive(Serialize)]
+    struct GateWire<'a> {
+        level: &'a str,
+        passed: bool,
+        assertions: &'a [Assertion],
+    }
+
+    let mut sequence = serializer.serialize_seq(Some(gates.len()))?;
+    let mut reached = true;
+    for gate in gates {
+        reached &= gate.assertions_passed();
+        sequence.serialize_element(&GateWire {
+            level: &gate.level,
+            passed: reached,
+            assertions: &gate.assertions,
+        })?;
+    }
+    sequence.end()
 }
 
 #[derive(Serialize)]
@@ -247,7 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gates = gates(&fixtures, &observed, &total_counts, &source_less_write);
     let highest_passing_gate = gates
         .iter()
-        .take_while(|gate| gate.passed)
+        .take_while(|gate| gate.assertions_passed())
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
@@ -975,7 +1003,7 @@ fn gates(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    let mut gates = vec![
+    vec![
         gate(
             "L0",
             vec![
@@ -1241,13 +1269,7 @@ fn gates(
                 ),
             ],
         ),
-    ];
-    let mut cumulative = true;
-    for gate in &mut gates {
-        cumulative &= gate.passed;
-        gate.passed = cumulative;
-    }
-    gates
+    ]
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1268,7 +1290,30 @@ fn assertion(
 fn gate(level: &str, assertions: Vec<Assertion>) -> Gate {
     Gate {
         level: level.to_owned(),
-        passed: assertions.iter().all(|assertion| assertion.passed),
         assertions,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gate_wire_passed_is_cumulative_without_changing_assertions() {
+        let gates = vec![
+            gate("L0", vec![assertion("first", true, "yes", "yes")]),
+            gate("L1", vec![assertion("second", false, "no", "yes")]),
+            gate("L2", vec![assertion("third", true, "yes", "yes")]),
+        ];
+        assert!(gates[2].assertions_passed());
+        let wire = serialize_gates(&gates, serde_json::value::Serializer).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!([
+                {"level":"L0", "passed":true, "assertions":[{"id":"first", "passed":true, "observed":"yes", "required":"yes"}]},
+                {"level":"L1", "passed":false, "assertions":[{"id":"second", "passed":false, "observed":"no", "required":"yes"}]},
+                {"level":"L2", "passed":false, "assertions":[{"id":"third", "passed":true, "observed":"yes", "required":"yes"}]}
+            ])
+        );
     }
 }
