@@ -343,6 +343,15 @@ fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<us
 /// The closed structural role of one physical container range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanRole {
+    /// A ZIP structural range.
+    Zip(ZipSpanRole),
+    /// A CFB structural range.
+    Cfb(CfbSpanRole),
+}
+
+/// The structural role of a ZIP physical range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ZipSpanRole {
     /// ZIP local-header signature for the named entry.
     LocalSignature(String),
     /// ZIP local-header fields for the named entry.
@@ -376,36 +385,58 @@ pub enum SpanRole {
     Zip64EndLocator,
     /// ZIP end-of-central-directory record.
     EndRecord,
+}
+
+/// The structural role of a CFB physical range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CfbSpanRole {
     /// CFB file header.
-    CfbHeader,
+    Header,
     /// CFB version-4 range-lock sector.
-    CfbRangeLockSector,
+    RangeLockSector,
     /// CFB file-allocation-table sector.
-    CfbFat,
+    Fat,
     /// CFB double-indirect file-allocation-table sector.
-    CfbDifat,
+    Difat,
     /// CFB directory sector.
-    CfbDirectory,
+    Directory,
     /// CFB mini-file-allocation-table sector.
-    CfbMiniFat,
+    MiniFat,
     /// CFB regular-sector payload for the named stream.
-    CfbRegularStreamPayload(String),
+    RegularStreamPayload(String),
     /// CFB allocation padding, optionally owned by a stream.
-    CfbPadding {
+    Padding {
         /// Owning entry, when the padding belongs to one.
         entry: Option<String>,
     },
     /// CFB mini-sector payload for the named stream.
-    CfbMiniStreamPayload(String),
+    MiniStreamPayload(String),
     /// Unallocated bytes inside the CFB root mini stream.
-    CfbMiniStreamPadding,
+    MiniStreamPadding,
     /// Unallocated CFB sector.
-    CfbUnallocatedSector,
+    UnallocatedSector,
 }
 
 impl SpanRole {
     /// Returns the stable physical-ledger label.
     pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Zip(role) => role.label(),
+            Self::Cfb(role) => role.label(),
+        }
+    }
+
+    /// Returns the owning entry for an entry-owned range.
+    pub fn entry(&self) -> Option<&str> {
+        match self {
+            Self::Zip(role) => role.entry(),
+            Self::Cfb(role) => role.entry(),
+        }
+    }
+}
+
+impl ZipSpanRole {
+    const fn label(&self) -> &'static str {
         match self {
             Self::LocalSignature(_) => "local-signature",
             Self::LocalFields(_) => "local-fields",
@@ -422,22 +453,10 @@ impl SpanRole {
             Self::Zip64EndRecord => "zip64-end-record",
             Self::Zip64EndLocator => "zip64-end-locator",
             Self::EndRecord => "end-record",
-            Self::CfbHeader => "header",
-            Self::CfbRangeLockSector => "range lock sector",
-            Self::CfbFat => "FAT",
-            Self::CfbDifat => "DIFAT",
-            Self::CfbDirectory => "directory",
-            Self::CfbMiniFat => "mini FAT",
-            Self::CfbRegularStreamPayload(_) => "regular stream payload",
-            Self::CfbPadding { .. } => "padding",
-            Self::CfbMiniStreamPayload(_) => "mini stream payload",
-            Self::CfbMiniStreamPadding => "mini-stream padding",
-            Self::CfbUnallocatedSector => "unallocated sector",
         }
     }
 
-    /// Returns the owning entry for an entry-owned range.
-    pub fn entry(&self) -> Option<&str> {
+    fn entry(&self) -> Option<&str> {
         match self {
             Self::LocalSignature(entry)
             | Self::LocalFields(entry)
@@ -449,11 +468,42 @@ impl SpanRole {
             | Self::CentralFields(entry)
             | Self::CentralName(entry)
             | Self::CentralExtra(entry)
-            | Self::CentralComment(entry)
-            | Self::CfbRegularStreamPayload(entry)
-            | Self::CfbMiniStreamPayload(entry) => Some(entry),
-            Self::Padding { entry } | Self::CfbPadding { entry } => entry.as_deref(),
-            _ => None,
+            | Self::CentralComment(entry) => Some(entry),
+            Self::Padding { entry } => entry.as_deref(),
+            Self::Zip64EndRecord | Self::Zip64EndLocator | Self::EndRecord => None,
+        }
+    }
+}
+
+impl CfbSpanRole {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Header => "header",
+            Self::RangeLockSector => "range lock sector",
+            Self::Fat => "FAT",
+            Self::Difat => "DIFAT",
+            Self::Directory => "directory",
+            Self::MiniFat => "mini FAT",
+            Self::RegularStreamPayload(_) => "regular stream payload",
+            Self::Padding { .. } => "padding",
+            Self::MiniStreamPayload(_) => "mini stream payload",
+            Self::MiniStreamPadding => "mini-stream padding",
+            Self::UnallocatedSector => "unallocated sector",
+        }
+    }
+
+    fn entry(&self) -> Option<&str> {
+        match self {
+            Self::RegularStreamPayload(entry) | Self::MiniStreamPayload(entry) => Some(entry),
+            Self::Padding { entry } => entry.as_deref(),
+            Self::Header
+            | Self::RangeLockSector
+            | Self::Fat
+            | Self::Difat
+            | Self::Directory
+            | Self::MiniFat
+            | Self::MiniStreamPadding
+            | Self::UnallocatedSector => None,
         }
     }
 }
@@ -503,9 +553,13 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: SpanRole) {
+fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: ZipSpanRole) {
     if start < end {
-        regions.push(PhysicalSpan { start, end, role });
+        regions.push(PhysicalSpan {
+            start,
+            end,
+            role: SpanRole::Zip(role),
+        });
     }
 }
 
@@ -542,31 +596,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            SpanRole::LocalSignature(entry.name.clone()),
+            ZipSpanRole::LocalSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.header_start + 4,
             fixed_end,
-            SpanRole::LocalFields(entry.name.clone()),
+            ZipSpanRole::LocalFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            SpanRole::LocalName(entry.name.clone()),
+            ZipSpanRole::LocalName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            SpanRole::LocalExtra(entry.name.clone()),
+            ZipSpanRole::LocalExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            SpanRole::CompressedPayload(entry.name.clone()),
+            ZipSpanRole::CompressedPayload(entry.name.clone()),
         );
 
         let next = local_order
@@ -586,13 +640,13 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    SpanRole::DataDescriptor(entry.name.clone()),
+                    ZipSpanRole::DataDescriptor(entry.name.clone()),
                 );
                 push_region(
                     &mut regions,
                     descriptor_end,
                     next,
-                    SpanRole::Padding {
+                    ZipSpanRole::Padding {
                         entry: Some(entry.name.clone()),
                     },
                 );
@@ -601,7 +655,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
                     &mut regions,
                     entry.data_end()?,
                     next,
-                    SpanRole::Padding {
+                    ZipSpanRole::Padding {
                         entry: Some(entry.name.clone()),
                     },
                 );
@@ -636,31 +690,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            SpanRole::CentralSignature(entry.name.clone()),
+            ZipSpanRole::CentralSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            SpanRole::CentralFields(entry.name.clone()),
+            ZipSpanRole::CentralFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            SpanRole::CentralName(entry.name.clone()),
+            ZipSpanRole::CentralName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            SpanRole::CentralExtra(entry.name.clone()),
+            ZipSpanRole::CentralExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             extra_end,
             record_end,
-            SpanRole::CentralComment(entry.name.clone()),
+            ZipSpanRole::CentralComment(entry.name.clone()),
         );
         central_end = central_end.max(record_end);
     }
@@ -727,18 +781,18 @@ fn classify_end_records(
                 let body = View::u64_le_at(raw, 0)
                     .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
                 (
-                    SpanRole::Zip64EndRecord,
+                    ZipSpanRole::Zip64EndRecord,
                     12_u64
                         .checked_add(body)
                         .ok_or_else(|| CodecError::Malformed("ZIP64 end size overflow".into()))?,
                 )
             }
-            Some(signature) if signature == *b"PK\x06\x07" => (SpanRole::Zip64EndLocator, 20),
+            Some(signature) if signature == *b"PK\x06\x07" => (ZipSpanRole::Zip64EndLocator, 20),
             Some(signature) if signature == *b"PK\x05\x06" => {
                 let comment = u64::from(u16_at(bytes, offset + 20)?);
-                (SpanRole::EndRecord, 22_u64 + comment)
+                (ZipSpanRole::EndRecord, 22_u64 + comment)
             }
-            _ => (SpanRole::Padding { entry: None }, len - offset),
+            _ => (ZipSpanRole::Padding { entry: None }, len - offset),
         };
         let end = offset
             .checked_add(size)
