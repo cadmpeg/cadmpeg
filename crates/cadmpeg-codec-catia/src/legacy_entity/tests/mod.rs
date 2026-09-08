@@ -215,7 +215,7 @@ fn parses_monotone_identity_suffix_before_legacy_catalog() {
     assert!(runs[0]
         .identities
         .iter()
-        .all(|identity| identity.lead == 0x81));
+        .all(|identity| u8::from(identity.lead) == 0x81));
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn parses_each_admitted_identity_record_lead() {
         parse_runs(&bytes)[0]
             .identities
             .iter()
-            .map(|identity| (identity.entity_id, identity.lead))
+            .map(|identity| (identity.entity_id, u8::from(identity.lead)))
             .collect::<Vec<_>>(),
         [(1, 0x81), (2, 0x82), (3, 0xe5), (4, 0xfd)]
     );

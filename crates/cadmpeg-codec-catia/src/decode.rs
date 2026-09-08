@@ -487,11 +487,18 @@ fn finish_decode(
         .fold(
             (0, 0, 0, 0),
             |(lead_81, lead_82, lead_e5, lead_fd), identity| match identity.lead {
-                0x81 => (lead_81 + 1, lead_82, lead_e5, lead_fd),
-                0x82 => (lead_81, lead_82 + 1, lead_e5, lead_fd),
-                0xe5 => (lead_81, lead_82, lead_e5 + 1, lead_fd),
-                0xfd => (lead_81, lead_82, lead_e5, lead_fd + 1),
-                _ => unreachable!("validated legacy identity lead"),
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead81 => {
+                    (lead_81 + 1, lead_82, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead82 => {
+                    (lead_81, lead_82 + 1, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadE5 => {
+                    (lead_81, lead_82, lead_e5 + 1, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadFd => {
+                    (lead_81, lead_82, lead_e5, lead_fd + 1)
+                }
             },
         );
     let legacy_text_field_count = native
