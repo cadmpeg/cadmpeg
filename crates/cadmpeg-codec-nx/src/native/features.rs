@@ -351,6 +351,10 @@ pub struct FeatureOperationTerminalFrame {
 
 /// Exact join from an operation terminal ordinal to its state-journal row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureOperationStateJournalUseWire",
+    into = "FeatureOperationStateJournalUseWire"
+)]
 pub struct FeatureOperationStateJournalUse {
     /// Globally unique operation-to-journal relation identity.
     pub id: String,
@@ -367,13 +371,67 @@ pub struct FeatureOperationStateJournalUse {
     /// Zero-based row order within the journal group.
     pub journal_row_ordinal: u32,
     /// Duplicated operation terminal ordinal.
-    pub operation_local_ordinal: u32,
+    operation_local_ordinal: u32,
     /// Matching journal state ordinal.
-    pub journal_state_ordinal: u32,
+    journal_state_ordinal: u32,
     /// Absolute source offset of the operation terminal frame.
     pub operation_source_offset: u64,
     /// Absolute source offset of the matching journal row.
     pub journal_source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationStateJournalUseWire {
+    id: String,
+    section_link: String,
+    operation_label: String,
+    operation_record: String,
+    operation_terminal_frame: String,
+    journal_group: String,
+    journal_row_ordinal: u32,
+    operation_local_ordinal: u32,
+    journal_state_ordinal: u32,
+    operation_source_offset: u64,
+    journal_source_offset: u64,
+}
+
+impl TryFrom<FeatureOperationStateJournalUseWire> for FeatureOperationStateJournalUse {
+    type Error = &'static str;
+    fn try_from(wire: FeatureOperationStateJournalUseWire) -> Result<Self, Self::Error> {
+        if wire.operation_local_ordinal != wire.journal_state_ordinal {
+            return Err("FeatureOperationStateJournalUse.operation_local_ordinal disagrees with journal_state_ordinal");
+        }
+        Ok(Self {
+            id: wire.id,
+            section_link: wire.section_link,
+            operation_label: wire.operation_label,
+            operation_record: wire.operation_record,
+            operation_terminal_frame: wire.operation_terminal_frame,
+            journal_group: wire.journal_group,
+            journal_row_ordinal: wire.journal_row_ordinal,
+            operation_local_ordinal: wire.operation_local_ordinal,
+            journal_state_ordinal: wire.journal_state_ordinal,
+            operation_source_offset: wire.operation_source_offset,
+            journal_source_offset: wire.journal_source_offset,
+        })
+    }
+}
+impl From<FeatureOperationStateJournalUse> for FeatureOperationStateJournalUseWire {
+    fn from(value: FeatureOperationStateJournalUse) -> Self {
+        Self {
+            id: value.id,
+            section_link: value.section_link,
+            operation_label: value.operation_label,
+            operation_record: value.operation_record,
+            operation_terminal_frame: value.operation_terminal_frame,
+            journal_group: value.journal_group,
+            journal_row_ordinal: value.journal_row_ordinal,
+            operation_local_ordinal: value.operation_local_ordinal,
+            journal_state_ordinal: value.journal_state_ordinal,
+            operation_source_offset: value.operation_source_offset,
+            journal_source_offset: value.journal_source_offset,
+        }
+    }
 }
 
 /// Ordered length-framed string from one bounded feature-operation payload.
@@ -4361,7 +4419,7 @@ pub fn feature_operation_state_journal_uses(
             .id
             .strip_prefix("nx:feature-history:operation-state-journal-group#")
             .unwrap_or(group.id.as_str());
-        uses.push(FeatureOperationStateJournalUse {
+        let Ok(usage) = FeatureOperationStateJournalUse::try_from(FeatureOperationStateJournalUseWire {
             id: format!(
                 "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
             ),
@@ -4375,7 +4433,10 @@ pub fn feature_operation_state_journal_uses(
             journal_state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
             journal_source_offset: row.offset(),
-        });
+        }) else {
+            continue;
+        };
+        uses.push(usage);
     }
     uses
 }
