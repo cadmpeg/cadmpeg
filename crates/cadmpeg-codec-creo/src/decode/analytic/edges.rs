@@ -7,8 +7,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
-use super::equations::{cross, dot};
 use super::planes::valid_positive_nurbs_curve;
+use crate::vecmath::{cross, dot};
 
 const EPS_ON_CONIC: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;

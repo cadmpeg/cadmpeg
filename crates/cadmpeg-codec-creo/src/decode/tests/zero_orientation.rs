@@ -4,11 +4,12 @@
 use crate::decode::sweep::pcurves::RevolutionBoundary;
 
 use super::with_decode_ctx;
-use crate::decode::analytic::{
-    ordered_face_loops, ordered_planar_face_loops, point_on_carrier, solve_carriers,
+use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
+use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
-use crate::decode::build::has_transferred_geometry;
+use crate::decode::analytic::planes::{point_on_carrier, solve_carriers};
+use crate::decode::build::report::has_transferred_geometry;
 use crate::decode::feature_history::{
     full_turn_revolution_carrier_axis, named_feature_definition,
     named_or_referenced_feature_definition, resolved_revolution_axis, revolution_axis_for_transfer,
@@ -17,18 +18,22 @@ use crate::decode::feature_history::{
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
 };
-use crate::decode::sketch_transfer::{
-    materialized_saved_section_external_ids, resolved_profile_chains,
-};
-use crate::decode::surfaces::{
+use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
+use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
-    coaxial_cones_section_candidates, cubic_extrusion_plane_generator_curve,
-    cubic_unit_interval_roots, nurbs_plane_boundary_curve, resolve_curve_candidates,
-    select_unique_curve_candidate, shared_extrusion_generator_curve,
+    coaxial_cones_section_candidates,
+};
+use crate::decode::surfaces::nurbs_boundaries::{
+    cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
+    shared_extrusion_generator_curve,
+};
+use crate::decode::surfaces::{resolve_curve_candidates, select_unique_curve_candidate};
+use crate::decode::sweep::pcurves::{
+    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
 };
 use crate::decode::sweep::{
     bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
-    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
     revolved_nurbs_surface, saved_spline_nurbs, saved_spline_sketch_geometry,
 };
 use crate::topology::HalfEdgeId;
@@ -687,9 +692,9 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
             kind: crate::feature::OperationKind::Extrude,
-            name: crate::feature::OperationName::Stored {
+            name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Extrude id 822".to_vec(),
-                keyword: crate::feature::IdKeyword::Id,
+                keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
             recipe: crate::feature::RecipeResolution::Conflicting,
@@ -733,7 +738,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
             kind: crate::feature::OperationKind::Native,
-            name: crate::feature::OperationName::Derived,
+            name: crate::feature::operations::OperationName::Derived,
             recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: true,
             depdb: None,

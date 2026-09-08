@@ -17,7 +17,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::export::is_rigid_transform;
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
@@ -243,8 +243,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     );
 
     for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id =
-            StepIdentity::construction("trimmed_curve", curve_id.trim_start_matches('#'));
+        let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id
                 && matches!(

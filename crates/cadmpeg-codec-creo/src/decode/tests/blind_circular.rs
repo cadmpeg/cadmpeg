@@ -5,7 +5,7 @@ use crate::container::SectionRole;
 use crate::feature::schema::SchemaClass;
 
 use super::parameter_slot;
-use crate::decode::analytic::PlaneEquation;
+use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::feature_history::{
     coordinate_pair_proves_torus_radii, differing_positive_lengths,
     five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,

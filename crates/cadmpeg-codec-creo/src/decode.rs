@@ -34,7 +34,8 @@ mod surfaces;
 mod sweep;
 pub(crate) mod uniqueness;
 
-use build::{build_container_ir, build_ir, build_report, BuiltIr};
+use crate::decode::build::ir::{build_container_ir, build_ir, BuiltIr};
+use crate::decode::build::report::build_report;
 
 #[cfg(test)]
 pub(crate) use sketch::{

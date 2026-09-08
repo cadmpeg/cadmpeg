@@ -2,13 +2,14 @@
 //! SKAMP solver constraint emission and locus compatibility.
 
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
-use super::{
-    section_entity_external_ids, section_skamp_active, section_skamp_center_entity,
-    section_skamp_circular_entity, section_skamp_curve_entity, section_skamp_incidence_locus,
-    section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair,
-    section_skamp_locus, section_skamp_midpoint, section_skamp_oriented_line,
-    section_skamp_point_locus, section_skamp_same_coordinate, section_skamp_same_coordinate_axis,
-    section_skamp_tangent_loci, unique_bounded_curve_segment,
+use crate::decode::sketch_transfer::identity::section_entity_external_ids;
+use crate::decode::sketch_transfer::loci::{
+    section_skamp_active, section_skamp_center_entity, section_skamp_circular_entity,
+    section_skamp_curve_entity, section_skamp_incidence_locus, section_skamp_is_arc,
+    section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair, section_skamp_locus,
+    section_skamp_midpoint, section_skamp_oriented_line, section_skamp_point_locus,
+    section_skamp_same_coordinate, section_skamp_same_coordinate_axis, section_skamp_tangent_loci,
+    unique_bounded_curve_segment,
 };
 use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;

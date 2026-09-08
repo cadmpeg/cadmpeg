@@ -1,40 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::StepIdentity;
+use crate::ids;
 use cadmpeg_ir::{format_identity, is_valid_identity, IdentityError};
 
 #[test]
 fn signature_uses_three_component_grammar() {
-    let id = StepIdentity::signature(0);
+    let id = ids::signature(0);
     assert_eq!(id.as_str(), "step:file:signature#0");
     assert!(is_valid_identity(id.as_str()));
 }
 
 #[test]
 fn data_and_opaque_preserve_existing_forms() {
-    assert_eq!(StepIdentity::data("surface", 12u64), "step:data:surface#12");
-    assert!(is_valid_identity(&StepIdentity::data("edge", "3-shell-4")));
+    assert_eq!(ids::data("surface", 12u64), "step:data:surface#12");
+    assert!(is_valid_identity(&ids::data("edge", "3-shell-4")));
 }
 
 #[test]
 fn scoped_builders_preserve_existing_forms() {
     assert_eq!(
-        StepIdentity::product("occurrence", "definition-9"),
+        ids::product("occurrence", "definition-9"),
         "step:product:occurrence#definition-9"
     );
+    assert_eq!(ids::presentation("pmi", 4u64), "step:presentation:pmi#4");
     assert_eq!(
-        StepIdentity::presentation("pmi", 4u64),
-        "step:presentation:pmi#4"
-    );
-    assert_eq!(
-        StepIdentity::construction("trimmed_curve", 9u64),
+        ids::construction("trimmed_curve", 9u64),
         "step:construction:trimmed_curve#9"
     );
+    assert_eq!(ids::tessellation("mesh", 1u64), "step:tessellation:mesh#1");
     assert_eq!(
-        StepIdentity::tessellation("mesh", 1u64),
-        "step:tessellation:mesh#1"
-    );
-    assert_eq!(
-        StepIdentity::drawing("drawing_definition", 2u64),
+        ids::drawing("drawing_definition", 2u64),
         "step:drawing:drawing_definition#2"
     );
 }

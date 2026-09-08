@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch profile connectivity, intersection, and containment.
 
-use super::super::analytic::nurbs_intrinsic_parameter_range;
 use super::super::holes::ExtrusionSpan;
 use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
+use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;

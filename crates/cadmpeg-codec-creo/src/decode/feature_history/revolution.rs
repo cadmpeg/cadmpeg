@@ -7,10 +7,6 @@ use super::super::sketch::{
     saved_section_entity_geometry, trim_segment_id,
 };
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::{
-    feature_recipe, feature_revolution_extent, semantic_saved_section_entities,
-    unique_feature_revolution_extent,
-};
 use super::super::sweep::{
     connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,
     revolved_section_circle, revolved_section_surface,
@@ -23,6 +19,10 @@ use super::{
     ordered_family_surface_bindings_for_feature, profile_segment_ids, revolution_axis_for_transfer,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::decode::sketch_transfer::recipe::{
+    feature_recipe, feature_revolution_extent, unique_feature_revolution_extent,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,

@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Named and referenced feature definitions.
 
-use super::super::sketch_transfer::{
-    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
-};
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
     feature_reference_name, feature_revolution_axis_for_transfer,
@@ -14,6 +10,10 @@ use super::{
     sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
+    feature_schema_class, feature_section_sweep_semantics_conflict,
+};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{

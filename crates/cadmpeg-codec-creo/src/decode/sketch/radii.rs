@@ -13,11 +13,6 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use super::super::feature_history::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
-use super::super::sketch_transfer::{
-    active_complete_section_skamps, saved_section_entity_fallback_allowed,
-    section_degenerate_axis_line, section_saved_entity, section_solver_relation_is_disabled,
-    unique_circle_segment, unique_section_segment_external_ids,
-};
 use super::coordinates::{resolved_section_coordinates, resolved_section_points};
 use super::equations_coordinate::{
     section_equation_function_six_distance_values, section_equation_radius_dimensions,
@@ -33,6 +28,14 @@ use super::geometry::{
 use super::skamp::{
     section_line_entity_fixed_coordinate_with_unique_rows, section_segment_rows,
     unique_decoded_section_segment,
+};
+use crate::decode::sketch_transfer::constraints::section_solver_relation_is_disabled;
+use crate::decode::sketch_transfer::identity::{
+    saved_section_entity_fallback_allowed, unique_section_segment_external_ids,
+};
+use crate::decode::sketch_transfer::loci::{
+    active_complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
+    unique_circle_segment,
 };
 
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;

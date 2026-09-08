@@ -19,22 +19,31 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::topology::HalfEdgeId;
 
-use super::super::analytic::{
-    canonicalized_pcurve_endpoints, exact_line_edge_parameter_range,
-    full_periodic_conic_edge_parameter_range, full_periodic_nurbs_edge_parameter_range,
-    geometry_section_record, meridian_circle_pcurve, native_face_orientations,
-    nonperiodic_conic_edge_parameter_range, ordered_face_loops, ordered_parameter_face_loops,
-    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
-    pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
-    ruled_generator_line_pcurve, solve_topological_vertices, surface_of_revolution_parallel_pcurve,
-    unique_oriented_native_pcurve, CarrierEquation, NativePcurveCandidates,
-    TopologicalVertexSolveDiagnostics,
-};
 use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
+use crate::decode::analytic::carriers::{
+    geometry_section_record, native_face_orientations, ordered_face_loops,
+    ordered_parameter_face_loops, placed_carriers,
+};
+use crate::decode::analytic::edges::{
+    exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
+    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
+    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
+};
+use crate::decode::analytic::equations::CarrierEquation;
+use crate::decode::analytic::pcurve_geometry::{
+    meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
+};
+use crate::decode::analytic::pcurves::{
+    canonicalized_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
+    planar_curve_pcurve, unique_oriented_native_pcurve, NativePcurveCandidates,
+};
+use crate::decode::analytic::vertices::{
+    solve_topological_vertices, TopologicalVertexSolveDiagnostics,
+};
 
 use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
 
@@ -1073,7 +1082,7 @@ pub(in super::super) fn transfer_native_brep(
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let Some(endpoint_sets) =
-            super::super::analytic::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
+            crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
         else {
             continue;
         };

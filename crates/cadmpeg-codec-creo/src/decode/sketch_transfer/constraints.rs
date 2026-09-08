@@ -23,10 +23,12 @@ use super::super::sketch::{
     unique_decoded_section_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
-use super::{
-    opaque_section_segment_identity_suffix, section_entity_external_ids, section_point_locus,
-    section_segment_identity_suffix, section_skamp_active, section_skamp_locus,
-    unique_section_segment_external_ids,
+use crate::decode::sketch_transfer::identity::{
+    opaque_section_segment_identity_suffix, section_entity_external_ids,
+    section_segment_identity_suffix, unique_section_segment_external_ids,
+};
+use crate::decode::sketch_transfer::loci::{
+    section_point_locus, section_skamp_active, section_skamp_locus,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};

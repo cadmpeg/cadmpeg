@@ -16,14 +16,15 @@ use super::super::surfaces::curve_contains_points;
 use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
-    common_plane_conic_parameters, cross, dot, plane_intersection_line, CarrierEquation,
-    PlaneConicEquation, PlaneEquation,
+    common_plane_conic_parameters, plane_intersection_line, CarrierEquation, PlaneConicEquation,
+    PlaneEquation,
 };
 use super::pcurves::{
     directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
     solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
+use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;

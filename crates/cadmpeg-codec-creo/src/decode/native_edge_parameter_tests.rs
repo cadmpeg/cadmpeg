@@ -1,10 +1,11 @@
-use crate::decode::analytic::{
+use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
-    full_periodic_nurbs_edge_parameter_range, native_pcurve_midpoint,
-    nonperiodic_conic_edge_parameter_range, nonperiodic_conic_parameter,
-    nonperiodic_nurbs_edge_parameter_range, orient_nonperiodic_nurbs_edge_carrier,
-    pcurve_backed_periodic_conic_parameter_range, periodic_conic_edge_parameter_range,
-    NativePcurveCandidates,
+    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
+    nonperiodic_conic_parameter, nonperiodic_nurbs_edge_parameter_range,
+    orient_nonperiodic_nurbs_edge_carrier, periodic_conic_edge_parameter_range,
+};
+use crate::decode::analytic::pcurves::{
+    native_pcurve_midpoint, pcurve_backed_periodic_conic_parameter_range, NativePcurveCandidates,
 };
 use crate::decode::surfaces::{
     analytic_curve_branches, curve_contains_points, select_unique_curve_candidate,

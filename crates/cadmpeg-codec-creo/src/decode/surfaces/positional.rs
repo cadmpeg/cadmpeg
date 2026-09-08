@@ -14,15 +14,15 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::cross;
 use super::super::feature_history::{
     paired_five_coordinate_sphere_center, round_constant_radius, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
-use super::super::sketch_transfer::feature_schema_class;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
+use crate::decode::sketch_transfer::recipe::feature_schema_class;
+use crate::vecmath::cross;
 
 use super::prototypes::{
     prototype_scalar, surface_prototype_frame_bounds, unique_surface_prototype_associations,

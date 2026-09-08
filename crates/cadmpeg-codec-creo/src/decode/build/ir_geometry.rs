@@ -9,10 +9,6 @@ use cadmpeg_ir::AnnotationBuilder;
 use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
 
-use super::super::analytic::{
-    reconcile_support_apex_cone_parameter_branches, retain_unresolved_surface_carriers,
-    transfer_analytic_pcurve_carriers, transfer_topology_bound_planes,
-};
 use super::super::coverage::{
     curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
 };
@@ -21,7 +17,6 @@ use super::super::feature_history::{
     transfer_resolved_extrusion_vertex_orbit_curves, transfer_resolved_revolution_surfaces,
     transfer_resolved_revolution_vertex_orbit_curves,
 };
-use super::super::sketch_transfer::transfer_sketches;
 use super::super::surfaces::{
     transfer_active_datum_cylinders, transfer_cap_pair_cylinders,
     transfer_carrier_intersection_curves, transfer_circular_sweep_cylinders,
@@ -39,6 +34,13 @@ use super::super::sweep::{
     transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
     transfer_saved_spline_curves,
 };
+use crate::decode::analytic::carriers::{
+    retain_unresolved_surface_carriers, transfer_topology_bound_planes,
+};
+use crate::decode::analytic::pcurves::{
+    reconcile_support_apex_cone_parameter_branches, transfer_analytic_pcurve_carriers,
+};
+use crate::decode::sketch_transfer::transfer::transfer_sketches;
 
 pub(super) fn transfer_and_record_scanned_geometry(
     ctx: &DecodeContext<'_>,

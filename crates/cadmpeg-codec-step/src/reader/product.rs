@@ -13,7 +13,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -311,7 +311,7 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId::mint(StepIdentity::product(
+        let id = OccurrenceId::mint(ids::product(
             "occurrence",
             format!("definition-{definition}"),
         ))
@@ -418,11 +418,8 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId::mint(StepIdentity::product(
-                "occurrence",
-                format!("{usage_id}{suffix}"),
-            ))
-            .expect("identity grammar");
+            let id = OccurrenceId::mint(ids::product("occurrence", format!("{usage_id}{suffix}")))
+                .expect("identity grammar");
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
                 warnings.push(format!(
@@ -1134,7 +1131,7 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId::mint(StepIdentity::product("product", id)).expect("identity grammar")
+    ProductDefinitionId::mint(ids::product("product", id)).expect("identity grammar")
 }
 
 fn product_definition_ir_id(
@@ -1145,7 +1142,7 @@ fn product_definition_ir_id(
     if definition_count == 1 {
         product_ir_id(product)
     } else {
-        ProductDefinitionId::mint(StepIdentity::product(
+        ProductDefinitionId::mint(ids::product(
             "product",
             format!("{product}-definition-{definition}"),
         ))

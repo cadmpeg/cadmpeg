@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion and revolution pcurves.
 
-use super::super::analytic::{cross, dot, nurbs_intrinsic_parameter_range};
 use super::super::native::annotate;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::nurbs::{oriented_sketch_nurbs_curve, placed_section_nurbs};
 use super::profiles::{circular_pcurve, line_pcurve, profile_arc};
 use super::surfaces::{revolved_nurbs_surface, revolved_section_surface};
+use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};

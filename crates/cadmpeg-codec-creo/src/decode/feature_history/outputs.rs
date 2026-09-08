@@ -2,14 +2,14 @@
 //! Feature output bodies, sweep kind, and native parameter maps.
 
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::{
-    current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
-    feature_schema_class, unique_feature_revolution_extent,
-};
 use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
 use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
+    feature_schema_class, unique_feature_revolution_extent,
+};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};

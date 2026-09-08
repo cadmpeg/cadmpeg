@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Filled, knit, draft, thicken, and result-topology feature recipes.
 
-use super::super::analytic::{dot, PlaneEquation};
 use super::super::sketch::normalized;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
@@ -10,6 +9,8 @@ use super::{
     surface_merge_quilt_ids, surface_merge_quilt_state_offset, unique_positive_length,
 };
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::PlaneEquation;
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,

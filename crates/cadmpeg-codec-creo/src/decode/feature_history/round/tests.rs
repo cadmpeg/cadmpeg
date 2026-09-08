@@ -167,37 +167,37 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
     let cylinder = super::slot_fillet_cylinder(
         [
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, -2.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 3.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
             },
         ],
         &[
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-9.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-8.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-9.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-8.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 0.0, -7.0],
                 normal: [0.0, 0.0, 1.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 0.0, -6.0],
                 normal: [0.0, 0.0, 1.0],
             },

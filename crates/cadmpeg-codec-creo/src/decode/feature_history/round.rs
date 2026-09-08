@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round and chamfer radius reconstruction from support geometry.
 
-use super::super::analytic::{
-    circular_cone, cross, dot, placed_planes, reconciled_model_plane, solve_planes, ConeEquation,
-    CylinderEquation, PlaneEquation,
-};
 use super::super::sketch::normalized;
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::{
+    circular_cone, solve_planes, ConeEquation, CylinderEquation, PlaneEquation,
+};
+use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 use crate::legacy_feature::LegacyRoundRadius;
 use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
+use crate::vecmath::{cross, dot};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;

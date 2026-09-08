@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular extrusion B-rep transfer.
 
-use super::super::analytic::dot;
 use super::super::feature_history::feature_allows_additive_linear_extrusion;
 use super::super::holes::circular_sweep_geometry;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::feature_is_first_material_operation;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -14,6 +12,8 @@ use super::extent::resolved_feature_extrusion_span;
 use super::pcurves::add_extrusion_pcurve;
 use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{

@@ -4054,7 +4054,6 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -4087,19 +4086,9 @@ mod tests {
     mod expression_wire;
     mod native_units;
     mod state_counters;
-    use std::io::{Cursor, Write};
+    use std::io::Cursor;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use super::*;
     use crate::container;

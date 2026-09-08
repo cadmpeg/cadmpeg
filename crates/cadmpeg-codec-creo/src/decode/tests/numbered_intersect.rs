@@ -4,8 +4,8 @@
 use crate::decode::sketch::axis::SectionAxis;
 
 use super::parameter_slot;
-use crate::decode::analytic::{ConeEquation, PlaneEquation};
-use crate::decode::build::has_transferred_geometry;
+use crate::decode::analytic::equations::{ConeEquation, PlaneEquation};
+use crate::decode::build::report::has_transferred_geometry;
 use crate::decode::feature_history::{
     add_surface_prototype_feature_dependencies, chamfer_constant_distance,
     equal_distance_chamfer_setback, feature_edge_selection, feature_entity_dependencies,

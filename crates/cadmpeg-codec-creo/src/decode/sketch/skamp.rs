@@ -5,9 +5,11 @@ use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::sketch_transfer::{
-    active_complete_section_skamps, saved_section_entity_fallback_allowed,
-    saved_section_line_witness_allowed, section_saved_entity, section_skamp_is_line,
+use crate::decode::sketch_transfer::identity::{
+    saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
+};
+use crate::decode::sketch_transfer::loci::{
+    active_complete_section_skamps, section_saved_entity, section_skamp_is_line,
     section_skamp_is_point, unique_bounded_curve_segment, unique_centered_line_segment,
     unique_circle_segment, unique_point_segment, unique_reference_line_segment,
 };

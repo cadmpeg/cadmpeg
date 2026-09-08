@@ -87,16 +87,13 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
+    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
     if ctx.container_only() {
-        ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
-        let (ir, annotations, unknowns) = build_container_only_ir(ctx, &scan, &dialects)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
         report_untransferred_streams(&scan, &mut body, false);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
-
-    // Charge stream cardinality before geometry construction.
-    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
 
     if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
         ctx,
@@ -114,36 +111,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     let mut body = build_container_body(&scan, dialect_losses, notes);
     report_untransferred_streams(&scan, &mut body, true);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
-}
-
-fn build_container_only_ir(
-    ctx: &DecodeContext<'_>,
-    scan: &Scan<'_>,
-    dialects: &DialectLayers,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
-    let mut ir = CadIr::decoded(source_meta(scan, dialects));
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind().is_parasolid() {
-            let unknown = unknown_stream(ctx, si, stream)?;
-            let source_stream = annotations.stream("nx:container");
-            annotations
-                .note(unknown.id(), source_stream, stream.file_offset as u64)
-                .tag(stream.kind().label());
-            annotations.exactness(unknown.id(), Exactness::Derived);
-            unknowns.push(unknown);
-        }
-    }
-    crate::native::attach_container_layer(
-        ctx,
-        &mut ir,
-        scan,
-        &mut annotations,
-        &mut unknowns,
-        false,
-    )?;
-    Ok((ir, annotations.build(), unknowns))
 }
 
 fn decoded(
@@ -277,16 +244,34 @@ fn build_metadata_ir(
             unknowns.push(unknown);
         }
     }
-    let mut parsed = crate::native::ParsedStreams::parse(scan);
-    let model = crate::native::NativeModel::extract(
-        ctx,
-        root,
-        &scan.container,
-        &scan.streams,
-        &mut parsed,
-        None,
-    );
-    crate::native::attach_annotations(ctx, &mut ir, &model, scan, &mut annotations, &mut unknowns)?;
+    if ctx.container_only() {
+        crate::native::attach_container_layer(
+            ctx,
+            &mut ir,
+            scan,
+            &mut annotations,
+            &mut unknowns,
+            false,
+        )?;
+    } else {
+        let mut parsed = crate::native::ParsedStreams::parse(scan);
+        let model = crate::native::NativeModel::extract(
+            ctx,
+            root,
+            &scan.container,
+            &scan.streams,
+            &mut parsed,
+            None,
+        );
+        crate::native::attach_annotations(
+            ctx,
+            &mut ir,
+            &model,
+            scan,
+            &mut annotations,
+            &mut unknowns,
+        )?;
+    }
     Ok((ir, annotations.build(), unknowns))
 }
 

@@ -19,8 +19,6 @@ pub(super) use extent::*;
 pub(super) use extrusion_brep::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use nurbs::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
-pub(super) use pcurves::*;
 #[allow(clippy::wildcard_imports)]
 pub(super) use planes::*;
 #[allow(clippy::wildcard_imports)]

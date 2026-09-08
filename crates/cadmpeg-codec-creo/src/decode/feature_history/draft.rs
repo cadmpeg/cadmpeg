@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema, thicken, datum, and sweep-admission feature definitions.
 
-use super::super::analytic::{
-    cross, dot, placed_plane_surfaces, placed_planes, reconciled_model_plane,
-};
 use super::super::holes::{
     circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
     compact_simple_hole_geometry, counterbore_axis_placement, counterbore_dimensions,
@@ -14,10 +11,6 @@ use super::super::holes::{
 };
 use super::super::sketch::{approximately_equal, normalized};
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
-use super::super::sketch_transfer::{
-    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
-    feature_section_sweep_semantics_conflict,
-};
 use super::super::sweep::{
     feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,
     generated_bounded_cylinder_extent, generated_cap_plane_extent,
@@ -40,7 +33,15 @@ use super::{
     unresolved_extrude_extent,
 };
 use crate::container::ContainerScan;
+use crate::decode::analytic::planes::{
+    placed_plane_surfaces, placed_planes, reconciled_model_plane,
+};
+use crate::decode::sketch_transfer::recipe::{
+    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
+    feature_section_sweep_semantics_conflict,
+};
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,

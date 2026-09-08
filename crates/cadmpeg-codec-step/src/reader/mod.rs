@@ -14,7 +14,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
 use crate::dialect::StepDialect;
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
@@ -548,7 +548,7 @@ fn decode_exchange_mode(
             )?;
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord::retained(
-                crate::ids::StepIdentity::signature(index),
+                ids::signature(index),
                 signature.start as u64,
                 bytes,
                 Vec::new(),
@@ -739,7 +739,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(&StepIdentity::data("pcurve", id)))
+        .filter(|id| !owned.contains(&ids::data("pcurve", id)))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -1005,7 +1005,7 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId::mint(crate::ids::StepIdentity::data(&kind, id)).expect("identity grammar")
+    UnknownId::mint(ids::data(&kind, id)).expect("identity grammar")
 }
 
 fn record_targets(

@@ -3,7 +3,7 @@
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
 use super::{unique_support_tangent_cylinder_frame, unique_tangent_axial_interval_corner_frame};
-use crate::decode::analytic::PlaneEquation;
+use crate::decode::analytic::equations::PlaneEquation;
 
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
 

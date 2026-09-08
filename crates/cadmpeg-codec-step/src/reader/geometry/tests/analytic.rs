@@ -15,7 +15,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
@@ -531,7 +531,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
         ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
-        let construction_id = ProceduralCurveId::mint(StepIdentity::construction(
+        let construction_id = ProceduralCurveId::mint(ids::construction(
             "trimmed_curve",
             curve_id.trim_start_matches('#'),
         ))

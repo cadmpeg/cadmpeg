@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
-use super::super::analytic::{
-    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
-};
 use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
 use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
 };
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::PlaneEquation;
+use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
+use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};

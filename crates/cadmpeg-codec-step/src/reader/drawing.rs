@@ -12,7 +12,7 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::NativeRecord;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -375,7 +375,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
 }
 
 fn drawing_identity(id: u64, name: &str) -> String {
-    StepIdentity::drawing(&name.to_ascii_lowercase(), id)
+    ids::drawing(&name.to_ascii_lowercase(), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {

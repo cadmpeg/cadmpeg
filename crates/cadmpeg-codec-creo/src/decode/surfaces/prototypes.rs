@@ -13,10 +13,10 @@ use crate::container::ContainerScan;
 use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::surface::SurfaceParameterRecord;
 
-use super::super::analytic::{cross, dot};
 use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
+use crate::vecmath::{cross, dot};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 

@@ -1,9 +1,11 @@
-use crate::decode::analytic::{
-    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints, meridian_circle_pcurve,
-    nonperiodic_nurbs_endpoint_points, oriented_native_pcurve_endpoints, planar_curve_pcurve,
-    ruled_generator_line_pcurve, solve_pcurve_vertex_domains,
-    solve_pcurve_vertex_domains_with_authoritative_points, surface_of_revolution_parallel_pcurve,
-    unique_oriented_native_pcurve,
+use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
+use crate::decode::analytic::pcurve_geometry::{
+    meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
+};
+use crate::decode::analytic::pcurves::{
+    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
+    oriented_native_pcurve_endpoints, planar_curve_pcurve, solve_pcurve_vertex_domains,
+    solve_pcurve_vertex_domains_with_authoritative_points, unique_oriented_native_pcurve,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, Surface, SurfaceGeometry};

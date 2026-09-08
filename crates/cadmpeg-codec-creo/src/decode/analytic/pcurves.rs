@@ -22,9 +22,10 @@ use super::edges::{
     nurbs_control_extent, nurbs_intrinsic_parameter_range, periodic_conic_edge_parameter_range,
     point_pair_alignments,
 };
-use super::equations::{cross, dot, CarrierEquation, PlaneEquation};
+use super::equations::{CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
 use super::vertices::model_points_agree;
+use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
@@ -206,13 +207,14 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
         .flatten()
 }
 
-#[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
+#[cfg(test)]
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Option<[[f64; 3]; 2]> {
-    mapped_pcurve_endpoint_evidence(ir, faces, endpoint_sets).map(|evidence| evidence.points)
+    let mapped = map_pcurve_paths(ir, faces.into_iter().zip(endpoint_sets));
+    pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false).map(|evidence| evidence.points)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -732,22 +734,6 @@ fn pcurve_mismatch_detail(
             .map(|candidate| endpoint_pair_error(first, candidate.endpoints, true))
             .fold(0.0, f64::max),
     })
-}
-
-fn mapped_pcurve_endpoint_evidence(
-    ir: &CadIr,
-    faces: [u32; 2],
-    endpoint_sets: [[[f64; 2]; 2]; 2],
-) -> Option<PcurveEndpointEvidence> {
-    mapped_pcurve_endpoint_evidence_for_paths(ir, faces.into_iter().zip(endpoint_sets))
-}
-
-fn mapped_pcurve_endpoint_evidence_for_paths(
-    ir: &CadIr,
-    paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
-) -> Option<PcurveEndpointEvidence> {
-    let mapped = map_pcurve_paths(ir, paths);
-    pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false)
 }
 
 pub fn pcurve_edge_endpoint_evidence(

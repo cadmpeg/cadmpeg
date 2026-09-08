@@ -11,12 +11,13 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
 
 use super::super::sketch_ids::sketch_entity_id;
-use super::super::sketch_transfer::{
-    saved_section_ordinary_geometry_allowed, section_saved_entity, semantic_saved_section_entities,
-    unique_saved_section_internal_ids,
-};
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
+use crate::decode::sketch_transfer::identity::{
+    saved_section_ordinary_geometry_allowed, semantic_saved_section_entities,
+    unique_saved_section_internal_ids,
+};
+use crate::decode::sketch_transfer::loci::section_saved_entity;
 
 const EPS_POINT_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
