@@ -2973,8 +2973,15 @@ fn consume_intersection_data(
         offset,
         intersection_schema_anchor_seen,
     )?;
-    let mut references = curve.header_references.to_vec();
-    references.extend(curve.references);
+    let mut references = curve
+        .header_references
+        .map(crate::framing::xmt_reference::XmtTarget::to_wire)
+        .to_vec();
+    references.extend(
+        curve
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+    );
     Some(Record {
         family: RecordFamily::IntersectionData {
             references: references.try_into().ok()?,
