@@ -164,7 +164,7 @@ pub(crate) fn select_records(
     let mut indices = Vec::new();
     let mut errors = Vec::new();
     for request in ids {
-        match resolve_one(request, &indexed) {
+        match resolve_one(request, indexed.iter().copied()) {
             Ok(i) => indices.push(i),
             Err(ResolveError::Ambiguous(matches)) => {
                 errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
@@ -182,30 +182,35 @@ pub(crate) fn select_records(
     (indices, errors)
 }
 
-enum ResolveError {
+/// Failure to select one record by ID.
+pub(crate) enum ResolveError {
     Missing,
     Ambiguous(Vec<String>),
 }
 
-fn resolve_one(request: &str, indexed: &[(Option<&str>, usize)]) -> Result<usize, ResolveError> {
-    for (id, i) in indexed {
-        if *id == Some(request) {
-            return Ok(*i);
+/// Resolves the first exact ID or one unique suffix match.
+pub(crate) fn resolve_one<'a, T: Copy>(
+    request: &str,
+    indexed: impl Iterator<Item = (Option<&'a str>, T)> + Clone,
+) -> Result<T, ResolveError> {
+    for (id, value) in indexed.clone() {
+        if id == Some(request) {
+            return Ok(value);
         }
     }
-    let mut suffix: Vec<(String, usize)> = Vec::new();
-    for (id, i) in indexed {
+    let mut suffix = Vec::new();
+    for (id, value) in indexed {
         if let Some(id) = id {
             if id.ends_with(request) {
-                suffix.push(((*id).to_owned(), *i));
+                suffix.push((id, value));
             }
         }
     }
-    match suffix.len() {
-        0 => Err(ResolveError::Missing),
-        1 => Ok(suffix[0].1),
+    match suffix.as_slice() {
+        [] => Err(ResolveError::Missing),
+        [(_, value)] => Ok(*value),
         _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id).collect(),
+            suffix.into_iter().map(|(id, _)| id.to_owned()).collect(),
         )),
     }
 }

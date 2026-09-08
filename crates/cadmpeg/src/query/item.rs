@@ -15,7 +15,7 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::document::reject_non_cadir;
+use super::document::{reject_non_cadir, resolve_one, ResolveError};
 use super::{print_json, read_input};
 
 /// Input selection for `query item`.
@@ -213,7 +213,10 @@ fn resolve_ids(
     let mut errors = Vec::new();
 
     for request in ids {
-        match resolve_one(request, &indexed) {
+        match resolve_one(
+            request,
+            indexed.iter().map(|(id, raw)| (id.as_deref(), *raw)),
+        ) {
             Ok(raw) => {
                 let value: serde_json::Value = serde_json::from_str(raw.get())
                     .with_context(|| format!("parsing record for id {request:?}"))?;
@@ -233,43 +236,6 @@ fn resolve_ids(
         }
     }
     Ok((values, errors))
-}
-
-enum ResolveError {
-    Missing,
-    Ambiguous(Vec<String>),
-}
-
-fn resolve_one<'a>(
-    request: &str,
-    indexed: &[(Option<String>, &'a RawValue)],
-) -> Result<&'a RawValue, ResolveError> {
-    let mut exact: Option<&RawValue> = None;
-    for (id, raw) in indexed {
-        if id.as_deref() == Some(request) {
-            exact = Some(*raw);
-            break;
-        }
-    }
-    if let Some(raw) = exact {
-        return Ok(raw);
-    }
-
-    let mut suffix: Vec<(String, &RawValue)> = Vec::new();
-    for (id, raw) in indexed {
-        if let Some(id) = id {
-            if id.ends_with(request) {
-                suffix.push((id.clone(), *raw));
-            }
-        }
-    }
-    match suffix.len() {
-        0 => Err(ResolveError::Missing),
-        1 => Ok(suffix[0].1),
-        _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id).collect(),
-        )),
-    }
 }
 
 /// Pretty-print records, TSV `--fields`, or the `--json` envelope.
