@@ -1089,6 +1089,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     );
     let mut wrong_class = tables.clone();
     wrong_class[0].entries[0].class_id = 201;
+    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain;
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
     if let Some(entry) = non_surface[0]
