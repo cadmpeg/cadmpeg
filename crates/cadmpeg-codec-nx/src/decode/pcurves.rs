@@ -221,39 +221,32 @@ impl IntersectionIncidenceIndex {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
-                if procedural
-                    .edit_definition(|definition| {
-                        let ProceduralCurveDefinition::Intersection { context, .. } = definition
-                        else {
-                            return;
-                        };
-                        let missing = context
-                            .sides()
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(index, side)| side.surface.is_none().then_some(index))
-                            .collect::<Vec<_>>();
-                        if missing.len() != 1 {
-                            return;
-                        }
-                        let candidates = incident
-                            .iter()
-                            .filter(|surface| {
-                                !context
-                                    .sides()
-                                    .iter()
-                                    .any(|side| side.surface.as_ref() == Some(surface))
-                            })
-                            .collect::<Vec<_>>();
-                        let [surface] = candidates.as_slice() else {
-                            return;
-                        };
-                        context.set_surface(missing[0], Some((*surface).clone()));
-                    })
-                    .is_err()
-                {
+                let Some(context) = procedural.intersection_context_mut() else {
+                    continue;
+                };
+
+                let missing = context
+                    .sides()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, side)| side.surface.is_none().then_some(index))
+                    .collect::<Vec<_>>();
+                if missing.len() != 1 {
                     continue;
                 }
+                let candidates = incident
+                    .iter()
+                    .filter(|surface| {
+                        !context
+                            .sides()
+                            .iter()
+                            .any(|side| side.surface.as_ref() == Some(surface))
+                    })
+                    .collect::<Vec<_>>();
+                let [surface] = candidates.as_slice() else {
+                    continue;
+                };
+                context.set_surface(missing[0], Some((*surface).clone()));
             }
         }
     }
@@ -267,44 +260,37 @@ impl IntersectionIncidenceIndex {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
-                if procedural
-                    .edit_definition(|definition| {
-                        let ProceduralCurveDefinition::Intersection { context, .. } = definition
-                        else {
-                            return;
-                        };
-                        for index in 0..context.sides().len() {
-                            let side = &context.sides()[index];
-                            if side.pcurve.is_some() {
-                                continue;
-                            }
-                            let Some(surface) = &side.surface else {
-                                continue;
-                            };
-                            let Some([pcurve]) = self
-                                .incident_pcurves
-                                .get(&(curve.clone(), surface.clone()))
-                                .map(Vec::as_slice)
-                            else {
-                                continue;
-                            };
-                            let Some(carrier_index) = self.pcurves_by_id.get(pcurve) else {
-                                continue;
-                            };
-                            let Some(geometry) = ir
-                                .model
-                                .pcurves
-                                .get(*carrier_index)
-                                .map(|carrier| carrier.geometry.clone())
-                            else {
-                                continue;
-                            };
-                            context.set_unmapped_pcurve(index, Some(geometry));
-                        }
-                    })
-                    .is_err()
-                {
+                let Some(context) = procedural.intersection_context_mut() else {
                     continue;
+                };
+
+                for index in 0..context.sides().len() {
+                    let side = &context.sides()[index];
+                    if side.pcurve.is_some() {
+                        continue;
+                    }
+                    let Some(surface) = &side.surface else {
+                        continue;
+                    };
+                    let Some([pcurve]) = self
+                        .incident_pcurves
+                        .get(&(curve.clone(), surface.clone()))
+                        .map(Vec::as_slice)
+                    else {
+                        continue;
+                    };
+                    let Some(carrier_index) = self.pcurves_by_id.get(pcurve) else {
+                        continue;
+                    };
+                    let Some(geometry) = ir
+                        .model
+                        .pcurves
+                        .get(*carrier_index)
+                        .map(|carrier| carrier.geometry.clone())
+                    else {
+                        continue;
+                    };
+                    context.set_unmapped_pcurve(index, Some(geometry));
                 }
             }
         }
