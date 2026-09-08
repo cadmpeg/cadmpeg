@@ -47,7 +47,7 @@ fn schema_relation_column_marks_ref_and_refs() {
     let path = doc.to_str().unwrap();
 
     cadmpeg()
-        .args(["query", "schema", path, "model.features"])
+        .args(["query", "schema", "file", path, "model.features"])
         .assert()
         .success()
         .stdout(
@@ -64,7 +64,7 @@ fn schema_relation_column_marks_ref_and_refs() {
         ));
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", path, "model.features"])
+        .args(["query", "schema", "--json", "file", path, "model.features"])
         .output()
         .unwrap();
     assert!(json.status.success());

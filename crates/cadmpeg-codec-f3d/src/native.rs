@@ -357,7 +357,6 @@ fn emit_asm_history_records(
 pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     F3dFamilyRow {
         arena: "act_entities",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_entities),
@@ -366,7 +365,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "act_guids",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_guids),
@@ -375,7 +373,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "act_registry_channels",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_registry_channels),
@@ -384,7 +381,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "act_root_components",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_root_components),
@@ -393,7 +389,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "act_table_references",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_table_references),
@@ -402,7 +397,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "body_native_keys",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.body_native_keys),
@@ -411,7 +405,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "body_visibilities",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.body_visibilities),
@@ -420,7 +413,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_types",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_types),
@@ -429,7 +421,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_canvas_images",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_canvas_images),
@@ -438,7 +429,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_decal_images",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_decal_images),
@@ -447,7 +437,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_mesh_features",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_mesh_features),
@@ -456,7 +445,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_component_occurrences",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -467,7 +455,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_component_naming_spaces",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -478,7 +465,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_body_recipe_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -489,7 +475,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_loft_legacy_body_carriers",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -500,7 +485,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_annotation_frames",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -511,7 +495,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_locus_groups",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -522,7 +505,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_locus_pairs",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -533,7 +515,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_null_locus_pairs",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -550,7 +531,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_presentation_frames",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -561,7 +541,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_dimension_recipe_records",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -572,7 +551,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_edge_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_edge_operands),
@@ -581,7 +559,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_edge_treatment_vertex_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -592,7 +569,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_edge_identity_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -603,7 +579,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_entity_selection_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -614,7 +589,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_face_operands",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_face_operands),
@@ -623,7 +597,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_face_source_groups",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -634,7 +607,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_construction_operand_groups",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -645,7 +617,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_construction_operand_identities",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -656,7 +627,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_extrude_selection_groups",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -667,7 +637,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_extrude_selection_members",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -678,7 +647,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_feature_timelines",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -689,7 +657,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_fillet_radius_groups",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -700,7 +667,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_parameter_companions",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -711,7 +677,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_parameter_owners",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -722,7 +687,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_parameter_scopes",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -733,7 +697,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_surface_trim_operations",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -744,7 +707,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_parameters",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_parameters),
@@ -753,7 +715,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_entity_headers",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_entity_headers),
@@ -762,7 +723,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_record_headers",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_record_headers),
@@ -771,7 +731,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_sketch_placements",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -782,7 +741,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_body_bindings",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_bindings),
@@ -791,7 +749,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_body_bounds",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_bounds),
@@ -800,7 +757,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_body_members",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_members),
@@ -809,7 +765,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_configurations",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_configurations),
@@ -818,7 +773,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "design_material_assignments",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -829,7 +783,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "edge_continuities",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.edge_continuities),
@@ -838,7 +791,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "edge_ownerships",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.edge_ownerships),
@@ -847,7 +799,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "face_sidedness",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.face_sidedness),
@@ -856,7 +807,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "face_native_keys",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.face_native_keys),
@@ -865,7 +815,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "construction_recipes",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.construction_recipes),
@@ -874,7 +823,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "creation_timestamps",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.creation_timestamps),
@@ -883,7 +831,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "persistent_design_links",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -894,7 +841,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "persistent_references",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.persistent_references),
@@ -903,7 +849,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "persistent_subentity_tags",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -914,7 +859,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_curve_links",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_curve_links),
@@ -923,7 +867,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_relations",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_relations),
@@ -932,7 +875,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_points",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_points),
@@ -941,7 +883,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_curve_identities",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -952,7 +893,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_surfaces",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_surfaces),
@@ -961,7 +901,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "sketch_texts",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_texts),
@@ -970,7 +909,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "lost_edge_references",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.lost_edge_references),
@@ -979,7 +917,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "mesh_surface_sentinels",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.mesh_surface_sentinels),
@@ -988,7 +925,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "vertex_ownerships",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.vertex_ownerships),
@@ -997,7 +933,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "tolerant_coedge_parameters",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| {
@@ -1008,7 +943,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "tolerant_edge_tails",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.tolerant_edge_tails),
@@ -1017,7 +951,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "tolerant_vertex_tails",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.tolerant_vertex_tails),
@@ -1026,7 +959,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "transform_hints",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.transform_hints),
@@ -1035,7 +967,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "wire_topologies",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.wire_topologies),
@@ -1044,7 +975,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "xref_designs",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.xref_designs),
@@ -1053,7 +983,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "xref_references",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.xref_references),
@@ -1062,7 +991,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "asm_histories",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: emit_asm_histories,
@@ -1071,7 +999,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "asm_delta_states",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: emit_asm_delta_states,
@@ -1086,7 +1013,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "asm_bulletin_boards",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: emit_asm_bulletin_boards,
@@ -1102,7 +1028,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "asm_entity_changes",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: emit_asm_entity_changes,
@@ -1119,7 +1044,6 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
     },
     F3dFamilyRow {
         arena: "asm_history_records",
-        tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: emit_asm_history_records,

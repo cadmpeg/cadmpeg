@@ -114,7 +114,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
         ctx: &'ctx DecodeContext<'arena>,
-        mode: &DecodeMode,
+        mode: DecodeMode,
     ) -> Self {
         let mut attributes = BTreeMap::new();
         attributes.insert("schema".into(), schema_name(exchange));
@@ -288,7 +288,7 @@ fn decode_exchange_mode(
     mode: DecodeMode,
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, &mode);
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }

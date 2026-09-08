@@ -38,43 +38,36 @@ pub fn parse_offset(text: &str) -> Result<u64, String> {
 }
 
 /// Byte order applied to a multi-byte scalar read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Endian {
     /// Least significant byte first.
-    Little,
+    Le,
     /// Most significant byte first.
-    Big,
+    Be,
 }
 
 impl Endian {
     /// Returns the two-letter suffix used in output and in layout specs.
     pub const fn suffix(self) -> &'static str {
         match self {
-            Self::Little => "le",
-            Self::Big => "be",
+            Self::Le => "le",
+            Self::Be => "be",
         }
     }
 }
 
-/// Mutually exclusive byte-order selection flags.
+/// Byte-order selection.
 #[derive(Debug, Clone, Args)]
 pub struct EndianArgs {
-    /// Read little-endian. This is the default.
-    #[arg(long, conflicts_with = "be")]
-    le: bool,
-    /// Read big-endian.
-    #[arg(long)]
-    be: bool,
+    /// Byte order; defaults to little-endian.
+    #[arg(long = "endian", value_enum)]
+    endian: Option<Endian>,
 }
 
 impl EndianArgs {
     /// Returns the selected byte order, defaulting to little-endian.
     pub fn mode(&self) -> Endian {
-        match (self.le, self.be) {
-            (false, true) => Endian::Big,
-            (_, false) => Endian::Little,
-            (true, true) => unreachable!("clap rejects conflicting byte-order flags"),
-        }
+        self.endian.unwrap_or(Endian::Le)
     }
 }
 
@@ -98,7 +91,7 @@ impl clap::builder::TypedValueParser for ScalarTypeParser {
         let redirect = match value.to_str().map(str::to_ascii_lowercase).as_deref() {
             Some("ascii" | "string" | "str" | "text" | "utf8") => Some(
                 "--type takes a fixed-width scalar; for text use `cadmpeg inspect strings`, \
-                 or `cadmpeg inspect find --ascii TEXT` to locate it",
+                 or `cadmpeg inspect find FILE --encoding ascii TEXT` to locate it",
             ),
             Some("hex" | "bytes") => {
                 Some("--type takes a fixed-width scalar; for a hex dump use `cadmpeg inspect hex`")
@@ -224,7 +217,7 @@ impl ScalarType {
         );
         let mut raw = [0u8; 8];
         raw[..bytes.len()].copy_from_slice(bytes);
-        if endian == Endian::Big {
+        if endian == Endian::Be {
             raw[..bytes.len()].reverse();
         }
         let bits = assemble_u64_le(raw);
@@ -334,11 +327,11 @@ mod tests {
         // 0x0102 big-endian is 258; the same bytes little-endian are 0x0201.
         let bytes = [0x01, 0x02];
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Big),
+            ScalarType::U16.read(&bytes, Endian::Be),
             ScalarValue::U16(258)
         );
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Little),
+            ScalarType::U16.read(&bytes, Endian::Le),
             ScalarValue::U16(513)
         );
     }
@@ -346,19 +339,19 @@ mod tests {
     #[test]
     fn signed_reads_sign_extend_at_each_width() {
         assert_eq!(
-            ScalarType::I8.read(&[0xff], Endian::Little),
+            ScalarType::I8.read(&[0xff], Endian::Le),
             ScalarValue::I8(-1)
         );
         assert_eq!(
-            ScalarType::I16.read(&[0x00, 0x80], Endian::Little),
+            ScalarType::I16.read(&[0x00, 0x80], Endian::Le),
             ScalarValue::I16(-32768)
         );
         assert_eq!(
-            ScalarType::I32.read(&[0xff, 0xff, 0xff, 0xff], Endian::Big),
+            ScalarType::I32.read(&[0xff, 0xff, 0xff, 0xff], Endian::Be),
             ScalarValue::I32(-1)
         );
         assert_eq!(
-            ScalarType::I64.read(&[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Little),
+            ScalarType::I64.read(&[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Le),
             ScalarValue::I64(i64::MIN)
         );
     }
@@ -368,13 +361,13 @@ mod tests {
         // 1.5f64 is sign 0, exponent 0x3ff, mantissa 0x8000000000000.
         let one_point_five = 0x3ff8_0000_0000_0000u64.to_le_bytes();
         assert_eq!(
-            ScalarType::F64.read(&one_point_five, Endian::Little),
+            ScalarType::F64.read(&one_point_five, Endian::Le),
             ScalarValue::F64(1.5)
         );
         // -2.0f32 is sign 1, exponent 0x80, mantissa 0.
         let minus_two = 0xc000_0000u32.to_be_bytes();
         assert_eq!(
-            ScalarType::F32.read(&minus_two, Endian::Big),
+            ScalarType::F32.read(&minus_two, Endian::Be),
             ScalarValue::F32(-2.0)
         );
     }
@@ -390,7 +383,7 @@ mod tests {
 
     #[test]
     fn display_names_carry_a_suffix_only_for_wide_types() {
-        assert_eq!(ScalarType::U8.display_name(Endian::Big), "u8");
-        assert_eq!(ScalarType::F64.display_name(Endian::Big), "f64be");
+        assert_eq!(ScalarType::U8.display_name(Endian::Be), "u8");
+        assert_eq!(ScalarType::F64.display_name(Endian::Be), "f64be");
     }
 }

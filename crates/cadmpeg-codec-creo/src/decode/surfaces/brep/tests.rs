@@ -626,7 +626,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .zip(points)
         .map(|(curve_id, endpoints)| crate::curve::PcurveEndpoints {
             curve_id,
-            faces: [5, 0],
+            faces: [5, 0].map(std::num::NonZeroU32::new),
             face_0_endpoints: endpoints,
             face_1_endpoints: [[0.0, 0.0], [0.0, 0.0]],
             offset: 0,
@@ -792,7 +792,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         offset: 0,
     });
     for pcurve in &mut scan.curves.pcurves {
-        pcurve.faces = [5, 6];
+        pcurve.faces = [5, 6].map(std::num::NonZeroU32::new);
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
     ir.model.surfaces.push(Surface {

@@ -1062,14 +1062,14 @@ pub(in super::super) fn transfer_native_brep(
             )
         }))
     {
-        native_pcurves
-            .entry((curve_id, faces[0]))
-            .or_default()
-            .push((face_0_endpoints, offset));
-        native_pcurves
-            .entry((curve_id, faces[1]))
-            .or_default()
-            .push((face_1_endpoints, offset));
+        for (face, endpoints) in faces.into_iter().zip([face_0_endpoints, face_1_endpoints]) {
+            if let Some(face) = face {
+                native_pcurves
+                    .entry((curve_id, face.get()))
+                    .or_default()
+                    .push((endpoints, offset));
+            }
+        }
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let Some(endpoint_sets) =
@@ -1092,7 +1092,7 @@ pub(in super::super) fn transfer_native_brep(
     ) {
         let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
             scan,
-            pcurve.faces,
+            pcurve.faces.map(std::num::NonZeroU32::new),
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
         );

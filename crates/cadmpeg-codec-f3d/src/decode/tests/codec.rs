@@ -57,7 +57,6 @@ fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
     let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
         width: cadmpeg_asm::kernel_header::RefWidth::Eight,
         save_format_version: Some(22500),
-        record_count: None,
         entity_count: None,
         flags: Some(flags),
         product_family: None,
@@ -93,7 +92,7 @@ fn asm_header_parses_binaryfile4_fields() {
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width.bytes(), 4);
     assert_eq!(h.save_format_version, Some(22700));
-    assert_eq!(h.record_count, Some(0));
+    assert_eq!(asm_header::record_count(&bytes), Some(0));
     assert_eq!(h.entity_count, Some(2));
     assert_eq!(h.flags, Some(5));
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));

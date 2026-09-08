@@ -2045,7 +2045,7 @@ pub(super) fn pcurve_endpoint_records(
                 CreoPcurveEndpointRecord {
                     id: format!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
                     curve_id: pcurve.curve_id,
-                    faces: pcurve.faces,
+                    faces: pcurve.stored_face_ids(),
                     face_0_endpoints: pcurve.face_0_endpoints,
                     face_1_endpoints: pcurve.face_1_endpoints,
                     source_form: "positional",
@@ -2062,7 +2062,7 @@ pub(super) fn pcurve_endpoint_records(
                     pcurve.curve_id
                 ),
                 curve_id: pcurve.curve_id,
-                faces: pcurve.faces,
+                faces: pcurve.stored_face_ids(),
                 face_0_endpoints: pcurve.face_0_endpoints,
                 face_1_endpoints: pcurve.face_1_endpoints,
                 source_form: "prototype",

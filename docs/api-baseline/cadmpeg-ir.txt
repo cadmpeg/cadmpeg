@@ -1,4 +1,4 @@
-# generated at 52daa3cec
+# generated at f444fcb0b
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -664,7 +664,6 @@ pub fn cadmpeg_ir::document::entity_census(&cadmpeg_ir::document::CadIr) -> allo
 pub mod cadmpeg_ir::draft
 pub enum cadmpeg_ir::draft::DraftError
 pub cadmpeg_ir::draft::DraftError::IdentityCollision(alloc::string::String)
-pub cadmpeg_ir::draft::DraftError::InvalidBrep(alloc::string::String)
 pub cadmpeg_ir::draft::DraftError::UnresolvedReference
 pub cadmpeg_ir::draft::DraftError::UnresolvedReference::owner: alloc::string::String
 pub cadmpeg_ir::draft::DraftError::UnresolvedReference::target: alloc::string::String
@@ -4927,8 +4926,12 @@ pub cadmpeg_ir::native::catalogue::NotePhase::GroupA
 pub cadmpeg_ir::native::catalogue::NotePhase::GroupB
 pub enum cadmpeg_ir::native::catalogue::Phase<M, A, N, E>
 pub cadmpeg_ir::native::catalogue::Phase::ArenaOnly
-pub cadmpeg_ir::native::catalogue::Phase::GroupA(cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E>)
-pub cadmpeg_ir::native::catalogue::Phase::GroupB(cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E>)
+pub cadmpeg_ir::native::catalogue::Phase::GroupA
+pub cadmpeg_ir::native::catalogue::Phase::GroupA::note: cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E>
+pub cadmpeg_ir::native::catalogue::Phase::GroupA::tag: core::option::Option<&'static str>
+pub cadmpeg_ir::native::catalogue::Phase::GroupB
+pub cadmpeg_ir::native::catalogue::Phase::GroupB::note: cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E>
+pub cadmpeg_ir::native::catalogue::Phase::GroupB::tag: core::option::Option<&'static str>
 pub struct cadmpeg_ir::native::catalogue::Catalogue<'a, M, A, N, E>
 impl<'a, M, A, N, E> cadmpeg_ir::native::catalogue::Catalogue<'a, M, A, N, E>
 pub fn cadmpeg_ir::native::catalogue::Catalogue<'a, M, A, N, E>::emit_all(&self, &M, &mut N) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
@@ -4943,9 +4946,8 @@ pub cadmpeg_ir::native::catalogue::FamilyRow::emit: cadmpeg_ir::native::catalogu
 pub cadmpeg_ir::native::catalogue::FamilyRow::exactness: E
 pub cadmpeg_ir::native::catalogue::FamilyRow::len: fn(&M) -> usize
 pub cadmpeg_ir::native::catalogue::FamilyRow::phase: cadmpeg_ir::native::catalogue::Phase<M, A, N, E>
-pub cadmpeg_ir::native::catalogue::FamilyRow::tag: core::option::Option<&'static str>
 pub type cadmpeg_ir::native::catalogue::EmitFn<M, A, N, E> = fn(&M, &cadmpeg_ir::native::catalogue::FamilyRow<M, A, N, E>, &mut N) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
-pub type cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E> = fn(&M, &cadmpeg_ir::native::catalogue::FamilyRow<M, A, N, E>, &mut A)
+pub type cadmpeg_ir::native::catalogue::NoteFn<M, A, N, E> = fn(&M, &cadmpeg_ir::native::catalogue::FamilyRow<M, A, N, E>, core::option::Option<&'static str>, &mut A)
 pub enum cadmpeg_ir::native::NativeConvertError
 pub cadmpeg_ir::native::NativeConvertError::InvalidOwner(alloc::string::String)
 pub cadmpeg_ir::native::NativeConvertError::MissingId
@@ -5484,12 +5486,10 @@ pub cadmpeg_ir::report::Check::ParameterDomain
 pub cadmpeg_ir::report::Check::PayloadIntegrity
 pub cadmpeg_ir::report::Check::Pmi
 pub cadmpeg_ir::report::Check::Presentation
-pub cadmpeg_ir::report::Check::ProductStructure
 pub cadmpeg_ir::report::Check::ReferentialIntegrity
 pub cadmpeg_ir::report::Check::ShellTopology
 pub cadmpeg_ir::report::Check::Tessellation
 pub cadmpeg_ir::report::Check::Tolerances
-pub cadmpeg_ir::report::Check::Units
 pub cadmpeg_ir::report::Check::WireTopology
 impl core::fmt::Display for cadmpeg_ir::Check
 pub fn cadmpeg_ir::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -7251,12 +7251,10 @@ pub cadmpeg_ir::Check::ParameterDomain
 pub cadmpeg_ir::Check::PayloadIntegrity
 pub cadmpeg_ir::Check::Pmi
 pub cadmpeg_ir::Check::Presentation
-pub cadmpeg_ir::Check::ProductStructure
 pub cadmpeg_ir::Check::ReferentialIntegrity
 pub cadmpeg_ir::Check::ShellTopology
 pub cadmpeg_ir::Check::Tessellation
 pub cadmpeg_ir::Check::Tolerances
-pub cadmpeg_ir::Check::Units
 pub cadmpeg_ir::Check::WireTopology
 impl core::fmt::Display for cadmpeg_ir::Check
 pub fn cadmpeg_ir::Check::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

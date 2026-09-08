@@ -279,12 +279,26 @@ impl From<RecipeState> for RecipeResolution {
     }
 }
 
+mod sealed {
+    /// Closed set of procedural recipe forms.
+    pub trait Sealed {}
+
+    impl Sealed for super::RecipeState {}
+    impl Sealed for super::RecipeResolution {}
+}
+
+/// Stored or resolved procedural recipe form.
+pub trait RecipeForm: sealed::Sealed {}
+
+impl RecipeForm for RecipeState {}
+impl RecipeForm for RecipeResolution {}
+
 /// One stored feature-state record, before current-state selection.
 pub type FeatureOperationState = FeatureOperation<RecipeState>;
 
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOperation<R = RecipeResolution> {
+pub struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     /// Numeric feature identifier following `id` in the stored name.
     pub feature_id: u32,
     /// Operation-family kind.
@@ -319,7 +333,7 @@ impl FeatureOperationState {
     }
 }
 
-impl<R> FeatureOperation<R> {
+impl<R: RecipeForm> FeatureOperation<R> {
     pub fn display_name_stored(&self) -> bool {
         self.name.display_name_stored()
     }

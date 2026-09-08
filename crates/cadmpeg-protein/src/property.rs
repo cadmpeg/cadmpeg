@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decoded property carriers and their serialized representation.
 
+use std::num::NonZeroUsize;
+
 use serde::{Deserialize, Serialize};
 
 /// One typed property decoded according to its packaged schema.
@@ -20,15 +22,15 @@ pub enum PropertyContent {
     Value {
         /// Decoded scalar or multiple-value payload.
         value: PropertyValue,
-        /// Connection block, present only for a connectable carrier.
-        connections: Option<Vec<String>>,
+        /// Empty for a carrier the schema does not declare connectable.
+        connections: Vec<String>,
     },
     /// A single reference carrier.
     Reference(Vec<String>),
     /// Repeated reference carriers share one connection block.
     MultipleReferences {
         /// Number of zero-byte reference values preceding the connection block.
-        count: usize,
+        count: NonZeroUsize,
         /// Connected asset identifiers in serialized order.
         targets: Vec<String>,
     },
@@ -48,9 +50,7 @@ impl DecodedProperty {
     #[must_use]
     pub fn connections(&self) -> &[String] {
         match &self.content {
-            PropertyContent::Value { connections, .. } => {
-                connections.as_deref().unwrap_or_default()
-            }
+            PropertyContent::Value { connections, .. } => connections,
             PropertyContent::Reference(targets)
             | PropertyContent::MultipleReferences { targets, .. } => targets,
         }
@@ -125,13 +125,13 @@ struct DecodedPropertyWire {
 impl From<DecodedProperty> for DecodedPropertyWire {
     fn from(property: DecodedProperty) -> Self {
         let (value, connections) = match property.content {
-            PropertyContent::Value { value, connections } => {
-                (value.into(), connections.unwrap_or_default())
-            }
+            PropertyContent::Value { value, connections } => (value.into(), connections),
             PropertyContent::Reference(targets) => (PropertyValueWire::Reference, targets),
             PropertyContent::MultipleReferences { count, targets } => (
                 PropertyValueWire::Multiple(
-                    (0..count).map(|_| PropertyValueWire::Reference).collect(),
+                    (0..count.get())
+                        .map(|_| PropertyValueWire::Reference)
+                        .collect(),
                 ),
                 targets,
             ),
@@ -150,20 +150,25 @@ impl TryFrom<DecodedPropertyWire> for DecodedProperty {
     fn try_from(wire: DecodedPropertyWire) -> Result<Self, Self::Error> {
         let content = match wire.value {
             PropertyValueWire::Reference => PropertyContent::Reference(wire.connections),
-            PropertyValueWire::Multiple(values)
-                if !values.is_empty()
-                    && values
+            PropertyValueWire::Multiple(values) => {
+                match NonZeroUsize::new(values.len()).filter(|_| {
+                    values
                         .iter()
-                        .all(|value| matches!(value, PropertyValueWire::Reference)) =>
-            {
-                PropertyContent::MultipleReferences {
-                    count: values.len(),
-                    targets: wire.connections,
+                        .all(|value| matches!(value, PropertyValueWire::Reference))
+                }) {
+                    Some(count) => PropertyContent::MultipleReferences {
+                        count,
+                        targets: wire.connections,
+                    },
+                    None => PropertyContent::Value {
+                        value: PropertyValueWire::Multiple(values).try_into()?,
+                        connections: wire.connections,
+                    },
                 }
             }
             value => PropertyContent::Value {
                 value: value.try_into()?,
-                connections: Some(wire.connections),
+                connections: wire.connections,
             },
         };
         Ok(Self {
@@ -230,31 +235,34 @@ mod tests {
             ),
             (
                 PropertyContent::MultipleReferences {
-                    count: 2,
+                    count: NonZeroUsize::new(2).expect("positive reference count"),
                     targets: vec!["target".into()],
                 },
                 r#"{"value_offset":4,"value":{"kind":"multiple","value":[{"kind":"reference"},{"kind":"reference"}]},"connections":["target"]}"#,
             ),
             (
-                PropertyContent::MultipleReferences {
-                    count: 0,
-                    targets: vec!["target".into()],
+                PropertyContent::Value {
+                    value: PropertyValue::Multiple(Vec::new()),
+                    connections: vec!["target".into()],
                 },
                 r#"{"value_offset":4,"value":{"kind":"multiple","value":[]},"connections":["target"]}"#,
             ),
             (
                 PropertyContent::Value {
                     value: PropertyValue::Float(1.5),
-                    connections: None,
+                    connections: Vec::new(),
                 },
                 r#"{"value_offset":4,"value":{"kind":"float","value":1.5},"connections":[]}"#,
             ),
             (
                 PropertyContent::Value {
-                    value: PropertyValue::Float(1.5),
-                    connections: Some(Vec::new()),
+                    value: PropertyValue::Multiple(vec![
+                        PropertyValue::Float(1.5),
+                        PropertyValue::Boolean(true),
+                    ]),
+                    connections: vec!["target".into()],
                 },
-                r#"{"value_offset":4,"value":{"kind":"float","value":1.5},"connections":[]}"#,
+                r#"{"value_offset":4,"value":{"kind":"multiple","value":[{"kind":"float","value":1.5},{"kind":"boolean","value":true}]},"connections":["target"]}"#,
             ),
         ];
         for (content, expected) in cases {
@@ -273,6 +281,7 @@ mod tests {
                 expected
             );
             assert_eq!(decoded.connections(), property.connections());
+            assert_eq!(decoded, property);
         }
     }
 

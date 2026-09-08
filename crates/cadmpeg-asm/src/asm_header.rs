@@ -54,6 +54,14 @@ pub fn stream_ref_width(bytes: &[u8]) -> RefWidth {
     declared_width(bytes).unwrap_or(RefWidth::Eight)
 }
 
+/// Stored record-count word of an ASM `BinaryFile4` header.
+pub fn record_count(bytes: &[u8]) -> Option<u32> {
+    if declared_width(bytes) != Some(RefWidth::Four) {
+        return None;
+    }
+    View::u32_le_at(bytes, bf4::RECORD_COUNT)
+}
+
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
@@ -62,7 +70,6 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     let mut header = KernelHeader {
         width,
         save_format_version: None,
-        record_count: None,
         entity_count: None,
         flags: None,
         product_family: None,
@@ -81,7 +88,6 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
         }
         RefWidth::Four => {
             header.save_format_version = View::u32_le_at(bytes, bf4::SAVE_FORMAT_VERSION);
-            header.record_count = View::u32_le_at(bytes, bf4::RECORD_COUNT);
             header.entity_count = View::u32_le_at(bytes, bf4::ENTITY_COUNT).map(u64::from);
             header.flags = View::u32_le_at(bytes, bf4::FLAGS).map(u64::from);
         }

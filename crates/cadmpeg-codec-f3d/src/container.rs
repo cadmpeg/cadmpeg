@@ -376,7 +376,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 if let Some(v) = h.save_format_version {
                     attributes.insert("acis_save_format_version".to_string(), v.to_string());
                 }
-                if let Some(v) = h.record_count {
+                if let Some(v) = asm_header::record_count(buf) {
                     attributes.insert("asm_record_count".to_string(), v.to_string());
                 }
                 if let Some(v) = h.entity_count {

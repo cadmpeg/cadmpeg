@@ -6,9 +6,19 @@ use super::NativeConvertError;
 /// Ordered processing phase and annotation function for a native record family.
 pub enum Phase<M, A, N, E> {
     /// Families handled before the first codec semantic island.
-    GroupA(NoteFn<M, A, N, E>),
+    GroupA {
+        /// Optional standard annotation tag.
+        tag: Option<&'static str>,
+        /// Annotation function for this family.
+        note: NoteFn<M, A, N, E>,
+    },
     /// Families handled between codec semantic islands.
-    GroupB(NoteFn<M, A, N, E>),
+    GroupB {
+        /// Optional standard annotation tag.
+        tag: Option<&'static str>,
+        /// Annotation function for this family.
+        note: NoteFn<M, A, N, E>,
+    },
     /// Families emitted without catalogue-driven annotations.
     ArenaOnly,
 }
@@ -23,7 +33,7 @@ pub enum NotePhase {
 }
 
 /// Annotation function carried by a family row.
-pub type NoteFn<M, A, N, E> = fn(&M, &FamilyRow<M, A, N, E>, &mut A);
+pub type NoteFn<M, A, N, E> = fn(&M, &FamilyRow<M, A, N, E>, Option<&'static str>, &mut A);
 
 /// Namespace-emission function carried by a family row.
 pub type EmitFn<M, A, N, E> =
@@ -33,8 +43,6 @@ pub type EmitFn<M, A, N, E> =
 pub struct FamilyRow<M, A, N, E> {
     /// Native namespace arena name.
     pub arena: &'static str,
-    /// Optional standard annotation tag.
-    pub tag: Option<&'static str>,
     /// Codec-selected exactness metadata.
     pub exactness: E,
     /// Ordered processing phase.
@@ -75,9 +83,11 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     pub fn note_phase(&self, phase: NotePhase, model: &M, annotations: &mut A) {
         for row in self.rows {
             match (&row.phase, phase) {
-                (Phase::GroupA(note), NotePhase::GroupA)
-                | (Phase::GroupB(note), NotePhase::GroupB) => note(model, row, annotations),
-                (Phase::GroupA(_) | Phase::GroupB(_) | Phase::ArenaOnly, _) => {}
+                (Phase::GroupA { tag, note }, NotePhase::GroupA)
+                | (Phase::GroupB { tag, note }, NotePhase::GroupB) => {
+                    note(model, row, *tag, annotations);
+                }
+                (Phase::GroupA { .. } | Phase::GroupB { .. } | Phase::ArenaOnly, _) => {}
             }
         }
     }

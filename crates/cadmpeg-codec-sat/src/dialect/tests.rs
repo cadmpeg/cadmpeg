@@ -44,7 +44,6 @@ fn header(save_format_version: Option<u32>) -> KernelHeader {
     KernelHeader {
         width: cadmpeg_asm::kernel_header::RefWidth::Four,
         save_format_version,
-        record_count: None,
         entity_count: None,
         flags: None,
         product_family: None,

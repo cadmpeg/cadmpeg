@@ -510,13 +510,20 @@ pub struct PcurveEndpoints {
     /// Owning curve identifier.
     pub curve_id: u32,
     /// Adjacent face identifiers corresponding to face frames zero and one.
-    pub faces: [u32; 2],
+    pub faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's local UV frame.
     pub face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's local UV frame.
     pub face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
     pub offset: usize,
+}
+
+impl PcurveEndpoints {
+    /// Stored face identifiers, with zero for an absent face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
 }
 
 /// Ordered samples of one curve represented in both incident-face charts.
@@ -733,13 +740,20 @@ pub struct BoundPrototypePcurve {
     /// Prototype curve identifier.
     pub curve_id: u32,
     /// Adjacent face identifiers corresponding to UV frames zero and one.
-    pub faces: [u32; 2],
+    pub faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's UV frame.
     pub face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's UV frame.
     pub face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source prototype pcurve.
     pub offset: usize,
+}
+
+impl BoundPrototypePcurve {
+    /// Stored face identifiers, with zero for an absent face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
 }
 
 /// Discover every labeled `crv_array` prototype. A label range ends at the
@@ -5767,7 +5781,21 @@ struct FramedRow {
     reference_geometry: [u32; 2],
 }
 
-type TopologySuffixCandidate = (usize, [u32; 4], [u32; 2]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TopologySuffixCandidate {
+    start: usize,
+    faces: [Option<NonZeroU32>; 2],
+    next_edges: [u32; 2],
+    reference_geometry: [u32; 2],
+}
+
+impl TopologySuffixCandidate {
+    fn stored_references(self) -> [u32; 4] {
+        let [f0, f1] = self.faces.map(stored_face_reference);
+        let [e0, e1] = self.next_edges;
+        [f0, f1, e0, e1]
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct TopologyPrefix {
@@ -5843,11 +5871,10 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         let known_face_ids = face_ids.map(|face_ids| {
             let mut known = face_ids.clone();
             for &(start, end, _) in &segments {
-                let Some((_, suffix, _)) = unique_topology_suffix_in_segment(&payload[start..end])
-                else {
+                let Some(suffix) = unique_topology_suffix_in_segment(&payload[start..end]) else {
                     continue;
                 };
-                known.extend(suffix[..2].iter().copied().filter(|id| *id != 0));
+                known.extend(suffix.faces.into_iter().flatten().map(NonZeroU32::get));
             }
             known
         });
@@ -5897,13 +5924,16 @@ fn framed_segment_with_face_ids(
         if !complete_curve_row_linkage(&segment[row_end..]) {
             continue;
         }
-        let Some((suffix_start, suffix, reference_geometry)) = topology_suffix_with_face_ids(
+        let Some(candidate) = topology_suffix_with_face_ids(
             &segment[..row_end],
             materialized_face_ids,
             known_face_ids,
         ) else {
             continue;
         };
+        let suffix_start = candidate.start;
+        let suffix = candidate.stored_references();
+        let reference_geometry = candidate.reference_geometry;
         if boundary_anchored
             && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
         {
@@ -6183,7 +6213,7 @@ pub fn pcurve_endpoints(
             (topology.type_byte == record.type_byte).then_some(())?;
             Some(PcurveEndpoints {
                 curve_id: record.curve_id,
-                faces: topology.faces.map(stored_face_reference),
+                faces: topology.faces,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
                 face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
                 offset: record.offset,
@@ -6842,7 +6872,7 @@ pub fn bind_prototype_pcurves(
                 .find(|topology| topology.curve_id == pcurve.curve_id)?;
             Some(BoundPrototypePcurve {
                 curve_id: pcurve.curve_id,
-                faces: topology.faces.map(stored_face_reference),
+                faces: topology.faces,
                 face_0_endpoints: pcurve.face_0_endpoints,
                 face_1_endpoints: pcurve.face_1_endpoints,
                 offset: pcurve.offset,
@@ -6912,10 +6942,12 @@ fn topology_suffix_with_face_ids(
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
         let role_matches = candidates
             .iter()
-            .filter(|(_, references, _)| {
-                references[..2].iter().all(|&face_id| {
-                    NonZeroU32::new(face_id).is_none_or(|id| ids.contains(&id.get()))
-                })
+            .filter(|candidate| {
+                candidate
+                    .faces
+                    .iter()
+                    .flatten()
+                    .all(|id| ids.contains(&id.get()))
             })
             .copied()
             .collect::<Vec<_>>();
@@ -6926,10 +6958,12 @@ fn topology_suffix_with_face_ids(
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|(_, references, _)| {
-        references[..2]
+    let mut role_matches = candidates.into_iter().filter(|candidate| {
+        candidate
+            .faces
             .iter()
-            .all(|&face_id| NonZeroU32::new(face_id).is_none_or(|id| ids.contains(&id.get())))
+            .flatten()
+            .all(|id| ids.contains(&id.get()))
     });
     let candidate = role_matches.next()?;
     role_matches.next().is_none().then_some(candidate)
@@ -6996,7 +7030,12 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == reference_geometry_start {
-                candidates.push((start, [f0, f1, e0, e1], reference_geometry));
+                candidates.push(TopologySuffixCandidate {
+                    start,
+                    faces: [f0, f1].map(NonZeroU32::new),
+                    next_edges: [e0, e1],
+                    reference_geometry,
+                });
             }
         }
     }

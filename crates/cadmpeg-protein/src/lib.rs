@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -472,7 +473,13 @@ fn decode_record(
                 let targets = read_connections(record, &mut at)
                     .map_err(|error| connection_error(error, at))?;
                 match count {
-                    Some(count) => PropertyContent::MultipleReferences { count, targets },
+                    Some(count) => match NonZeroUsize::new(count) {
+                        Some(count) => PropertyContent::MultipleReferences { count, targets },
+                        None => PropertyContent::Value {
+                            value: PropertyValue::Multiple(Vec::new()),
+                            connections: targets,
+                        },
+                    },
                     None => PropertyContent::Reference(targets),
                 }
             }
@@ -485,7 +492,8 @@ fn decode_record(
                 let connections = connectable
                     .then(|| read_connections(record, &mut at))
                     .transpose()
-                    .map_err(|error| connection_error(error, at))?;
+                    .map_err(|error| connection_error(error, at))?
+                    .unwrap_or_default();
                 PropertyContent::Value { value, connections }
             }
         };
@@ -792,9 +800,16 @@ mod tests {
             assert_eq!(records.len(), 1);
             assert_eq!(
                 records[0].properties["targets"].content,
-                PropertyContent::MultipleReferences {
-                    count: count as usize,
-                    targets: vec!["target".into()]
+                if count == 0 {
+                    PropertyContent::Value {
+                        value: PropertyValue::Multiple(Vec::new()),
+                        connections: vec!["target".into()],
+                    }
+                } else {
+                    PropertyContent::MultipleReferences {
+                        count: NonZeroUsize::new(2).expect("positive reference count"),
+                        targets: vec!["target".into()],
+                    }
                 }
             );
         }

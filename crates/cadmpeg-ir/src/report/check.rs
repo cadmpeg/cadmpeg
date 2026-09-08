@@ -18,8 +18,6 @@ use crate::document::CensusKey;
 pub enum Check {
     /// Entity identifiers are empty, duplicated, or not globally unique.
     Identity,
-    /// Product occurrence ownership, references, or acyclicity.
-    ProductStructure,
     /// PMI targets and annotation-to-annotation references.
     Pmi,
     /// Presentation-layer membership and references.
@@ -50,9 +48,6 @@ pub enum Check {
     PayloadIntegrity,
     /// A tessellation payload is malformed.
     Tessellation,
-    /// The document's units are missing or non-canonical, or a tolerance is
-    /// invalid.
-    Units,
     /// A geometric quantity is out of sane range (e.g. negative radius).
     Bounds,
     /// Evaluated carrier geometry disagrees with the topology it supports:
@@ -67,7 +62,6 @@ impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Identity => "identity",
-            Self::ProductStructure => "product_structure",
             Self::Pmi => "pmi",
             Self::Presentation => "presentation",
             Self::ArenaOrder => "arena_order",
@@ -83,7 +77,6 @@ impl fmt::Display for Check {
             Self::Tolerances => "tolerances",
             Self::PayloadIntegrity => "payload_integrity",
             Self::Tessellation => "tessellation",
-            Self::Units => "units",
             Self::Bounds => "bounds",
             Self::GeometricConsistency => "geometric_consistency",
             Self::Counts => "counts",

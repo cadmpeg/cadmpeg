@@ -373,6 +373,26 @@ fn a_discarded_topology_root_counts_no_admitted_relation() {
 }
 
 #[test]
+fn single_pcurve_with_unresolved_vertex_carrier_reports_loss() {
+    let source = std::str::from_utf8(include_bytes!("data/tp09_divergent_interior.p21"))
+        .expect("fixture is UTF-8")
+        .replace("#7=VERTEX_POINT('',#4);", "#7=VERTEX_POINT('',#9);");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode unresolved vertex carrier");
+
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveCandidatesCarrierUnresolved.kind()
+            && loss.message.contains("coedge use #22")
+    }));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::PcurveAssociationAmbiguous.kind() }));
+}
+
+#[test]
 fn divergent_interior_pcurve_is_omitted_from_coedge() {
     let decoded = crate::StepCodec::default()
         .decode(

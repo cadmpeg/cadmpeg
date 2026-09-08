@@ -365,7 +365,7 @@ mod tests {
         }];
         scan.curves.pcurves = vec![curve::PcurveEndpoints {
             curve_id: 10,
-            faces: [1, 3],
+            faces: [1, 3].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[0.0, 1.0], [1.0, 1.0]],
             face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]],
             offset: 0,

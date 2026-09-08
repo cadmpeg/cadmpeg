@@ -15,7 +15,7 @@ cargo add cadmpeg-asm
 
 `asm_header::has_asm_magic` recognizes the 15-byte `ASM BinaryFile4` and
 `ASM BinaryFile8` prefixes. `asm_header::parse` returns a [`KernelHeader`][header]
-with `width`, `save_format_version`, `record_count`, `entity_count`, `flags`,
+with `width`, `save_format_version`, `entity_count`, `flags`,
 product strings, and tolerance fields that the input provides. A missing magic
 returns `None`; a recognized but incomplete header returns a `KernelHeader` with
 unavailable fields set to `None`.

@@ -419,7 +419,7 @@ fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
                 value_offset: 0,
                 content: cadmpeg_protein::property::PropertyContent::Value {
                     value: cadmpeg_protein::property::PropertyValue::Distance { unit, value },
-                    connections: None,
+                    connections: Vec::new(),
                 },
             },
         )]),
@@ -469,7 +469,7 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
                     value_offset: 0,
                     content: cadmpeg_protein::property::PropertyContent::Value {
                         value: cadmpeg_protein::property::PropertyValue::Boolean(false),
-                        connections: None,
+                        connections: Vec::new(),
                     },
                 },
             ),
@@ -482,7 +482,7 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
                     value: cadmpeg_protein::property::PropertyValue::Color([
                         0.125, 0.25, 0.375, 1.0,
                     ]),
-                    connections: None,
+                    connections: Vec::new(),
                 },
             },
         );
@@ -508,7 +508,7 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
             value_offset: 0,
             content: cadmpeg_protein::property::PropertyContent::Value {
                 value: cadmpeg_protein::property::PropertyValue::Boolean(true),
-                connections: None,
+                connections: Vec::new(),
             },
         },
     );
@@ -529,7 +529,7 @@ fn color_property(
             value_offset: 0,
             content: cadmpeg_protein::property::PropertyContent::Value {
                 value: cadmpeg_protein::property::PropertyValue::Color(color),
-                connections: None,
+                connections: Vec::new(),
             },
         },
     )
@@ -566,7 +566,7 @@ fn texture_record(guid: &str, path: &str) -> cadmpeg_protein::DecodedRecord {
                     value: cadmpeg_protein::property::PropertyValue::TextureUri(vec![
                         path.to_owned()
                     ]),
-                    connections: None,
+                    connections: Vec::new(),
                 },
             },
         )]),
@@ -582,7 +582,7 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
                 value_offset: 0,
                 content: cadmpeg_protein::property::PropertyContent::Value {
                     value: cadmpeg_protein::property::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
-                    connections: Some(vec![texture_guid.to_owned()]),
+                    connections: vec![texture_guid.to_owned()],
                 },
             },
         )]),
@@ -644,7 +644,7 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
                     unit: 0x0002_1008,
                     value: 3.0,
                 },
-                connections: None,
+                connections: Vec::new(),
             },
         },
     );

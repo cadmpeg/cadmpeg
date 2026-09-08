@@ -4,6 +4,7 @@
 use crate::decode::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
@@ -666,7 +667,11 @@ fn stored_frame_branch_constraints(
     domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
 ) -> Vec<PlaneBranchConstraint> {
     let mut constraints = Vec::new();
-    let mut add = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+    let mut add = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        let [Some(first), Some(second)] = faces else {
+            return;
+        };
+        let faces = [first.get(), second.get()];
         if faces[0] == faces[1] {
             return;
         }
@@ -711,14 +716,15 @@ fn stored_frame_branch_constraints(
         );
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
         };
         add(
-            pcurve.faces,
+            faces,
             super::pcurves::canonicalized_pcurve_endpoints(
                 scan,
-                pcurve.faces,
+                faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),
@@ -1046,7 +1052,11 @@ fn select_stored_frame_carrier_pcurve_branches(
     domains: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
     let carriers = native_positional_cylinder_carriers(scan);
-    let mut apply = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+    let mut apply = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        let [Some(first), Some(second)] = faces else {
+            return;
+        };
+        let faces = [first.get(), second.get()];
         for face_index in 0..2 {
             let plane_id = faces[face_index];
             let Some(options) = variable_domains.get(&plane_id) else {
@@ -1094,14 +1104,15 @@ fn select_stored_frame_carrier_pcurve_branches(
         );
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
             continue;
         };
         apply(
-            pcurve.faces,
+            faces,
             super::pcurves::canonicalized_pcurve_endpoints(
                 scan,
-                pcurve.faces,
+                faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),

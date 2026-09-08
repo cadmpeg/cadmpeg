@@ -382,8 +382,8 @@ pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[
         ));
     }
     parts.push(
-        "list fields with `cadmpeg query schema FILE ARENA` (native records) or \
-         `cadmpeg query schema model.<arena>` (IR types)"
+        "list fields with `cadmpeg query schema file FILE ARENA` (native records) or \
+         `cadmpeg query schema types model.<arena>` (IR types)"
             .to_owned(),
     );
     parts.join("\n")

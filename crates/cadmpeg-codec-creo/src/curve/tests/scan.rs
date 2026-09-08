@@ -214,6 +214,45 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
 }
 
 #[test]
+fn absent_pcurve_faces_remain_zero_in_native_records() {
+    for prototype in [false, true] {
+        let mut payload = visibgeom_payload(0, u8::from(!prototype));
+        if prototype {
+            payload.extend_from_slice(b"crv_id\0\x07 type\0\x00");
+            payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x00 crv_hdr_geom_ptr[1]\0\x0b");
+            payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x07 next_crv_hdr_ptr[1]\0\x07");
+            payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
+        } else {
+            payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
+        }
+        payload.extend_from_slice(&[0x0f; 8]);
+        if prototype {
+            payload.extend_from_slice(b"topol_ref_data\0");
+        } else {
+            payload.extend_from_slice(b"\x00\x0b\x07\x07\0\0\xe3\xe1\xe3");
+        }
+        let data = build_prt("c", &[("VisibGeom", payload)]);
+        let scan = container::scan_bytes(data.clone());
+        let faces = if prototype {
+            scan.curves.bound_prototype_pcurves[0].faces
+        } else {
+            scan.curves.pcurves[0].faces
+        };
+        assert_eq!(faces, [None, std::num::NonZeroU32::new(11)]);
+
+        let decoded = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode an absent pcurve face");
+        let records = &decoded.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            serde_json::to_string(&records[0].fields()["faces"]).unwrap(),
+            "[0,11]"
+        );
+    }
+}
+
+#[test]
 fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
@@ -229,7 +268,7 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(scan.curves.pcurves.len(), 1);
     let pcurve = &scan.curves.pcurves[0];
     assert_eq!(pcurve.curve_id, 7);
-    assert_eq!(pcurve.faces, [10, 11]);
+    assert_eq!(pcurve.stored_face_ids(), [10, 11]);
     assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(pcurve.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
 
@@ -568,7 +607,10 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     );
     assert_eq!(scan.curves.prototype_topology[0].next_edges, [44, 44]);
     assert_eq!(scan.curves.bound_prototype_pcurves.len(), 1);
-    assert_eq!(scan.curves.bound_prototype_pcurves[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.bound_prototype_pcurves[0].stored_face_ids(),
+        [10, 11]
+    );
     assert_eq!(
         scan.curves.bound_prototype_pcurves[0].face_0_endpoints,
         [[0.0, 1.0], [1.0, 0.0]]

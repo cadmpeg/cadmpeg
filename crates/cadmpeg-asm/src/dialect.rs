@@ -239,7 +239,6 @@ mod tests {
         KernelHeader {
             width,
             save_format_version,
-            record_count: None,
             entity_count: None,
             flags: None,
             product_family: None,

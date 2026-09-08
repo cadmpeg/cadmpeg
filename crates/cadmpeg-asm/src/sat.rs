@@ -40,8 +40,6 @@ pub enum Terminator {
 pub struct TextHeader {
     /// ACIS save-format version word, `major * 100 + minor`.
     pub save_format_version: u32,
-    /// Record-count word; `0` when unwritten.
-    pub record_count: u32,
     /// Entity-count word: the `RecordTable` index of the first referenced record.
     pub entity_count: u64,
     /// Flags word: bit 0 marks a history partition, bits 1..=7 the revision.
@@ -70,7 +68,6 @@ impl TextHeader {
         KernelHeader {
             width: RefWidth::Eight,
             save_format_version: Some(self.save_format_version),
-            record_count: Some(self.record_count),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
             product_family: Some(self.product_family.clone()),
@@ -298,7 +295,7 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
         });
     }
     let save_format_version = header_int(line1.first(), at, "save format")?;
-    let record_count = header_int(line1.get(1), at, "record count")?;
+    header_int::<u32>(line1.get(1), at, "record count")?;
     let entity_count = header_int(line1.get(2), at, "entity count")?;
     let flags = header_int(line1.get(3), at, "flags")?;
 
@@ -365,7 +362,6 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
     }
     Ok(TextHeader {
         save_format_version,
-        record_count,
         entity_count,
         flags,
         product_family,
@@ -1462,7 +1458,6 @@ mod tests {
         let asm = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("asm stream");
         assert_eq!(asm.terminator, Terminator::Asm);
         assert_eq!(asm.header.save_format_version, 23200);
-        assert_eq!(asm.header.record_count, 0);
         assert_eq!(asm.header.entity_count, 2);
         assert_eq!(asm.header.flags, 2);
         assert_eq!(asm.header.product_family, "Autodesk Neutron");

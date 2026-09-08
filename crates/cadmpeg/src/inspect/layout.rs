@@ -291,14 +291,14 @@ fn parse_kind(type_text: &str, token: &str) -> Result<FieldKind, LayoutError> {
     }
     if let Some(ty) = ScalarType::from_base_name(type_text) {
         if ty.is_single_byte() {
-            return Ok(FieldKind::Scalar(ty, Endian::Little));
+            return Ok(FieldKind::Scalar(ty, Endian::Le));
         }
         return Err(LayoutError::MissingByteOrder {
             token: token.to_string(),
             base: type_text.to_string(),
         });
     }
-    for (suffix, endian) in [("le", Endian::Little), ("be", Endian::Big)] {
+    for (suffix, endian) in [("le", Endian::Le), ("be", Endian::Be)] {
         let Some(base) = type_text.strip_suffix(suffix) else {
             continue;
         };
@@ -387,17 +387,17 @@ mod tests {
         assert_eq!(
             kinds("u8,i8"),
             [
-                FieldKind::Scalar(ScalarType::U8, Endian::Little),
-                FieldKind::Scalar(ScalarType::I8, Endian::Little),
+                FieldKind::Scalar(ScalarType::U8, Endian::Le),
+                FieldKind::Scalar(ScalarType::I8, Endian::Le),
             ]
         );
         assert_eq!(
             kinds("u16be,i64le,f32be,f64le"),
             [
-                FieldKind::Scalar(ScalarType::U16, Endian::Big),
-                FieldKind::Scalar(ScalarType::I64, Endian::Little),
-                FieldKind::Scalar(ScalarType::F32, Endian::Big),
-                FieldKind::Scalar(ScalarType::F64, Endian::Little),
+                FieldKind::Scalar(ScalarType::U16, Endian::Be),
+                FieldKind::Scalar(ScalarType::I64, Endian::Le),
+                FieldKind::Scalar(ScalarType::F32, Endian::Be),
+                FieldKind::Scalar(ScalarType::F64, Endian::Le),
             ]
         );
     }

@@ -1056,7 +1056,7 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
     if with_pcurve {
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
-            faces: [1, 2],
+            faces: [1, 2].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[1.0, 1.0], [2.0, 1.0]],
             face_1_endpoints: [[0.6, 0.8], [1.2, 1.6]],
             offset: 30,

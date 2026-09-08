@@ -84,7 +84,7 @@ pub struct SpaceDescriptor {
 pub struct AddressStep {
     /// Stable label for this step.
     pub label: String,
-    /// Whether this step is the root, a stored member, or an expansion.
+    /// Whether this step is the root or an archive member.
     pub kind: AddressStepKind,
 }
 
@@ -93,10 +93,8 @@ pub struct AddressStep {
 pub enum AddressStepKind {
     /// Root input file.
     Root,
-    /// Stored archive member (borrowed parent bytes).
-    StoredMember,
-    /// Expanded (inflated) archive member.
-    ExpandedMember,
+    /// Archive member, stored or expanded.
+    Member,
 }
 
 /// Owned root-to-leaf address that survives the decode session.
@@ -141,7 +139,7 @@ impl ResolvedAddress {
                 )]
             }
             Some(AddressStep {
-                kind: AddressStepKind::StoredMember | AddressStepKind::ExpandedMember,
+                kind: AddressStepKind::Member,
                 label: member,
             }) => {
                 let extracted = format!("{file}.member");
@@ -170,10 +168,9 @@ pub fn resolve_address(
         };
         let kind = match descriptor.derivation {
             SpaceDerivation::Root => AddressStepKind::Root,
-            SpaceDerivation::StoredSlice { .. } => AddressStepKind::StoredMember,
-            SpaceDerivation::Expanded { .. } | SpaceDerivation::Concatenated { .. } => {
-                AddressStepKind::ExpandedMember
-            }
+            SpaceDerivation::StoredSlice { .. }
+            | SpaceDerivation::Expanded { .. }
+            | SpaceDerivation::Concatenated { .. } => AddressStepKind::Member,
         };
         steps.push(AddressStep {
             label: descriptor.label.clone(),

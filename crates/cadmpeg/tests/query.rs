@@ -29,7 +29,7 @@ const CHECK_REPORT: &str = r#"{
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
       {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "units", "severity": "warning", "message": "non-canonical unit"}
+      {"check": "bounds", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -351,7 +351,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .stdout(
             "severity\tcheck\tentity\tmessage\n\
              error\tidentity\te1\tduplicate id\n\
-             warning\tunits\t\tnon-canonical unit\n",
+             warning\tbounds\t\tnegative radius\n",
         );
 
     cadmpeg()
@@ -1066,7 +1066,7 @@ fn schema_lists_model_arenas_with_element_types() {
 #[test]
 fn schema_projects_feature_fields_with_tagged_union_inventory() {
     let output = cadmpeg()
-        .args(["query", "schema", "model.features"])
+        .args(["query", "schema", "types", "model.features"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -1089,7 +1089,7 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 
     // Bare shorthand is byte-identical to the dotted name.
     let bare = cadmpeg()
-        .args(["query", "schema", "features"])
+        .args(["query", "schema", "types", "features"])
         .output()
         .unwrap();
     assert_eq!(output.stdout, bare.stdout);
@@ -1098,16 +1098,16 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
 #[test]
 fn schema_teaches_on_native_without_file_and_unknown_ir_arena() {
     let native = cadmpeg()
-        .args(["query", "schema", "native.creo.rows"])
+        .args(["query", "schema", "types", "native.creo.rows"])
         .output()
         .unwrap();
     assert_eq!(native.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&native.stderr);
-    assert!(stderr.contains("query schema FILE"), "{stderr}");
+    assert!(stderr.contains("query schema file FILE"), "{stderr}");
     assert!(stderr.contains("native.creo.rows"), "{stderr}");
 
     let unknown = cadmpeg()
-        .args(["query", "schema", "model.bogus"])
+        .args(["query", "schema", "types", "model.bogus"])
         .output()
         .unwrap();
     assert_eq!(unknown.status.code(), Some(2));
@@ -1123,7 +1123,13 @@ fn schema_infers_native_fields_from_a_document() {
     let path = doc.to_str().unwrap();
 
     cadmpeg()
-        .args(["query", "schema", path, "native.creo.curve_parameters"])
+        .args([
+            "query",
+            "schema",
+            "file",
+            path,
+            "native.creo.curve_parameters",
+        ])
         .assert()
         .success()
         .stdout(
@@ -1137,7 +1143,7 @@ fn schema_infers_native_fields_from_a_document() {
         ));
 
     let output = cadmpeg()
-        .args(["query", "schema", path, "model.sketch_entities"])
+        .args(["query", "schema", "file", path, "model.sketch_entities"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -1164,6 +1170,7 @@ fn schema_infers_native_fields_from_a_document() {
             "query",
             "schema",
             "--json",
+            "file",
             path,
             "native.creo.curve_parameters",
         ])
@@ -1192,7 +1199,7 @@ fn schema_document_unknown_arena_lists_counts() {
     let path = doc.to_str().unwrap();
 
     let missing = cadmpeg()
-        .args(["query", "schema", path, "native.creo.missing"])
+        .args(["query", "schema", "file", path, "native.creo.missing"])
         .output()
         .unwrap();
     assert_eq!(missing.status.code(), Some(2));
@@ -1209,7 +1216,10 @@ fn schema_document_unknown_arena_lists_counts() {
     assert!(stderr.contains("model.empty_arena\t0"), "{stderr}");
     assert!(!stderr.contains("model.null_arena"), "{stderr}");
 
-    let file_only = cadmpeg().args(["query", "schema", path]).output().unwrap();
+    let file_only = cadmpeg()
+        .args(["query", "schema", "file", path])
+        .output()
+        .unwrap();
     assert_eq!(file_only.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&file_only.stderr);
     assert!(stderr.contains("needs an arena name"), "{stderr}");
@@ -1219,7 +1229,7 @@ fn schema_document_unknown_arena_lists_counts() {
     );
 
     cadmpeg()
-        .args(["query", "schema", path, "model.empty_arena"])
+        .args(["query", "schema", "file", path, "model.empty_arena"])
         .assert()
         .success()
         .stdout("path\tpresence\ttype\texample\trelation\n")
@@ -1230,6 +1240,7 @@ fn schema_document_unknown_arena_lists_counts() {
         .args([
             "query",
             "schema",
+            "file",
             report.to_str().unwrap(),
             "native.creo.rows",
         ])
@@ -1252,7 +1263,7 @@ fn schema_sidecar_and_json_envelope() {
     assert!(stdout.contains("ir_sha256\tstring\tyes"), "{stdout}");
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", "model.faces"])
+        .args(["query", "schema", "--json", "types", "model.faces"])
         .output()
         .unwrap();
     assert!(json.status.success());
@@ -1570,7 +1581,10 @@ fn every_view_json_is_a_query_command_report() {
         ("losses", vec!["query", "losses", "--json", report]),
         ("counts", vec!["query", "counts", "--json", doc]),
         ("item", vec!["query", "item", "--json", doc, arena]),
-        ("schema", vec!["query", "schema", "--json", doc, arena]),
+        (
+            "schema",
+            vec!["query", "schema", "--json", "file", doc, arena],
+        ),
         ("graph", vec!["query", "graph", "--json", doc, arena]),
         (
             "join",
