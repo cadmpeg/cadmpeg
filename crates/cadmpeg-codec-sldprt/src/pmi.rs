@@ -13,6 +13,9 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
+mod patch_slots;
+use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
+
 fn exact_count(value: f64) -> Option<i64> {
     let count = value as i64;
     (count >= 0 && count as f64 == value).then_some(count)
@@ -258,26 +261,20 @@ pub(crate) fn patch_payload(
                 )));
             }
         };
-        patch_bytes(
-            payload,
-            record.value_offset,
-            &native_value.to_be_bytes(),
-            &record.id,
-        )?;
+        FloatPatchSlot::read(payload, record.offset)
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .write(native_value);
         IntegerPatchSlot::read(payload, record.offset, "valPrecision")
             .and_then(|slot| slot.write(i64::from(semantic.precision)))
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        for (offset, value) in [
-            (record.basic_offset, semantic.basic),
-            (record.inspection_offset, semantic.inspection),
-            (record.reference_only_offset, semantic.reference_only),
+        for (field, value) in [
+            ("isBasic", semantic.basic),
+            ("isInspection", semantic.inspection),
+            ("isReferenceOnly", semantic.reference_only),
         ] {
-            patch_bytes(
-                payload,
-                offset,
-                &[if value { 0xc3 } else { 0xc2 }],
-                &record.id,
-            )?;
+            BooleanPatchSlot::read(payload, record.offset, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (
@@ -299,89 +296,6 @@ pub(crate) fn patch_payload(
         }
     }
     Ok(())
-}
-
-enum IntegerPatchSlot<'a> {
-    Fix(&'a mut u8),
-    U8(&'a mut [u8; 1]),
-    U16(&'a mut [u8; 2]),
-    U32(&'a mut [u8; 4]),
-    U64(&'a mut [u8; 8]),
-    I8(&'a mut [u8; 1]),
-    I16(&'a mut [u8; 2]),
-    I32(&'a mut [u8; 4]),
-    I64(&'a mut [u8; 8]),
-}
-
-impl<'a> IntegerPatchSlot<'a> {
-    fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, String> {
-        let invalid = || format!("DimSemData {field} has an invalid integer patch slot");
-        let mut cursor = usize::try_from(offset).map_err(|_| invalid())?;
-        let outer = parse_value(payload, &mut cursor, 0).ok_or_else(invalid)?;
-        let ValueKind::Map(outer) = outer.kind else {
-            return Err(invalid());
-        };
-        let ValueKind::Array(items) = &outer.get("dimItems").ok_or_else(invalid)?.kind else {
-            return Err(invalid());
-        };
-        let ValueKind::Map(item) = &items.first().ok_or_else(invalid)?.kind else {
-            return Err(invalid());
-        };
-        let value = item.get(field).ok_or_else(invalid)?;
-        let marker = Marker::from_u8(*payload.get(value.start).ok_or_else(invalid)?);
-        let bytes = payload.get_mut(value.data_offset..).ok_or_else(invalid)?;
-        macro_rules! slot {
-            ($variant:ident, $width:literal) => {
-                Self::$variant(
-                    bytes
-                        .get_mut(..$width)
-                        .ok_or_else(invalid)?
-                        .try_into()
-                        .map_err(|_| invalid())?,
-                )
-            };
-        }
-        Ok(match marker {
-            Marker::FixPos(_) | Marker::FixNeg(_) => {
-                Self::Fix(bytes.first_mut().ok_or_else(invalid)?)
-            }
-            Marker::U8 => slot!(U8, 1),
-            Marker::U16 => slot!(U16, 2),
-            Marker::U32 => slot!(U32, 4),
-            Marker::U64 => slot!(U64, 8),
-            Marker::I8 => slot!(I8, 1),
-            Marker::I16 => slot!(I16, 2),
-            Marker::I32 => slot!(I32, 4),
-            Marker::I64 => slot!(I64, 8),
-            _ => return Err(invalid()),
-        })
-    }
-
-    fn write(self, value: i64) -> Result<(), String> {
-        let invalid = || "DimSemData valPrecision exceeds its integer encoding".to_string();
-        macro_rules! write {
-            ($bytes:ident, $ty:ty) => {
-                *$bytes = <$ty>::try_from(value).map_err(|_| invalid())?.to_be_bytes()
-            };
-        }
-        match self {
-            Self::Fix(byte) => {
-                if !(-32..=127).contains(&value) {
-                    return Err(invalid());
-                }
-                *byte = value as u8;
-            }
-            Self::U8(bytes) => write!(bytes, u8),
-            Self::U16(bytes) => write!(bytes, u16),
-            Self::U32(bytes) => write!(bytes, u32),
-            Self::U64(bytes) => write!(bytes, u64),
-            Self::I8(bytes) => write!(bytes, i8),
-            Self::I16(bytes) => write!(bytes, i16),
-            Self::I32(bytes) => write!(bytes, i32),
-            Self::I64(bytes) => *bytes = value.to_be_bytes(),
-        }
-        Ok(())
-    }
 }
 
 fn patch_bytes(
