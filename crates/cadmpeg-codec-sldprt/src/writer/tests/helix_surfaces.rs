@@ -1022,6 +1022,26 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
 
 #[test]
 fn semantic_writer_round_trips_filled_surface() {
+    filled_surface_round_trip(cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+        cadmpeg_ir::features::SurfaceContinuity::Curvature,
+    ));
+}
+
+#[test]
+fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
+    for conditions in [
+        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature],
+        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature; 2],
+    ] {
+        filled_surface_round_trip(
+            cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(conditions),
+        );
+    }
+}
+
+fn filled_surface_round_trip(
+    edited_continuity: cadmpeg_ir::features::FilledSurfaceContinuityState,
+) {
     use cadmpeg_ir::features::{
         EdgeSelection, FaceSelection, FeatureDefinition, SurfaceContinuity,
     };
@@ -1073,9 +1093,7 @@ fn semantic_writer_round_trips_filled_surface() {
             edge_id.clone(),
         ]));
         *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-            SurfaceContinuity::Curvature,
-        );
+        *continuity = edited_continuity;
         *merge_result = Some(true);
     }
 
