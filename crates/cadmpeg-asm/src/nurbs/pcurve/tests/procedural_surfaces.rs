@@ -163,7 +163,9 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         else {
             panic!("expected deformable surface");
         };
-        let Some(revision_form) = construction.revision_form else {
+        let crate::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Revision(revision_form) =
+            construction.layout
+        else {
             panic!("expected revision form");
         };
         assert_eq!(revision_form.revision, 22_506);
