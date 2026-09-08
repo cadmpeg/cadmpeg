@@ -40,6 +40,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     let associations = unique_surface_prototype_associations(scan)
         .into_iter()
         .filter_map(|(prototype, associated_row, section)| {
+            let prototype = prototype.record();
             let frame = surface_prototype_frame_bounds(scan, section, prototype.offset)?;
             Some((prototype, associated_row, section, frame))
         })

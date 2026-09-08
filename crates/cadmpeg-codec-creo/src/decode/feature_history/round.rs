@@ -334,15 +334,15 @@ pub(in super::super) fn prototype_round_radius(
             .into_iter()
             .filter(|(record, row, _)| {
                 matches!(
-                    record.family,
+                    record.record().family,
                     crate::surface::SurfacePrototypeFamily::Torus(_)
                 ) && row.feature_id == feature_id
                     && rows.iter().any(|candidate| candidate.offset == row.offset)
             })
             .filter_map(|(record, _, _)| {
                 Some((
-                    prototype_scalar(record, "radius1")?,
-                    prototype_scalar(record, "radius2")?,
+                    prototype_scalar(record.record(), "radius1")?,
+                    prototype_scalar(record.record(), "radius2")?,
                 ))
             }),
     )?;
