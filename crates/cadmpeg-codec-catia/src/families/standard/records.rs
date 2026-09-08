@@ -154,7 +154,7 @@ pub struct StandardFaceBounds {
 fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
     let values = (0..10)
         .map(|index| f32_le(brep, position + 4 * index))
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite())
         || values[3..6].iter().any(|extent| *extent < 0.0)
         || values[9] < 0.0
@@ -902,9 +902,9 @@ pub fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
         _ => return None,
     };
     let values = [
-        f32_le(brep, marker_pos + offset),
-        f32_le(brep, marker_pos + offset + 4),
-        f32_le(brep, marker_pos + offset + 8),
+        f32_le(brep, marker_pos + offset)?,
+        f32_le(brep, marker_pos + offset + 4)?,
+        f32_le(brep, marker_pos + offset + 8)?,
     ];
     values
         .iter()
@@ -930,11 +930,10 @@ fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
     unit_vector(Vector3::new(ax as f64, ay as f64, az))
 }
 
-fn f32_le(bytes: &[u8], at: usize) -> f32 {
+fn f32_le(bytes: &[u8], at: usize) -> Option<f32> {
     let mut view = View::over_retained(bytes);
-    view.seek(at)
-        .and_then(|()| view.f32_le())
-        .unwrap_or(f32::NAN)
+    view.seek(at)?;
+    view.f32_le()
 }
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
@@ -988,5 +987,12 @@ mod tests {
         let expected = (1.0 - x * x - y * y).sqrt();
 
         assert!((axis.z + expected).abs() < AXIS_COMPONENT_TOLERANCE);
+    }
+    #[test]
+    fn f32_read_distinguishes_truncation_from_stored_nan() {
+        assert_eq!(super::f32_le(&[0; 3], 0), None);
+        assert_eq!(super::f32_le(&[0; 4], 5), None);
+        assert!(super::f32_le(&f32::NAN.to_le_bytes(), 0).unwrap().is_nan());
+        assert_eq!(super::f32_le(&1.5_f32.to_le_bytes(), 0), Some(1.5));
     }
 }
