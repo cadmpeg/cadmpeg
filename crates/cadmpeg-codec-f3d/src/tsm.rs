@@ -292,21 +292,15 @@ struct SymmetryBlock {
 #[derive(Debug)]
 enum SymmetryKind {
     Correspondence {
-        face: SymmetryPairs,
-        edge: SymmetryPairs,
-        vertex: SymmetryPairs,
+        face: BTreeMap<usize, usize>,
+        edge: BTreeMap<usize, usize>,
+        vertex: BTreeMap<usize, usize>,
     },
     Radial {
         segments: std::num::NonZeroU32,
         sweep: f64,
         maps: Vec<SubdRadialSymmetryMap>,
     },
-}
-
-#[derive(Debug)]
-struct SymmetryPairs {
-    forward: BTreeMap<usize, usize>,
-    reverse: BTreeMap<usize, usize>,
 }
 
 fn parse_pairs<'a>(
@@ -1147,28 +1141,32 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .ok_or_else(|| malformed(name, "symmetry block has no plane"))?;
             let kind = match block.mode {
                 SymmetryMode::Correspondence => {
-                    let face = SymmetryPairs {
-                        forward: block.face_forward,
-                        reverse: block.face_reverse,
-                    };
-                    let edge = SymmetryPairs {
-                        forward: block.edge_forward,
-                        reverse: block.edge_reverse,
-                    };
-                    let vertex = SymmetryPairs {
-                        forward: block.vertex_forward,
-                        reverse: block.vertex_reverse,
-                    };
-                    validate_symmetry_map(name, &face.forward, &face.reverse, &face_live, "face")?;
-                    validate_symmetry_map(name, &edge.forward, &edge.reverse, &edge_live, "edge")?;
                     validate_symmetry_map(
                         name,
-                        &vertex.forward,
-                        &vertex.reverse,
+                        &block.face_forward,
+                        &block.face_reverse,
+                        &face_live,
+                        "face",
+                    )?;
+                    validate_symmetry_map(
+                        name,
+                        &block.edge_forward,
+                        &block.edge_reverse,
+                        &edge_live,
+                        "edge",
+                    )?;
+                    validate_symmetry_map(
+                        name,
+                        &block.vertex_forward,
+                        &block.vertex_reverse,
                         &vertex_live,
                         "vertex",
                     )?;
-                    SymmetryKind::Correspondence { face, edge, vertex }
+                    SymmetryKind::Correspondence {
+                        face: block.face_forward,
+                        edge: block.edge_forward,
+                        vertex: block.vertex_forward,
+                    }
                 }
                 SymmetryMode::Radial => {
                     let segments = block.radial_segments.ok_or_else(|| {
@@ -1296,9 +1294,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
                 SymmetryKind::Correspondence { face, edge, vertex } => (
                     SubdSymmetryKind::Correspondence,
-                    remap_symmetry_pairs(name, &face.forward, &face_ir, "face")?,
-                    remap_symmetry_pairs(name, &edge.forward, &edge_ir, "edge")?,
-                    remap_symmetry_pairs(name, &vertex.forward, &vertex_ir, "vertex")?,
+                    remap_symmetry_pairs(name, face, &face_ir, "face")?,
+                    remap_symmetry_pairs(name, edge, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(name, vertex, &vertex_ir, "vertex")?,
                 ),
                 SymmetryKind::Radial {
                     segments,
