@@ -7950,8 +7950,8 @@ fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroE
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs,
-            surface_support_refs: record.surface_support_refs,
+            topology_refs: record.topology_refs(),
+            surface_support_refs: record.surface_support_refs(),
         })
         .collect()
 }
