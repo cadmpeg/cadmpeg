@@ -1494,7 +1494,7 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("has edited class declarations"));
+    assert!(error.to_string().contains("class index does not match"));
 }
 
 #[test]
@@ -1547,7 +1547,7 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("has edited named scalars"));
+    assert!(error.to_string().contains("scalar index does not match"));
 }
 
 #[test]
