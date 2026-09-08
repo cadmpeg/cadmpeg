@@ -851,11 +851,11 @@ pub(in super::super) fn transfer_sketches(
                 ordinal: ir.model.features.len() as u64,
                 name: None,
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("section".to_string()),
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs: Vec::new(),
                 definition: IrFeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(

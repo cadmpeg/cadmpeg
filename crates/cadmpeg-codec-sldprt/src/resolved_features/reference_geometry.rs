@@ -1670,7 +1670,10 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    let projected = crate::history::project_features(histories);
+    let projected = match crate::history::project_features(histories) {
+        Ok(features) => features,
+        Err(_) => return,
+    };
     let plane_frames = sketch_plane_frames(&projected, histories);
     for feature in histories
         .iter_mut()

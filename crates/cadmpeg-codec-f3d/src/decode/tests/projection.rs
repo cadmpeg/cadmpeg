@@ -93,11 +93,11 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Base Mesh Feature".into(),
@@ -223,11 +223,11 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: Some("Fillet".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::FullRoundFillet {
             groups: vec![FullRoundFilletGroup {
@@ -832,11 +832,11 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("CoilPrimitive".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: native_target,
         native_ref: None,
@@ -924,11 +924,11 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: Some("Loft".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: unresolved,
         native_ref: None,
@@ -950,11 +950,11 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: source_tag.map(str::to_owned),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: kind.into(),
@@ -1587,7 +1587,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
     assert_eq!(gaps.ambiguous_history_dependencies, 1);
 
     let predecessor = ir.model.features[0].id.clone();
-    ir.model.features[1].dependencies.push(predecessor);
+    ir.model.features[1].dependencies.insert(predecessor);
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_history_dependencies, 0);
     assert_eq!(gaps.ambiguous_history_dependencies, 1);

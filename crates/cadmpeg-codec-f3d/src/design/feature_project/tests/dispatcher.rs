@@ -284,7 +284,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             }
         })
         .collect::<Vec<_>>();
-    assert_eq!(point.dependencies, plane_features);
+    assert_eq!(point.dependencies.as_slice(), plane_features);
 }
 
 #[test]
@@ -430,7 +430,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     );
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
     assert_eq!(native.as_str(), &recipe_id);
-    assert_eq!(point.dependencies, [predecessor.id.clone()]);
+    assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
 }
 
 #[test]
@@ -867,11 +867,11 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Form".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: cadmpeg_ir::features::FeatureDefinition::Native {
             kind: "Form".into(),
@@ -947,11 +947,11 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Form".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: cadmpeg_ir::features::FeatureDefinition::Native {
             kind: "Form".into(),

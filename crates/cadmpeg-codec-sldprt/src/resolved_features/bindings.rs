@@ -471,7 +471,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(seed) {
-            model_features[index].dependencies.push(seed.clone());
+            model_features[index].dependencies.insert(seed.clone());
         }
         if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
@@ -491,7 +491,9 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(dependency) {
-            model_features[index].dependencies.push(dependency.clone());
+            model_features[index]
+                .dependencies
+                .insert(dependency.clone());
         }
         if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
             if let Some(slot) = pattern.curve_path_mut() {
@@ -578,7 +580,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         for seed in seeds {
             if !model_features[index].dependencies.contains(seed) {
-                model_features[index].dependencies.push(seed.clone());
+                model_features[index].dependencies.insert(seed.clone());
             }
         }
         if let FeatureDefinition::Pattern {
@@ -872,13 +874,13 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         {
             model_features[index]
                 .dependencies
-                .push(profile_dependency.clone());
+                .insert(profile_dependency.clone());
         }
         if let Some((path_dependency, _)) = path {
             if !model_features[index].dependencies.contains(path_dependency) {
                 model_features[index]
                     .dependencies
-                    .push(path_dependency.clone());
+                    .insert(path_dependency.clone());
             }
         }
     }

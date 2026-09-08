@@ -153,11 +153,11 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -221,11 +221,11 @@ fn generic_native_offset_plane_support_stays_native() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
@@ -287,11 +287,11 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -379,7 +379,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
-        features[1].dependencies,
+        features[1].dependencies.as_slice(),
         [FeatureId::mint("producer").expect("identity grammar")]
     );
 
@@ -461,11 +461,11 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -562,11 +562,11 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
@@ -621,11 +621,11 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -721,7 +721,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         }) if faces[0].local_id == "6"
     ));
     assert_eq!(
-        features[1].dependencies,
+        features[1].dependencies.as_slice(),
         [FeatureId::mint("producer").expect("identity grammar")]
     );
 }
@@ -733,11 +733,11 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -843,7 +843,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     ));
     assert!(reverse.is_none());
     assert_eq!(
-        features[2].dependencies,
+        features[2].dependencies.as_slice(),
         vec![
             FeatureId::mint("target").expect("identity grammar"),
             FeatureId::mint("tool").expect("identity grammar")
@@ -858,11 +858,11 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -942,7 +942,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         }
     ));
     assert_eq!(
-        features[2].dependencies,
+        features[2].dependencies.as_slice(),
         vec![
             FeatureId::mint("first").expect("identity grammar"),
             FeatureId::mint("second").expect("identity grammar")
@@ -985,11 +985,11 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -1133,11 +1133,11 @@ fn split_face_collects_distinct_generated_target_faces() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -1232,7 +1232,7 @@ fn split_face_collects_distinct_generated_target_faces() {
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(
-        features[2].dependencies,
+        features[2].dependencies.as_slice(),
         vec![
             FeatureId::mint("producer-a").expect("identity grammar"),
             FeatureId::mint("producer-b").expect("identity grammar")

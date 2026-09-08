@@ -246,7 +246,7 @@ pub(crate) fn transfer_curve_expression_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     dimension_parameters: &BTreeMap<String, ParameterId>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let ordinal_base = ir
         .model
         .features
@@ -571,7 +571,7 @@ pub(crate) fn transfer_curve_expression_features(
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("crv_fr_eqn".to_string()),
             source_text: Some(
@@ -582,13 +582,15 @@ pub(crate) fn transfer_curve_expression_features(
                     .collect::<Vec<_>>()
                     .join("\n"),
             ),
-            source_content,
+            source_content: source_content.try_into().map_err(|message: &'static str| {
+                cadmpeg_core::CodecError::Malformed(message.into())
+            })?,
             outputs: Vec::new(),
             definition,
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
-    transferred_parameter_count
+    Ok(transferred_parameter_count)
 }
 
 #[cfg(test)]

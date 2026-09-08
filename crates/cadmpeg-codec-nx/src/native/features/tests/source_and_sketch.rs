@@ -525,7 +525,10 @@ fn decoded_feature_ids_preserve_source_order_and_ordinals_reverse_history() {
             .collect::<Vec<_>>(),
         (0..12).rev().collect::<Vec<_>>()
     );
-    assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[1].id.clone()]
+    );
     assert!(features[11].dependencies.is_empty());
 }
 

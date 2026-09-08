@@ -69,7 +69,9 @@ impl FeatureProjection {
     }
 }
 
-pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProjection {
+pub(crate) fn project_feature_model(
+    histories: &[FeatureHistory],
+) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let (mut features, parents): (Vec<_>, Vec<_>) = histories
         .iter()
         .flat_map(|history| {
@@ -128,7 +130,7 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
                                 .parent_source_id()
                                 .and_then(|source| by_source.get(source).cloned())
                         });
-                    (
+                    Ok((
                         cadmpeg_ir::features::Feature {
                             id: neutral_feature_id(&feature.id),
                             ordinal: source_ordered
@@ -138,11 +140,13 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
                                 .unwrap_or(u64::from(feature.ordinal)),
                             name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                             suppressed: Some(feature.suppressed),
-                            dependencies: project_feature_dependencies(feature, &by_source),
+                            dependencies: (project_feature_dependencies(feature, &by_source))
+                                .into_iter()
+                                .collect(),
                             source_properties: feature.properties.clone(),
                             source_tag: Some(feature.xml_tag.clone()),
                             source_text: feature.text.clone(),
-                            source_content: project_feature_content(feature, &by_native),
+                            source_content: project_feature_content(feature, &by_native)?,
                             outputs: Vec::new(),
                             definition: project_definition(
                                 feature,
@@ -154,9 +158,11 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
                             native_ref: Some(feature.id.clone()),
                         },
                         parent,
-                    )
+                    ))
                 })
         })
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
+        .into_iter()
         .unzip();
     let tree_nodes = features
         .iter()
@@ -184,14 +190,16 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
     }
     bind_offset_plane_references(&mut features);
     bind_native_construction_features(&mut features, histories);
-    FeatureProjection {
+    Ok(FeatureProjection {
         features,
         regeneration_parents,
-    }
+    })
 }
 
-pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
-    project_feature_model(histories).features
+pub fn project_features(
+    histories: &[FeatureHistory],
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    project_feature_model(histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
@@ -457,7 +465,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             continue;
         }
         if !feature.dependencies.contains(&reference_id) {
-            feature.dependencies.push(reference_id);
+            feature.dependencies.insert(reference_id);
         }
     }
     let mut frames = features
@@ -607,7 +615,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             *slot = Some(DatumPlaneReference::Feature(reference.clone()));
             *stored_distance = distance;
             if !features[index].dependencies.contains(&reference) {
-                features[index].dependencies.push(reference);
+                features[index].dependencies.insert(reference);
             }
             changed = true;
         }
@@ -715,7 +723,7 @@ pub(crate) fn bind_native_construction_features(
         }
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.push(dependency);
+                feature.dependencies.insert(dependency);
             }
         }
     }
@@ -825,9 +833,9 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
 pub(crate) fn project_feature_content(
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
-) -> Vec<FeatureSourceContent> {
+) -> Result<cadmpeg_ir::features::FeatureContent, cadmpeg_core::CodecError> {
     if feature.text.is_some() {
-        return Vec::new();
+        return Ok(Default::default());
     }
     let parameters = projected_parameter_names(feature)
         .into_iter()
@@ -850,7 +858,9 @@ pub(crate) fn project_feature_content(
                 .cloned()
                 .map(FeatureSourceContent::Feature),
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|message: &'static str| cadmpeg_core::CodecError::Malformed(message.into()))
 }
 
 pub(crate) fn project_feature_dependencies(

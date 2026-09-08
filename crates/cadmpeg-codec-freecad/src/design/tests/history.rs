@@ -51,7 +51,10 @@ fn distinguishes_stored_base_and_application_owned_features() {
         cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
             if source.as_str() == "fcstd:design:feature#Source"
     ));
-    assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
+    assert_eq!(
+        base.dependencies.as_slice(),
+        std::slice::from_ref(&source.id)
+    );
     assert!(result.ir().model.features.iter().all(|feature| {
         !matches!(
             feature.name.as_deref(),
@@ -732,7 +735,10 @@ fn preserves_forward_declared_feature_dependencies() {
         .find(|feature| feature.name.as_deref() == Some("Second"))
         .expect("second feature");
 
-    assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
+    assert_eq!(
+        first.dependencies.as_slice(),
+        std::slice::from_ref(&second.id)
+    );
     assert!(second.ordinal < first.ordinal);
     assert_valid_document(result.ir());
 }
@@ -816,8 +822,8 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
         .expect("namespace")
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
-    assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
-    assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_eq!(objects[0].dependencies.as_slice(), [objects[1].id.clone()]);
+    assert_eq!(objects[1].dependencies.as_slice(), [objects[0].id.clone()]);
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

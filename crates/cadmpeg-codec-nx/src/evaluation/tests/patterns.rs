@@ -48,11 +48,11 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
@@ -118,7 +118,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
             .unwrap(),
         },
     );
-    pattern.dependencies.push(seed);
+    pattern.dependencies.insert(seed);
     ir.model.features.push(pattern);
 
     assert_eq!(

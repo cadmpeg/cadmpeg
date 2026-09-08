@@ -352,7 +352,7 @@ pub(crate) fn attach(
         &model.om.expression_declarations,
         &model.features.feature_parameter_uses,
         annotations,
-    );
+    )?;
     attach_active_configuration_parameter_values(ir, annotations);
     attach_feature_operations(
         ir,
@@ -1012,7 +1012,7 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                         outputs: feature.outputs.iter().cloned().collect(),
                     },
-                    dependencies: feature.dependencies.iter().cloned().collect(),
+                    dependencies: feature.dependencies.clone(),
                     definition: feature.definition.clone(),
                 },
             )
@@ -1091,11 +1091,11 @@ fn attach_initial_segment_bodies(
         ordinal: ir.model.features.len() as u64,
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties,
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: outputs.clone(),
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved {
@@ -3654,7 +3654,7 @@ fn attach_feature_operations(
             ordinal: base_ordinal + ordinal as u64,
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies,
+            dependencies: (dependencies).into_iter().collect(),
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
@@ -5580,18 +5580,13 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
 
 pub(crate) fn feature_source_content(
     payload_strings: &[&crate::native::features::FeaturePayloadString],
-) -> Vec<FeatureSourceContent> {
+) -> cadmpeg_ir::features::FeatureContent {
     let mut content = payload_strings
         .iter()
-        .map(|value| {
-            (
-                value.source_offset,
-                FeatureSourceContent::Text(value.value.as_str().to_owned()),
-            )
-        })
+        .map(|value| (value.source_offset, value.value.as_str().to_owned()))
         .collect::<Vec<_>>();
     content.sort_by_key(|(offset, _)| *offset);
-    content.into_iter().map(|(_, content)| content).collect()
+    cadmpeg_ir::features::FeatureContent::text(content.into_iter().map(|(_, content)| content))
 }
 
 fn simple_hole_native_properties(
@@ -8769,7 +8764,7 @@ pub(crate) fn attach_expression_parameters(
     declarations: &[crate::native::om::ExpressionDeclaration],
     parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let declarations = declarations
         .iter()
         .map(|declaration| (declaration.id.as_str(), declaration))
@@ -8855,6 +8850,8 @@ pub(crate) fn attach_expression_parameters(
                 expression_parameter_id(&expression.id).map(FeatureSourceContent::Parameter)
             })
             .collect::<Vec<_>>();
+        let source_content = cadmpeg_ir::features::FeatureContent::try_from(source_content)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
         if !source_content.is_empty() {
             annotations.derived(&feature_id, "source_content");
         }
@@ -8863,7 +8860,7 @@ pub(crate) fn attach_expression_parameters(
             ordinal: base_ordinal + table_ordinal as u64,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hostglobalvariables".to_string()),
             source_text: None,
@@ -8973,6 +8970,7 @@ pub(crate) fn attach_expression_parameters(
             });
         }
     }
+    Ok(())
 }
 
 fn order_expression_dependencies(

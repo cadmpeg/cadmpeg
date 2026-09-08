@@ -78,7 +78,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     }
 
     let (transferred, _) =
-        transfer_feature_dimensions(&scan, &mut ir, &mut AnnotationBuilder::new());
+        transfer_feature_dimensions(&scan, &mut ir, &mut AnnotationBuilder::new()).unwrap();
 
     assert_eq!(transferred, 1);
     assert!(ir

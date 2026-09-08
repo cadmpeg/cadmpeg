@@ -213,11 +213,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: crate::features::SketchFeatureBinding::Unresolved,
@@ -271,21 +271,23 @@ mod tests {
 
     #[test]
     fn split_face_plane_sets_require_two_unique_plane_dependencies() {
-        let feature =
-            |id: FeatureId, ordinal, dependencies, definition: FeatureDefinition| Feature {
-                id,
-                ordinal,
-                name: None,
-                suppressed: Some(false),
-                dependencies,
-                source_properties: BTreeMap::new(),
-                source_tag: None,
-                source_text: None,
-                source_content: Vec::new(),
-                outputs: Vec::new(),
-                definition,
-                native_ref: None,
-            };
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: (dependencies).try_into().unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
         let second = FeatureId::mint("test:model:feature#plane-b").expect("identity grammar");
         let split = FeatureId::mint("test:model:feature#split").expect("identity grammar");

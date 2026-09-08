@@ -1374,7 +1374,7 @@ pub fn project_parameter_design_with_edge_identities(
                     ) && scope.history_state_id.is_none()
                         && scope.previous_history_state_id.is_none(),
                 ),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: if matches!(&definition, FeatureDefinition::Native { .. }) {
                     native_scope_properties(scope, native_scope)
                 } else {
@@ -1382,7 +1382,7 @@ pub fn project_parameter_design_with_edge_identities(
                 },
                 source_tag: Some(scope.kind_name().to_owned()),
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs,
                 definition,
                 native_ref: Some(scope.id.clone()),
@@ -1417,7 +1417,7 @@ pub fn project_parameter_design_with_edge_identities(
             continue;
         };
         if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
-            feature.dependencies.push(predecessor.clone());
+            feature.dependencies.insert(predecessor.clone());
         }
     }
     for feature in &mut features {
@@ -1429,7 +1429,7 @@ pub fn project_parameter_design_with_edge_identities(
             _ => None,
         }) {
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.push(dependency.clone());
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -1465,7 +1465,7 @@ pub fn project_parameter_design_with_edge_identities(
         };
         for dependency in dependencies {
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.push(dependency.clone());
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -1513,7 +1513,7 @@ pub fn project_parameter_design_with_edge_identities(
                 continue;
             };
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.push(dependency.clone());
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -2703,7 +2703,7 @@ pub fn bind_sketch_feature_geometry(
         }
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.push(dependency);
+                feature.dependencies.insert(dependency);
             }
         }
     }

@@ -52,7 +52,7 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
             continue;
         };
         if !feature.dependencies.contains(&sketch_feature) {
-            feature.dependencies.push(sketch_feature);
+            feature.dependencies.insert(sketch_feature);
         }
     }
 }

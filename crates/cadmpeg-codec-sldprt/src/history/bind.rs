@@ -125,7 +125,9 @@ pub fn bind_unique_sketch_feature(
             continue;
         };
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.push(base_dependency.clone());
+            features[*index]
+                .dependencies
+                .insert(base_dependency.clone());
         }
         let Some((_, _, _, sketch, has_profile)) = bindings
             .iter()
@@ -152,7 +154,7 @@ pub fn bind_unique_sketch_feature(
                 *has_profile,
             ) && !feature.dependencies.contains(dependency)
             {
-                feature.dependencies.push(dependency.clone());
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -262,7 +264,7 @@ pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool
         };
         let target = &mut ordering_graph[by_id[&feature.id]];
         if !target.dependencies.contains(parent) {
-            target.dependencies.push(parent.clone());
+            target.dependencies.insert(parent.clone());
         }
     }
     for configuration in &ir.model.configurations {
@@ -272,7 +274,9 @@ pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool
             };
             for dependency in &state.dependencies {
                 if !ordering_graph[index].dependencies.contains(dependency) {
-                    ordering_graph[index].dependencies.push(dependency.clone());
+                    ordering_graph[index]
+                        .dependencies
+                        .insert(dependency.clone());
                 }
             }
         }

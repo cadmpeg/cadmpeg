@@ -1067,11 +1067,11 @@ fn mixed_current_and_generated_edges_remain_native() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: IrFeatureDefinition::Native {
             kind: "producer".into(),

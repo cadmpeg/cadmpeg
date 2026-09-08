@@ -182,7 +182,7 @@ pub(crate) fn validate_embedded_helix_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)
+    let embedded = project_features(&native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
@@ -280,7 +280,7 @@ fn project_feature_model_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     );
-    let mut projection = project_feature_model(&histories);
+    let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
         features,

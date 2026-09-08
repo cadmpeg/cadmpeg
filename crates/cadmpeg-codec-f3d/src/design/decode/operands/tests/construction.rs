@@ -585,7 +585,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             ..
         } if planes == &expected_planes
     ));
-    assert_eq!(plane_split.dependencies, expected_planes);
+    assert_eq!(plane_split.dependencies.as_slice(), expected_planes);
 
     compact_split_scope.class_tag =
         crate::records::DesignClassTag::try_from("375".to_owned()).unwrap();

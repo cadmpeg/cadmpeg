@@ -471,7 +471,7 @@ pub fn sync_neutral_features(
             .get(&projected_id)
             .is_some_and(|projected| {
                 if feature.native_ref.is_some() {
-                    projected.dependencies == expected
+                    projected.dependencies.as_slice() == expected
                 } else {
                     expected
                         .iter()

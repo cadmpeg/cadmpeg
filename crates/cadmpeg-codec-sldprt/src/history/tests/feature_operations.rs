@@ -228,7 +228,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }] if actual_radius.get() == 2.0)
     ));
     assert_eq!(
-        decoded.ir().model.features[2].dependencies,
+        decoded.ir().model.features[2].dependencies.as_slice(),
         vec![
             decoded.ir().model.features[0].id.clone(),
             decoded.ir().model.features[1].id.clone(),
@@ -295,13 +295,15 @@ fn decode_dispatches_typed_features_by_xml_family() {
         "FaceBlend"
     );
     assert_eq!(
-        regenerated.ir().model.features[2].dependencies,
+        regenerated.ir().model.features[2].dependencies.as_slice(),
         vec![
             regenerated.ir().model.features[0].id.clone(),
             regenerated.ir().model.features[1].id.clone(),
         ]
     );
-    regenerated.ir_mut().model.features[2].dependencies.pop();
+    let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
+    dependencies.pop();
+    regenerated.ir_mut().model.features[2].dependencies = dependencies.try_into().unwrap();
     let error = crate::test_support::plan_inherited_write(
         regenerated.ir(),
         regenerated.source_fidelity(),

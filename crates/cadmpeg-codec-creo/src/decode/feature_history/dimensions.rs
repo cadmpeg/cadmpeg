@@ -185,7 +185,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> (usize, BTreeMap<String, ParameterId>) {
+) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let feature_ids = ir
         .model
         .features
@@ -214,7 +214,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
-        return (0, BTreeMap::new());
+        return Ok((0, BTreeMap::new()));
     };
     let unique_external_ids = keys
         .iter()
@@ -319,10 +319,11 @@ pub(in super::super) fn transfer_feature_dimensions(
         ) {
             feature
                 .source_content
-                .push(FeatureSourceContent::Parameter(id));
+                .push(FeatureSourceContent::Parameter(id))
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
     }
-    (transferred, relation_parameters)
+    Ok((transferred, relation_parameters))
 }
 
 #[cfg(test)]

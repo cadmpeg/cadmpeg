@@ -1333,7 +1333,7 @@ pub(crate) fn project(
             source_properties: properties,
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
                 kind: record.command_id.to_string().into(),

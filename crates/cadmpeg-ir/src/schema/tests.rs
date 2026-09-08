@@ -71,11 +71,11 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Fillet {
             groups: vec![FilletGroup {

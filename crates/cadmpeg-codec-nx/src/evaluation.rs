@@ -1200,11 +1200,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body],
             definition: FeatureDefinition::Block {
                 dimensions: Some([
@@ -1232,7 +1232,7 @@ mod tests {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                             outputs: (feature.outputs.clone()).try_into().unwrap(),
                         },
-                        dependencies: (feature.dependencies.clone()).try_into().unwrap(),
+                        dependencies: feature.dependencies.clone(),
                         definition: feature.definition.clone(),
                     },
                 )
@@ -1268,11 +1268,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body],
             definition: FeatureDefinition::Hole {
                 profile: None,
@@ -1310,11 +1310,11 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body],
             definition,
             native_ref: None,
@@ -1327,11 +1327,11 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1368,7 +1368,7 @@ mod tests {
                 allow_multi_profile_faces: None,
             },
         );
-        feature.dependencies.push(profile);
+        feature.dependencies.insert(profile);
         feature.outputs = outputs;
         feature
     }
@@ -1395,11 +1395,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body.clone()],
             definition: FeatureDefinition::Sphere {
                 center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
@@ -1427,11 +1427,11 @@ mod tests {
                 ordinal: 0,
                 name: Some("Retained history input".to_string()),
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs: Vec::new(),
                 definition: FeatureDefinition::BaseFeature {
                     bodies: BodySelection::Resolved {
@@ -1887,7 +1887,7 @@ mod tests {
         let mut ir = complete_block_ir();
         ir.model.features[0]
             .dependencies
-            .push(FeatureId::mint("later".to_string()).expect("identity grammar"));
+            .insert(FeatureId::mint("later".to_string()).expect("identity grammar"));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
@@ -1964,11 +1964,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![extracted.clone()],
             definition: FeatureDefinition::ExtractBody {
                 source: BodySelection::Bodies(vec![source]),
@@ -1995,11 +1995,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::ExtractBody {
                 source: BodySelection::local(
@@ -2027,11 +2027,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Bodies(vec![body]),
@@ -2055,11 +2055,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DeleteBody {
                 bodies: BodySelection::local(
@@ -2088,11 +2088,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Bodies(vec![body]),
@@ -2364,11 +2364,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::TrimBodies {
                 targets: BodySelection::Unresolved,
@@ -2424,11 +2424,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![output.clone()],
             definition: FeatureDefinition::SewBodies {
                 bodies: BodySelection::local(
@@ -2784,11 +2784,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::Loft,
@@ -2811,11 +2811,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::FreeformSurface,
@@ -2875,11 +2875,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
@@ -3022,11 +3022,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
                 kind: "DELETE".into(),

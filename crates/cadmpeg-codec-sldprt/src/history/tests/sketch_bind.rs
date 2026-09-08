@@ -349,11 +349,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: Some(native_ref.into()),
@@ -447,7 +447,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         }
     ));
     assert_eq!(
-        features[1].dependencies,
+        features[1].dependencies.as_slice(),
         vec![FeatureId::mint("base").expect("identity grammar")]
     );
     assert!(matches!(
@@ -463,7 +463,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         FeatureDefinition::Extrude { profile: ProfileRef::Sketch(id), .. } if id == &sketch_id
     ));
     assert_eq!(
-        features[3].dependencies,
+        features[3].dependencies.as_slice(),
         vec![FeatureId::mint("base").expect("identity grammar")]
     );
 }

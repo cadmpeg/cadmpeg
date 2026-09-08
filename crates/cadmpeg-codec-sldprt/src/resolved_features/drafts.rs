@@ -643,11 +643,11 @@ mod tests {
             ordinal: 0,
             name: Some("Draft1".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Draft".into()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Draft {
                 faces: FaceSelection::Unresolved,
