@@ -248,7 +248,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
                     })
-                    .unwrap(),
+                    .expect("valid test fixture"),
                     false,
                     start,
                     end,
@@ -293,7 +293,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                 start_angle: Angle(start_angle),
                 end_angle: Angle(end_angle),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
             true,
             start,
             end,
@@ -1002,14 +1002,14 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
                 }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
-    let sketch = SketchId::mint("creo:model:sketch#822".to_string()).unwrap();
+    let sketch = SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
     assert!(matches!(
@@ -1642,14 +1642,16 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
     assert_eq!(
         circular_sweep_feature_definition(
-            ProfileRef::Sketch(SketchId::mint("creo:model:sketch#917".to_string()).unwrap()),
+            ProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
+            ),
             &sweep,
             BooleanOp::Join,
             Some(true),
         ),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(
-                SketchId::mint("creo:model:sketch#917".to_string()).unwrap()
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
             ),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: Vector3::new(0.0, 0.0, -1.0),
@@ -1709,7 +1711,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
 
 #[test]
 fn typed_center_locus_requires_a_circular_geometry_family() {
-    let entity = SketchEntityId::mint("creo:test:entity#1").unwrap();
+    let entity = SketchEntityId::mint("creo:test:entity#1").expect("valid test fixture");
     let definition = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Center(entity.clone())],
     };
@@ -1734,7 +1736,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
         })
-        .unwrap(),
+        .expect("valid test fixture"),
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &resolved));
 }
@@ -1743,7 +1745,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 fn section_profile_prefers_a_resolved_sketch_chain() {
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
-        id: SketchId::mint("creo:model:sketch#offset:40".to_string()).unwrap(),
+        id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
         name: None,
         configuration: None,
         visible: None,
@@ -1752,8 +1754,8 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
-        .unwrap(),
-        profiles: Default::default(),
+        .expect("valid test fixture"),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
@@ -1763,12 +1765,14 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 
     ir.model.sketches[0].profiles.push_single(SketchEntityUse {
         entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
-            .unwrap(),
+            .expect("valid test fixture"),
         reversed: false,
     });
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Sketch(SketchId::mint("creo:model:sketch#offset:40".to_string()).unwrap())
+        ProfileRef::Sketch(
+            SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
+        )
     );
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
@@ -1778,9 +1782,11 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 
 #[test]
 fn connected_profile_vertices_include_open_chain_terminals() {
-    let sketch_id = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+    let sketch_id =
+        SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
     let entity_id = |external_id| {
-        SketchEntityId::mint(format!("creo:featdefs:sketch_entity#917:{external_id}")).unwrap()
+        SketchEntityId::mint(format!("creo:featdefs:sketch_entity#917:{external_id}"))
+            .expect("valid test fixture")
     };
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
@@ -1799,7 +1805,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 reversed: true,
             },
         ]])
-        .unwrap(),
+        .expect("valid test fixture"),
         native_ref: None,
     });
     ir.model.sketch_entities.extend([
@@ -1810,7 +1816,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         ),
         SketchEntity::new(
             entity_id(2),
@@ -1819,7 +1825,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 start: Point2::new(1.0, 1.0),
                 end: Point2::new(1.0, 0.0),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         ),
     ]);
 
@@ -1837,7 +1843,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 unreachable!();
             }
         })
-        .unwrap();
+        .expect("valid test fixture");
     assert_eq!(
         connected_sketch_profile_vertices(&ir, &sketch_id),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
@@ -1852,7 +1858,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 unreachable!();
             }
         })
-        .unwrap();
+        .expect("valid test fixture");
     assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
 }
 

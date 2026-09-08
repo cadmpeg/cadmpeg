@@ -137,7 +137,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
                 start: cadmpeg_ir::math::Point2::new(-2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
     let mut disabled_parallel = definition.clone();
@@ -288,7 +288,7 @@ fn arc_carriers_use_trim_vertices() {
                 start_angle: Angle(-std::f64::consts::FRAC_PI_2),
                 end_angle: Angle(std::f64::consts::PI),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
 
@@ -346,7 +346,7 @@ fn arc_carriers_use_trim_vertices() {
                 start_angle: Angle(-std::f64::consts::FRAC_PI_2),
                 end_angle: Angle(std::f64::consts::PI),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
 }

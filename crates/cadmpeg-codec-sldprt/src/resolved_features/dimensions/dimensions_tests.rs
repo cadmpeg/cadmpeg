@@ -1289,7 +1289,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, 1.0e-8)
@@ -1604,7 +1604,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     );
 
     assert!(
-        matches!((entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+        matches!((entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
             Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
                 if *center == Point2::new(1.0, 2.0)
         )
@@ -1715,7 +1715,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&implicit_lane),
     );
     assert!(
-        matches!((implicit_entities.get(1).map(|entity| &entity.geometry)).map(|geometry| geometry.definition()),
+        matches!((implicit_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
             Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
                 if *center == Point2::new(3.0, 4.0)
         )

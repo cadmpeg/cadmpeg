@@ -783,7 +783,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }];
     let group = group();
@@ -983,7 +983,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
             profiles[0].push(SketchEntityUse {
                 entity: curve_ids[0].clone(),
                 reversed: false,
-            })
+            });
         })
         .unwrap();
     let ambiguous_resolution = EntitySelectionPathResolution {
@@ -1019,7 +1019,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }];
     let mut group = group();
@@ -1158,7 +1158,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             profiles[1].push(SketchEntityUse {
                 entity: first_entity,
                 reversed: false,
-            })
+            });
         })
         .unwrap();
     assert!(resolved_sketch_profile_regions(

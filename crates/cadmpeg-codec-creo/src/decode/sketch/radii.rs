@@ -576,10 +576,7 @@ pub(crate) fn section_axis_reference_line_geometry(
     } else {
         (Point2::new(0.0, value), Point2::new(1.0, 0.0))
     };
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction })
-            .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
 }
 
 pub(crate) fn section_segment_intersection_carrier_with_missing_line(
@@ -603,15 +600,13 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+        radius: Length(radius),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::TAU),
+    })
+    .ok()
 }
 
 pub(crate) fn trim_segment_id(
@@ -735,7 +730,7 @@ mod tests {
                         direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
                     }
                 )
-                .unwrap()
+                .expect("valid test fixture")
             )
         );
         assert_eq!(

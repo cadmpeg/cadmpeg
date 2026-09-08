@@ -120,7 +120,7 @@ pub(in super::super) fn section_point_locus(
             .rows
             .centered_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
-            .flat_map(|segment| {
+            .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
                     [
@@ -140,7 +140,7 @@ pub(in super::super) fn section_point_locus(
             .rows
             .reference_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
-            .flat_map(|segment| {
+            .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
                     [
@@ -160,7 +160,7 @@ pub(in super::super) fn section_point_locus(
             .rows
             .bounded_curves()
             .filter(|segment| unique_entities.contains(&segment.external_id))
-            .flat_map(|segment| {
+            .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
                     [
@@ -762,11 +762,11 @@ pub(in super::super) fn section_skamp_midpoint(
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return Some(sketch_entity_id(sketch, item.entity_id)?);
+            return sketch_entity_id(sketch, item.entity_id);
         }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
-            return Some(sketch_entity_id(sketch, item.entity_id)?);
+            return sketch_entity_id(sketch, item.entity_id);
         }
         section_skamp_oriented_line(definition, sketch, item, geometry)
     };
@@ -1122,11 +1122,12 @@ mod tests {
         assert_eq!(
             section_point_locus(
                 &definition,
-                &SketchId::mint("creo:model:sketch#917".to_string()).unwrap(),
+                &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
                 7,
             ),
             Some(SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:12".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
     }
@@ -1191,41 +1192,48 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert_eq!(
             section_point_locus(&definition, &sketch, 0),
             Some(SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 1),
             Some(SketchLocus::End(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 7),
             Some(SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 8),
             Some(SketchLocus::End(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:31".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 9),
             Some(SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
         assert_eq!(
             section_point_locus(&definition, &sketch, 10),
             Some(SketchLocus::End(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:32".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
 
@@ -1294,11 +1302,13 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert_eq!(
             section_point_locus(&definition, &sketch, 3),
             Some(SketchLocus::Center(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:30".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
     }
@@ -1425,7 +1435,8 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         let line = crate::feature::FeatureSkampItem {
             entity_id: 101,
             sense: 0,
@@ -1454,7 +1465,10 @@ mod tests {
         );
         assert_eq!(
             section_skamp_curve_entity(&definition, &sketch, &bounded_curve),
-            Some(SketchEntityId::mint("creo:featdefs:sketch_entity#917:103".to_string(),).unwrap())
+            Some(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:103".to_string(),)
+                    .expect("valid test fixture")
+            )
         );
         assert_eq!(
             section_skamp_locus(
@@ -1466,7 +1480,8 @@ mod tests {
                 },
             ),
             Some(SketchLocus::Start(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
 
@@ -1622,12 +1637,14 @@ mod tests {
             entity_id: 99,
             sense: 0,
         };
-        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert!(section_skamp_is_point(&definition, &item));
         assert_eq!(
             section_skamp_point_locus(&definition, &sketch, &item),
             Some(SketchLocus::Entity(
-                SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string(),).unwrap()
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string(),)
+                    .expect("valid test fixture")
             ))
         );
     }
@@ -1679,7 +1696,8 @@ mod tests {
             .as_ref()
             .expect("segments")
             .is_complete());
-        let sketch = SketchId::mint("creo:model:sketch#917".to_string()).unwrap();
+        let sketch =
+            SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
         assert_eq!(
             section_skamp_tangent_loci(
                 &definition,
@@ -1698,11 +1716,11 @@ mod tests {
             Some([
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:10".to_string(),)
-                        .unwrap()
+                        .expect("valid test fixture")
                 ),
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:11".to_string(),)
-                        .unwrap()
+                        .expect("valid test fixture")
                 ),
             ])
         );

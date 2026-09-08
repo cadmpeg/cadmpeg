@@ -3973,16 +3973,14 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let planar = match crate::ids::neutral_sketch_id(entity) {
-                Some(id) => id,
-                None => continue,
+            let Some(planar) = crate::ids::neutral_sketch_id(entity) else {
+                continue;
             };
             if planar_sketches.contains(planar.as_str()) {
                 note(planar.as_str(), "sketch");
             }
-            let spatial = match crate::ids::neutral_spatial_sketch_id(entity) {
-                Some(id) => id,
-                None => continue,
+            let Some(spatial) = crate::ids::neutral_spatial_sketch_id(entity) else {
+                continue;
             };
             if spatial_sketches.contains(spatial.as_str()) {
                 note(spatial.as_str(), "spatial_sketch");
@@ -4004,8 +4002,12 @@ fn populate_annotations(
             note(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 note(
-                    &match crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index) { Some(id) => id, None => continue }
-                        .as_str(),
+                    match crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index)
+                    {
+                        Some(id) => id,
+                        None => continue,
+                    }
+                    .as_str(),
                     "sketch_constraint",
                 );
             }

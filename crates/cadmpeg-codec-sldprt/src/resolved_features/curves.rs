@@ -409,7 +409,7 @@ pub(super) fn tangent_bounded_curve(
     }
     let cross = tangent[0] * chord[1] - tangent[1] * chord[0];
     if cross.abs() <= tolerance * chord_length {
-        return Some(SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok()?);
+        return SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     }
     let normal = [-tangent[1], tangent[0]];
     let denominator = 2.0 * (chord[0] * normal[0] + chord[1] * normal[1]);
@@ -426,15 +426,13 @@ pub(super) fn tangent_bounded_curve(
     let first = (start.v - center.v).atan2(start.u - center.u);
     let second = (end.v - center.v).atan2(end.u - center.u);
     let (start_angle, end_angle, _) = minor_arc_angles(first, second);
-    Some(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center,
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
-        })
-        .ok()?,
-    )
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center,
+        radius: Length(radius),
+        start_angle: Angle(start_angle),
+        end_angle: Angle(end_angle),
+    })
+    .ok()
 }
 
 pub(super) fn slot_curve_and_center_indices(

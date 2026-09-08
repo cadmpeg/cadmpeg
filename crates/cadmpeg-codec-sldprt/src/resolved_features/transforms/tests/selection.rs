@@ -640,7 +640,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let mut first_marker = marker("first-point", Some([-0.005, 0.002]));
@@ -795,7 +795,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
             Vector3::new(0.0, 0.0, 1.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let circles = [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)];

@@ -1641,18 +1641,16 @@ fn project_placement(
     {
         return None;
     }
-    Some(
-        SketchPlacement::try_resolved(
-            Point3::new(
-                matrix[0][3] * 10.0,
-                matrix[1][3] * 10.0,
-                matrix[2][3] * 10.0,
-            ),
-            normal,
-            u_axis,
-        )
-        .ok()?,
+    SketchPlacement::try_resolved(
+        Point3::new(
+            matrix[0][3] * 10.0,
+            matrix[1][3] * 10.0,
+            matrix[2][3] * 10.0,
+        ),
+        normal,
+        u_axis,
     )
+    .ok()
 }
 
 fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {

@@ -18,7 +18,7 @@ fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
             entity: entity.clone(),
             reversed: false,
         }]])
-        .unwrap(),
+        .expect("valid test fixture"),
         native_ref: None,
     }
 }
@@ -31,14 +31,15 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
             start: Point2::new(0.0, 0.0),
             end: Point2::new(end[0], end[1]),
         })
-        .unwrap(),
+        .expect("valid test fixture"),
     )
 }
 
 #[test]
 fn profile_joins_reject_duplicate_sketch_ids() {
-    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
-    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string()).unwrap();
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).expect("valid test fixture");
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string())
+        .expect("valid test fixture");
     let mut ir = CadIr::empty();
     ir.model.sketches.extend([
         sketch(&sketch_id, &entity_id),
@@ -54,8 +55,9 @@ fn profile_joins_reject_duplicate_sketch_ids() {
 
 #[test]
 fn profile_joins_reject_duplicate_sketch_entity_ids() {
-    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).unwrap();
-    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string()).unwrap();
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).expect("valid test fixture");
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string())
+        .expect("valid test fixture");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
     ir.model.sketch_entities.extend([

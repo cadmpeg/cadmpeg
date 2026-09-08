@@ -650,7 +650,7 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
             Vector3::new(0.0, 0.0, -1.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("axis frame");
@@ -740,7 +740,7 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
             Vector3::new(diagonal, 0.0, -diagonal),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("rotated frame");
@@ -1123,7 +1123,7 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     };
     let circle = SketchEntity::new(
@@ -1302,7 +1302,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     }];
     let mut entities = vec![SketchEntity::new(

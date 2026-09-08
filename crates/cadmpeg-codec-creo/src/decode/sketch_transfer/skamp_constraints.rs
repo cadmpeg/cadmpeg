@@ -172,7 +172,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             let point_entity = |item: &crate::feature::FeatureSkampItem| {
                 (item.sense == 0).then_some(())?;
                 if section_skamp_is_point(definition, item) {
-                    return Some(sketch_entity_id(sketch, item.entity_id)?);
+                    return sketch_entity_id(sketch, item.entity_id);
                 }
                 (!active && item_geometry(item).is_some_and(|geometry| {
                     matches!(
@@ -682,23 +682,26 @@ mod tests {
 
     #[test]
     fn typed_entity_relations_require_every_entity_in_the_emitted_geometry() {
-        let first = SketchEntityId::mint("synthetic:test:relation#first").unwrap();
-        let second = SketchEntityId::mint("synthetic:test:relation#second").unwrap();
-        let axis = SketchEntityId::mint("synthetic:test:relation#axis").unwrap();
+        let first =
+            SketchEntityId::mint("synthetic:test:relation#first").expect("valid test fixture");
+        let second =
+            SketchEntityId::mint("synthetic:test:relation#second").expect("valid test fixture");
+        let axis =
+            SketchEntityId::mint("synthetic:test:relation#axis").expect("valid test fixture");
         let geometry = BTreeMap::from([
             (
                 first.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
                 })
-                .unwrap(),
+                .expect("valid test fixture"),
             ),
             (
                 second.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(1.0, 0.0),
                 })
-                .unwrap(),
+                .expect("valid test fixture"),
             ),
         ]);
         let symmetry = SketchConstraintDefinitionInput::Symmetric {
@@ -725,7 +728,7 @@ mod tests {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(0.0, 1.0),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         );
         assert!(sketch_constraint_loci_compatible_with_policy(
             &symmetry, &complete, false,

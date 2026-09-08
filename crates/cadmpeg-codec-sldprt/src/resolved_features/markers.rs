@@ -134,13 +134,12 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = match SpatialSketchId::mint(feature.id.as_str().replacen(
+            let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
-            )) {
-                Ok(id) => id,
-                Err(_) => continue,
+            )) else {
+                continue;
             };
             let Some(mut projected) = points
                 .iter()
@@ -272,13 +271,12 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = match SpatialSketchId::mint(feature.id.as_str().replacen(
+        let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,
-        )) {
-            Ok(id) => id,
-            Err(_) => continue,
+        )) else {
+            continue;
         };
         let Some(projected) = vertices
             .chunks_exact(2)

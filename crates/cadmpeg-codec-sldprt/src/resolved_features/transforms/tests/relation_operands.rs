@@ -624,7 +624,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let feature = Feature {
@@ -704,7 +704,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let feature = Feature {
@@ -773,7 +773,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let feature = Feature {

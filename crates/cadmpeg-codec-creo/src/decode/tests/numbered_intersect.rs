@@ -1310,11 +1310,13 @@ fn closed_fallback_profile_selects_revolution_segments() {
     let segments = [segment(9), segment(10), segment(11)];
     let profiles = vec![vec![
         SketchEntityUse {
-            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string()).unwrap(),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string())
+                .expect("valid test fixture"),
             reversed: false,
         },
         SketchEntityUse {
-            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string()).unwrap(),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string())
+                .expect("valid test fixture"),
             reversed: true,
         },
     ]];
@@ -1742,7 +1744,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
             start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
             end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
         })
-        .unwrap()
+        .expect("valid test fixture")
     };
 
     assert!(matches!(
@@ -1791,7 +1793,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
     })
-    .unwrap();
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &centered_arc, &axis),
         Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
@@ -1802,7 +1804,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
     })
-    .unwrap();
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_arc, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
@@ -1812,7 +1814,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         center: Point2::new(5.0, 3.0),
         radius: Length(2.0),
     })
-    .unwrap();
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_circle, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })

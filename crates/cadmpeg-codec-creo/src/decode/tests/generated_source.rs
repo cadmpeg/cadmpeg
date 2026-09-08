@@ -237,7 +237,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 center: Point2::new(1.0, 2.0),
                 radius: Length(3.0),
             })
-            .unwrap()
+            .expect("valid test fixture")
         ),
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
@@ -1483,11 +1483,14 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
 
 #[test]
 fn design_constraint_coverage_separates_typed_and_native_constraints() {
-    let sketch = SketchId::mint("synthetic:test:id#sketch".to_string()).unwrap();
+    let sketch =
+        SketchId::mint("synthetic:test:id#sketch".to_string()).expect("valid test fixture");
     let constraint = |id: &str, definition| SketchConstraint {
-        id: SketchConstraintId::mint(format!("synthetic:test:id#{id}")).unwrap(),
+        id: SketchConstraintId::mint(format!("synthetic:test:id#{id}"))
+            .expect("valid test fixture"),
         sketch: sketch.clone(),
-        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).unwrap(),
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+            .expect("valid test fixture"),
         name: None,
         driving: None,
         active: None,
@@ -1499,7 +1502,8 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         metadata: None,
         native_ref: None,
     };
-    let entity = SketchEntityId::mint("synthetic:test:id#entity".to_string()).unwrap();
+    let entity =
+        SketchEntityId::mint("synthetic:test:id#entity".to_string()).expect("valid test fixture");
     let mut constraints = vec![
         constraint(
             "sketch:relation:1",
@@ -1563,12 +1567,16 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 
 #[test]
 fn native_curve_families_accept_only_their_defined_loci() {
-    let point = SketchEntityId::mint("synthetic:test:id#point".to_string()).unwrap();
-    let bounded = SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap();
-    let line = SketchEntityId::mint("synthetic:test:id#line".to_string()).unwrap();
-    let reference_line =
-        SketchEntityId::mint("synthetic:test:id#reference_line".to_string()).unwrap();
-    let circle = SketchEntityId::mint("synthetic:test:id#circle".to_string()).unwrap();
+    let point =
+        SketchEntityId::mint("synthetic:test:id#point".to_string()).expect("valid test fixture");
+    let bounded =
+        SketchEntityId::mint("synthetic:test:id#bounded".to_string()).expect("valid test fixture");
+    let line =
+        SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture");
+    let reference_line = SketchEntityId::mint("synthetic:test:id#reference_line".to_string())
+        .expect("valid test fixture");
+    let circle =
+        SketchEntityId::mint("synthetic:test:id#circle".to_string()).expect("valid test fixture");
     let geometry = BTreeMap::from([
         (point.clone(), SketchGeometry::native("point".to_string())),
         (
@@ -1596,9 +1604,10 @@ fn native_curve_families_accept_only_their_defined_loci() {
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
     let centered_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(
-            SketchEntityId::mint("synthetic:test:id#line".to_string()).unwrap(),
+            SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture"),
         ),
-        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap(),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
+            .expect("valid test fixture"),
     };
     assert!(sketch_constraint_loci_compatible(
         &centered_midpoint,
@@ -1606,7 +1615,8 @@ fn native_curve_families_accept_only_their_defined_loci() {
     ));
     let incompatible_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(reference_line),
-        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string()).unwrap(),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
+            .expect("valid test fixture"),
     };
     assert!(!sketch_constraint_loci_compatible(
         &incompatible_midpoint,
@@ -1779,12 +1789,12 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
     })
-    .unwrap();
+    .expect("valid test fixture");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(-1.0, 0.0),
         end: Point2::new(1.0, 0.0),
     })
-    .unwrap();
+    .expect("valid test fixture");
     let counterclockwise = vec![
         (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
         (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
@@ -1816,7 +1826,7 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
         })
-        .unwrap(),
+        .expect("valid test fixture"),
         false,
         [2.0, 0.0],
         [2.0, 0.0],
@@ -1837,13 +1847,15 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
 
 #[test]
 fn circle_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId::mint("creo:model:sketch#circle".to_string()).unwrap();
-    let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string()).unwrap();
+    let sketch_id =
+        SketchId::mint("creo:model:sketch#circle".to_string()).expect("valid test fixture");
+    let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string())
+        .expect("valid test fixture");
     let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(1.0, -2.0),
         radius: Length(3.0),
     })
-    .unwrap();
+    .expect("valid test fixture");
     let seam = [4.0, -2.0];
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
@@ -1856,7 +1868,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             entity: entity_id.clone(),
             reversed: false,
         }]])
-        .unwrap(),
+        .expect("valid test fixture"),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(

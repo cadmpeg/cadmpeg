@@ -139,12 +139,11 @@ pub(super) fn transfer_section_entities(
         .iter()
         .filter(|segment| segment_geometry(segment).is_none())
     {
-        let id = match sketch_entity_id(
+        let Some(id) = sketch_entity_id(
             sketch_id,
             section_segment_identity_suffix(unique_segment_ids, segment),
-        ) {
-            Some(id) => id,
-            None => continue,
+        ) else {
+            continue;
         };
         annotate(
             annotations,
@@ -198,9 +197,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("circle:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         let geometry = circle_geometries
             .get(&segment.offset)
@@ -251,9 +249,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("point:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         let geometry = point_geometries
             .get(&segment.offset)
@@ -303,9 +300,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("centered_line:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         let geometry = centered_line_geometries
             .get(&segment.offset)
@@ -358,9 +354,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("reference_line:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         let geometry = reference_line_geometries
             .get(&segment.offset)
@@ -417,9 +412,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("bounded_curve:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
@@ -462,9 +456,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("conic:offset:{}", segment.offset)
         };
-        let id = match sketch_entity_id(sketch_id, suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, suffix) else {
+            continue;
         };
         annotate(
             annotations,
@@ -496,9 +489,8 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
-        let id = match sketch_entity_id(sketch_id, suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(id) = sketch_entity_id(sketch_id, suffix) else {
+            continue;
         };
         let geometry = if unique_external_id {
             let native_kind =
@@ -566,9 +558,8 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("saved:offset:{offset}")
         };
-        let entity_id = match sketch_entity_id(sketch_id, &suffix) {
-            Some(id) => id,
-            None => continue,
+        let Some(entity_id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
         };
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;

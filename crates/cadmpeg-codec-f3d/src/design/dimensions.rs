@@ -5252,28 +5252,28 @@ fn exact_centered_entity_relation(
     if first.id() == second.id() {
         return None;
     }
-    let centered_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match (&entity.geometry)
-        .definition()
-    {
-        SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => {
-            (center.u.is_finite() && center.v.is_finite() && radius.0.is_finite() && radius.0 > 0.0)
-                .then_some((*center, Some(radius.0)))
-        }
-        SketchGeometryDefinition::Ellipse {
-            center,
-            major_radius,
-            minor_radius,
-            ..
-        } => (center.u.is_finite()
-            && center.v.is_finite()
-            && major_radius.0.is_finite()
-            && minor_radius.0.is_finite()
-            && major_radius.0 > 0.0
-            && minor_radius.0 > 0.0)
-            .then_some((*center, None)),
-        _ => None,
-    };
+    let centered_geometry =
+        |entity: &cadmpeg_ir::sketches::SketchEntity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. } => (center.u.is_finite()
+                && center.v.is_finite()
+                && radius.0.is_finite()
+                && radius.0 > 0.0)
+                .then_some((*center, Some(radius.0))),
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_radius,
+                minor_radius,
+                ..
+            } => (center.u.is_finite()
+                && center.v.is_finite()
+                && major_radius.0.is_finite()
+                && minor_radius.0.is_finite()
+                && major_radius.0 > 0.0
+                && minor_radius.0 > 0.0)
+                .then_some((*center, None)),
+            _ => None,
+        };
     let (first_center, first_radius) = centered_geometry(first)?;
     let (second_center, second_radius) = centered_geometry(second)?;
     if !sketch_points_close(first_center, second_center) {

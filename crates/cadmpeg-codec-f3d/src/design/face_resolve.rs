@@ -3059,7 +3059,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         };
         let face = |id: &str, surface: &str| Face {

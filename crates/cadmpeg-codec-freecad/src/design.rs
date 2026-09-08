@@ -1110,7 +1110,6 @@ fn append_operation_parameters(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<(), CodecError> {
-    let owner = feature_id(object)?;
     const NAMES: &[&str] = &[
         "Angle",
         "Angle2",
@@ -1132,6 +1131,7 @@ fn append_operation_parameters(
         "ThreadDepth",
         "CustomThreadClearance",
     ];
+    let owner = feature_id(object)?;
     for property in properties
         .iter()
         .copied()

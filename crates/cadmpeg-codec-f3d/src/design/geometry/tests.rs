@@ -68,7 +68,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let arrangement_budget = local_arrangement_budget();

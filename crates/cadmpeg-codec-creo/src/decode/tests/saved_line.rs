@@ -105,7 +105,7 @@ fn saved_line_joins_through_order_table() {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
     assert!(resolved_section_segment_geometry(
@@ -198,7 +198,7 @@ fn saved_line_joins_through_order_table() {
     assert!(materialized_saved_section_external_ids(&incomplete).is_empty());
     let (native_entity, offset) = unresolved_saved_section_entity(
         &incomplete,
-        &SketchId::mint("creo:model:sketch#5").unwrap(),
+        &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
         &incomplete
             .saved_section
             .as_ref()
@@ -207,7 +207,7 @@ fn saved_line_joins_through_order_table() {
         &unique_saved_section_internal_ids(&incomplete),
         &BTreeSet::new(),
     )
-    .unwrap();
+    .expect("valid test fixture");
     assert_eq!(offset, 20);
     assert_eq!(
         native_entity.id().as_str(),
@@ -341,14 +341,14 @@ fn saved_line_joins_through_order_table() {
     });
     let constraints = section_skamp_constraints(
         &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     assert!(matches!(
         constraints[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            ).unwrap()]
+            ).expect("valid test fixture")]
     ));
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         constraints[0].0.definition.kind()
@@ -377,7 +377,7 @@ fn saved_line_joins_through_order_table() {
         .relation_id = None;
     let equation_only_constraints = section_skamp_constraints(
         &equation_only_incidence,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         equation_only_constraints[0].0.definition.kind()
@@ -400,7 +400,7 @@ fn saved_line_joins_through_order_table() {
         .equation_id = None;
     let missing_equation_constraints = section_skamp_constraints(
         &missing_equation,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         missing_equation_constraints[0].0.definition.kind()
@@ -429,7 +429,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     let duplicate_equation_constraints = section_skamp_constraints(
         &duplicate_equation,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         duplicate_equation_constraints[0].0.definition.kind()
@@ -442,25 +442,27 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         relation_incidence_entities(
             &constrained,
-            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
         ),
         vec![
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
         ]
     );
     let dimension_constraints = section_dimension_constraints(
         &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     assert!(
         matches!(
             dimension_constraints[0].0.definition.kind(),
             SketchConstraintDefinitionInput::Distance { entities, .. }
                 if entities == &[
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).expect("valid test fixture"),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).expect("valid test fixture"),
                 ]
         ),
         "{:?}",
@@ -470,7 +472,7 @@ fn saved_line_joins_through_order_table() {
     native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
     let native_join_constraints = section_dimension_constraints(
         &native_join,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         native_join_constraints[0].0.definition.kind()
@@ -508,7 +510,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     let ambiguous_join_constraints = section_dimension_constraints(
         &native_join,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         ambiguous_join_constraints[0].0.definition.kind()
@@ -629,13 +631,14 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
-        SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
+        SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+            .expect("valid test fixture"),
         SketchGeometry::native("solver_only_section_entity".to_string()),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
         )[0]
         .0
@@ -656,7 +659,7 @@ fn saved_line_joins_through_order_table() {
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
         )[0]
         .0
@@ -701,17 +704,19 @@ fn saved_line_joins_through_order_table() {
     );
     let solver_geometry = BTreeMap::from([
         (
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
             SketchGeometry::native("line".to_string()),
         ),
         (
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
             SketchGeometry::native("point".to_string()),
         ),
     ]);
     let solver_constraints = section_skamp_constraints_for_geometry(
         &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         Some(&solver_geometry),
     );
     let point_item = &solver_families
@@ -728,13 +733,13 @@ fn saved_line_joins_through_order_table() {
         .items[1];
     assert!(section_skamp_point_locus(
         &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         point_item
     )
     .is_some());
     assert!(section_skamp_incidence_locus(
         &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         line_item,
         Some(&solver_geometry)
     )
@@ -900,7 +905,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     assert!(relation_incidence_entities(
         &duplicate_incidence,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
     )
     .is_empty());
@@ -915,25 +920,27 @@ fn saved_line_joins_through_order_table() {
         .status = 34;
     assert!(relation_incidence_entities(
         &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
     )
     .is_empty());
     assert_eq!(
         joined_relation_incidence_entities(
             &constrained,
-            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
         ),
         vec![
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
         ]
     );
     assert_eq!(
         section_skamp_constraints(
             &constrained,
-            &SketchId::mint("creo:model:sketch#5".to_string()).unwrap()
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture")
         )[0]
         .0
         .active,
@@ -942,14 +949,14 @@ fn saved_line_joins_through_order_table() {
     constrained.segments = None;
     let constraints = section_skamp_constraints(
         &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
     assert!(matches!(
         constraints[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            ).unwrap()]
+            ).expect("valid test fixture")]
     ));
 
     let mut completed = definition;
@@ -996,7 +1003,7 @@ fn saved_line_joins_through_order_table() {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
     let mut replay_mismatched = completed.clone();
@@ -1024,7 +1031,7 @@ fn saved_line_joins_through_order_table() {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
     let mut incomplete_order = completed.clone();
@@ -1122,7 +1129,7 @@ fn saved_line_joins_through_order_table() {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         ))
     );
     assert_eq!(
@@ -1132,7 +1139,7 @@ fn saved_line_joins_through_order_table() {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
 
@@ -1194,7 +1201,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
                 center: Point2::new(2.0, -3.0),
                 radius: Length(4.5),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
             19,
         ))
     );
@@ -1314,7 +1321,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
                 start: Point2::new(start.0, start.1),
                 end: Point2::new(end.0, end.1),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         )
     };
     let geometries = vec![
@@ -1331,7 +1338,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
                 )
                 .expect("valid test pcurve"),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),
         line(11, (1.0, 1.0), (1.0, 0.0)),
@@ -1344,12 +1351,12 @@ fn generated_saved_geometry_forms_closed_profiles() {
                 start_angle: Angle(0.0),
                 end_angle: Angle(std::f64::consts::TAU),
             })
-            .unwrap(),
+            .expect("valid test fixture"),
         ),
     ];
 
     let profiles = saved_profile_chains(
-        &SketchId::mint("creo:model:sketch#917".to_string()).unwrap(),
+        &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
         &geometries,
     );
 
@@ -1441,7 +1448,7 @@ fn saved_arc_joins_through_order_table() {
                 start_angle: Angle(std::f64::consts::PI),
                 end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
     assert_eq!(
@@ -1737,7 +1744,7 @@ fn saved_arc_joins_through_order_table() {
                 start_angle: Angle(0.0),
                 end_angle: Angle(std::f64::consts::TAU),
             })
-            .unwrap()
+            .expect("valid test fixture")
         )
     );
 }
