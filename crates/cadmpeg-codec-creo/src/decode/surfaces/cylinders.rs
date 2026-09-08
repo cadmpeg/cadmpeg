@@ -341,7 +341,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         let cylinders = if let Some(hole) = simple_hole_geometry(scan, feature_id) {
             hole.cylinder_rows
                 .into_iter()
-                .map(|row| (row, hole.geometry.clone()))
+                .map(|row| (row, hole.geometry))
                 .collect::<Vec<_>>()
         } else {
             counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
@@ -363,7 +363,7 @@ pub(in super::super) fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry,
+                geometry: geometry.into(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{cylinder_id}"),
@@ -1459,7 +1459,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: sweep.geometry.clone(),
+                geometry: sweep.geometry.into(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{cylinder_id}"),

@@ -295,7 +295,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         }
     );
     assert!(matches!(
-        sweep.geometry,
+        SurfaceGeometry::from(sweep.geometry),
         SurfaceGeometry::Cylinder { origin, axis, radius, .. }
             if origin == Point3::new(-12.5, -4.0, 0.0)
                 && axis == Vector3::new(0.0, -1.0, 0.0)

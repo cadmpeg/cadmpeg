@@ -7,7 +7,6 @@ use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
     LinearTermination, ProfileRef,
 };
-use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
@@ -16,7 +15,8 @@ use super::super::sketch::normalized;
 use super::super::sweep::{feature_outline_plane, feature_outline_planes, FeatureOutlinePlane};
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
-    hole_placement, plane_envelope_corners, ExtrusionSpan, PartialCapOutline, SimpleHoleGeometry,
+    hole_placement, plane_envelope_corners, ExtrusionSpan, HoleCylinder, PartialCapOutline,
+    SimpleHoleGeometry,
 };
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -233,7 +233,7 @@ pub fn compact_simple_hole_geometry<'a>(
         extent: LinearTermination::Blind {
             length: Length(length),
         },
-        geometry: SurfaceGeometry::Cylinder {
+        geometry: HoleCylinder {
             origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
             axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             ref_direction: Vector3::new(
@@ -248,7 +248,7 @@ pub fn compact_simple_hole_geometry<'a>(
 
 pub fn circular_sweep_cylinder_from_cap_outlines(
     caps: [PartialCapOutline; 2],
-) -> Option<SurfaceGeometry> {
+) -> Option<HoleCylinder> {
     let (_, axis, _) = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
@@ -276,7 +276,7 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
+    Some(HoleCylinder {
         origin: Point3::new(center[0], center[1], center[2]),
         axis: Vector3::new(axis[0], axis[1], axis[2]),
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -290,7 +290,7 @@ pub struct CircularSweepGeometry<'a> {
     pub section_definition_id: Option<u32>,
     pub direction: [f64; 3],
     pub extent: ExtrudeExtent,
-    pub geometry: SurfaceGeometry,
+    pub geometry: HoleCylinder,
 }
 
 pub fn single_cap_circular_sweep_geometry<'a>(
