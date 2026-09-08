@@ -51,49 +51,85 @@ pub(crate) fn variable_reference_assembly_generation(
     )
 }
 
-/// Select the exact operand-frame grammar admitted for an `Assemble` scope.
-///
-/// The class-430 generation is keyed by both class tags because its 744- and
-/// 748-byte spans are also used by other scope families with different
-/// payloads. Those spans must not become a frame-length-only admission.
-/// The 671-byte generation is likewise keyed to class-406 paired with
-/// class-261; its standard payload is not a generic length variant.
-pub(crate) fn operand_frame_variant(
-    frame_length: u64,
-    class_tag: &str,
-    paired_class_tag: &str,
-) -> Option<AssemblyOperandFrameVariant> {
-    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
-        return Some(AssemblyOperandFrameVariant::Standard);
+/// The operand, owner-lane, and locator layout of one assembly scope.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AssemblyScopeGeneration {
+    operand_frame: Option<AssemblyOperandFrameVariant>,
+    alignment: AssemblyAlignmentLanes,
+    locator_offsets: Option<[usize; 2]>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AssemblyAlignmentLanes {
+    Fixed(Option<(usize, usize, usize)>),
+    Variable(Option<(usize, usize, usize)>),
+}
+
+impl AssemblyScopeGeneration {
+    /// Classify the scope's three coupled layout projections.
+    pub(crate) fn new(frame_length: u64, class_tag: &str, paired_class_tag: &str) -> Self {
+        use AssemblyOperandFrameVariant::{Axial, Compact, LegacyClass388, Standard};
+        let (operand_frame, lanes, locator_offsets) = match frame_length {
+            399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            604 => (None, Some((8, 4, 8)), None),
+            627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
+            633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
+            671 => ((class_tag == "406" && paired_class_tag == "261").then_some(Standard), Some((6, 4, 6)), Some([
+                crate::layout::assembly_class_406_261_scope_671::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_class_406_261_scope_671::SECOND_LOCATOR_REFERENCE,
+            ])),
+            705 => (Some(Axial), Some((6, 4, 6)), None),
+            732 => (Some(Compact), Some((8, 4, 8)), Some([362, 373])),
+            744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
+            748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
+            772 => (Some(Axial), Some((10, 8, 10)), None),
+            length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => (
+                (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
+                    crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
+                    crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
+                ])),
+            length if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => (
+                (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
+            _ => (None, None, None),
+        };
+        if variable_reference_assembly_generation(class_tag, paired_class_tag) {
+            Self {
+                operand_frame: Some(Standard),
+                alignment: AssemblyAlignmentLanes::Variable(lanes),
+                locator_offsets: Some([366, 377]),
+            }
+        } else {
+            Self {
+                operand_frame,
+                alignment: AssemblyAlignmentLanes::Fixed(lanes),
+                locator_offsets,
+            }
+        }
     }
-    match frame_length {
-        length
-            if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64
-                && class_tag == "388"
-                && paired_class_tag == "266" =>
-        {
-            Some(AssemblyOperandFrameVariant::LegacyClass388)
-        }
-        length
-            if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
-                && class_tag == "383"
-                && paired_class_tag == "258" =>
-        {
-            Some(AssemblyOperandFrameVariant::Standard)
-        }
-        627 | 637 | 692 => Some(AssemblyOperandFrameVariant::Standard),
-        671 if class_tag == "406" && paired_class_tag == "261" => {
-            Some(AssemblyOperandFrameVariant::Standard)
-        }
-        633 | 732 => Some(AssemblyOperandFrameVariant::Compact),
-        744 if class_tag == "430" && paired_class_tag == "262" => {
-            Some(AssemblyOperandFrameVariant::Compact)
-        }
-        748 if class_tag == "430" && paired_class_tag == "262" => {
-            Some(AssemblyOperandFrameVariant::Standard)
-        }
-        705 | 772 => Some(AssemblyOperandFrameVariant::Axial),
-        _ => None,
+
+    /// Operand-frame grammar admitted by the scope classes.
+    pub(crate) fn operand_frame_variant(self) -> Option<AssemblyOperandFrameVariant> {
+        self.operand_frame
+    }
+
+    /// Half-open alignment range for the supplied owner count.
+    pub(crate) fn alignment_lane_bounds(self, owner_count: usize) -> Option<(usize, usize)> {
+        let fallback = match self.alignment {
+            AssemblyAlignmentLanes::Variable(_)
+                if owner_count >= 12 && matches!((owner_count - 12) % 4, 0 | 2) =>
+            {
+                return Some((8, 12))
+            }
+            AssemblyAlignmentLanes::Fixed(fallback)
+            | AssemblyAlignmentLanes::Variable(fallback) => fallback,
+        };
+        let (count, start, end) = fallback?;
+        (owner_count == count).then_some((start, end))
+    }
+
+    /// Marker offsets of the two ordered operand-path locators.
+    pub(crate) fn operand_path_locator_offsets(self) -> Option<[usize; 2]> {
+        self.locator_offsets
     }
 }
 
@@ -197,64 +233,6 @@ pub(crate) fn legacy_as_built_421_generation(
         ("420", "262") => Some(LegacyAsBuilt421Generation::Class420),
         ("417", "263") => Some(LegacyAsBuilt421Generation::Class417),
         ("457", "258") => Some(LegacyAsBuilt421Generation::Class457),
-        _ => None,
-    }
-}
-
-/// Return the half-open owner-lane range that carries assembly alignment.
-///
-/// The serialized frame length fixes both the Cartesian/axial form and the
-/// number of placement lanes that precede the alignment values.
-pub(crate) fn alignment_lane_bounds(
-    frame_length: u64,
-    class_tag: &str,
-    paired_class_tag: &str,
-    owner_count: usize,
-) -> Option<(usize, usize)> {
-    if variable_reference_assembly_generation(class_tag, paired_class_tag)
-        && owner_count >= 12
-        && matches!((owner_count - 12) % 4, 0 | 2)
-    {
-        return Some((8, 12));
-    }
-    match (frame_length, owner_count) {
-        (length, 28) if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => {
-            Some((4, 8))
-        }
-        (length, 20) if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => {
-            Some((8, 12))
-        }
-        (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
-        (671, 6) => Some((4, 6)),
-        (604 | 732 | 744 | 748, 8) => Some((4, 8)),
-        (705, 6) => Some((4, 6)),
-        (772, 10) => Some((8, 10)),
-        _ => None,
-    }
-}
-
-/// Return the scope-relative marker offsets of the two ordered operand-path
-/// locator references carried by a non-axial assembly frame.
-pub(crate) fn operand_path_locator_offsets(
-    frame_length: u64,
-    class_tag: &str,
-    paired_class_tag: &str,
-) -> Option<[usize; 2]> {
-    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
-        return Some([366, 377]);
-    }
-    match frame_length {
-        399 => Some([51, 62]),
-        length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => Some([
-            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
-            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
-        ]),
-        627 | 637 | 692 | 748 => Some([366, 377]),
-        671 => Some([
-            crate::layout::assembly_class_406_261_scope_671::FIRST_LOCATOR_REFERENCE,
-            crate::layout::assembly_class_406_261_scope_671::SECOND_LOCATOR_REFERENCE,
-        ]),
-        633 | 732 | 744 => Some([362, 373]),
         _ => None,
     }
 }
@@ -810,115 +788,131 @@ mod tests {
             (772, 10, (8, 10)),
         ] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, "", "", owner_count),
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .alignment_lane_bounds(owner_count),
                 Some(expected)
             );
         }
         for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, "", "", owner_count),
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .alignment_lane_bounds(owner_count),
                 None
             );
         }
         for (class_tag, paired_class_tag) in [("283", "264"), ("347", "260")] {
             for owner_count in [12, 14, 16, 20, 22, 36, 38, 44, 60] {
                 assert_eq!(
-                    super::alignment_lane_bounds(
+                    super::AssemblyScopeGeneration::new(
                         800 + owner_count as u64,
                         class_tag,
-                        paired_class_tag,
-                        owner_count,
-                    ),
+                        paired_class_tag
+                    )
+                    .alignment_lane_bounds(owner_count),
                     Some((8, 12))
                 );
             }
             for owner_count in [0, 10, 13, 15] {
                 assert_eq!(
-                    super::alignment_lane_bounds(
+                    super::AssemblyScopeGeneration::new(
                         800 + owner_count as u64,
                         class_tag,
-                        paired_class_tag,
-                        owner_count,
-                    ),
+                        paired_class_tag
+                    )
+                    .alignment_lane_bounds(owner_count),
                     None
                 );
             }
         }
-        assert_eq!(super::alignment_lane_bounds(869, "283", "260", 12), None);
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(869, "283", "260").alignment_lane_bounds(12),
+            None
+        );
     }
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
         let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
         assert_eq!(
-            super::operand_path_locator_offsets(class_388_length, "388", "266"),
+            super::AssemblyScopeGeneration::new(class_388_length, "388", "266")
+                .operand_path_locator_offsets(),
             Some([366, 377])
         );
         for frame_length in [627, 637, 692, 748] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length, "", ""),
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .operand_path_locator_offsets(),
                 Some([366, 377])
             );
         }
         for frame_length in [633, 732, 744] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length, "", ""),
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .operand_path_locator_offsets(),
                 Some([362, 373])
             );
         }
         assert_eq!(
-            super::operand_path_locator_offsets(671, "406", "261"),
+            super::AssemblyScopeGeneration::new(671, "406", "261").operand_path_locator_offsets(),
             Some([388, 399])
         );
         for frame_length in [604, 705, 772] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length, "", ""),
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .operand_path_locator_offsets(),
                 None
             );
         }
         assert_eq!(
-            super::operand_path_locator_offsets(869, "283", "264"),
+            super::AssemblyScopeGeneration::new(869, "283", "264").operand_path_locator_offsets(),
             Some([366, 377])
         );
         assert_eq!(
-            super::operand_path_locator_offsets(843, "347", "260"),
+            super::AssemblyScopeGeneration::new(843, "347", "260").operand_path_locator_offsets(),
             Some([366, 377])
         );
-        assert_eq!(super::operand_path_locator_offsets(869, "283", "260"), None);
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(869, "283", "260").operand_path_locator_offsets(),
+            None
+        );
     }
 
     #[test]
     fn operand_frames_are_scoped_by_class_pair() {
         assert_eq!(
-            super::operand_frame_variant(
+            super::AssemblyScopeGeneration::new(
                 crate::layout::assembly_class_388_266_scope_968::LEN as u64,
                 "388",
                 "266"
-            ),
+            )
+            .operand_frame_variant(),
             Some(super::AssemblyOperandFrameVariant::LegacyClass388)
         );
         assert_eq!(
-            super::operand_frame_variant(
+            super::AssemblyScopeGeneration::new(
                 crate::layout::assembly_class_388_266_scope_968::LEN as u64,
                 "388",
                 "258"
-            ),
+            )
+            .operand_frame_variant(),
             None
         );
         assert_eq!(
-            super::operand_frame_variant(
+            super::AssemblyScopeGeneration::new(
                 crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
                 "383",
                 "258"
-            ),
+            )
+            .operand_frame_variant(),
             Some(super::AssemblyOperandFrameVariant::Standard)
         );
         assert_eq!(
-            super::operand_frame_variant(
+            super::AssemblyScopeGeneration::new(
                 crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
                 "383",
                 "261"
-            ),
+            )
+            .operand_frame_variant(),
             None
         );
         assert!(super::legacy_class_383_258_scope(
@@ -932,21 +926,33 @@ mod tests {
             "258"
         ));
         assert_eq!(
-            super::operand_frame_variant(744, "430", "262"),
+            super::AssemblyScopeGeneration::new(744, "430", "262").operand_frame_variant(),
             Some(super::AssemblyOperandFrameVariant::Compact)
         );
         assert_eq!(
-            super::operand_frame_variant(748, "430", "262"),
+            super::AssemblyScopeGeneration::new(748, "430", "262").operand_frame_variant(),
             Some(super::AssemblyOperandFrameVariant::Standard)
         );
         assert_eq!(
-            super::operand_frame_variant(671, "406", "261"),
+            super::AssemblyScopeGeneration::new(671, "406", "261").operand_frame_variant(),
             Some(super::AssemblyOperandFrameVariant::Standard)
         );
-        assert_eq!(super::operand_frame_variant(671, "406", "258"), None);
-        assert_eq!(super::operand_frame_variant(671, "430", "261"), None);
-        assert_eq!(super::operand_frame_variant(744, "327", "262"), None);
-        assert_eq!(super::operand_frame_variant(748, "430", "261"), None);
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(671, "406", "258").operand_frame_variant(),
+            None
+        );
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(671, "430", "261").operand_frame_variant(),
+            None
+        );
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(744, "327", "262").operand_frame_variant(),
+            None
+        );
+        assert_eq!(
+            super::AssemblyScopeGeneration::new(748, "430", "261").operand_frame_variant(),
+            None
+        );
     }
 
     #[test]
