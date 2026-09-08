@@ -1681,7 +1681,7 @@ impl<'a> DecodeContext<'a> {
         let (surface_geometry, surface_derived) = match construction.surface {
             crate::surfaces::DecodedSurface::Typed {
                 geometry, derived, ..
-            } => (geometry, derived),
+            } => (geometry.into_geometry(), derived),
             crate::surfaces::DecodedSurface::Procedural { geometry, .. } => {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
@@ -2362,6 +2362,7 @@ impl<'a> DecodeContext<'a> {
             }
         }
         self.report.typed_losses.extend(omissions);
+        losses.extend(self.scan.definitions.losses.iter().cloned());
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(
                 RhinoLossCode::ContainerInstanceDefinitionDegraded
@@ -2777,7 +2778,7 @@ impl<'a> DecodeContext<'a> {
                             .expect("valid identity");
                     self.ir.model.surfaces.push(Surface {
                         id: surface_id.clone(),
-                        geometry,
+                        geometry: geometry.into_geometry(),
                         source_object: Some(association.clone()),
                     });
                     set_exactness(
@@ -3911,20 +3912,16 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         );
         match decoded {
             Ok(crate::curves::DecodedGeometry::Surface {
-                surface:
-                    crate::surfaces::DecodedSurface::Typed {
-                        geometry,
-                        derived,
-                        plane_parameterization,
-                    },
+                surface: crate::surfaces::DecodedSurface::Typed { geometry, derived },
             }) => {
+                let plane_parameterization = geometry.plane_parameterization();
                 let id: cadmpeg_ir::ids::SurfaceId =
                     format!("rhino:object:surface#{key}.slot-{index}")
                         .try_into()
                         .expect("valid identity");
                 staged.draft.model_mut().surfaces.push(Surface {
                     id: id.clone(),
-                    geometry,
+                    geometry: geometry.into_geometry(),
                     source_object: Some(association.clone()),
                 });
                 staged.draft.exactness(
@@ -4126,7 +4123,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .try_into()
                 .expect("valid identity"),
             surface,
-            sense: face_sense(face.reversed_surface != 0),
+            sense: face_sense(face.reversed_surface),
             loops: Vec::new().into(),
             name: None,
             color: face.color.map(color),
@@ -4180,8 +4177,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 edge: edge_id,
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(
-                    trim.reversed_3d != 0,
-                    trim.edge >= 0 && raw.edges[trim.edge as usize].proxy_reversed != 0,
+                    trim.reversed_3d,
+                    trim.edge >= 0 && raw.edges[trim.edge as usize].proxy_reversed,
                 ),
                 pcurves: pcurve
                     .into_iter()
@@ -4508,7 +4505,7 @@ fn edge_param_range(edge: &crate::brep::RawBrepEdge) -> [f64; 2] {
 }
 
 fn edge_vertices(edge: &crate::brep::RawBrepEdge) -> [usize; 2] {
-    if edge.proxy_reversed != 0 {
+    if edge.proxy_reversed {
         [edge.vertices[1] as usize, edge.vertices[0] as usize]
     } else {
         [edge.vertices[0] as usize, edge.vertices[1] as usize]
@@ -4748,7 +4745,7 @@ fn decode_pcurves(
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
-                Some(trim.proxy_reversed != 0),
+                Some(trim.proxy_reversed),
                 Some(trim.domain.0),
                 finite_tolerance(trim.tolerances[0]),
             ),
