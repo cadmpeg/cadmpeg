@@ -370,31 +370,14 @@ pub(super) struct CreoLoopArrayFrameRecord {
     pub(super) variant: Option<crate::loop_array::LayoutMarker>,
     pub(super) declared_count: u32,
     pub(super) class_id: u32,
-    #[serde(flatten, serialize_with = "serialize_loop_array_rows")]
-    pub(super) rows: crate::loop_array::LoopArrayFrameRows,
+    pub(super) materialized_count: usize,
+    pub(super) overfull: bool,
     pub(super) offset: usize,
     pub(super) prototype_end: usize,
     pub(super) end: usize,
     pub(super) source_section: String,
 }
 
-fn serialize_loop_array_rows<S: serde::Serializer>(
-    rows: &crate::loop_array::LoopArrayFrameRows,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use crate::loop_array::LoopArrayFrameRows;
-    use serde::ser::SerializeMap;
-    let (count, overfull) = match rows {
-        LoopArrayFrameRows::Materialized(count) => (*count, false),
-        LoopArrayFrameRows::Overfull => (0, true),
-    };
-    let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry("materialized_count", &count)?;
-    map.serialize_entry("overfull", &overfull)?;
-    map.end()
-}
-
-#[derive(Serialize)]
 pub(super) struct CreoLoopArrayRecord {
     pub(super) id: String,
     pub(super) frame_offset: usize,
@@ -408,8 +391,29 @@ pub(super) struct CreoLoopArrayRecord {
     pub(super) body: Vec<u8>,
     pub(super) offset: usize,
     pub(super) body_offset: usize,
-    pub(super) end: usize,
     pub(super) source_section: String,
+}
+
+impl Serialize for CreoLoopArrayRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoLoopArrayRecord", 14)?;
+        record.serialize_field("id", &self.id)?;
+        record.serialize_field("frame_offset", &self.frame_offset)?;
+        record.serialize_field("lo_id", &self.lo_id)?;
+        record.serialize_field("lo_type", &self.lo_type)?;
+        record.serialize_field("lo_subtype", &self.lo_subtype)?;
+        record.serialize_field("feature_id", &self.feature_id)?;
+        record.serialize_field("attributes", &self.attributes)?;
+        record.serialize_field("direction", &self.direction)?;
+        record.serialize_field("next_lo_ptr", &self.next_lo_ptr)?;
+        record.serialize_field("body", &self.body)?;
+        record.serialize_field("offset", &self.offset)?;
+        record.serialize_field("body_offset", &self.body_offset)?;
+        record.serialize_field("end", &(self.body_offset + self.body.len()))?;
+        record.serialize_field("source_section", &self.source_section)?;
+        record.end()
+    }
 }
 
 #[derive(Serialize)]
@@ -1115,6 +1119,10 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
 }
 
 pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArrayFrameRecord> {
+    let mut counts = BTreeMap::<usize, usize>::new();
+    for record in &scan.loop_arrays.records {
+        *counts.entry(record.frame_offset).or_default() += 1;
+    }
     scan.loop_arrays
         .frames
         .iter()
@@ -1123,7 +1131,8 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
             variant: frame.variant,
             declared_count: frame.declared_count,
             class_id: frame.class_id,
-            rows: frame.rows,
+            materialized_count: counts.get(&frame.offset).copied().unwrap_or_default(),
+            overfull: frame.overfull,
             offset: frame.offset,
             prototype_end: frame.prototype_end,
             end: frame.end,
@@ -1149,7 +1158,6 @@ pub(super) fn loop_array_record_records(scan: &ContainerScan) -> Vec<CreoLoopArr
             body: record.body.clone(),
             offset: record.offset,
             body_offset: record.body_offset,
-            end: record.end,
             source_section: source_section(scan, record.offset),
         })
         .collect()
@@ -1413,10 +1421,10 @@ pub(super) fn feature_section_transform_records(
             ),
             definition_id: record.definition_id,
             owner_feature_id: record.feature_id,
-            origin: record.origin,
-            u_axis: record.u_axis,
-            v_axis: record.v_axis,
-            normal: record.normal,
+            origin: record.origin(),
+            u_axis: record.u_axis(),
+            v_axis: record.v_axis(),
+            normal: record.normal(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })

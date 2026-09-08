@@ -35,7 +35,6 @@ loss_codes! {
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CreoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CreoLossCode {
     /// PSB section census and prototype/instance transfer summary.

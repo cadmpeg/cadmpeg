@@ -10,26 +10,37 @@ pub(crate) struct DimensionedScalars {
 }
 
 impl DimensionedScalars {
-    /// Admits arrays whose declared extents and token lengths agree.
-    pub(crate) fn try_new(
-        dimensions: u32,
-        count: u32,
-        values: Vec<Option<f64>>,
-        tokens: Option<Vec<Vec<u8>>>,
-    ) -> Option<Self> {
-        let expected = usize::try_from(dimensions)
+    /// Allocates the declared shape with undecoded slots.
+    pub(crate) fn empty(dimensions: u32, count: u32) -> Option<Self> {
+        let len = usize::try_from(dimensions)
             .ok()?
             .checked_mul(usize::try_from(count).ok()?)?;
-        (values.len() == expected
-            && tokens
-                .as_ref()
-                .is_none_or(|tokens| tokens.len() == expected))
-        .then_some(Self {
+        Some(Self {
             dimensions,
             count,
-            values,
-            tokens,
+            values: std::iter::repeat_n(None, len).collect(),
+            tokens: None,
         })
+    }
+
+    /// Replaces values only when the input matches the declared extent.
+    pub(crate) fn fill_values(&mut self, values: Vec<Option<f64>>) -> Option<()> {
+        if values.len() != self.values.len() {
+            return None;
+        }
+        self.values = values;
+        Some(())
+    }
+
+    /// Replaces values and tokens only when the input matches the declared extent.
+    pub(crate) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
+        if slots.len() != self.values.len() {
+            return None;
+        }
+        let (values, tokens) = slots.into_iter().unzip();
+        self.values = values;
+        self.tokens = Some(tokens);
+        Some(())
     }
 
     /// Stored outer dimension.
@@ -59,18 +70,23 @@ pub(crate) struct CountedScalars {
 }
 
 impl CountedScalars {
-    /// Admits arrays whose declared extents and token lengths agree.
-    pub(crate) fn try_new(
-        count: u32,
-        values: Vec<Option<f64>>,
-        tokens: Vec<Vec<u8>>,
-    ) -> Option<Self> {
-        let expected = usize::try_from(count).ok()?;
-        (values.len() == expected && tokens.len() == expected).then_some(Self {
+    /// Allocates the declared shape with undecoded slots.
+    pub(crate) fn empty(count: u32) -> Option<Self> {
+        let len = usize::try_from(count).ok()?;
+        Some(Self {
             count,
-            values,
-            tokens,
+            values: std::iter::repeat_n(None, len).collect(),
+            tokens: std::iter::repeat_with(Vec::new).take(len).collect(),
         })
+    }
+
+    /// Replaces values and tokens only when the input matches the declared extent.
+    pub(crate) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
+        if slots.len() != self.values.len() {
+            return None;
+        }
+        (self.values, self.tokens) = slots.into_iter().unzip();
+        Some(())
     }
 
     /// Stored scalar count per dimension.
@@ -89,21 +105,51 @@ impl CountedScalars {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CountedScalars, DimensionedScalars};
 
     #[test]
-    fn dimensioned_arrays_admit_only_complete_slot_shapes() {
-        assert!(DimensionedScalars::try_new(2, 3, vec![None; 5], None).is_none());
-        assert!(DimensionedScalars::try_new(2, 3, vec![None; 6], Some(vec![vec![]; 5])).is_none());
-        assert!(DimensionedScalars::try_new(2, 3, vec![None; 6], Some(vec![vec![]; 6])).is_some());
-        assert!(DimensionedScalars::try_new(0, 3, vec![], None).is_some());
+    fn dimensioned_fills_reject_mismatched_extents_without_mutation() {
+        let mut array = DimensionedScalars::empty(2, 2).expect("valid extent");
+        let slots = vec![(Some(2.0), vec![0xe4]); 4];
+        assert_eq!(array.fill_tokens(slots), Some(()));
+        let original = array.clone();
+        for len in [0, 3, 5] {
+            assert_eq!(array.fill_values(vec![Some(3.0); len]), None);
+            assert_eq!(array, original);
+            assert_eq!(array.fill_tokens(vec![(None, vec![0x0f]); len]), None);
+            assert_eq!(array, original);
+        }
+        assert_eq!(array.fill_values(vec![None; 4]), Some(()));
+        assert_eq!(array.values(), &[None; 4]);
+        assert_eq!(array.tokens(), original.tokens());
     }
 
     #[test]
-    fn counted_arrays_admit_only_complete_slot_shapes() {
-        assert!(CountedScalars::try_new(2, vec![None], vec![vec![]; 2]).is_none());
-        assert!(CountedScalars::try_new(2, vec![None; 2], vec![vec![]]).is_none());
-        assert!(CountedScalars::try_new(2, vec![None; 2], vec![vec![]; 2]).is_some());
-        assert!(CountedScalars::try_new(0, vec![], vec![]).is_some());
+    fn counted_fills_reject_mismatched_extents_without_mutation() {
+        let mut array = CountedScalars::empty(2).expect("valid extent");
+        assert_eq!(
+            array.fill_tokens(vec![(Some(2.0), vec![0xe4]); 2]),
+            Some(())
+        );
+        let original = array.clone();
+        for len in [0, 1, 3] {
+            assert_eq!(array.fill_tokens(vec![(None, vec![0x0f]); len]), None);
+            assert_eq!(array, original);
+        }
+        assert_eq!(array.fill_tokens(vec![(None, vec![0x0f]); 2]), Some(()));
+        assert_eq!(array.values(), &[None; 2]);
+        assert_eq!(array.tokens(), &[vec![0x0f], vec![0x0f]]);
+    }
+
+    #[test]
+    fn empty_arrays_accept_only_empty_fills() {
+        let mut dimensioned = DimensionedScalars::empty(0, 2).expect("valid extent");
+        assert_eq!(dimensioned.fill_values(Vec::new()), Some(()));
+        assert_eq!(dimensioned.fill_tokens(Vec::new()), Some(()));
+        assert_eq!(dimensioned.fill_values(vec![None]), None);
+        assert_eq!(dimensioned.fill_tokens(vec![(None, Vec::new())]), None);
+        let mut counted = CountedScalars::empty(0).expect("valid extent");
+        assert_eq!(counted.fill_tokens(Vec::new()), Some(()));
+        assert_eq!(counted.fill_tokens(vec![(None, Vec::new())]), None);
     }
 }

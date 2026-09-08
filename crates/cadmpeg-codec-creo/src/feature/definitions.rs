@@ -4685,7 +4685,7 @@ pub(crate) fn positional_feature_skamps(
         else {
             break;
         };
-        item_classes.get_or_insert((item_table_class, item_row_class));
+        let classes = item_classes.get_or_insert((item_table_class, item_row_class));
         cursor = after_item_row_class;
         let mut items = Vec::new();
         while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
@@ -4701,11 +4701,7 @@ pub(crate) fn positional_feature_skamps(
                     payload,
                     cursor,
                     end,
-                    item_classes
-                        .as_ref()
-                        .expect("item classes established")
-                        .0
-                        .as_slice(),
+                    classes.0.as_slice(),
                     &[0xf1],
                 ) else {
                     break 'rows;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Filled, knit, draft, thicken, and result-topology feature recipes.
 
-use super::super::sketch::normalized;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::{
@@ -11,6 +10,7 @@ use super::{
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
@@ -393,14 +393,14 @@ pub(in super::super) fn thicken_plane_offset(
         let source_row = crate::surface::unique_surface_row(rows, source_id)?;
         let output_row = crate::surface::unique_surface_row(rows, output_id)?;
         (source_row.reversed != output_row.reversed).then_some(())?;
-        let source_normal = normalized(source.normal)?.map(|component| {
+        let source_normal = normalize(source.normal)?.map(|component| {
             if source_row.reversed {
                 -component
             } else {
                 component
             }
         });
-        let output_normal = normalized(output.normal)?;
+        let output_normal = normalize(output.normal)?;
         if dot(source_normal, output_normal).abs() < 1.0 - EPS_NORMAL_ALIGNMENT {
             return None;
         }

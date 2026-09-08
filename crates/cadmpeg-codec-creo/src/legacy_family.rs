@@ -36,10 +36,8 @@ pub(crate) struct FamilyTable {
 }
 
 /// One ordered family-table column descriptor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableItem {
-    /// Legacy item object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the item object row.
     pub(crate) offset: usize,
     /// Stored item identifier.
@@ -53,10 +51,8 @@ pub(crate) struct FamilyTableItem {
 }
 
 /// One ordered family-table instance row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableInstance {
-    /// Legacy instance-row object identity.
-    pub(crate) source_object_id: String,
     /// Source offset of the instance object row.
     pub(crate) offset: usize,
     /// Stored instance name. This field is required to be non-empty UTF-8.
@@ -66,7 +62,6 @@ pub(crate) struct FamilyTableInstance {
     /// Direct model object referenced by the instance row.
     pub(crate) model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) values: Vec<FamilyTableValue>,
 }
 
@@ -109,6 +104,53 @@ impl FamilyTableValuePayload {
             Self::String { .. } => 51,
             Self::Integer { .. } => 52,
         }
+    }
+}
+
+impl Serialize for FamilyTableItem {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: String,
+            offset: &'a usize,
+            item_id: &'a i32,
+            type_code: &'a i32,
+            invisible: &'a i32,
+            name: &'a legacy::StringValue,
+        }
+        Wire {
+            source_object_id: legacy::object_node_id(self.offset),
+            offset: &self.offset,
+            item_id: &self.item_id,
+            type_code: &self.type_code,
+            invisible: &self.invisible,
+            name: &self.name,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl Serialize for FamilyTableInstance {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source_object_id: String,
+            offset: &'a usize,
+            name: &'a String,
+            attributes: &'a i32,
+            model_object_id: &'a String,
+            #[serde(serialize_with = "serialize_ordered")]
+            values: &'a Vec<FamilyTableValue>,
+        }
+        Wire {
+            source_object_id: legacy::object_node_id(self.offset),
+            offset: &self.offset,
+            name: &self.name,
+            attributes: &self.attributes,
+            model_object_id: &self.model_object_id,
+            values: &self.values,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -169,15 +211,18 @@ impl<'a> Index<'a> {
         }
 
         let mut integers_by_parent_name = BTreeMap::new();
-        add_value_index(&mut integers_by_parent_name, &persistence.integer_values);
+        add_value_index(
+            &mut integers_by_parent_name,
+            &persistence.integer_values.rows,
+        );
         let mut reals_by_parent_name = BTreeMap::new();
-        add_value_index(&mut reals_by_parent_name, &persistence.real_values);
+        add_value_index(&mut reals_by_parent_name, &persistence.real_values.rows);
         let mut strings_by_parent_name = BTreeMap::new();
         add_value_index(&mut strings_by_parent_name, &persistence.string_values);
 
         let mut typed_field_names = BTreeMap::new();
-        add_typed_field_names(&mut typed_field_names, &persistence.integer_values);
-        add_typed_field_names(&mut typed_field_names, &persistence.real_values);
+        add_typed_field_names(&mut typed_field_names, &persistence.integer_values.rows);
+        add_typed_field_names(&mut typed_field_names, &persistence.real_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.string_values);
         add_typed_field_names(&mut typed_field_names, &persistence.type_3_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.type_4_values.rows);
@@ -402,7 +447,6 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                 return None;
             }
             Some(FamilyTableItem {
-                source_object_id: item.id(),
                 offset: item.offset,
                 item_id: optional_integer(&index, item.offset, "id").ok()??,
                 type_code: optional_integer(&index, item.offset, "type").ok()??,
@@ -451,7 +495,6 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(FamilyTableInstance {
-                source_object_id: instance.id(),
                 offset: instance.offset,
                 name,
                 attributes,
@@ -550,7 +593,7 @@ mod tests {
 
     fn integer(parent: &str, name: &str, value: i32, offset: usize) -> legacy::IntegerRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -563,7 +606,7 @@ mod tests {
 
     fn real(parent: &str, name: &str, value: f64, offset: usize) -> legacy::RealRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -578,7 +621,7 @@ mod tests {
 
     fn string(parent: &str, name: &str, value: &str, offset: usize) -> legacy::StringRecord {
         legacy::ValueRecord {
-            kind: crate::legacy::ValueKind::String,
+            kind: crate::legacy::ValueKind::STRING,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -660,14 +703,20 @@ mod tests {
                     9,
                 ),
             ],
-            integer_values: vec![
-                integer(item, "id", 17, 10),
-                integer(item, "type", 2, 11),
-                integer(item, "invisible", 0, 12),
-                integer(instance, "attributes", 0, 13),
-                integer(value, "type", 50, 14),
-            ],
-            real_values: vec![real(value, VALUE_REAL, 2.5, 15)],
+            integer_values: crate::legacy::TypedValues {
+                rows: vec![
+                    integer(item, "id", 17, 10),
+                    integer(item, "type", 2, 11),
+                    integer(item, "invisible", 0, 12),
+                    integer(instance, "attributes", 0, 13),
+                    integer(value, "type", 50, 14),
+                ],
+                unresolved_count: 0,
+            },
+            real_values: crate::legacy::TypedValues {
+                rows: vec![real(value, VALUE_REAL, 2.5, 15)],
+                unresolved_count: 0,
+            },
             string_values: vec![
                 string(item, "name", "d0", 16),
                 string(instance, "name", "SMALL", 17),
@@ -724,7 +773,7 @@ mod tests {
     #[test]
     fn incomplete_value_form_is_retained() {
         let mut persistence = complete_table();
-        persistence.integer_values.retain(|record| {
+        persistence.integer_values.rows.retain(|record| {
             record.name != "type" || record.parent != Some(fixture_offset("value"))
         });
         assert!(parse(&persistence).is_none());
@@ -733,15 +782,18 @@ mod tests {
     #[test]
     fn integer_and_string_value_forms_are_typed_by_their_source_field() {
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
+            .rows
             .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 52, 30));
         persistence
             .integer_values
+            .rows
             .push(integer("value", VALUE_INTEGER, 3, 31));
         let mut table = parse(&persistence).expect("integer family table");
         assert!(matches!(
@@ -755,12 +807,14 @@ mod tests {
         ));
 
         let mut persistence = complete_table();
-        persistence.real_values.clear();
+        persistence.real_values.rows.clear();
         persistence
             .integer_values
+            .rows
             .retain(|record| record.parent != Some(fixture_offset("value")));
         persistence
             .integer_values
+            .rows
             .push(integer("value", "type", 51, 40));
         persistence
             .string_values

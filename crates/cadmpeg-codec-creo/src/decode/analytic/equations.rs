@@ -5,7 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::vecmath::{cross, dot, normalized};
+use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
 
@@ -149,7 +149,7 @@ pub fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
     let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     match carrier {
         CarrierEquation::Cylinder(cylinder) => {
-            let axis = normalized(cylinder.axis)?;
+            let axis = normalize(cylinder.axis)?;
             if !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
                 return None;
             }
@@ -165,8 +165,8 @@ pub fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
             })
         }
         CarrierEquation::Cone(cone) => {
-            let axis = normalized(cone.axis)?;
-            let x_axis = normalized(cone.ref_direction)?;
+            let axis = normalize(cone.axis)?;
+            let x_axis = normalize(cone.ref_direction)?;
             if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return None;
             }
@@ -284,7 +284,7 @@ pub fn plane_intersection_line(
             + second_distance * direction_cross_first[index])
             / denominator
     });
-    Some((origin, normalized(direction)?))
+    Some((origin, normalize(direction)?))
 }
 
 pub fn intersect_two_planes_with_quadric(
@@ -631,7 +631,7 @@ pub fn intersect_plane_with_two_quadrics(
     first: CarrierEquation,
     second: CarrierEquation,
 ) -> Vec<[f64; 3]> {
-    let Some(normal) = normalized(plane.normal) else {
+    let Some(normal) = normalize(plane.normal) else {
         return Vec::new();
     };
     let reference = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
@@ -642,7 +642,7 @@ pub fn intersect_plane_with_two_quadrics(
                 .total_cmp(&dot(normal, *right).abs())
         })
         .expect("three reference axes");
-    let Some(u_axis) = normalized(cross(normal, reference)) else {
+    let Some(u_axis) = normalize(cross(normal, reference)) else {
         return Vec::new();
     };
     let v_axis = cross(normal, u_axis);
@@ -671,7 +671,7 @@ pub fn intersect_two_planes_with_torus(
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Vec::new();
     };
-    let Some(axis) = normalized(torus.axis) else {
+    let Some(axis) = normalize(torus.axis) else {
         return Vec::new();
     };
     if torus.major_radius <= 0.0 || torus.minor_radius <= 0.0 {
@@ -730,7 +730,7 @@ pub fn intersect_plane_with_circle(
     radius: f64,
 ) -> Vec<[f64; 3]> {
     let (Some(plane_normal), Some(circle_normal)) =
-        (normalized(plane.normal), normalized(circle_axis))
+        (normalize(plane.normal), normalize(circle_axis))
     else {
         return Vec::new();
     };
@@ -793,19 +793,19 @@ pub fn plane_cone_conic(
     plane: PlaneEquation,
     cone: ConeEquation,
 ) -> Option<(CurveGeometry, &'static str)> {
-    let normal = normalized(plane.normal)?;
-    let axis = normalized(cone.axis)?;
-    let x_axis = normalized(cone.ref_direction)?;
+    let normal = normalize(plane.normal)?;
+    let axis = normalize(cone.axis)?;
+    let x_axis = normalize(cone.ref_direction)?;
     let slope = cone.half_angle.tan();
     if slope <= EPS_NEAR_ZERO || cone.radius < 0.0 || dot(axis, x_axis).abs() > EPS_ORTHO {
         return None;
     }
     let y_axis = cross(axis, x_axis);
     let alignment = dot(normal, axis);
-    let plane_u = normalized(std::array::from_fn(|index| {
+    let plane_u = normalize(std::array::from_fn(|index| {
         axis[index] - alignment * normal[index]
     }))?;
-    let plane_v = normalized(cross(normal, plane_u))?;
+    let plane_v = normalize(cross(normal, plane_u))?;
     let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - cone.origin[index]);
     let coordinates = |vector: [f64; 3]| {
         [

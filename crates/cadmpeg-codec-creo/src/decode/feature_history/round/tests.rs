@@ -613,12 +613,10 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(crate::container::Section {
-        name: "first".to_string(),
-        raw_name: "first".to_string(),
+        raw_name: "VisibGeom#1".to_string(),
         offset: 0,
         length: 20,
         expanded_length: None,
-        role: crate::container::SectionRole::PsbGeometry,
     });
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -686,12 +684,10 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     );
 
     scan.framing.sections.push(crate::container::Section {
-        name: "second".to_string(),
-        raw_name: "second".to_string(),
+        raw_name: "VisibGeom#2".to_string(),
         offset: 20,
         length: 20,
         expanded_length: None,
-        role: crate::container::SectionRole::PsbGeometry,
     });
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));

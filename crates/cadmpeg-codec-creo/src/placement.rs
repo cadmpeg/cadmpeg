@@ -36,15 +36,67 @@ pub struct FeatureSectionTransform {
     /// Unique modeling feature identifier inside the definition, when present.
     pub feature_id: Option<u32>,
     /// Model-space point corresponding to section coordinate `[0, 0, 0]`.
-    pub origin: [f64; 3],
+    origin: [f64; 3],
     /// Model-space direction of increasing section `u`.
-    pub u_axis: [f64; 3],
+    u_axis: [f64; 3],
     /// Model-space direction of increasing section `v`.
-    pub v_axis: [f64; 3],
-    /// Model-space normal of the section plane.
-    pub normal: [f64; 3],
+    v_axis: [f64; 3],
     /// Byte offset of the source `gsec3d_ptr` record.
     pub offset: usize,
+}
+
+impl FeatureSectionTransform {
+    /// Constructs a finite right-handed orthonormal section frame.
+    pub fn new(
+        definition_id: u32,
+        feature_id: Option<u32>,
+        origin: [f64; 3],
+        u_axis: [f64; 3],
+        v_axis: [f64; 3],
+        offset: usize,
+    ) -> Option<Self> {
+        let unit = |axis| {
+            let squared = dot(axis, axis);
+            squared.is_finite()
+                && (squared - 1.0).abs() <= EPS_FRAME_AGREEMENT * squared.abs().max(1.0)
+        };
+        (origin
+            .iter()
+            .chain(&u_axis)
+            .chain(&v_axis)
+            .all(|value| value.is_finite())
+            && unit(u_axis)
+            && unit(v_axis)
+            && dot(u_axis, v_axis).abs() <= EPS_FRAME_AGREEMENT)
+            .then_some(Self {
+                definition_id,
+                feature_id,
+                origin,
+                u_axis,
+                v_axis,
+                offset,
+            })
+    }
+
+    /// Model-space section origin.
+    pub fn origin(&self) -> [f64; 3] {
+        self.origin
+    }
+
+    /// Model-space direction of increasing section u.
+    pub fn u_axis(&self) -> [f64; 3] {
+        self.u_axis
+    }
+
+    /// Model-space direction of increasing section v.
+    pub fn v_axis(&self) -> [f64; 3] {
+        self.v_axis
+    }
+
+    /// Right-handed normal derived from the section axes.
+    pub fn normal(&self) -> [f64; 3] {
+        cross(self.u_axis, self.v_axis)
+    }
 }
 
 pub(crate) struct PlacementSources<'a> {
@@ -86,9 +138,7 @@ fn generated_cylinder_section_transform(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| {
-            entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
-        })
+        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
     {
         let Some(external_id) = entry.source_entity_id() else {
             continue;
@@ -200,15 +250,14 @@ fn generated_cylinder_section_transform(
         || correspondences.iter().map(|item| item.3).min(),
         |section| Some(section.offset),
     )?;
-    Some(FeatureSectionTransform {
-        definition_id: definition.identity.id(),
-        feature_id: Some(feature_id),
-        origin: frame.0,
-        u_axis: frame.1,
-        v_axis: frame.2,
-        normal,
+    FeatureSectionTransform::new(
+        definition.identity.id(),
+        Some(feature_id),
+        frame.0,
+        frame.1,
+        frame.2,
         offset,
-    })
+    )
 }
 
 fn generated_planar_section_transform(
@@ -229,6 +278,10 @@ fn generated_planar_section_transform(
     let [table] = tables.as_slice() else {
         return None;
     };
+    let offset = definition
+        .section_3d
+        .as_ref()
+        .map_or(table.offset, |section| section.offset);
     let generated_plane_equation = |entry: &crate::feature::FeatureEntityTableEntry| {
         let mut matches = sources
             .outline_planes
@@ -323,12 +376,6 @@ fn generated_planar_section_transform(
                         (-second.0[0] * first_normal[axis] + first.0[0] * second_normal[axis])
                             / determinant
                     });
-                    if !close(dot(u_axis, u_axis), 1.0)
-                        || !close(dot(v_axis, v_axis), 1.0)
-                        || !close(dot(u_axis, v_axis), 0.0)
-                    {
-                        continue;
-                    }
                     let normal = cross(u_axis, v_axis);
                     let cap_alignment = dot(normal, caps[0].0);
                     if !close(cap_alignment.abs(), 1.0) {
@@ -386,37 +433,32 @@ fn generated_planar_section_transform(
                     if close(second_cap_offset, cap_offset) {
                         continue;
                     }
-                    let candidate = (origin, u_axis, v_axis, normal);
-                    if !candidates.iter().any(
-                        |existing: &([f64; 3], [f64; 3], [f64; 3], [f64; 3])| {
-                            vectors_close(existing.0, candidate.0)
-                                && vectors_close(existing.1, candidate.1)
-                                && vectors_close(existing.2, candidate.2)
-                                && vectors_close(existing.3, candidate.3)
-                        },
-                    ) {
+                    let Some(candidate) = FeatureSectionTransform::new(
+                        definition.identity.id(),
+                        Some(feature_id),
+                        origin,
+                        u_axis,
+                        v_axis,
+                        offset,
+                    ) else {
+                        continue;
+                    };
+                    if !candidates.iter().any(|existing: &FeatureSectionTransform| {
+                        vectors_close(existing.origin(), candidate.origin())
+                            && vectors_close(existing.u_axis(), candidate.u_axis())
+                            && vectors_close(existing.v_axis(), candidate.v_axis())
+                            && vectors_close(existing.normal(), candidate.normal())
+                    }) {
                         candidates.push(candidate);
                     }
                 }
             }
         }
     }
-    let [(origin, u_axis, v_axis, normal)] = candidates.as_slice() else {
+    let [transform] = candidates.as_slice() else {
         return None;
     };
-    let offset = definition
-        .section_3d
-        .as_ref()
-        .map_or(table.offset, |section| section.offset);
-    Some(FeatureSectionTransform {
-        definition_id: definition.identity.id(),
-        feature_id: Some(feature_id),
-        origin: *origin,
-        u_axis: *u_axis,
-        v_axis: *v_axis,
-        normal: *normal,
-        offset,
-    })
+    Some(transform.clone())
 }
 
 fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
@@ -426,9 +468,7 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
     if first.class_id != 204
         || second.class_id != 203
         || rest.is_empty()
-        || !rest
-            .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
+        || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
         return false;
     }
@@ -580,17 +620,17 @@ fn apply_section_orientation(
     section: &crate::feature::FeatureSection3d,
 ) {
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
-        transform.normal = scale(transform.normal, -1.0);
+        transform.v_axis = scale(transform.v_axis, -1.0);
     }
     if section.orientation.section_flip == Some(BinaryFlag::Set) {
-        transform.normal = scale(transform.normal, -1.0);
+        transform.v_axis = scale(transform.v_axis, -1.0);
     }
     if reference_flip_for_reference(section, unique_carrier_reference_id(section))
         == Some(BinaryFlag::Set)
     {
         transform.u_axis = scale(transform.u_axis, -1.0);
+        transform.v_axis = scale(transform.v_axis, -1.0);
     }
-    transform.v_axis = cross(transform.normal, transform.u_axis);
 }
 
 fn definition_local_frame_transform(
@@ -614,16 +654,14 @@ fn definition_local_frame_transform(
         u_axis = scale(u_axis, -1.0);
     }
     let v_axis = cross(normal, u_axis);
-    ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(
-        FeatureSectionTransform {
-            definition_id: definition.identity.id(),
-            feature_id: Some(feature_id),
-            origin,
-            u_axis,
-            v_axis,
-            normal,
-            offset: section.offset,
-        },
+    ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+    FeatureSectionTransform::new(
+        definition.identity.id(),
+        Some(feature_id),
+        origin,
+        u_axis,
+        v_axis,
+        section.offset,
     )
 }
 
@@ -792,7 +830,7 @@ fn feature_generated_plane_equation(
     let magnitude = dot(direction, direction).sqrt();
     (magnitude > EPS_VECTOR_NONZERO).then_some(())?;
     let direction = scale(direction, magnitude.recip());
-    let normal = cross(direction, transform.normal);
+    let normal = cross(direction, transform.normal());
     let magnitude = dot(normal, normal).sqrt();
     (magnitude > EPS_VECTOR_NONZERO).then_some(())?;
     let normal = scale(normal, magnitude.recip());
@@ -1243,16 +1281,17 @@ pub(crate) fn resolve(
                 )
             })
             .unwrap_or(intersection_origin);
-        let direct_transform = FeatureSectionTransform {
-            definition_id: definition.identity.id(),
-            feature_id: definition.identity.owner_feature_id(),
+        let direct_transform = FeatureSectionTransform::new(
+            definition.identity.id(),
+            definition.identity.owner_feature_id(),
             origin,
             u_axis,
-            v_axis: reference_axis,
-            normal,
-            offset: section.offset,
-        };
-        result.push(carrier_transform.unwrap_or(direct_transform));
+            reference_axis,
+            section.offset,
+        );
+        if let Some(transform) = carrier_transform.or(direct_transform) {
+            result.push(transform);
+        }
     }
     for definition in definitions {
         if result

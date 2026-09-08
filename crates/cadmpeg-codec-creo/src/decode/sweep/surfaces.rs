@@ -7,9 +7,8 @@ use super::super::feature_history::{
 };
 use super::super::native::annotate;
 use super::super::sketch::{
-    complete_section_segment_rows, normalized, resolved_section_points,
-    resolved_section_segment_geometry, saved_section_entity_geometry, section_point_in_model,
-    trim_segment_id,
+    complete_section_segment_rows, resolved_section_points, resolved_section_segment_geometry,
+    saved_section_entity_geometry, section_point_in_model, trim_segment_id,
 };
 use super::super::sketch_ids::sketch_section_curve_id;
 use super::super::uniqueness::{
@@ -22,6 +21,7 @@ use super::nurbs::{
 };
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
@@ -46,7 +46,7 @@ pub(in super::super) fn revolved_section_surface(
     geometry: &SketchGeometry,
     revolution_axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
-    let axis = normalized([
+    let axis = normalize([
         revolution_axis.direction.x,
         revolution_axis.direction.y,
         revolution_axis.direction.z,
@@ -69,7 +69,7 @@ pub(in super::super) fn revolved_section_surface(
         SketchGeometry::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
-            let direction = normalized(std::array::from_fn(|index| end[index] - start[index]))?;
+            let direction = normalize(std::array::from_fn(|index| end[index] - start[index]))?;
             let (mut on_axis, mut radial) = project(start);
             let mut radius = dot(radial, radial).sqrt();
             if radius <= EPS_RADIUS_NONZERO {
@@ -85,7 +85,7 @@ pub(in super::super) fn revolved_section_surface(
                 let coplanar_residual = dot(cross(radial, radial_rate), axis).abs();
                 (coplanar_residual <= EPS_COPLANAR_RESIDUAL * scale).then_some(())?;
             }
-            let reference = normalized(radial).or_else(|| normalized(radial_rate))?;
+            let reference = normalize(radial).or_else(|| normalize(radial_rate))?;
             if radial_speed <= EPS_RADIAL_SPEED {
                 (radius > EPS_RADIUS_NONZERO).then_some(())?;
                 return Some(SurfaceGeometry::Cylinder {
@@ -121,12 +121,12 @@ pub(in super::super) fn revolved_section_surface(
             let center = section_point_in_model(transform, [center.u, center.v]);
             let (on_axis, radial) = project(center);
             let major_radius = dot(radial, radial).sqrt();
-            let reference = normalized(radial).or_else(|| {
-                [transform.u_axis, transform.v_axis]
+            let reference = normalize(radial).or_else(|| {
+                [transform.u_axis(), transform.v_axis()]
                     .into_iter()
                     .find_map(|candidate| {
                         let axial = dot(candidate, axis);
-                        normalized(std::array::from_fn(|index| {
+                        normalize(std::array::from_fn(|index| {
                             candidate[index] - axial * axis[index]
                         }))
                     })
@@ -160,7 +160,7 @@ pub(in super::super) fn placed_section_geometry_curve(
         SketchGeometry::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
-            let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(start[0], start[1], start[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
@@ -168,10 +168,10 @@ pub(in super::super) fn placed_section_geometry_curve(
         }
         SketchGeometry::ReferenceLine { origin, direction } => {
             let origin = section_point_in_model(transform, [origin.u, origin.v]);
-            let direction = normalized([
-                direction.u * transform.u_axis[0] + direction.v * transform.v_axis[0],
-                direction.u * transform.u_axis[1] + direction.v * transform.v_axis[1],
-                direction.u * transform.u_axis[2] + direction.v * transform.v_axis[2],
+            let direction = normalize([
+                direction.u * transform.u_axis()[0] + direction.v * transform.v_axis()[0],
+                direction.u * transform.u_axis()[1] + direction.v * transform.v_axis()[1],
+                direction.u * transform.u_axis()[2] + direction.v * transform.v_axis()[2],
             ])?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
@@ -183,14 +183,14 @@ pub(in super::super) fn placed_section_geometry_curve(
             Some(CurveGeometry::Circle {
                 center: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
                 radius: radius.0,
             })
@@ -295,7 +295,7 @@ pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
 ) -> Option<NurbsSurface> {
-    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
         [1.0, 0.0],
@@ -404,7 +404,7 @@ pub(in super::super) fn revolved_section_circle(
     point: [f64; 2],
     axis: &RevolutionAxis,
 ) -> Option<RevolvedSectionCircle> {
-    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let point = section_point_in_model(transform, point);
     let relative: [f64; 3] =
@@ -433,13 +433,13 @@ pub(in super::super) fn revolved_section_circle(
 pub(in super::super) fn extruded_section_line(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
-) -> Option<CurveGeometry> {
-    let direction = normalized(transform.normal)?;
+) -> CurveGeometry {
+    let direction = transform.normal();
     let origin = section_point_in_model(transform, point);
-    Some(CurveGeometry::Line {
+    CurveGeometry::Line {
         origin: Point3::new(origin[0], origin[1], origin[2]),
         direction: Vector3::new(direction[0], direction[1], direction[2]),
-    })
+    }
 }
 
 pub(in super::super) fn transfer_feature_extrusion_surfaces(
@@ -612,9 +612,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
-        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower);
         let sweep = transform
-            .normal
+            .normal()
             .map(|value| value * (span.upper - span.lower));
         for (native_surface_id, internal_id, spline) in splines {
             let Some(section_curve) = saved_spline_nurbs(spline) else {

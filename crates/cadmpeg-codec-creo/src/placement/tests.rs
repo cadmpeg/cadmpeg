@@ -232,15 +232,15 @@ fn resolves_perpendicular_datum_frame() {
             },
             &[],
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 42,
-            feature_id: Some(42),
-            origin: [2.0, 0.0, 3.0],
-            u_axis: [0.0, 1.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [1.0, 0.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            42,
+            Some(42),
+            [2.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -294,10 +294,10 @@ fn resolves_reference_flip_from_selected_positional_row() {
     );
 
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, -1.0, 0.0]);
-    assert_eq!(transforms[0].v_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[0].normal, [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[0].origin(), [2.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(transforms[0].v_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[0].normal(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -385,15 +385,15 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             },
             &[],
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 42,
-            feature_id: Some(42),
-            origin: [-3.0, -4.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
-            v_axis: [0.0, -1.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            42,
+            Some(42),
+            [-3.0, -4.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -513,15 +513,15 @@ fn resolves_generated_section_from_declared_cap_pair() {
             },
             &entity_tables,
         ),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(40),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
-            v_axis: [1.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 100,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(40),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            100
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -652,10 +652,10 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
     assert_eq!(transforms.len(), 2);
     assert_eq!(transforms[1].definition_id, 579);
     assert_eq!(transforms[1].feature_id, Some(579));
-    assert_eq!(transforms[1].origin, [0.0, 1.0, 0.0]);
-    assert_eq!(transforms[1].u_axis, [1.0, 0.0, 0.0]);
-    assert_eq!(transforms[1].v_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[1].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[1].origin(), [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[1].u_axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[1].v_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[1].normal(), [0.0, 1.0, 0.0]);
 
     let duplicate_plane = SurfaceRow {
         offset: 51,
@@ -735,9 +735,9 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, 1.0, 0.0]);
-    assert_eq!(transforms[0].v_axis, [0.0, 0.0, 1.0]);
+    assert_eq!(transforms[0].origin(), [2.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(transforms[0].v_axis(), [0.0, 0.0, 1.0]);
 }
 
 #[test]
@@ -805,9 +805,9 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].normal, [0.0, -1.0, 0.0]);
-    assert_eq!(transforms[0].u_axis, [0.0, 0.0, -1.0]);
-    assert_eq!(transforms[0].v_axis, [1.0, 0.0, 0.0]);
+    assert_eq!(transforms[0].normal(), [0.0, -1.0, 0.0]);
+    assert_eq!(transforms[0].u_axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(transforms[0].v_axis(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -892,8 +892,8 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
         &[],
     );
     assert_eq!(transforms.len(), 1);
-    assert_eq!(transforms[0].origin, [0.0, 0.0, 3.0]);
-    assert_eq!(transforms[0].normal, [0.0, 0.0, 1.0]);
+    assert_eq!(transforms[0].origin(), [0.0, 0.0, 3.0]);
+    assert_eq!(transforms[0].normal(), [0.0, 0.0, 1.0]);
 }
 
 #[test]
@@ -1034,15 +1034,17 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
 
     assert_eq!(
         generated_cylinder_section_transform(&definition, &sources, &tables),
-        Some(FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(40),
-            origin: [0.0, 4.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 200,
-        })
+        Some(
+            FeatureSectionTransform::new(
+                917,
+                Some(40),
+                [0.0, 4.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                200
+            )
+            .expect("valid section frame")
+        )
     );
 
     let mut far_divergent = parameters.clone();
@@ -1087,6 +1089,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     );
     let mut wrong_class = tables.clone();
     wrong_class[0].entries[0].class_id = 201;
+    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain;
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
     if let Some(entry) = non_surface[0]
@@ -1232,15 +1235,17 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
 
     assert_eq!(
         generated_planar_section_transform(&definition, &sources, &tables),
-        Some(FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [-0.0, 1.0, 0.0],
-            offset: 200,
-        })
+        Some(
+            FeatureSectionTransform::new(
+                917,
+                Some(10),
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                200
+            )
+            .expect("valid section frame")
+        )
     );
 
     let mut oriented_definition = definition;
@@ -1259,15 +1264,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     });
     assert_eq!(
         resolve(&[oriented_definition.clone()], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, -1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 
     let mut row_flipped_definition = oriented_definition.clone();
@@ -1287,15 +1292,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         }]);
     assert_eq!(
         resolve(&[row_flipped_definition], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [-1.0, -0.0, -0.0],
-            v_axis: [0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [-1.0, -0.0, -0.0],
+            [0.0, 0.0, 1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 
     let mut doubly_flipped_definition = oriented_definition;
@@ -1306,15 +1311,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         .sketch_plane_flip = Some(BinaryFlag::Set);
     assert_eq!(
         resolve(&[doubly_flipped_definition], &sources, &tables),
-        vec![FeatureSectionTransform {
-            definition_id: 917,
-            feature_id: Some(10),
-            origin: [0.0, 0.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
-            v_axis: [0.0, 0.0, -1.0],
-            normal: [-0.0, 1.0, 0.0],
-            offset: 200,
-        }]
+        vec![FeatureSectionTransform::new(
+            917,
+            Some(10),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            200
+        )
+        .expect("valid section frame")]
     );
 }
 
@@ -1410,4 +1415,57 @@ fn named_gsec3d_fields_extend_to_the_placement_close() {
         vec![5]
     );
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
+}
+
+#[test]
+fn section_frame_admission_rejects_invalid_numeric_components() {
+    let origin = [0.0; 3];
+    let u_axis = [1.0, 0.0, 0.0];
+    let v_axis = [0.0, 1.0, 0.0];
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for component in 0..3 {
+            let mut invalid_origin = origin;
+            invalid_origin[component] = invalid;
+            assert!(
+                FeatureSectionTransform::new(1, None, invalid_origin, u_axis, v_axis, 0).is_none()
+            );
+            let mut invalid_u = u_axis;
+            invalid_u[component] = invalid;
+            assert!(FeatureSectionTransform::new(1, None, origin, invalid_u, v_axis, 0).is_none());
+            let mut invalid_v = v_axis;
+            invalid_v[component] = invalid;
+            assert!(FeatureSectionTransform::new(1, None, origin, u_axis, invalid_v, 0).is_none());
+        }
+    }
+    assert!(FeatureSectionTransform::new(1, None, origin, [0.0; 3], v_axis, 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, [0.0; 3], 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, [2.0, 0.0, 0.0], v_axis, 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, [0.0, 2.0, 0.0], 0).is_none());
+    assert!(FeatureSectionTransform::new(1, None, origin, u_axis, u_axis, 0).is_none());
+}
+
+#[test]
+fn section_frame_derives_normal_from_rotated_axes() {
+    let diagonal = 0.5_f64.sqrt();
+    let u_axis = [diagonal, -diagonal, 0.0];
+    let v_axis = [0.0, 0.0, -1.0];
+    let frame = FeatureSectionTransform::new(1, None, [1.0, 2.0, 3.0], u_axis, v_axis, 0)
+        .expect("orthonormal frame");
+    assert_eq!(frame.normal(), cross(u_axis, v_axis));
+    assert_eq!(frame.normal(), [diagonal, diagonal, 0.0]);
+}
+
+#[test]
+fn section_frame_preserves_reconstructed_frame_tolerance() {
+    let u_axis = [(1.0 + EPS_FRAME_AGREEMENT * 0.5).sqrt(), 0.0, 0.0];
+    assert!(FeatureSectionTransform::new(1, None, [0.0; 3], u_axis, [0.0, 1.0, 0.0], 0).is_some());
+    assert!(FeatureSectionTransform::new(
+        1,
+        None,
+        [0.0; 3],
+        [f64::MAX, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0
+    )
+    .is_none());
 }
