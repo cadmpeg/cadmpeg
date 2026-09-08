@@ -52,33 +52,38 @@ pub(crate) enum UfrxRecord {
 )]
 pub(crate) struct UfrxRepresentationRecord {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<(String, String)>,
+    pub(crate) active_representation: Option<(NonEmptyString, NonEmptyString)>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: String,
+    pub(crate) active_model_state: NonEmptyString,
     pub(crate) active_model_state_state: [u16; 2],
 }
 
 #[derive(Serialize, Deserialize)]
-struct UfrxRepresentationRecordWire {
-    prefix: u16,
-    active_representation: Option<String>,
-    active_representation_kind: Option<String>,
-    secondary_active_lod_state: [u16; 2],
-    active_model_state: String,
-    active_model_state_state: [u16; 2],
+pub(crate) struct UfrxRepresentationRecordWire {
+    pub(crate) prefix: u16,
+    pub(crate) active_representation: Option<String>,
+    pub(crate) active_representation_kind: Option<String>,
+    pub(crate) secondary_active_lod_state: [u16; 2],
+    pub(crate) active_model_state: String,
+    pub(crate) active_model_state_state: [u16; 2],
 }
 
 impl From<UfrxRepresentationRecord> for UfrxRepresentationRecordWire {
     fn from(value: UfrxRepresentationRecord) -> Self {
         let (active_representation, active_representation_kind) = value
             .active_representation
-            .map_or((None, None), |(name, kind)| (Some(name), Some(kind)));
+            .map_or((None, None), |(name, kind)| {
+                (
+                    Some(name.as_str().to_owned()),
+                    Some(kind.as_str().to_owned()),
+                )
+            });
         Self {
             prefix: value.prefix,
             active_representation,
             active_representation_kind,
             secondary_active_lod_state: value.secondary_active_lod_state,
-            active_model_state: value.active_model_state,
+            active_model_state: value.active_model_state.as_str().to_owned(),
             active_model_state_state: value.active_model_state_state,
         }
     }
@@ -90,7 +95,11 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
         let active_representation =
             match (wire.active_representation, wire.active_representation_kind) {
                 (None, None) => None,
-                (Some(name), Some(kind)) => Some((name, kind)),
+                (Some(name), Some(kind)) => Some((
+                    NonEmptyString::new(name).ok_or("active_representation must not be empty")?,
+                    NonEmptyString::new(kind)
+                        .ok_or("active_representation_kind must not be empty")?,
+                )),
                 _ => return Err(
                     "active_representation and active_representation_kind must be present together"
                         .into(),
@@ -100,7 +109,8 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
             prefix: wire.prefix,
             active_representation,
             secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: wire.active_model_state,
+            active_model_state: NonEmptyString::new(wire.active_model_state)
+                .ok_or("active_model_state must not be empty")?,
             active_model_state_state: wire.active_model_state_state,
         })
     }
@@ -538,6 +548,38 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn representation_admission_rejects_empty_names_and_half_pairs() {
+        let valid = serde_json::json!({
+            "prefix": 0, "active_representation": "Master",
+            "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
+            "active_model_state": "Primary", "active_model_state_state": [0, 0]
+        });
+        let record: UfrxRepresentationRecord = serde_json::from_value(valid.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), valid);
+        for field in [
+            "active_representation",
+            "active_representation_kind",
+            "active_model_state",
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = serde_json::json!("");
+            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        for field in ["active_representation", "active_representation_kind"] {
+            let mut wire = valid.clone();
+            wire[field] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_err());
+        }
+        let mut wire = valid;
+        wire["active_representation"] = serde_json::Value::Null;
+        wire["active_representation_kind"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_ok());
+    }
 
     #[test]
     fn model_state_admission_rejects_invalid_framing() {

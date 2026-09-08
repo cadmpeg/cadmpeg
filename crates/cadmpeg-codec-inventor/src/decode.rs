@@ -29,7 +29,7 @@ use crate::native::protein::{
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateParameterRecord,
     UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxRecord,
-    UfrxRepresentationRecord,
+    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
@@ -430,15 +430,27 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 section_versions: document.section_versions.clone(),
                 original_file_name: document.original_file_name.clone(),
                 caption: document.caption.clone(),
-                representation: document.representation.as_ref().map(|state| {
-                    UfrxRepresentationRecord {
-                        prefix: state.prefix,
-                        active_representation: state.active_representation.clone(),
-                        secondary_active_lod_state: state.secondary_active_lod_state,
-                        active_model_state: state.active_model_state.clone(),
-                        active_model_state_state: state.active_model_state_state,
-                    }
-                }),
+                representation: document
+                    .representation
+                    .as_ref()
+                    .map(|state| {
+                        UfrxRepresentationRecord::try_from(UfrxRepresentationRecordWire {
+                            prefix: state.prefix,
+                            active_representation: state
+                                .active_representation
+                                .as_ref()
+                                .map(|(name, _)| name.clone()),
+                            active_representation_kind: state
+                                .active_representation
+                                .as_ref()
+                                .map(|(_, kind)| kind.clone()),
+                            secondary_active_lod_state: state.secondary_active_lod_state,
+                            active_model_state: state.active_model_state.clone(),
+                            active_model_state_state: state.active_model_state_state,
+                        })
+                    })
+                    .transpose()
+                    .map_err(CodecError::malformed)?,
                 model_states,
                 external_references: references,
                 embedded_references: embedded,
