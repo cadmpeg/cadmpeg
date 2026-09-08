@@ -1067,7 +1067,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             })
             .collect::<Vec<_>>();
         if expected_bodies.len() != items.references().len()
-            || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
+            || expected_bodies
+                != result
+                    .bodies()
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
         {
             findings.push(finding(
                 Check::NativeLinks,

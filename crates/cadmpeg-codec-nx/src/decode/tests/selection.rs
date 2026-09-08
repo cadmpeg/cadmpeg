@@ -1205,7 +1205,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            bodies: ConfigurationBodies::Resolved(Default::default()),
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,

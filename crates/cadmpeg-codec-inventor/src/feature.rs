@@ -1402,19 +1402,20 @@ fn feature_result(
         source.identity.segment_token, source.identity.record_ordinal
     ))
     .expect("identity grammar");
-    let result = FeatureResultTopology {
-        id: FeatureResultTopologyId::mint(format!(
+    let result = FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!(
             "inventor:design:feature-result#{}-{}",
             source.identity.segment_token, source.identity.record_ordinal
         ))
         .expect("identity grammar"),
-        output_of: feature_id.clone(),
+        feature_id.clone(),
         bodies,
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
-        native_ref: Some(collection.id()),
-    };
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Some(collection.id()),
+    )
+    .ok()?;
     Some((feature_id, result))
 }
 
@@ -2095,7 +2096,7 @@ mod tests {
             FeatureDefinition::Fillet { groups }
                 if matches!(groups[0].radius, RadiusSpec::Constant { radius: Length(2.5) })
         ));
-        assert_eq!(result.bodies, vec![fillet_properties[8].id()]);
+        assert_eq!(result.bodies(), vec![fillet_properties[8].id()]);
 
         let raw_distance = raw_parameter(40);
         let neutral_distance =

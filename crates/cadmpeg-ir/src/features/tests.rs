@@ -62,7 +62,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: crate::features::ConfigurationBodies::Resolved(vec![body.clone()]),
+        bodies: crate::features::ConfigurationBodies::Resolved(
+            (vec![body.clone()]).try_into().unwrap(),
+        ),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -266,18 +268,15 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
-    ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
-        BodyId::mint("synthetic:test:body#missing").expect("valid identity"),
-        BodyId::mint("synthetic:test:body#missing").expect("valid identity"),
-    ]);
+    ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(
+        (vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")])
+            .try_into()
+            .unwrap(),
+    );
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("missing configuration body")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("repeats body")
     }));
 
     ir.model.configurations.push(DesignConfiguration {
@@ -289,7 +288,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: crate::features::ConfigurationBodies::Resolved(Default::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1260,16 +1259,16 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     use crate::features::{FeatureId, FeatureResultTopology};
     use crate::ids::FeatureResultTopologyId;
 
-    let state = FeatureResultTopology {
-        id: FeatureResultTopologyId::mint("synthetic:history-result:state#0")
-            .expect("valid identity"),
-        output_of: FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        bodies: vec!["body:17".into()],
-        faces: vec!["face:3".into()],
-        edges: vec!["edge:5".into()],
-        vertices: vec!["vertex:8".into()],
-        native_ref: Some("native:result#0".into()),
-    };
+    let state = FeatureResultTopology::new(
+        FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"),
+        FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
+        vec!["body:17".into()],
+        vec!["face:3".into()],
+        vec!["edge:5".into()],
+        vec!["vertex:8".into()],
+        Some("native:result#0".into()),
+    )
+    .unwrap();
     let json = serde_json::to_string(&state).unwrap();
     assert_eq!(
         serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
@@ -1891,4 +1890,45 @@ fn body_selection_admission_rejects_invalid_members() {
     ] {
         assert!(serde_json::from_value::<BodySelection>(value).is_err());
     }
+}
+
+#[test]
+fn topology_membership_admission() {
+    use super::{DistinctMembers, FeatureResultTopology};
+    let id = crate::ids::FeatureResultTopologyId::mint("test:result#1").unwrap();
+    let feature = super::FeatureId::mint("test:feature#1").unwrap();
+    assert!(FeatureResultTopology::new(
+        id.clone(),
+        feature.clone(),
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        None
+    )
+    .is_err());
+    for bodies in [vec![" ".into()], vec!["a".into(), "a".into()]] {
+        assert!(FeatureResultTopology::new(
+            id.clone(),
+            feature.clone(),
+            bodies,
+            vec![],
+            vec![],
+            vec![],
+            None
+        )
+        .is_err());
+    }
+    assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
+    assert!(
+        serde_json::from_value::<super::ConfigurationBodies>(serde_json::json!([
+            "test:body#1",
+            "test:body#1"
+        ]))
+        .is_err()
+    );
+    assert!(serde_json::from_value::<FeatureResultTopology>(
+        serde_json::json!({"id":"test:result#1","output_of":"test:feature#1"})
+    )
+    .is_err());
 }

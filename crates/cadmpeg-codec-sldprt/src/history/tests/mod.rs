@@ -69,7 +69,7 @@ fn design_configuration(
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        bodies: ConfigurationBodies::Resolved(Default::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),

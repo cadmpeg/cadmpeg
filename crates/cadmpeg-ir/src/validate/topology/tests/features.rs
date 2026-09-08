@@ -112,10 +112,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vec![historical_vertex.clone()],
+            bodies: (Vec::new()).try_into().unwrap(),
+            faces: (Vec::new()).try_into().unwrap(),
+            edges: (Vec::new()).try_into().unwrap(),
+            vertices: (vec![historical_vertex.clone()]).try_into().unwrap(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -209,19 +209,19 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         FeatureInputTopology {
             id: first_state.clone(),
             input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vertices.to_vec(),
+            bodies: (Vec::new()).try_into().unwrap(),
+            faces: (Vec::new()).try_into().unwrap(),
+            edges: (Vec::new()).try_into().unwrap(),
+            vertices: (vertices.to_vec()).try_into().unwrap(),
             native_ref: None,
         },
         FeatureInputTopology {
             id: second_state.clone(),
             input_of: feature_id.clone(),
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: vec![other_vertex.clone()],
+            bodies: (Vec::new()).try_into().unwrap(),
+            faces: (Vec::new()).try_into().unwrap(),
+            edges: (Vec::new()).try_into().unwrap(),
+            vertices: (vec![other_vertex.clone()]).try_into().unwrap(),
             native_ref: None,
         },
     ]);
@@ -1590,18 +1590,19 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         },
         native_ref: None,
     });
-    ir.model
-        .feature_result_topologies
-        .push(FeatureResultTopology {
-            id: FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
+    ir.model.feature_result_topologies.push(
+        FeatureResultTopology::new(
+            FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
                 .expect("valid identity"),
-            output_of: producer.clone(),
-            bodies: vec!["body#declared".into()],
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: Vec::new(),
-            native_ref: None,
-        });
+            producer.clone(),
+            vec!["body#declared".into()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#1-consumer").expect("identity grammar"),
         ordinal: 1,

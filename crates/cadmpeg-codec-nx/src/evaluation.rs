@@ -1251,7 +1251,13 @@ mod tests {
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(
-                ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+                (ir.model
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect::<Vec<_>>())
+                .try_into()
+                .unwrap(),
             ),
             parameter_values: BTreeMap::new(),
             feature_states,

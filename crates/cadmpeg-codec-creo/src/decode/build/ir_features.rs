@@ -443,7 +443,7 @@ pub(super) fn finish_feature_transfers(
         .model
         .feature_result_topologies
         .iter()
-        .map(|state| state.edges.len())
+        .map(|state| state.edges().len())
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, ir, annotations);

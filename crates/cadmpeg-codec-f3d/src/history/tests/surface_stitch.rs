@@ -163,10 +163,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (Vec::new()).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
     let mut ambiguous_feature = feature.clone();
@@ -220,7 +220,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         ]
     );
     assert_eq!(native, &scope_id);
-    assert_eq!(&input_topologies[0].faces, faces);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces);
 
     bind_feature_face_selections(
         std::slice::from_mut(&mut ambiguous_feature),

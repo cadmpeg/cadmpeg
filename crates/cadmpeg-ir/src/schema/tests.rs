@@ -60,10 +60,10 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: vec![historical_edge.clone()],
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (vec![historical_edge.clone()]).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     };
     let feature = Feature {

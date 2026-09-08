@@ -2578,7 +2578,7 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    assign_configuration_bodies(&mut ir, &configuration_bodies);
+    assign_configuration_bodies(&mut ir, &configuration_bodies)?;
     crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
@@ -4061,7 +4061,7 @@ fn stamp_feature_baseline(ir: &mut CadIr) {
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) {
+) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
         let Ok(index) = u32::try_from(*index) else {
@@ -4090,14 +4090,19 @@ fn assign_configuration_bodies(
         };
         if source_counts.get(&source_index) == Some(&1) {
             configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
-                partition_map.remove(&source_index).unwrap_or_default(),
+                (partition_map.remove(&source_index).unwrap_or_default())
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
             );
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
-            ir.model.configurations[position].bodies =
-                cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
+            ir.model.configurations[position].bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
+                (bodies)
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+            );
         }
     }
     for (source_index, bodies) in partition_map {
@@ -4121,13 +4126,18 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                    (bodies)
+                        .try_into()
+                        .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+                ),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
     }
+    Ok(())
 }
 
 /// Bind the active configuration's partition identity from the two native

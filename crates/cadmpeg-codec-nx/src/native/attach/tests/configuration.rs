@@ -336,7 +336,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        bodies: ConfigurationBodies::Resolved(Default::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -384,7 +384,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        bodies: ConfigurationBodies::Resolved(Default::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -473,7 +473,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     }
     ir.model.configurations = vec![configuration(
         true,
-        ConfigurationBodies::Resolved(vec![body]),
+        ConfigurationBodies::Resolved((vec![body]).try_into().unwrap()),
     )];
     let mut annotations = AnnotationBuilder::new();
 
@@ -606,9 +606,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     missing_dependency.model.configurations = vec![configuration(
         "active",
         true,
-        ConfigurationBodies::Resolved(vec![
-            BodyId::mint("test:model:entity#body").expect("identity grammar")
-        ]),
+        ConfigurationBodies::Resolved(
+            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
+        ),
     )];
     let mut annotations = AnnotationBuilder::new();
     super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
@@ -638,9 +640,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.configurations = vec![configuration(
         "active",
         true,
-        ConfigurationBodies::Resolved(vec![
-            BodyId::mint("test:model:entity#body").expect("identity grammar")
-        ]),
+        ConfigurationBodies::Resolved(
+            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
+        ),
     )];
     super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
@@ -655,16 +659,20 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         configuration(
             "first",
             true,
-            ConfigurationBodies::Resolved(vec![
-                BodyId::mint("test:model:entity#body").expect("identity grammar")
-            ]),
+            ConfigurationBodies::Resolved(
+                (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                    .try_into()
+                    .unwrap(),
+            ),
         ),
         configuration(
             "second",
             true,
-            ConfigurationBodies::Resolved(vec![
-                BodyId::mint("test:model:entity#body").expect("identity grammar")
-            ]),
+            ConfigurationBodies::Resolved(
+                (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                    .try_into()
+                    .unwrap(),
+            ),
         ),
     ];
     super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);

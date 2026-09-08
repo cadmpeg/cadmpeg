@@ -302,7 +302,13 @@ pub(crate) fn attach(
                 .find(|relation| relation.configuration == configuration.id);
             let bodies = if active_attribute_use.is_some() {
                 ConfigurationBodies::Resolved(
-                    ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+                    (ir.model
+                        .bodies
+                        .iter()
+                        .map(|body| body.id.clone())
+                        .collect::<Vec<_>>())
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
                 )
             } else {
                 ConfigurationBodies::Unresolved
@@ -356,7 +362,7 @@ pub(crate) fn attach(
         &model.om.expressions,
         &model.segments.segment_body_bindings,
         annotations,
-    );
+    )?;
     attach_block_dimension_parameter_consumers(
         ir,
         &model.features.feature_block_dimensions,
@@ -1110,7 +1116,7 @@ fn attach_feature_operations(
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
@@ -3669,24 +3675,25 @@ fn attach_feature_operations(
                     body_write_group_partition_uses,
                     parasolid_group_members,
                 );
-                ir.model
-                    .feature_result_topologies
-                    .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId::mint(format!(
+                ir.model.feature_result_topologies.push(
+                    FeatureResultTopology::new(
+                        FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}-{:010}",
                             write.ordinal
                         ))
                         .expect("identity grammar"),
-                        output_of: id.clone(),
-                        bodies: vec![format!(
+                        id.clone(),
+                        vec![format!(
                             "nx:feature-history:body-identity#{:010}",
                             write.frame.body_identity()
                         )],
-                        faces: result_members.faces,
-                        edges: result_members.edges,
-                        vertices: result_members.vertices,
-                        native_ref: Some(write.id.clone()),
-                    });
+                        result_members.faces,
+                        result_members.edges,
+                        result_members.vertices,
+                        Some(write.id.clone()),
+                    )
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                );
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
@@ -3700,20 +3707,21 @@ fn attach_feature_operations(
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                ir.model
-                    .feature_result_topologies
-                    .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId::mint(format!(
+                ir.model.feature_result_topologies.push(
+                    FeatureResultTopology::new(
+                        FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}"
                         ))
                         .expect("identity grammar"),
-                        output_of: id.clone(),
-                        bodies: vec![local_id],
-                        faces: Vec::new(),
-                        edges: Vec::new(),
-                        vertices: Vec::new(),
-                        native_ref: Some(native_ref),
-                    });
+                        id.clone(),
+                        vec![local_id],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        Some(native_ref),
+                    )
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                );
             }
         }
     }
@@ -3747,6 +3755,7 @@ fn attach_feature_operations(
             annotations.derived(&initial_body_id, "outputs");
         }
     }
+    Ok(())
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]

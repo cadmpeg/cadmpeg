@@ -2177,7 +2177,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 });
             }
         }
-        let mut seen = HashSet::new();
         for body in &configuration.bodies {
             if ids.bodies(body.as_str()).is_none() {
                 ref_error(
@@ -2186,14 +2185,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     "configuration body",
                     body.as_str(),
                 );
-            }
-            if !seen.insert(body) {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: format!("configuration repeats body `{}`", body.as_str()),
-                    entity: Some(configuration.id.as_str().to_owned()),
-                });
             }
         }
         for parameter in configuration.parameter_overrides.keys() {
@@ -2486,52 +2477,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 entity: Some(state.input_of.as_str().to_owned()),
             });
         }
-        for (kind, members) in [
-            (
-                "historical body",
-                state
-                    .bodies
-                    .iter()
-                    .map(crate::ids::HistoricalBodyId::as_str)
-                    .collect::<Vec<_>>(),
-            ),
-            (
-                "historical face",
-                state
-                    .faces
-                    .iter()
-                    .map(crate::ids::HistoricalFaceId::as_str)
-                    .collect::<Vec<_>>(),
-            ),
-            (
-                "historical edge",
-                state
-                    .edges
-                    .iter()
-                    .map(crate::ids::HistoricalEdgeId::as_str)
-                    .collect::<Vec<_>>(),
-            ),
-            (
-                "historical vertex",
-                state
-                    .vertices
-                    .iter()
-                    .map(crate::ids::HistoricalVertexId::as_str)
-                    .collect::<Vec<_>>(),
-            ),
-        ] {
-            let mut seen = HashSet::new();
-            for member in members {
-                if member.is_empty() || !seen.insert(member) {
-                    findings.push(Finding {
-                        check: Check::Counts,
-                        severity: Severity::Error,
-                        message: format!("input topology has empty or repeated {kind} `{member}`"),
-                        entity: Some(state.id.as_str().to_owned()),
-                    });
-                }
-            }
-        }
     }
     let mut result_owners = HashSet::new();
     for state in &ir.model.feature_result_topologies {
@@ -2550,38 +2495,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 message: "feature has multiple result topology states".into(),
                 entity: Some(state.output_of.as_str().to_owned()),
             });
-        }
-        if state.bodies.is_empty()
-            && state.faces.is_empty()
-            && state.edges.is_empty()
-            && state.vertices.is_empty()
-        {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: "feature result topology is empty".into(),
-                entity: Some(state.id.as_str().to_owned()),
-            });
-        }
-        for (kind, members) in [
-            ("body", &state.bodies),
-            ("face", &state.faces),
-            ("edge", &state.edges),
-            ("vertex", &state.vertices),
-        ] {
-            let mut seen = HashSet::new();
-            for member in members {
-                if member.trim().is_empty() || !seen.insert(member) {
-                    findings.push(Finding {
-                        check: Check::Counts,
-                        severity: Severity::Error,
-                        message: format!(
-                            "result topology has empty or repeated generated {kind} `{member}`"
-                        ),
-                        entity: Some(state.id.as_str().to_owned()),
-                    });
-                }
-            }
         }
     }
     let result_topologies_by_feature = ir
@@ -5067,7 +4980,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         || !feature.dependencies.contains(&vertex.feature)
                         || result_topologies_by_feature
                             .get(vertex.feature.as_str())
-                            .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
+                            .is_some_and(|state| !state.vertices().contains(&vertex.local_id))
                     {
                         feature_geometry_error(
                             findings,
@@ -5187,7 +5100,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 || !feature.dependencies.contains(&edge.feature)
                                 || result_topologies_by_feature
                                     .get(edge.feature.as_str())
-                                    .is_some_and(|state| !state.edges.contains(&edge.local_id))
+                                    .is_some_and(|state| !state.edges().contains(&edge.local_id))
                         })
                     {
                         feature_geometry_error(
@@ -5295,7 +5208,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 || !feature.dependencies.contains(&face.feature)
                                 || result_topologies_by_feature
                                     .get(face.feature.as_str())
-                                    .is_some_and(|state| !state.faces.contains(&face.local_id))
+                                    .is_some_and(|state| !state.faces().contains(&face.local_id))
                         })
                     {
                         feature_geometry_error(
@@ -5398,7 +5311,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             || result_topologies_by_feature
                                 .get(body.feature.as_str())
                                 .is_some_and(|state| {
-                                    !state.bodies.iter().any(|id| id == body.local_id.as_str())
+                                    !state.bodies().iter().any(|id| id == body.local_id.as_str())
                                 })
                     }) {
                         feature_geometry_error(
