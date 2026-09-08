@@ -1981,13 +1981,7 @@ pub(super) fn feature_operation_state_records(
                 current: !state.display_state_conflict
                     && current_offsets.get(&state.feature_id) == Some(&state.offset),
                 family: state.kind.as_str().to_string(),
-                display_name_stored: state.display_name_stored(),
-                stored_name: state.stored_name(),
-                stored_name_bytes: state.stored_name_bytes().map(ToOwned::to_owned),
-                identifier_keyword: state.identifier_keyword().map(str::to_string),
-                stored_name_prefix: state
-                    .stored_name_prefix()
-                    .map(|prefix| char::from(prefix).to_string()),
+                name: state.name.clone(),
                 recipe: state
                     .recipe
                     .candidate()
