@@ -1345,10 +1345,10 @@ fn legacy_trim_endpoint(trim_index: i32, endpoint: usize) -> usize {
 }
 
 fn legacy_trim_endpoint_for_edge(trim: &RawBrepTrim, edge_endpoint: usize) -> usize {
-    let trim_endpoint = if !trim.reversed_3d {
-        edge_endpoint
-    } else {
+    let trim_endpoint = if trim.reversed_3d {
         1 - edge_endpoint
+    } else {
+        edge_endpoint
     };
     legacy_trim_endpoint(trim.index, trim_endpoint)
 }
