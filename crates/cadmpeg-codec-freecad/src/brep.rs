@@ -1603,7 +1603,7 @@ pub fn parse_payloads(
 }
 
 fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid exact-shape property XML {}: {error}",
             property.id
@@ -5578,10 +5578,12 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
-                .into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
+                    .into(),
+                0,
+            )
+            .unwrap(),
         };
         let entry = EntryRecord {
             id: crate::native::native_id("entry", "empty.brp"),
@@ -5620,9 +5622,11 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
+                0,
+            )
+            .unwrap(),
         };
         let payloads = parse_payloads(&[property], &[]).expect("nested carrier is ignored");
         assert!(payloads.is_empty());
@@ -5644,10 +5648,11 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#
-                .into(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text(
+                r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#.into(),
+                0,
+            )
+            .unwrap(),
         };
         assert!(parse_payloads(&[property], &[]).is_err());
     }
@@ -5663,11 +5668,12 @@ pub(crate) mod tests {
             status: Some(152),
             body: crate::native::PropertyBody::Transient,
             order: 0,
-            raw_xml:
+            xml: crate::native::RetainedXml::from_text(
                 r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
                     .into(),
-            byte_start: 0,
-            byte_end: 0,
+                0,
+            )
+            .unwrap(),
         };
         let payloads = parse_payloads(&[property], &[]).expect("transient shape is retained");
         assert!(payloads.is_empty());
@@ -5689,9 +5695,7 @@ pub(crate) mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: String::new(),
-            byte_start: 0,
-            byte_end: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
         };
 
         let payloads = parse_payloads(&[property], &[]).expect("unknown type is retained");

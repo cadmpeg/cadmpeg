@@ -307,8 +307,8 @@ pub(crate) fn logical_ledger(
                     .iter()
                     .map(|property| {
                         (
-                            property.byte_start,
-                            property.byte_end,
+                            property.xml.start(),
+                            property.xml.end(),
                             if property.family == PropertyFamily::Unknown {
                                 "named_opaque"
                             } else {
@@ -323,8 +323,8 @@ pub(crate) fn logical_ledger(
                     .iter()
                     .map(|property| {
                         (
-                            property.byte_start,
-                            property.byte_end,
+                            property.xml.start(),
+                            property.xml.end(),
                             if gui::has_registered_property_grammar(
                                 &property.name,
                                 &property.type_name,
@@ -338,7 +338,12 @@ pub(crate) fn logical_ledger(
                     })
                     .chain(gui.documents.iter().flat_map(|document| {
                         document.states.iter().map(|state| {
-                            (state.byte_start, state.byte_end, "typed", state.id.clone())
+                            (
+                                state.xml.start(),
+                                state.xml.end(),
+                                "typed",
+                                state.id.clone(),
+                            )
                         })
                     }))
                     .collect::<Vec<_>>()

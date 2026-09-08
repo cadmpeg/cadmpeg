@@ -932,7 +932,7 @@ Co 1001000 +2 0 *
     assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
-        .all(|property| property.raw_xml.starts_with("<Property")));
+        .all(|property| property.xml.text().starts_with("<Property")));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

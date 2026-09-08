@@ -351,7 +351,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         malformed(format!(
             "joint enumeration property {} has invalid XML: {error}",
             property.id

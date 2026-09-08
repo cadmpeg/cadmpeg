@@ -226,20 +226,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
-        let valid_object_bytes = match &object.data {
-            Some(data) => {
-                data.byte_start < data.byte_end
-                    && data.byte_end - data.byte_start == data.raw_xml.len() as u64
-            }
-            None => true,
-        };
-        if !valid_object_bytes {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} has inconsistent retained object bytes", object.id),
-                Some(object.id.clone()),
-            ));
-        }
         for dependency in &object.dependencies {
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
@@ -318,7 +304,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for document in &gui_documents {
         if document.states.iter().enumerate().any(|(order, state)| {
             state.order != order
-                || state.byte_start >= state.byte_end
                 || state
                     .side_entries
                     .iter()

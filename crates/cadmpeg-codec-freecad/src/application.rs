@@ -105,11 +105,11 @@ fn wire_records<'a>(
         .iter()
         .map(|object| {
             let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
-            owned.sort_by_key(|property| (property.byte_start, property.byte_end));
+            owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
             let data = object
                 .data
                 .as_ref()
-                .map_or(&[][..], |data| data.raw_xml.as_bytes());
+                .map_or(&[][..], |data| data.text().as_bytes());
             ApplicationRecordWire {
                 id: crate::native::native_id("application", &object.name),
                 object: &object.id,
@@ -126,15 +126,15 @@ fn wire_records<'a>(
                     .collect(),
                 inert_payload: owned.iter().any(|property| is_inert(property)),
                 order: object.order,
-                byte_start: object.data.as_ref().map_or(0, |data| data.byte_start),
-                byte_end: object.data.as_ref().map_or(0, |data| data.byte_end),
+                byte_start: object.data.as_ref().map_or(0, |data| data.start()),
+                byte_end: object.data.as_ref().map_or(0, |data| data.end()),
                 byte_len: data.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(data),
                 data,
                 property_records: owned
                     .into_iter()
                     .map(|property| {
-                        let data = property.raw_xml.as_bytes();
+                        let data = property.xml.text().as_bytes();
                         ApplicationPropertyWire {
                             id: crate::native::native_child_id(
                                 "application-property",
@@ -147,8 +147,8 @@ fn wire_records<'a>(
                             family: property.family,
                             order: property.order,
                             links: property.links(),
-                            byte_start: property.byte_start,
-                            byte_end: property.byte_end,
+                            byte_start: property.xml.start(),
+                            byte_end: property.xml.end(),
                             byte_len: data.len() as u64,
                             sha256: cadmpeg_ir::hash::sha256_hex(data),
                             data,
