@@ -376,13 +376,14 @@ fn decode_recipe_reference_operand(
         return None;
     }
     let references_end = references_at.checked_add(reference_bytes)?;
-    let next = if !matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
-        if View::u32_le_at(prefix, references_end) != Some(0) {
-            return None;
+    let next = match token_frame {
+        RecipeReferenceTokenFrame::Packed => references_end,
+        RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
+            if View::u32_le_at(prefix, references_end) != Some(0) {
+                return None;
+            }
+            references_end.checked_add(4)?
         }
-        references_end.checked_add(4)?
-    } else {
-        references_end
     };
     let references = (0..reference_count)
         .map(|reference_ordinal| {
