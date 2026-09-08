@@ -87,15 +87,12 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
 
 pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     let (class_tag, after_tag) = lp_ascii_filtered(payload, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || after_tag != 7
-        || payload.get(11..22) != Some(&[0; 11])
-    {
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
+    if after_tag != 7 || payload.get(11..22) != Some(&[0; 11]) {
         return None;
     }
     let record_index = View::u32_le_at(payload, 7)?;
-    if class_tag == "287" {
+    if class_tag.as_str() == "287" {
         return parse_legacy_287_design_parameter(payload, class_tag, record_index);
     }
     let compact_owned = payload.get(11..26) == Some(&[0; 15])
@@ -222,7 +219,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
 /// Its expression is followed by one of the two fixed five-byte trailers.
 fn parse_legacy_287_design_parameter(
     payload: &[u8],
-    class_tag: String,
+    class_tag: crate::records::DesignClassTag,
     record_index: u32,
 ) -> Option<DesignParameter> {
     if payload.get(legacy_287::ZERO_RUN_15..legacy_287::SOURCE_ORDINAL) != Some(&[0; 15])
@@ -303,7 +300,7 @@ const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
 
 fn parse_legacy_design_parameter(
     payload: &[u8],
-    class_tag: String,
+    class_tag: crate::records::DesignClassTag,
     record_index: u32,
 ) -> Option<DesignParameter> {
     if payload.get(11..25)? != [0; 14]
@@ -524,9 +521,8 @@ pub fn decode_parameter_owners(
 
 pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
         || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
         || frame.get(owner_prefix::SCOPE_MARKER) != Some(&1)
@@ -679,7 +675,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
@@ -742,7 +738,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index,
         local_ordinal: 0,
@@ -804,10 +800,9 @@ pub fn decode_parameter_companions(
 
 pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
             != Some(&[0; 20])
         || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)

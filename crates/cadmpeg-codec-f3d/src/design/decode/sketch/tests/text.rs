@@ -170,13 +170,13 @@ fn sketch_records_use_the_primary_index_live_copy() {
         |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -280,7 +280,10 @@ fn sketch_records_use_the_primary_index_live_copy() {
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
     assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
-    meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002".into();
+    meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
+        .to_owned()
+        .try_into()
+        .expect("type GUID");
     assert!(
         crate::design::decode::sketch::decode_sketch_points_from_stream(
             &bytes,
@@ -292,7 +295,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
     );
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
-        .into();
+        .to_owned()
+        .try_into()
+        .expect("type GUID");
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
@@ -840,7 +845,7 @@ fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::reco
     crate::design::decode::sketch::decode_sketch_text_record(
         bytes,
         "Design/BulkStream.dat",
-        "329".into(),
+        crate::records::DesignClassTag::try_from("329".to_owned()).unwrap(),
         class_version,
         304,
         7,

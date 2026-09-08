@@ -86,7 +86,7 @@ fn class_287_parameter_record_with_expression_trailer(
 fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     let parameter = parse_design_parameter(&class_287_parameter_record("HoleDepth", "d20"))
         .expect("class-287 parameter");
-    assert_eq!(parameter.class_tag, "287");
+    assert_eq!(parameter.class_tag.as_str(), "287");
     assert_eq!(parameter.record_index, 887);
     assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
@@ -664,7 +664,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     let parsed = parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("284"), 0.0)
         .expect("legacy 68-byte parameter owner");
     assert_eq!(parsed.frame_length, 68);
-    assert_eq!(parsed.class_tag, "284");
+    assert_eq!(parsed.class_tag.as_str(), "284");
     assert_eq!(parsed.record_index, 100);
     assert_eq!(parsed.parameter_record_index, 101);
     assert_eq!(parsed.companion_record_index, 102);
@@ -780,7 +780,7 @@ fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
     let parsed = parse_parameter_owner(&compact_variant_parameter_owner_frame())
         .expect("compact scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 103);
-    assert_eq!(parsed.class_tag, "299");
+    assert_eq!(parsed.class_tag.as_str(), "299");
     assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.parameter_record_index, 6654);
     assert_eq!(parsed.companion_record_index, 6655);
@@ -859,7 +859,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let parameter = crate::records::DesignParameter {
         id: crate::ids::native_design_parameter_id(stream, 200),
         byte_offset: 200,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 45,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
@@ -887,7 +887,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let header = crate::records::DesignRecordHeader {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -937,7 +937,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 1,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
@@ -963,7 +963,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 21,
         scope_record_index: 10,
         local_ordinal: 0,
@@ -977,7 +977,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let mut companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 10,
-        class_tag: "408".into(),
+        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
         record_index: 22,
         owner_record_index: 21,
         timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),

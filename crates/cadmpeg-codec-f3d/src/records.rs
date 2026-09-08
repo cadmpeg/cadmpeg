@@ -198,31 +198,43 @@ impl<T, O> Located<T, O> {
     }
 }
 
-/// An ordered run whose encoding locations are either complete or absent.
-#[derive(Debug, Clone)]
-pub enum ReferenceRun<T, O = u64> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReferenceRunData<T, O> {
     Unlocated(Vec<T>),
     Located(Vec<Located<T, O>>),
 }
 
-impl<T: PartialEq, O: PartialEq> PartialEq for ReferenceRun<T, O> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Unlocated(left), Self::Unlocated(right)) => left == right,
-            (Self::Located(left), Self::Located(right)) => left == right,
-            // An empty run has no locations in either wire form.
-            _ => self.is_empty() && other.is_empty(),
-        }
-    }
-}
-
-impl<T: Eq, O: Eq> Eq for ReferenceRun<T, O> {}
+/// An ordered run whose encoding locations are either complete or absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceRun<T, O = u64>(ReferenceRunData<T, O>);
 
 impl<T, O> ReferenceRun<T, O> {
+    /// A run whose values carry no encoding locations. The empty run has no
+    /// locations in either wire form, so it is always `Located(vec![])`.
+    pub fn unlocated(values: Vec<T>) -> Self {
+        if values.is_empty() {
+            Self(ReferenceRunData::Located(Vec::new()))
+        } else {
+            Self(ReferenceRunData::Unlocated(values))
+        }
+    }
+
+    /// A run whose values each carry an encoding location.
+    pub fn located(rows: Vec<Located<T, O>>) -> Self {
+        Self(ReferenceRunData::Located(rows))
+    }
+
+    pub(crate) fn located_rows(&self) -> Option<&[Located<T, O>]> {
+        match &self.0 {
+            ReferenceRunData::Located(rows) => Some(rows),
+            ReferenceRunData::Unlocated(_) => None,
+        }
+    }
+
     pub fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
-        (0..self.len()).map(|index| match self {
-            Self::Unlocated(values) => &values[index],
-            Self::Located(values) => &values[index].value,
+        (0..self.len()).map(|index| match &self.0 {
+            ReferenceRunData::Unlocated(values) => &values[index],
+            ReferenceRunData::Located(values) => &values[index].value,
         })
     }
 
@@ -241,12 +253,12 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
-        match self {
-            Self::Unlocated(values) => {
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => {
                 let values: &[T; N] = values.as_slice().try_into().ok()?;
                 Some(values.each_ref())
             }
-            Self::Located(values) => {
+            ReferenceRunData::Located(values) => {
                 let values: &[Located<T, O>; N] = values.as_slice().try_into().ok()?;
                 Some(values.each_ref().map(|row| &row.value))
             }
@@ -254,18 +266,18 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn offsets(&self) -> impl ExactSizeIterator<Item = &O> + DoubleEndedIterator + Clone {
-        let rows: &[Located<T, O>] = match self {
-            Self::Unlocated(_) => &[],
-            Self::Located(rows) => rows,
+        let rows: &[Located<T, O>] = match &self.0 {
+            ReferenceRunData::Unlocated(_) => &[],
+            ReferenceRunData::Located(rows) => rows,
         };
         rows.iter().map(|row| &row.offset)
     }
 
     #[cfg(test)]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match self {
-            Self::Unlocated(values) => (values, &mut []),
-            Self::Located(values) => (&mut [], values),
+        let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match &mut self.0 {
+            ReferenceRunData::Unlocated(values) => (values, &mut []),
+            ReferenceRunData::Located(values) => (&mut [], values),
         };
         unlocated
             .iter_mut()
@@ -273,16 +285,16 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     pub fn len(&self) -> usize {
-        match self {
-            Self::Unlocated(values) => values.len(),
-            Self::Located(values) => values.len(),
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => values.len(),
+            ReferenceRunData::Located(values) => values.len(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Unlocated(values) => values.is_empty(),
-            Self::Located(values) => values.is_empty(),
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => values.is_empty(),
+            ReferenceRunData::Located(values) => values.is_empty(),
         }
     }
 
@@ -292,14 +304,14 @@ impl<T, O> ReferenceRun<T, O> {
         field: &str,
     ) -> Result<Self, String> {
         if offsets.is_empty() {
-            return Ok(Self::Unlocated(values));
+            return Ok(Self::unlocated(values));
         }
         if values.len() != offsets.len() {
             return Err(format!(
                 "{field} offsets must be absent or match every value"
             ));
         }
-        Ok(Self::Located(
+        Ok(Self::located(
             values
                 .into_iter()
                 .zip(offsets)
@@ -309,9 +321,9 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     fn into_wire(self) -> (Vec<T>, Vec<O>) {
-        match self {
-            Self::Unlocated(values) => (values, Vec::new()),
-            Self::Located(values) => values
+        match self.0 {
+            ReferenceRunData::Unlocated(values) => (values, Vec::new()),
+            ReferenceRunData::Located(values) => values
                 .into_iter()
                 .map(|row| (row.value, row.offset))
                 .unzip(),
@@ -534,7 +546,7 @@ pub struct DesignComponentNamingSpace {
     /// Component entity id named by the binding.
     pub component_record_index: u64,
     /// UUID used by persistent identities to select this component.
-    pub context_uuid: String,
+    pub context_uuid: DesignRelaxedGuidText,
     /// Byte offset of the UUID length prefix.
     pub context_uuid_offset: u64,
 }
@@ -802,7 +814,7 @@ pub struct DesignParameter {
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Source ordering value stored by the parameter record.
@@ -925,7 +937,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             source_ordinal: wire.source_ordinal,
             source,
@@ -953,7 +965,7 @@ impl From<DesignParameter> for DesignParameterSerde {
         Self {
             id: parameter.id,
             byte_offset: parameter.byte_offset,
-            class_tag: parameter.class_tag,
+            class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
             family_discriminator: family_discriminator.map(|value| value.value.code()),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
@@ -986,7 +998,7 @@ pub struct DesignParameterOwner {
     #[serde(default)]
     pub frame_length: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Feature or sketch record that scopes this parameter.
@@ -1017,7 +1029,7 @@ pub struct DesignParameterCompanion {
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Indexed parameter-owner record referenced by this prefix.
@@ -1068,7 +1080,7 @@ pub struct DesignDimensionRecipeRecord {
     /// Byte offset of the indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Number of bytes from this header to the next indexed header or the end
@@ -1125,8 +1137,17 @@ pub struct DesignRecipeReference {
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// One frame shape covers both source forms: the two-locus form, which carries
+/// the opaque index that precedes its loci, and the null-locus form, whose
+/// first locus is the fixed zero reference and which carries no opaque index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionLocusPairWire"))]
+#[serde(
+    try_from = "DesignDimensionLocusPairWire",
+    into = "DesignDimensionLocusPairWire"
+)]
 pub struct DesignDimensionLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1138,74 +1159,121 @@ pub struct DesignDimensionLocusPair {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
     pub frame_length: u64,
-    /// Opaque u32 preceding the two locus references.
-    pub opaque_index: u32,
-    /// Byte offset of `opaque_index`.
-    pub opaque_index_offset: u64,
-    /// First typed sketch-geometry record.
-    pub first_geometry_record_index: u32,
-    /// Byte offset of the first geometry record index.
-    pub first_geometry_reference_offset: u64,
-    /// Source role code following the first geometry reference.
-    pub first_role: u32,
-    /// Byte offset of `first_role`.
-    pub first_role_offset: u64,
-    /// Second typed sketch-geometry record.
-    pub second_geometry_record_index: u32,
-    /// Byte offset of the second geometry record index.
-    pub second_geometry_reference_offset: u64,
-    /// Source role code following the second geometry reference.
-    pub second_role: u32,
-    /// Byte offset of `second_role`.
-    pub second_role_offset: u64,
+    /// Opaque u32 preceding the two locus references. Present exactly when the
+    /// first locus names sketch geometry.
+    pub opaque_index: Option<Located<u32>>,
+    /// The two ordered loci. `loci[0].geometry_record_index` is `None` in the
+    /// null-locus form, where the frame stores a fixed zero record reference.
+    pub loci: [DesignDimensionAnnotationOperand; 2],
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
 }
 
-/// Dimension frame with one null locus and one typed sketch-geometry locus.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignDimensionNullLocusPair {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Companion record containing this frame.
-    pub companion_record_index: u32,
-    /// Companion record owned by the following dimension parameter governed by
-    /// this frame.
-    pub governing_companion_record_index: u32,
-    /// Byte offset of the primary indexed record header.
-    pub byte_offset: u64,
-    /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
-    /// Shared logical record identity.
-    pub record_index: u32,
-    /// Byte length from the primary header to the paired header.
-    pub frame_length: u64,
-    /// Byte offset of the fixed zero record reference.
-    pub null_reference_offset: u64,
-    /// Role code attached to the null record reference.
-    pub null_role: u32,
-    /// Byte offset of `null_role`.
-    pub null_role_offset: u64,
-    /// Typed sketch-geometry record.
-    pub geometry_record_index: u32,
-    /// Byte offset of `geometry_record_index`.
-    pub geometry_reference_offset: u64,
-    /// Role code attached to the typed geometry record.
-    pub geometry_role: u32,
-    /// Byte offset of `geometry_role`.
-    pub geometry_role_offset: u64,
-    /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
-    /// Byte offset of the paired indexed record header.
-    pub paired_byte_offset: u64,
+struct DesignDimensionLocusPairWire {
+    id: String,
+    companion_record_index: u32,
+    governing_companion_record_index: u32,
+    byte_offset: u64,
+    class_tag: String,
+    record_index: u32,
+    frame_length: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opaque_index_offset: Option<u64>,
+    first_geometry_record_index: u32,
+    first_geometry_reference_offset: u64,
+    first_role: u32,
+    first_role_offset: u64,
+    second_geometry_record_index: u32,
+    second_geometry_reference_offset: u64,
+    second_role: u32,
+    second_role_offset: u64,
+    paired_class_tag: String,
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
+    type Error = String;
+
+    fn try_from(wire: DesignDimensionLocusPairWire) -> Result<Self, Self::Error> {
+        let opaque_index = match (wire.opaque_index, wire.opaque_index_offset) {
+            (None, None) => None,
+            (Some(value), Some(offset)) => Some(Located { value, offset }),
+            _ => return Err("opaque_index and opaque_index_offset must occur together".to_owned()),
+        };
+        let first = NonZeroU32::new(wire.first_geometry_record_index);
+        if opaque_index.is_some() != first.is_some() {
+            return Err(
+                "opaque_index is present exactly when first_geometry_record_index names geometry"
+                    .to_owned(),
+            );
+        }
+        let second = NonZeroU32::new(wire.second_geometry_record_index)
+            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
+        Ok(Self {
+            id: wire.id,
+            companion_record_index: wire.companion_record_index,
+            governing_companion_record_index: wire.governing_companion_record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag.try_into()?,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            opaque_index,
+            loci: [
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: first,
+                    geometry_reference_offset: wire.first_geometry_reference_offset,
+                    role: wire.first_role,
+                    role_offset: wire.first_role_offset,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: Some(second),
+                    geometry_reference_offset: wire.second_geometry_reference_offset,
+                    role: wire.second_role,
+                    role_offset: wire.second_role_offset,
+                },
+            ],
+            paired_class_tag: wire.paired_class_tag.try_into()?,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
+    fn from(pair: DesignDimensionLocusPair) -> Self {
+        let [first, second] = pair.loci;
+        Self {
+            id: pair.id,
+            companion_record_index: pair.companion_record_index,
+            governing_companion_record_index: pair.governing_companion_record_index,
+            byte_offset: pair.byte_offset,
+            class_tag: pair.class_tag.into(),
+            record_index: pair.record_index,
+            frame_length: pair.frame_length,
+            opaque_index: pair.opaque_index.as_ref().map(|located| located.value),
+            opaque_index_offset: pair.opaque_index.as_ref().map(|located| located.offset),
+            first_geometry_record_index: first.geometry_record_index.map_or(0, NonZeroU32::get),
+            first_geometry_reference_offset: first.geometry_reference_offset,
+            first_role: first.role,
+            first_role_offset: first.role_offset,
+            second_geometry_record_index: second.geometry_record_index.map_or(0, NonZeroU32::get),
+            second_geometry_reference_offset: second.geometry_reference_offset,
+            second_role: second.role,
+            second_role_offset: second.role_offset,
+            paired_class_tag: pair.paired_class_tag.into(),
+            paired_byte_offset: pair.paired_byte_offset,
+        }
+    }
 }
 
 /// One nullable typed operand in an annotated dimension frame.
@@ -1222,6 +1290,13 @@ pub struct DesignDimensionAnnotationOperand {
     pub role: u32,
     /// Byte offset of `role`.
     pub role_offset: u64,
+}
+
+impl DesignDimensionAnnotationOperand {
+    /// The named sketch-geometry record, or the wire's zero for the null locus.
+    pub(crate) fn geometry_index(&self) -> u32 {
+        self.geometry_record_index.map_or(0, NonZeroU32::get)
+    }
 }
 
 mod annotation_geometry_index {
@@ -1293,7 +1368,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length from the primary through the paired header boundary.
@@ -1313,7 +1388,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Ordered non-null return geometry records.
     pub return_members: Vec<Located<NonZeroU32>>,
     /// Dynamic class tag of the paired indexed record.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
     /// Numeric design-entity suffix of the owning sketch.
@@ -1388,7 +1463,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             operands: wire.operands,
@@ -1397,7 +1472,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             annotation_byte_offset: wire.annotation_byte_offset,
             governing_owner_record_index: wire.governing_owner_record_index,
             governing_owner_reference_offset: wire.governing_owner_reference_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
             owner_reference: wire.owner_reference,
             owner_reference_offset: wire.owner_reference_offset,
@@ -1418,7 +1493,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             companion_record_index: value.companion_record_index,
             governing_companion_record_index: value.governing_companion_record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             frame_length: value.frame_length,
             operands: value.operands,
@@ -1427,7 +1502,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             annotation_byte_offset: value.annotation_byte_offset,
             governing_owner_record_index: value.governing_owner_record_index,
             governing_owner_reference_offset: value.governing_owner_reference_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
             owner_reference: value.owner_reference,
             owner_reference_offset: value.owner_reference_offset,
@@ -1445,7 +1520,7 @@ pub struct DesignDimensionPresentationFrame {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length from the primary through the paired-header boundary.
@@ -1458,7 +1533,7 @@ pub struct DesignDimensionPresentationFrame {
     /// Byte offset of `presentation_bytes`.
     pub presentation_byte_offset: u64,
     /// Dynamic class tag of the paired `EntityTracking` header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
     /// Numeric suffix of the owning Sketch entity.
@@ -1505,7 +1580,7 @@ pub struct DesignDimensionLocusGroup {
     /// Byte offset of the indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length through the zero byte preceding the next indexed header.
@@ -1525,7 +1600,7 @@ pub struct DesignDimensionLocusGroup {
     /// Byte offset of `state`.
     pub state_offset: u64,
     /// Dynamic class tag of the immediately following indexed record.
-    pub next_class_tag: String,
+    pub next_class_tag: DesignClassTag,
     /// Identity of the immediately following indexed record.
     pub next_record_index: u32,
     /// Byte offset of the immediately following indexed record.
@@ -1641,7 +1716,7 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             owner_reference: wire.owner_reference,
@@ -1650,7 +1725,7 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
             owner_role_offset: wire.owner_role_offset,
             state: wire.state,
             state_offset: wire.state_offset,
-            next_class_tag: wire.next_class_tag,
+            next_class_tag: wire.next_class_tag.try_into()?,
             next_record_index: wire.next_record_index,
             next_byte_offset: wire.next_byte_offset,
         })
@@ -1684,7 +1759,7 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
             id: value.id,
             companion_record_index: value.companion_record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             frame_length: value.frame_length,
             owner_reference: value.owner_reference,
@@ -1693,7 +1768,7 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
             owner_role_offset: value.owner_role_offset,
             state: value.state,
             state_offset: value.state_offset,
-            next_class_tag: value.next_class_tag,
+            next_class_tag: value.next_class_tag.into(),
             next_record_index: value.next_record_index,
             next_byte_offset: value.next_byte_offset,
         }
@@ -2138,8 +2213,18 @@ impl From<DesignClassTag> for String {
     }
 }
 impl DesignClassTag {
+    /// Numeric value of the three-digit tag.
+    pub(crate) fn code(&self) -> u32 {
+        self.0
+            .bytes()
+            .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'))
+    }
     pub(crate) fn as_str(&self) -> &str {
         &self.0
+    }
+    /// Dynamic type ordinal: the three digits minus the 256 fixed-class base.
+    pub(crate) fn dynamic_ordinal(&self) -> Option<usize> {
+        self.0.parse::<usize>().ok()?.checked_sub(256)
     }
     pub(crate) fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
@@ -2450,13 +2535,12 @@ pub struct SegmentType {
     pub byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: String,
+    pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
-    /// GUID of this type's base type; `None` for a root type, whose stored base
-    /// GUID is the empty string.
+    /// Base GUID field and location; its value is `None` for an explicit empty root GUID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_type_guid: Option<RecordedValue<String>>,
+    pub base_type_guid: Option<RecordedValue<Option<DesignRelaxedGuidText>>>,
     /// Record version of this type.
     pub version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
@@ -2482,7 +2566,7 @@ struct SegmentTypeWire {
     pub byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: String,
+    pub type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base
@@ -2509,6 +2593,7 @@ struct SegmentTypeWire {
 
 impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
+    /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
     fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
@@ -2524,7 +2609,17 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
                 "entity_ids/entity_id_offsets",
             )?,
             base_type_guid: RecordedValue::from_wire(
-                wire.base_type_guid,
+                wire.base_type_guid
+                    .map(|guid| {
+                        if guid.is_empty() {
+                            Ok(None)
+                        } else {
+                            DesignRelaxedGuidText::try_from(guid)
+                                .map(Some)
+                                .map_err(|error| format!("base_type_guid: {error}"))
+                        }
+                    })
+                    .transpose()?,
                 wire.base_type_guid_offset,
                 "base_type_guid",
             )?,
@@ -2546,7 +2641,9 @@ impl From<SegmentType> for SegmentTypeWire {
             entity_ids,
             entity_id_offsets,
             base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
-            base_type_guid: value.base_type_guid.map(|field| field.value),
+            base_type_guid: value
+                .base_type_guid
+                .map(|field| field.value.map(String::from).unwrap_or_default()),
         }
     }
 }
@@ -2773,29 +2870,107 @@ pub struct DesignEntityHeader {
     pub class_tag: DesignClassTag,
     /// Whether the flag-selected four-byte optional slot is present.
     pub optional_slot_present: bool,
-    /// Add-in module of the `MetaStream` type whose entity-id list contains this
-    /// header's entity, when the `MetaStream` registers that entity.
-    pub module: Option<String>,
-    /// Index of an associated `BulkStream` record, when the header carries one.
+    /// Module registration and its sketch-owned data.
+    pub registration: DesignEntityRegistration,
+}
+
+/// A sketch header's located reference-list slot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchHeaderReferences {
+    /// Owning record, absent for the no-base-record sentinel.
     pub record_reference: Option<u32>,
-    /// Byte offset of the base-record slot, including its no-base-record sentinel.
-    pub record_reference_offset: Option<u64>,
-    /// Whether the wire includes the reference count; its value is derived from the run.
-    pub reference_count_present: bool,
-    /// Padded record-reference run owned by a sketch entity container.
-    pub references: ReferenceRun<u32>,
-    /// Counted member-record run from the paired same-index container record.
-    pub members: ReferenceRun<u32>,
+    /// Byte offset of the owning-record slot.
+    pub record_reference_offset: u64,
+    /// Located references in the counted list.
+    pub references: Vec<Located<u32>>,
+}
+
+/// Module registration with data owned only by sketch headers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignEntityRegistration(DesignEntityRegistrationKind);
+
+#[derive(Debug, Clone, PartialEq)]
+enum DesignEntityRegistrationKind {
+    Other(Option<String>),
+    Sketch {
+        references: Option<SketchHeaderReferences>,
+        members: ReferenceRun<u32>,
+    },
+}
+
+impl DesignEntityRegistration {
+    /// Construct a module registration and its sketch data.
+    pub fn new(
+        module: Option<String>,
+        references: Option<SketchHeaderReferences>,
+        members: ReferenceRun<u32>,
+    ) -> Result<Self, String> {
+        if module.as_deref() == Some(DESIGN_MODULE_SKETCH) {
+            Ok(Self(DesignEntityRegistrationKind::Sketch {
+                references,
+                members,
+            }))
+        } else if references.is_some() || !members.is_empty() {
+            Err("module must be MSketch for sketch references or members".into())
+        } else {
+            Ok(Self(DesignEntityRegistrationKind::Other(module)))
+        }
+    }
 }
 
 impl DesignEntityHeader {
+    /// Declared reference count for a present sketch reference list.
     pub fn declared_reference_count(&self) -> Option<usize> {
-        self.reference_count_present.then(|| self.references.len())
+        self.sketch_references().map(|list| list.references.len())
     }
 
-    /// Whether the `MetaStream` registers this entity under the sketch module.
+    /// Registered module name.
+    pub fn module(&self) -> Option<&str> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Other(module) => module.as_deref(),
+            DesignEntityRegistrationKind::Sketch { .. } => Some(DESIGN_MODULE_SKETCH),
+        }
+    }
+
+    /// Located sketch reference-list slot.
+    pub fn sketch_references(&self) -> Option<&SketchHeaderReferences> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { references, .. } => references.as_ref(),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+    }
+
+    /// Mutable located sketch reference-list slot.
+    pub fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
+        match &mut self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { references, .. } => references.as_mut(),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+    }
+
+    /// Referenced record indices.
+    pub fn reference_values(&self) -> impl Iterator<Item = &u32> {
+        self.sketch_references()
+            .into_iter()
+            .flat_map(|list| list.references.iter().map(|row| &row.value))
+    }
+
+    /// Member record indices.
+    pub fn member_values(&self) -> impl Iterator<Item = &u32> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+        .into_iter()
+        .flat_map(ReferenceRun::values)
+    }
+
+    /// Whether the entity belongs to the sketch module.
     pub fn in_sketch_module(&self) -> bool {
-        self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
+        matches!(
+            self.registration.0,
+            DesignEntityRegistrationKind::Sketch { .. }
+        )
     }
 }
 
@@ -2844,6 +3019,7 @@ struct DesignEntityHeaderWire {
 }
 impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
     type Error = String;
+    /// Header references without paired `record_reference_offset` and `declared_reference_count` metadata are not decoder-producible and are rejected deliberately.
     fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, Self::Error> {
         if wire
             .declared_reference_count
@@ -2855,26 +3031,33 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         if entity_id.suffix() != wire.entity_suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
+        let references = match (wire.record_reference_offset, wire.declared_reference_count) {
+            (Some(offset), Some(_)) => {
+                if wire.reference_indices.len() != wire.reference_offsets.len() {
+                    return Err("reference_offsets must locate every reference_indices entry".into());
+                }
+                Some(SketchHeaderReferences {
+                    record_reference: wire.record_reference,
+                    record_reference_offset: offset,
+                    references: wire.reference_indices.into_iter().zip(wire.reference_offsets)
+                        .map(|(value, offset)| Located { value, offset }).collect(),
+                })
+            }
+            (None, None) if wire.record_reference.is_none() && wire.reference_indices.is_empty() && wire.reference_offsets.is_empty() => None,
+            _ => return Err("record_reference_offset and declared_reference_count must accompany reference_indices and record_reference".into()),
+        };
+        let members = ReferenceRun::from_columns(
+            wire.member_indices,
+            wire.member_offsets,
+            "member_indices/member_offsets",
+        )?;
         Ok(Self {
-            reference_count_present: wire.declared_reference_count.is_some(),
-            references: ReferenceRun::from_columns(
-                wire.reference_indices,
-                wire.reference_offsets,
-                "reference_indices/reference_offsets",
-            )?,
-            members: ReferenceRun::from_columns(
-                wire.member_indices,
-                wire.member_offsets,
-                "member_indices/member_offsets",
-            )?,
+            registration: DesignEntityRegistration::new(wire.module, references, members)?,
             id: wire.id,
             byte_offset: wire.byte_offset,
             entity_id,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             optional_slot_present: wire.optional_slot_present,
-            module: wire.module,
-            record_reference: wire.record_reference,
-            record_reference_offset: wire.record_reference_offset,
         })
     }
 }
@@ -2882,8 +3065,33 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
 impl From<DesignEntityHeader> for DesignEntityHeaderWire {
     fn from(header: DesignEntityHeader) -> Self {
         let declared_reference_count = header.declared_reference_count();
-        let (reference_indices, reference_offsets) = header.references.into_wire();
-        let (member_indices, member_offsets) = header.members.into_wire();
+        let (module, references, members) = match header.registration.0 {
+            DesignEntityRegistrationKind::Other(module) => {
+                (module, None, ReferenceRun::unlocated(Vec::new()))
+            }
+            DesignEntityRegistrationKind::Sketch {
+                references,
+                members,
+            } => (Some(DESIGN_MODULE_SKETCH.to_owned()), references, members),
+        };
+        let (record_reference, record_reference_offset, reference_indices, reference_offsets) =
+            match references {
+                Some(list) => {
+                    let (values, offsets) = list
+                        .references
+                        .into_iter()
+                        .map(|row| (row.value, row.offset))
+                        .unzip();
+                    (
+                        list.record_reference,
+                        Some(list.record_reference_offset),
+                        values,
+                        offsets,
+                    )
+                }
+                None => (None, None, Vec::new(), Vec::new()),
+            };
+        let (member_indices, member_offsets) = members.into_wire();
         Self {
             declared_reference_count,
             reference_indices,
@@ -2896,9 +3104,9 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             entity_id: header.entity_id.0,
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
-            module: header.module,
-            record_reference: header.record_reference,
-            record_reference_offset: header.record_reference_offset,
+            module,
+            record_reference,
+            record_reference_offset,
         }
     }
 }
@@ -2940,8 +3148,8 @@ impl DesignMeshRecordIdentity {
             frame_length,
         })
     }
-    pub fn class_tag(&self) -> &str {
-        self.class_tag.as_str()
+    pub fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
     }
     pub fn record_index(&self) -> u32 {
         self.record_index.get()
@@ -3030,7 +3238,7 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 }
 
 /// A hyphenated hexadecimal GUID with its original letter case.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "String"))]
 #[serde(try_from = "String", into = "String")]
@@ -3052,6 +3260,36 @@ impl TryFrom<String> for DesignGuidText {
 }
 impl From<DesignGuidText> for String {
     fn from(value: DesignGuidText) -> Self {
+        value.0
+    }
+}
+
+/// A relaxed GUID with its original text.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "String"))]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignRelaxedGuidText(String);
+
+impl DesignRelaxedGuidText {
+    /// The original GUID text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl TryFrom<String> for DesignRelaxedGuidText {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !crate::bytes::is_guid_relaxed(&value) {
+            return Err(
+                "GUID must be 36 through 38 alphanumeric, hyphen, or underscore characters".into(),
+            );
+        }
+        Ok(Self(value))
+    }
+}
+impl From<DesignRelaxedGuidText> for String {
+    fn from(value: DesignRelaxedGuidText) -> Self {
         value.0
     }
 }
@@ -4717,15 +4955,12 @@ impl DesignCanvasGeometry {
 /// Canvas image-asset record with a nonempty UTF-16 name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignCanvasAsset {
-    class_tag: String,
+    class_tag: DesignClassTag,
     record_index: u32,
     name: String,
 }
 impl DesignCanvasAsset {
-    pub fn new(class_tag: String, record_index: u32, name: String) -> Result<Self, String> {
-        if class_tag.is_empty() || !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
-            return Err("asset_class_tag must contain printable ASCII characters".into());
-        }
+    pub fn new(class_tag: DesignClassTag, record_index: u32, name: String) -> Result<Self, String> {
         if name.is_empty() {
             return Err("asset_name must be nonempty".into());
         }
@@ -4952,7 +5187,8 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             geometry_payload,
         )?;
         let asset = DesignCanvasAsset::new(
-            wire.asset_class_tag,
+            DesignClassTag::try_from(wire.asset_class_tag)
+                .map_err(|error| format!("asset_class_tag: {error}"))?,
             wire.asset_record_index,
             wire.asset_name,
         )?;
@@ -5085,7 +5321,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             plane_reference_offset,
             component_entity_suffix: value.component_entity_suffix,
             component_reference_offset,
-            asset_class_tag: value.asset.class_tag,
+            asset_class_tag: value.asset.class_tag.into(),
             asset_record_index,
             asset_reference_offset,
             asset_byte_offset,
@@ -5398,7 +5634,7 @@ pub struct DesignRecordHeader {
     /// Index of this record within the recursive `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this header within its Design `BulkStream`.
     pub byte_offset: u64,
 }
@@ -5691,121 +5927,23 @@ impl From<SketchGlyphTransform> for [[f64; 4]; 4] {
     }
 }
 
-/// Pattern or text payload a sketch relation carries, when the mask names one.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SketchRelationKind {
-    /// No class-specific pattern or text payload.
-    Unpatterned,
-    /// A circular-pattern relation's auxiliary operands.
-    Circular {
-        /// Record index of the total-angle parameter value record.
-        angle_parameter: u32,
-        /// Record index of the instance-count parameter value record.
-        count_parameter: u32,
-        /// Evaluated total pattern angle in radians.
-        evaluated_angle: f64,
-        /// Evaluated instance count.
-        evaluated_count: u32,
-    },
-    /// A rectangular-pattern relation's two direction clauses.
-    Rectangular {
-        /// The two pattern direction clauses in record order.
-        directions: [SketchPatternDirection; 2],
-    },
-    /// A text-frame relation's auxiliary operand.
-    TextFrame {
-        /// Record index of the sketch-text entity the frame curves bind to.
-        text_reference: u32,
-    },
-    /// A text-path relation's auxiliary operands.
-    TextPath {
-        /// Record index of the sketch-text entity placed along the path curve.
-        text_reference: u32,
-        /// Row-major 4×4 character placement transforms in character order,
-        /// in centimetres.
-        glyph_transforms: Vec<SketchGlyphTransform>,
-    },
-}
-
-impl SketchRelationKind {
-    pub(crate) fn from_pattern(pattern: Option<SketchPatternDefinition>) -> Self {
-        match pattern {
-            None => Self::Unpatterned,
-            Some(SketchPatternDefinition::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            }) => Self::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            },
-            Some(SketchPatternDefinition::Rectangular { directions }) => {
-                Self::Rectangular { directions }
-            }
-            Some(SketchPatternDefinition::TextFrame { text_reference }) => {
-                Self::TextFrame { text_reference }
-            }
-            Some(SketchPatternDefinition::TextPath {
-                text_reference,
-                glyph_transforms,
-            }) => Self::TextPath {
-                text_reference,
-                glyph_transforms,
-            },
-        }
-    }
-
-    fn into_pattern(self) -> Option<SketchPatternDefinition> {
-        match self {
-            Self::Unpatterned => None,
-            Self::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            } => Some(SketchPatternDefinition::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            }),
-            Self::Rectangular { directions } => {
-                Some(SketchPatternDefinition::Rectangular { directions })
-            }
-            Self::TextFrame { text_reference } => {
-                Some(SketchPatternDefinition::TextFrame { text_reference })
-            }
-            Self::TextPath {
-                text_reference,
-                glyph_transforms,
-            } => Some(SketchPatternDefinition::TextPath {
-                text_reference,
-                glyph_transforms,
-            }),
-        }
-    }
-}
-
 /// Constraint mask and its matching pattern or text payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchRelationDefinition {
     state: u64,
-    kind: SketchRelationKind,
+    pattern: Option<SketchPatternDefinition>,
 }
 
 impl SketchRelationDefinition {
     /// Reject a payload that does not match the mask's first constraint kind.
     pub(crate) fn new(
         state: u64,
-        kind: SketchRelationKind,
+        pattern: Option<SketchPatternDefinition>,
     ) -> Result<Self, SketchRelationPayloadError> {
         let (kinds, _) = constraint_kinds_from_state(state);
         let first = kinds.first().copied();
-        let agrees = match &kind {
-            SketchRelationKind::Unpatterned => !matches!(
+        let agrees = match &pattern {
+            None => !matches!(
                 first,
                 Some(
                     SketchConstraintKind::CircularPattern
@@ -5814,21 +5952,25 @@ impl SketchRelationDefinition {
                         | SketchConstraintKind::TextPath
                 )
             ),
-            SketchRelationKind::Circular { .. } => {
+            Some(SketchPatternDefinition::Circular { .. }) => {
                 first == Some(SketchConstraintKind::CircularPattern)
             }
-            SketchRelationKind::Rectangular { .. } => {
+            Some(SketchPatternDefinition::Rectangular { .. }) => {
                 first == Some(SketchConstraintKind::RectangularPattern)
             }
-            SketchRelationKind::TextFrame { .. } => first == Some(SketchConstraintKind::TextFrame),
-            SketchRelationKind::TextPath { .. } => first == Some(SketchConstraintKind::TextPath),
+            Some(SketchPatternDefinition::TextFrame { .. }) => {
+                first == Some(SketchConstraintKind::TextFrame)
+            }
+            Some(SketchPatternDefinition::TextPath { .. }) => {
+                first == Some(SketchConstraintKind::TextPath)
+            }
         };
         if !agrees {
             return Err(SketchRelationPayloadError(
                 "sketch relation pattern disagrees with the first constraint kind".into(),
             ));
         }
-        Ok(Self { state, kind })
+        Ok(Self { state, pattern })
     }
 
     /// Source sketch-constraint bitmask.
@@ -5839,8 +5981,8 @@ impl SketchRelationDefinition {
 
     /// Pattern or text payload selected by the mask.
     #[must_use]
-    pub fn kind(&self) -> &SketchRelationKind {
-        &self.kind
+    pub fn pattern(&self) -> Option<&SketchPatternDefinition> {
+        self.pattern.as_ref()
     }
 }
 
@@ -5867,7 +6009,7 @@ pub struct SketchRelation {
     /// Index of this relation record within the `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of the constraint mask relative to the record start.
@@ -6121,14 +6263,12 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
-        let definition = SketchRelationDefinition::new(
-            wire.state,
-            SketchRelationKind::from_pattern(wire.pattern),
-        )?;
+        let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: DesignClassTag::try_from(wire.class_tag)
+                .map_err(SketchRelationPayloadError)?,
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
@@ -6168,7 +6308,7 @@ impl From<SketchRelation> for SketchRelationSerde {
         Self {
             id: relation.id,
             record_index: relation.record_index,
-            class_tag: relation.class_tag,
+            class_tag: relation.class_tag.into(),
             byte_offset: relation.byte_offset,
             state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
@@ -6201,7 +6341,7 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .filter_map(|member| member.relation_ordinal)
                 .collect(),
             entity_genesis: relation.entity_genesis,
-            pattern: relation.definition.kind.into_pattern(),
+            pattern: relation.definition.pattern,
             return_members: relation
                 .return_members
                 .iter()
@@ -6385,7 +6525,7 @@ pub struct SketchText {
     /// Owning sketch record index.
     pub owner_reference: u32,
     /// Source per-file dynamic ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Record version of this record's class, from its Design `MetaStream` type
     /// table. It selects the member sequence the record was written under.
     pub class_version: u32,
@@ -6558,7 +6698,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             class_version: wire.class_version,
             byte_offset: wire.byte_offset,
             entity_genesis: wire.entity_genesis,
@@ -6598,7 +6738,7 @@ impl From<SketchText> for SketchTextSerde {
             id: text.id,
             record_index: text.record_index,
             owner_reference: text.owner_reference,
-            class_tag: text.class_tag,
+            class_tag: text.class_tag.into(),
             class_version: text.class_version,
             byte_offset: text.byte_offset,
             entity_genesis: text.entity_genesis,
@@ -6973,7 +7113,7 @@ pub struct SketchPoint {
     /// or sketch-container member run.
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
@@ -7212,7 +7352,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             byte_offset: wire.byte_offset,
             coordinate_offset: wire.coordinate_offset,
             record_form,
@@ -7275,7 +7415,7 @@ impl From<SketchPoint> for SketchPointSerde {
             id: point.id,
             record_index: point.record_index,
             owner_reference: point.owner_reference,
-            class_tag: point.class_tag,
+            class_tag: point.class_tag.into(),
             byte_offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
             entity_genesis,
@@ -7303,7 +7443,7 @@ pub struct SketchCurveIdentity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
@@ -7334,7 +7474,7 @@ pub struct SketchSurface {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.
@@ -7393,7 +7533,7 @@ pub enum SketchCurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier_reference: Option<u64>,
         /// Source per-file dynamic three-digit ASCII class tag naming the NURBS subtype.
-        subtype_class_tag: String,
+        subtype_class_tag: DesignClassTag,
         /// Record index of the NURBS subtype record.
         subtype_record_index: u32,
         /// Polynomial degree of the curve.
@@ -7508,7 +7648,8 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
                 control_points,
             } => Self::Nurbs {
                 carrier_reference,
-                subtype_class_tag,
+                subtype_class_tag: DesignClassTag::try_from(subtype_class_tag)
+                    .map_err(|error| format!("subtype_class_tag: {error}"))?,
                 subtype_record_index,
                 degree,
                 fit_tolerance,
@@ -7568,7 +7709,7 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                 };
                 Self::Nurbs {
                     carrier_reference,
-                    subtype_class_tag,
+                    subtype_class_tag: subtype_class_tag.into(),
                     subtype_record_index,
                     degree,
                     fit_tolerance,
@@ -7801,7 +7942,7 @@ impl ActClassTail {
 pub struct ActChannelGroup {
     pub record_index_offset: u64,
     pub entity_id_offset: Option<u64>,
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     pub channels: BTreeMap<String, Located<DesignGuidText>>,
     pub class_tail: Option<ActClassTail>,
 }
@@ -7969,7 +8110,9 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             (Some(class_tag), Some(record_index_offset)) => Some(ActChannelGroup {
                 record_index_offset,
                 entity_id_offset: wire.channel_entity_id_offset,
-                class_tag,
+                class_tag: class_tag
+                    .try_into()
+                    .map_err(|error| format!("channel_class_tag: {error}"))?,
                 channels: wire
                     .channels
                     .into_iter()
@@ -8315,7 +8458,7 @@ pub struct ActRootComponent {
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Record index of the instance registry root.
     pub instance_root_record: u32,
     /// Record index of the components registry root.
@@ -8408,7 +8551,10 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: wire
+                .class_tag
+                .try_into()
+                .map_err(|error| format!("class_tag: {error}"))?,
             instance_root_record: wire.instance_root_record,
             components_root_record: wire.components_root_record,
             registry_flag: wire.registry_flag,
@@ -8422,7 +8568,7 @@ impl From<ActRootComponent> for ActRootComponentWire {
         Self {
             id: root.id,
             record_index: root.record_index,
-            class_tag: root.class_tag,
+            class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,
             components_root_record: root.components_root_record,
             registry_flag: root.registry_flag,
@@ -8567,6 +8713,7 @@ pub struct XrefReference {
     pub relative_path: String,
     /// Occurrence-role GUID joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     pub neutron_role: String,
     /// The independent `neutronData` property value. It is retained exactly
     /// and is never inferred from or aliased to `neutron_role`.
@@ -8579,3 +8726,6 @@ pub struct XrefReference {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) mod dimension_locus_arenas;
+pub(crate) mod dimension_null_locus_wire;

@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
     let Some(
@@ -147,7 +148,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 100,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
@@ -173,14 +174,18 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 scope_reference_ordinal: 0,
                 record_index: 100,
                 byte_offset: 300,
-                class_tag: "308".into(),
-                asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
+                class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 330,
                 entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
                     .expect("valid entity identity"),
                 entity_reference_offset: 420,
                 region_selection: None,
-                paired_class_tag: "259".into(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
                 paired_byte_offset: 520,
             }),
             ..crate::records::feature::DesignExtrudeScope::default()
@@ -199,7 +204,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         )
         .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
     let placement = DesignSketchPlacement {
@@ -380,7 +385,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         scope_reference_ordinal: 0,
         record_index: 300,
         byte_offset: 700,
-        class_tag: "308".into(),
+        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
         member_count_offset: 720,
         members: vec![crate::records::Located {
             value: 301,
@@ -391,7 +396,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         opaque_scalar: 0.0,
         opaque_scalar_offset: 739,
         variant: false,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 760,
     };
     let mut feature = Feature {
@@ -651,7 +656,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         scope_reference_ordinal: 1,
         record_index: 101,
         byte_offset: 1000,
-        class_tag: "332".into(),
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 1026,
@@ -674,11 +679,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             opaque_scalar_offset: 1076,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
-        extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
         role_offset: 1054,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1125,
     };
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
@@ -715,8 +719,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         value: 201,
         offset: 1026,
     }];
-    target_shape_group.role = 0x0000_0005_0000_0000;
-    target_shape_group.extrude_role = None;
+    target_shape_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     let Some(DesignExtrudePrologue::ReferenceAware {
         first_side_target_ordinal,
         ..
@@ -745,10 +749,16 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         },
         record_index: 201,
         byte_offset: 0,
-        class_tag: "295".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 
@@ -896,7 +906,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     first_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
     first_profile_group.record_index = 102;
     first_profile_group.scope_reference_ordinal = 0;
-    first_profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
+    first_profile_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
     let mut second_profile_group = first_profile_group.clone();
     second_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
     second_profile_group.record_index = 103;
@@ -939,8 +950,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut profile_group = body_group.clone();
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
     profile_group.record_index = 104;
-    profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
-    profile_group.role = 0x0000_0041_0000_0000;
+    profile_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
     let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -1076,8 +1087,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     let mut face_group = body_group.clone();
     face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(None));
-    face_group.role = 0x0000_0011_0000_0000;
+    face_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);
@@ -1214,9 +1228,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_direction_reversed(&mut scope, true);
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
-        DesignExtrudeFaceRole::Termination,
-    )));
+    face_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
         &scope,
@@ -1245,8 +1261,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
 
     let mut omitted_zero_offset_scope = scope.clone();
-    omitted_zero_offset_scope.class_tag = "330".into();
-    omitted_zero_offset_scope.paired_class_tag = "258".into();
+    omitted_zero_offset_scope.class_tag =
+        crate::records::DesignClassTag::try_from("330".to_owned()).unwrap();
+    omitted_zero_offset_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     omitted_zero_offset_scope.frame_length = 476;
     let omitted_zero_offset = project_extrude(
         &omitted_zero_offset_scope,
@@ -1272,7 +1290,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if id == &face_group.id
     ));
-    omitted_zero_offset_scope.class_tag = "331".into();
+    omitted_zero_offset_scope.class_tag =
+        crate::records::DesignClassTag::try_from("331".to_owned()).unwrap();
     assert!(project_extrude(
         &omitted_zero_offset_scope,
         &[(0, &taper)],
@@ -1400,9 +1419,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
-    start_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
-        DesignExtrudeFaceRole::Start,
-    )));
+    start_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Start,
+        };
     let from_face = project_extrude(
         &scope,
         &[

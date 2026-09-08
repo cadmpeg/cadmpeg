@@ -15,7 +15,7 @@ use cadmpeg_ir::topology::Sense;
 use super::attributes::{
     edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts,
+    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts, SurfaceOwnerStarts,
 };
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{
@@ -549,8 +549,7 @@ fn encode_wire_body_smbh(
         attribute_start,
         AttributeOwnerStarts {
             body: body_start,
-            face: None,
-            coedge: None,
+            surface: None,
             edge: edge_start,
             vertex: vertex_start,
         },
@@ -1436,8 +1435,10 @@ fn encode_face_topology_smbh(
         attribute_start,
         AttributeOwnerStarts {
             body: body_start,
-            face: Some(face_start),
-            coedge: Some(coedge_start),
+            surface: Some(SurfaceOwnerStarts {
+                face: face_start,
+                coedge: coedge_start,
+            }),
             edge: edge_start,
             vertex: vertex_start,
         },

@@ -76,7 +76,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
             panic!("expected one component naming space");
         };
         assert_eq!(space.component_record_index, 17);
-        assert_eq!(space.context_uuid, CONTEXT_UUID);
+        assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
         assert_eq!(space.byte_offset, marker as u64);
         assert_eq!(
             space.context_uuid_offset,
@@ -95,7 +95,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         panic!("expected one typed component naming space");
     };
     assert_eq!(space.component_record_index, 17);
-    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
     assert_eq!(space.byte_offset, typed_marker as u64);
 
     let mut overlapping_reference = vec![1];
@@ -113,7 +113,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     let [space] = decoded.as_slice() else {
         panic!("expected one component naming space");
     };
-    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
 
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);

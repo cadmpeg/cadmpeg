@@ -8,9 +8,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
-};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
 use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
@@ -35,7 +33,12 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
         && design_type
             .base_type_guid
             .as_ref()
-            .map(|field| field.value.as_str())
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -61,7 +64,7 @@ fn insert_component_naming_space(
     bulk_name: &str,
     marker: usize,
     component_record_index: u64,
-    context_uuid: String,
+    context_uuid: crate::records::DesignRelaxedGuidText,
     context_uuid_offset: usize,
 ) -> Result<(), CodecError> {
     let binding = DesignComponentNamingSpace {
@@ -101,7 +104,12 @@ pub fn decode_component_naming_spaces(
                     && design_type
                         .base_type_guid
                         .as_ref()
-                        .map(|field| field.value.as_str())
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
@@ -137,9 +145,11 @@ pub fn decode_component_naming_spaces(
                 let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                     continue;
                 };
-                if !is_guid_relaxed(&context_uuid) {
+                let Ok(context_uuid) =
+                    crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+                else {
                     continue;
-                }
+                };
                 insert_component_naming_space(
                     &mut by_component,
                     &bulk_name,
@@ -167,11 +177,19 @@ pub fn decode_component_naming_spaces(
                         && design_type
                             .base_type_guid
                             .as_ref()
-                            .map(|field| field.value.as_str())
+                            .and_then(|field| {
+                                field
+                                    .value
+                                    .as_ref()
+                                    .map(crate::records::DesignRelaxedGuidText::as_str)
+                            })
                             .is_some_and(|base| {
                                 base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                             })
-                        && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
+                        && design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(inline_type_guid)
                         && design_type
                             .entities
                             .values()
@@ -183,9 +201,10 @@ pub fn decode_component_naming_spaces(
             let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                 continue;
             };
-            if !is_guid_relaxed(&context_uuid) {
+            let Ok(context_uuid) = crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+            else {
                 continue;
-            }
+            };
             insert_component_naming_space(
                 &mut by_component,
                 &bulk_name,
@@ -353,7 +372,11 @@ pub(crate) fn typed_primary_frames<'a>(
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
     let mut typed_entities = HashSet::new();
     for design_type in &meta.types {
-        if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
+        if !design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
+        {
             continue;
         }
         for &entity_id in design_type.entities.values() {
@@ -371,6 +394,7 @@ pub(crate) fn typed_primary_frames<'a>(
         if !primary_frame
             .design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(type_guid)
         {
             continue;
@@ -538,6 +562,7 @@ pub fn decode_feature_timelines(
             .filter(|(_, design_type)| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
             })
             .collect::<Vec<_>>();
@@ -581,7 +606,7 @@ pub fn decode_feature_timelines(
                 type_guids_by_entity
                     .entry(*entity_id)
                     .or_default()
-                    .push(&design_type.type_guid);
+                    .push(design_type.type_guid.as_str());
             }
         }
         let mut source_ordinal = 0_u32;

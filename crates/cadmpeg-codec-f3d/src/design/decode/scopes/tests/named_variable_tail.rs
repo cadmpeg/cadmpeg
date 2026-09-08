@@ -52,7 +52,7 @@ fn parameter_scope_parses_named_variable_tail() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "378".into(),
+        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
@@ -77,13 +77,13 @@ fn parameter_scope_parses_named_variable_tail() {
 
     let mut owner_scope = scope.clone();
     owner_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![327, 330, 55, 56, 57, 58]);
+        crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
     let owners = vec![
         DesignParameterOwner {
             id: "f3d:test:owner#327".into(),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "272".into(),
+            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 327,
             scope_record_index: 12,
             local_ordinal: 0,
@@ -98,7 +98,7 @@ fn parameter_scope_parses_named_variable_tail() {
             id: "f3d:test:owner#330".into(),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "272".into(),
+            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 330,
             scope_record_index: 12,
             local_ordinal: 1,

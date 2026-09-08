@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 use crate::records::feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation};
 use crate::records::topology::{
@@ -20,7 +21,7 @@ fn group(
     scope_reference_ordinal: u32,
     record_index: u32,
     member: u32,
-    role: u64,
+    role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
@@ -28,7 +29,7 @@ fn group(
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -48,10 +49,9 @@ fn group(
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
@@ -63,14 +63,14 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         crate::records::feature::DesignFeatureKind::ReplaceFace,
         1129,
     );
-    scope.class_tag = "301".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("301".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 290;
     scope.previous_history_state_id = Some(254);
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1130, 1133, 1137, 1140]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
 
-    let replacement_group = group(1129, 0, 1130, 1133, 0x0000_0009_0000_0000);
-    let target_group = group(1129, 2, 1137, 1140, 0x0000_0010_0000_0000);
+    let replacement_group = group(1129, 0, 1130, 1133, DesignOperandRole::ROLE_0X9);
+    let target_group = group(1129, 2, 1137, 1140, DesignOperandRole::ROLE_0X10);
     let replacement = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
         scope_record_index: 1129,
@@ -80,10 +80,16 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         },
         record_index: 1133,
         byte_offset: 0,
-        class_tag: "316".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 
@@ -116,9 +122,9 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         }),
         record_index: 1140,
         byte_offset: 0,
-        class_tag: "272".into(),
+        class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
         paired_byte_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 1143,
         recipe_record_byte_offset: 0,
         recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
@@ -182,9 +188,9 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         crate::records::feature::DesignFeatureKind::SurfaceTrim,
         1200,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1201, 1202, 1203, 1204]);
-    let target_group = group(1200, 0, 1201, 1202, 0x0000_0004_0000_0000);
-    let tool_group = group(1200, 2, 1203, 1204, 0x0000_0021_0000_0000);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
+    let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
+    let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
     let body = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
         scope_record_index: 1200,
@@ -194,10 +200,16 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         },
         record_index: 1202,
         byte_offset: 0,
-        class_tag: "316".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 
@@ -265,9 +277,10 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         chain_records: Vec::new(),
         cell_table_record_index: 3,
         cell_table_byte_offset: 0,
-        cell_table_class_tag: "325".into(),
+        cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
         cell_table_frame_length: 0,
-        cell_table_paired_class_tag: "257".into(),
+        cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
         cell_table_paired_byte_offset: 0,
         cell_count: 2,
         cell_count_offset: 0,

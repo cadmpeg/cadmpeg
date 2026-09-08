@@ -53,7 +53,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
             &DesignRecordHeader {
                 id: "generated:scope-header#class-296-to-face".into(),
                 record_index: RECORD_INDEX,
-                class_tag: class_tag.into(),
+                class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
                 byte_offset: 0,
             },
         )
@@ -158,7 +158,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-symmetric".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
@@ -283,7 +283,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-two-sided-to-faces".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
@@ -439,7 +439,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-legacy-one-sided".into(),
         record_index: RECORD_INDEX,
-        class_tag: "296".into(),
+        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let prologue = |bytes: &[u8]| {

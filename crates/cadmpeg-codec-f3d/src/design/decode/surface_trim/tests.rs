@@ -68,7 +68,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
         crate::records::feature::DesignFeatureKind::SurfaceTrim,
         800,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![801, 804, 808, 811]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![801, 804, 808, 811]);
     (bytes, scope)
 }
 
@@ -94,8 +94,8 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
         vec![(815, "288", 11), (816, "271", 11)]
     );
     assert_eq!(operation.cell_table_record_index, 817);
-    assert_eq!(operation.cell_table_class_tag, "325");
-    assert_eq!(operation.cell_table_paired_class_tag, "257");
+    assert_eq!(operation.cell_table_class_tag.as_str(), "325");
+    assert_eq!(operation.cell_table_paired_class_tag.as_str(), "257");
     assert_eq!(operation.cell_count, 2);
     assert_eq!(
         operation

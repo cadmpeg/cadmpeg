@@ -170,10 +170,16 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
         record_index: 120,
         byte_offset: 0,
-        class_tag: "300".into(),
-        asset_id: String::new(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: String::new(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         selector_tail: None,
 

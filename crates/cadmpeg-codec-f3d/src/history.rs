@@ -17,6 +17,7 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
@@ -1257,7 +1258,7 @@ pub(crate) fn bind_feature_body_selections(
         let mut matching_groups = groups.iter().filter(|group| {
             group.id == *group_id
                 && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0004_0000_0000
+                && group.role() == DesignOperandRole::BODIES_A
                 && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
         });
         let Some(group) = matching_groups.next() else {
@@ -1333,7 +1334,13 @@ fn combine_recipe_family_tool_slots(
     operands: &[crate::records::topology::DesignBodyRecipeOperand],
     recipes: &[crate::records::ConstructionRecipe],
 ) -> Option<Vec<i64>> {
-    type FamilyKey = (String, String, u64, u32, String);
+    type FamilyKey = (
+        crate::records::DesignRelaxedGuidText,
+        crate::records::DesignRelaxedGuidText,
+        u64,
+        u32,
+        String,
+    );
     type FamilyMember = (u32, Option<i64>, BTreeSet<i64>);
 
     if tool_record_indices.is_empty()
@@ -1493,7 +1500,7 @@ fn bind_pattern_body_selections(
             .iter()
             .filter(|group| {
                 group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0008_0000_0000
+                    && group.role() == DesignOperandRole::BODIES_B
                     && !group.members.is_empty()
                     && crate::ids::native_stream(&group.id) == stream
             })
@@ -1608,8 +1615,10 @@ fn bind_body_recipe_body_selection(
         group.id == *group_id
             && group.scope_record_index == scope.record_index
             && matches!(
-                group.role,
-                0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                group.role(),
+                DesignOperandRole::BODIES_A
+                    | DesignOperandRole::ROLE_0X5
+                    | DesignOperandRole::BODIES_B
             )
             && crate::ids::native_stream(&group.id) == stream
     });
@@ -1678,8 +1687,10 @@ fn bind_direct_body_recipe_body_selection(
                 group.id == *group_id
                     && group.scope_record_index == scope.record_index
                     && matches!(
-                        group.role,
-                        0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                        group.role(),
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::ROLE_0X5
+                            | DesignOperandRole::BODIES_B
                     )
                     && crate::ids::native_stream(&group.id) == stream
             });
@@ -2232,8 +2243,8 @@ fn bind_surface_stitch_face_selection(
         .filter(|group| {
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0005_0000_0000
-                && group.extrude_role.is_none()
+                && group.role() == DesignOperandRole::ROLE_0X5
+                && group.extrude_role().is_none()
                 && group.extrude_face_role().is_none()
         })
         .collect::<Vec<_>>();
@@ -3567,7 +3578,7 @@ fn exact_face_selection_group<'a>(
         crate::ids::native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
             && group.record_index == group_record_index
-            && group.role == 0x0000_0010_0000_0000
+            && group.role() == DesignOperandRole::ROLE_0X10
             && group
                 .members
                 .get(group_member_ordinal)
@@ -3795,7 +3806,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
                     && group.record_index == group_record_index
-                    && group.extrude_role.is_some_and(|role| {
+                    && group.extrude_role().is_some_and(|role| {
                         matches!(
                             role,
                             crate::records::topology::DesignExtrudeOperandRole::Faces(_)
@@ -6504,7 +6515,7 @@ fn bind_body_recipe_face_selection(
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *native
             && group.scope_record_index == scope.record_index
-            && group.role == 0x0000_0005_0000_0000
+            && group.role() == DesignOperandRole::ROLE_0X5
             && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
@@ -6820,7 +6831,7 @@ fn component_histories<'a>(
     }
     let mut matching_spaces = naming_spaces
         .iter()
-        .filter(|space| space.context_uuid.eq_ignore_ascii_case(context_id));
+        .filter(|space| space.context_uuid.as_str().eq_ignore_ascii_case(context_id));
     let Some(space) = matching_spaces.next() else {
         return Some(Vec::new());
     };
@@ -6867,7 +6878,12 @@ pub(crate) fn historical_extrude_selection_identity_kind(
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
 ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
-    match component_histories(&member.context_id, naming_spaces, body_bindings, histories) {
+    match component_histories(
+        member.context_id.as_str(),
+        naming_spaces,
+        body_bindings,
+        histories,
+    ) {
         Some(selected) => HistoricalIdentityIndex::build(selected, [member.local_id])
             .selection_identity_kind(member.local_id),
         None => historical_selection_identity_kind(histories, member.local_id),
@@ -7416,7 +7432,7 @@ pub(crate) fn bind_mirror_selection_planes(
             crate::ids::native_stream(&group.id) == stream.as_deref()
                 && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
-                && group.role == 0x0000_0005_0000_0000
+                && group.role() == DesignOperandRole::ROLE_0X5
                 && group
                     .members
                     .iter()
@@ -7976,9 +7992,9 @@ pub(crate) fn bind_edge_identity_history(
                 operand.group_record_index,
             ))
             .and_modify(|count| {
-                *count = count.and_then(|count| operand.compact_layout.then_some(count + 1));
+                *count = count.and_then(|count| operand.layout.is_compact().then_some(count + 1));
             })
-            .or_insert(operand.compact_layout.then_some(1));
+            .or_insert(operand.layout.is_compact().then_some(1));
     }
     let local_ids = operands
         .iter()

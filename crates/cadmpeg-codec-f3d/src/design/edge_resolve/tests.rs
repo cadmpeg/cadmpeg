@@ -27,10 +27,10 @@ fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityO
         "class_tag": "277",
         "compact_layout": true,
         "local_id": record_index,
-        "local_id_offset": 0,
-        "asset_id": "asset",
+        "local_id_offset": 23,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
         "asset_id_offset": 0,
-        "context_id": "context",
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
         "context_id_offset": 0,
         "transition_edge_candidates": candidates
             .iter()
@@ -168,7 +168,7 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    identity.compact_layout = false;
+    identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
 
     assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
 }
@@ -177,7 +177,7 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
 fn only_edge_treatments_use_single_member_transition_chains() {
     let group = group(2, 10);
     let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    generic_identity.compact_layout = false;
+    generic_identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     generic_identity.treatment_radius_candidates.clear();
     let generic_feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
@@ -197,7 +197,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
     let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    identity.compact_layout = false;
+    identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     identity.treatment_radius_candidates.clear();
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -231,9 +231,9 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
         },
     ];
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
-    first.compact_layout = false;
+    first.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
-    second.compact_layout = false;
+    second.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     second.group_member_ordinal = 1;
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
@@ -398,9 +398,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         recipe: DesignVertexRecipe {
             record_index,
             byte_offset: u64::from(record_index),
-            class_tag: "306".into(),
+            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
             paired_byte_offset: 1,
-            paired_class_tag: "261".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             recipe_record_index: record_index + 3,
             recipe_record_byte_offset: 2,
             recipe_id: format!("f3d:test:construction-recipe#{record_index}"),

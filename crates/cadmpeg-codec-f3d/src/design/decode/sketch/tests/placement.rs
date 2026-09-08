@@ -206,7 +206,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -319,12 +319,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
@@ -665,13 +665,13 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -801,23 +801,23 @@ fn sketch_member_run_backfills_relation_free_owners() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Located(
-            members
-                .into_iter()
-                .map(|value| crate::records::Located { value, offset: 0 })
-                .collect(),
-        ),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::located(
+                members
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
+        )
+        .expect("valid module registration"),
     };
     let point = |record_index: u32| SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
         record_form: crate::records::SketchPointRecordForm::version11(

@@ -353,6 +353,17 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                         .expect("legacy wire"),
                     wire
                 );
+                for guid in ["_".repeat(38), "invalid".into()] {
+                    let changed = wire.replace("11111111-2222-3333-4444-555555555555", &guid);
+                    let decoded = serde_json::from_str::<
+                        crate::records::feature::DesignBaseFeatureConstruction,
+                    >(&changed);
+                    if guid == "invalid" {
+                        assert!(decoded.is_err());
+                    } else {
+                        assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), changed);
+                    }
+                }
                 let value: serde_json::Value = serde_json::from_str(&wire).expect("legacy JSON");
                 if form == "compact_one_body" {
                     for mode in [1_u8, 2, u8::MAX] {
@@ -433,7 +444,7 @@ fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
                 let fields_wire =
                     ["[]", "[[1,2,3,4,5,6]]", "[[1,2,3,4,5,6],[6,5,4,3,2,1]]"][fields];
                 let wire = format!(
-                    r#"{{"body_entity_suffixes":{values_wire},"body_entity_suffix_offsets":{offsets_wire},"body_entity_fields":{fields_wire},"related_guids":["a","b","c"],"related_guid_offsets":[66,142,275],"linkage_record":301,"linkage_record_offset":234,"auxiliary_record":401,"auxiliary_record_offset":253}}"#
+                    r#"{{"body_entity_suffixes":{values_wire},"body_entity_suffix_offsets":{offsets_wire},"body_entity_fields":{fields_wire},"related_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","cccccccc-cccc-4ccc-8ccc-cccccccccccc"],"related_guid_offsets":[66,142,275],"linkage_record":301,"linkage_record_offset":234,"auxiliary_record":401,"auxiliary_record_offset":253}}"#
                 );
                 let parsed = serde_json::from_str::<
                     crate::records::feature::DesignBaseFeatureConstruction,
@@ -464,6 +475,17 @@ fn direct_base_feature_emits_its_single_body_reference_views() {
         serde_json::to_string(&parsed).expect("direct body wire"),
         wire
     );
+    for guid in ["_".repeat(38), "invalid".into()] {
+        let changed = wire.replace("fcec56e3-832f-4468-88a4-d710e62e629f", &guid);
+        let decoded = serde_json::from_str::<crate::records::feature::DesignBaseFeatureConstruction>(
+            &changed,
+        );
+        if guid == "invalid" {
+            assert!(decoded.is_err());
+        } else {
+            assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), changed);
+        }
+    }
     assert_eq!(parsed.body_entity_suffixes().collect::<Vec<_>>(), [201]);
     assert_eq!(parsed.body_reference_records().collect::<Vec<_>>(), [201]);
     for (field, old, new) in [
@@ -657,8 +679,8 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
         if count != 0 {
             let mut component = value.clone();
             component["component_occurrences"] = serde_json::json!({
-                "component_guid": "component", "seed_occurrence_guid": "seed",
-                "generated_occurrence_guids": (1..count).map(|index| format!("generated-{index}")).collect::<Vec<_>>()
+                "component_guid": "00000001-1111-4111-8111-111111111111", "seed_occurrence_guid": "00000003-1111-4111-8111-111111111111",
+                "generated_occurrence_guids": (1..count).map(|index| format!("{index:08}-2222-4222-8222-222222222222")).collect::<Vec<_>>()
             });
             let wire: crate::records::feature::DesignRectangularPatternInstancesWire =
                 serde_json::from_value(component.clone()).unwrap();
@@ -666,8 +688,11 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
             let native: crate::records::feature::DesignRectangularPatternInstances =
                 serde_json::from_str(&expected).unwrap();
             assert_eq!(serde_json::to_string(&native).unwrap(), expected);
-            component["component_occurrences"]["generated_occurrence_guids"] =
-                serde_json::json!(["extra", "extra", "extra"]);
+            component["component_occurrences"]["generated_occurrence_guids"] = serde_json::json!([
+                "99999999-9999-4999-8999-999999999999",
+                "99999999-9999-4999-8999-999999999999",
+                "99999999-9999-4999-8999-999999999999"
+            ]);
             assert!(serde_json::from_value::<
                 crate::records::feature::DesignRectangularPatternInstances,
             >(component)
@@ -695,7 +720,7 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
     }
     let empty_component = serde_json::json!({
         "record_indices": [], "transforms": [], "transform_offsets": [],
-        "component_occurrences": { "component_guid": "component", "seed_occurrence_guid": "seed", "generated_occurrence_guids": [] }
+        "component_occurrences": { "component_guid": "00000001-1111-4111-8111-111111111111", "seed_occurrence_guid": "00000003-1111-4111-8111-111111111111", "generated_occurrence_guids": [] }
     });
     assert!(
         serde_json::from_value::<crate::records::feature::DesignRectangularPatternInstances>(
@@ -1114,7 +1139,7 @@ fn mirror_plane_wire_rejects_partial_placement() {
 
 #[test]
 fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity() {
-    let persistent = r#"{"kind":"persistent","asset_id":"asset","context_id":"context","identity_record_index":3,"primary_identity":7"#;
+    let persistent = r#"{"kind":"persistent","asset_id":"00000001-1111-4111-8111-111111111111","context_id":"00000002-1111-4111-8111-111111111111","identity_record_index":3,"primary_identity":7"#;
     for fields in [
         "",
         ",\"secondary_identity\":11",
@@ -1133,7 +1158,7 @@ fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity()
     assert!(error.contains("secondary_identity"));
     assert!(error.contains("curve_secondary_identity"));
 
-    let face = r#"{"kind":"face_recipe","asset_id":"asset","context_id":"context","recipe_record_index":3,"recipe_record_byte_offset":40,"recipe_id":"recipe","recipe_kind":"#;
+    let face = r#"{"kind":"face_recipe","asset_id":"00000001-1111-4111-8111-111111111111","context_id":"00000002-1111-4111-8111-111111111111","recipe_record_index":3,"recipe_record_byte_offset":40,"recipe_id":"recipe","recipe_kind":"#;
     for kind in ["face", "bounded_face"] {
         for fields in [
             "",
@@ -1204,7 +1229,7 @@ fn legacy_extrude_constants_and_geometry_preserve_wire() {
 
 #[test]
 fn coil_placement_derives_only_the_encoded_identity_matrix() {
-    let prefix = r#"{"selection_record_index":1,"selection_record_byte_offset":0,"selection_class_tag":"353","selection":{"kind":"persistent","asset_id":"a","context_id":"c","identity_record_index":2,"primary_identity":3},"transform_record_index":4,"transform_record_byte_offset":5,"transform_class_tag":"450","transform":"#;
+    let prefix = r#"{"selection_record_index":1,"selection_record_byte_offset":0,"selection_class_tag":"353","selection":{"kind":"persistent","asset_id":"00000001-1111-4111-8111-111111111111","context_id":"00000002-1111-4111-8111-111111111111","identity_record_index":2,"primary_identity":3},"transform_record_index":4,"transform_record_byte_offset":5,"transform_class_tag":"450","transform":"#;
     let identity = "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
     let translated = "[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
     for (matrix, offset) in [
@@ -1350,12 +1375,12 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
     }
     let mut external_target = base;
     external_target["target"]["external_identity"] = serde_json::json!({
-        "selector_asset_id": "asset", "selector_asset_id_offset": 0,
-        "selector_context_id": "context", "selector_context_id_offset": 0,
+        "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 0,
+        "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 0,
         "occurrence_reference": 1, "occurrence_reference_offset": 0,
         "external_body_reference": 2, "external_body_reference_offset": 0,
         "external_segment": 1, "external_segment_offset": 0,
-        "external_asset_id": "asset", "external_asset_id_offset": 0,
+        "external_asset_id": "00000006-1111-4111-8111-111111111111", "external_asset_id_offset": 0,
         "external_link_name": "link", "external_link_name_offset": 0
     });
     let error =
@@ -1455,8 +1480,14 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         let plane: DesignWorkPlaneConstruction =
             serde_json::from_value(plane_wire.clone()).expect("three-point plane");
         assert_eq!(
-            serde_json::to_value(plane).expect("serialize plane"),
+            serde_json::to_value(&plane).expect("serialize plane"),
             plane_wire
+        );
+        let mut wrong_kind = plane_wire.clone();
+        wrong_kind["kind"] = "two_point".into();
+        assert!(
+            serde_json::from_value::<DesignWorkPlaneConstruction>(wrong_kind).is_err(),
+            "unknown work-plane construction kind"
         );
     }
     for (state, slot) in [(Some(4), None), (None, Some(0)), (Some(4), Some(-1))] {

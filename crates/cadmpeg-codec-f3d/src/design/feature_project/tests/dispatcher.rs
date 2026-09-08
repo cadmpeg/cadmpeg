@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
@@ -156,9 +157,9 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     let recipe = |record_index, vertex| DesignVertexRecipe {
         record_index,
         byte_offset: u64::from(record_index),
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         paired_byte_offset: 1,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 2,
         recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
@@ -224,10 +225,16 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         reference_offset: u64::from(record_index),
         carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
             selection: DesignWorkPointPlaneSelection {
-                class_tag: "267".into(),
-                asset_id: "00000000-0000-0000-0000-000000000001".into(),
+                class_tag: crate::records::DesignClassTag::try_from("267".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000001".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 1,
-                context_id: "00000000-0000-0000-0000-000000000002".into(),
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000002".to_owned(),
+                )
+                .unwrap(),
                 context_id_offset: 2,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 3,
@@ -307,9 +314,9 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let recipe = DesignVertexRecipe {
         record_index: 12,
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         paired_byte_offset: 1,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: 23,
         recipe_record_byte_offset: 2,
         recipe_id: recipe_id.clone(),
@@ -449,14 +456,14 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                  scope_reference_ordinal: u32,
                  record_index: u32,
                  members: &[u32],
-                 role: u64| {
+                 role: DesignOperandRole| {
         DesignConstructionOperandGroup {
             id: format!("{stream}:construction-group#{record_index}"),
             scope_record_index,
             scope_reference_ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: "264".into(),
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             members: members
                 .iter()
                 .copied()
@@ -477,10 +484,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 opaque_scalar_offset: 0,
                 variant: false,
             },
-            role,
-            extrude_role: None,
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
-            paired_class_tag: "264".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             paired_byte_offset: 0,
         }
     };
@@ -511,14 +517,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             scope_reference_ordinal: 1,
             record_index: 101,
             byte_offset: 0,
-            class_tag: "377".into(),
-            asset_id: "asset".into(),
+            class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 0,
             entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 0,
             region_selection: None,
-            paired_class_tag: "264".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             paired_byte_offset: 0,
         });
         if let crate::records::feature::DesignScopePayload::BaseFlange(slot) =
@@ -534,7 +543,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::DesignFeatureKind::RemoveBody,
         20,
     );
-    remove_body.reference_members = crate::records::ReferenceRun::Unlocated(vec![200]);
+    remove_body.reference_members = crate::records::ReferenceRun::unlocated(vec![200]);
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
@@ -542,7 +551,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         30,
     );
     surface_stitch.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![300, 301, 302, 303]);
+        crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
     if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
         &mut surface_stitch.payload
     {
@@ -564,9 +573,18 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             relation_record_index: 401,
             source_occurrence_record_index: 402,
             copied_occurrence_record_index: 403,
-            component_guid: "component".into(),
-            source_occurrence_guid: "source-occurrence".into(),
-            copied_occurrence_guid: "copied-occurrence".into(),
+            component_guid: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            source_occurrence_guid: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            copied_occurrence_guid: "33333333-3333-4333-8333-333333333333"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             source_transform: identity_matrix(),
             source_transform_offset: 0,
             copied_transform: identity_matrix(),
@@ -598,10 +616,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 },
             }],
             body_group_record_index: 501,
-            body_group_class_tag: "264".into(),
+            body_group_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
             body_group_byte_offset: 0,
             relation_record_index: 503,
-            relation_class_tag: "264".into(),
+            relation_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             relation_byte_offset: 0,
         });
     }
@@ -662,7 +681,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             face_group_record_indices: vec![701],
         });
     }
-    thread.reference_members = crate::records::ReferenceRun::Unlocated(vec![701, 702]);
+    thread.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
 
     let scopes = vec![
         base_flange,
@@ -674,10 +693,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread,
     ];
     let groups = vec![
-        group(10, 0, 100, &[101], 0x0000_0041_0000_0000),
-        group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
-        group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
-        group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
+        group(10, 0, 100, &[101], DesignOperandRole::PROFILE),
+        group(20, 0, 200, &[201], DesignOperandRole::BODIES_A),
+        group(30, 0, 300, &[301], DesignOperandRole::ROLE_0X5),
+        group(70, 0, 701, &[702], DesignOperandRole::ROLE_0X10),
     ];
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
@@ -744,7 +763,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("CopyPaste"),
         FeatureDefinition::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id("copied-occurrence"),
+            occurrence: crate::ids::neutral_component_occurrence_id(
+                "33333333-3333-4333-8333-333333333333"
+            ),
         }
     );
     assert_eq!(
@@ -850,7 +871,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         crate::records::feature::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![205]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,
@@ -930,7 +951,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         crate::records::feature::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![205]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,

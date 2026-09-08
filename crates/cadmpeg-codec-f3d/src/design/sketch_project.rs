@@ -73,8 +73,10 @@ fn text_frame_curve_records(
     relations
         .iter()
         .filter_map(|relation| {
-            let pattern = relation.definition.kind();
-            let crate::records::SketchRelationKind::TextFrame { text_reference } = pattern else {
+            let pattern = relation.definition.pattern();
+            let Some(crate::records::SketchPatternDefinition::TextFrame { text_reference }) =
+                pattern
+            else {
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();

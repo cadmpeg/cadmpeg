@@ -89,7 +89,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: scope_record_index,
-        class_tag: "382".into(),
+        class_tag: crate::records::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
@@ -147,8 +147,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_bytes[36..44].copy_from_slice(&200u64.to_le_bytes());
     compact_bytes[44..46].fill(0);
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = "387".into();
-    compact_scope.paired_class_tag = "258".into();
+    compact_scope.class_tag = crate::records::DesignClassTag::try_from("387".to_owned()).unwrap();
+    compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     compact_scope.frame_length = 328;
     let compact = exact_combine_operation(
         &compact_bytes,
@@ -283,10 +284,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         scope_record_index,
     );
     scope.byte_offset = 0;
-    scope.class_tag = "329".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = 363;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![91, 92, 93, 94]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
     let records = IndexedRecordOffsets::build(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");

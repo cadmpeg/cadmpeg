@@ -452,7 +452,7 @@ fn merge_entities(
             let attached = ActChannelGroup {
                 record_index_offset: group.record_index_offset as u64,
                 entity_id_offset: group.entity_id.as_ref().map(|id| id.offset as u64),
-                class_tag: group.class_tag,
+                class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
                 channels: group.channels,
                 class_tail: group.class_tail,
             };
@@ -472,7 +472,7 @@ fn merge_entities(
                     membership: ActEntityMembership::GroupOnly(ActChannelGroup {
                         record_index_offset: group.record_index_offset as u64,
                         entity_id_offset: Some(entity_id.offset as u64),
-                        class_tag: group.class_tag,
+                        class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
                         channels: group.channels,
                         class_tail: group.class_tail,
                     }),
@@ -626,7 +626,7 @@ fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Opt
     Some(ComponentLink::Root(ActRootComponent {
         id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
         record_index: frame.record_index,
-        class_tag: frame.class_tag.clone(),
+        class_tag: frame.class_tag.clone().try_into().ok()?,
         instance_root_record,
         components_root_record,
         registry_flag,

@@ -4,9 +4,9 @@
 use super::topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand};
 use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
-    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignEntityId,
-    DesignRecipeReference, DesignSecondaryIdentity, Located, RecordedValue, ReferenceRun,
-    IDENTITY_MATRIX,
+    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
+    DesignEntityId, DesignRecipeReference, DesignRelaxedGuidText, DesignSecondaryIdentity, Located,
+    RecordedValue, ReferenceRun, IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
@@ -760,9 +760,9 @@ pub enum DesignCoilSelection {
     /// Nested entity-selection frame with one or two persistent identities.
     Persistent {
         /// Asset UUID qualifying the persistent selection namespace.
-        asset_id: String,
+        asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the persistent selection namespace.
-        context_id: String,
+        context_id: DesignRelaxedGuidText,
         /// Indexed nested record carrying the persistent identity pair.
         identity_record_index: u32,
         /// First persistent identity value.
@@ -774,9 +774,9 @@ pub enum DesignCoilSelection {
     /// Face construction recipe carried by a placement selection frame.
     FaceRecipe {
         /// Asset UUID qualifying the recipe selection namespace.
-        asset_id: String,
+        asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the recipe selection namespace.
-        context_id: String,
+        context_id: DesignRelaxedGuidText,
         /// Indexed record containing the face recipe.
         recipe_record_index: u32,
         /// Byte offset of the face recipe record header.
@@ -801,7 +801,7 @@ pub struct DesignCoilPlacement {
     /// Byte offset of the support selection frame header.
     pub selection_record_byte_offset: u64,
     /// Dynamic class tag of the support selection frame.
-    pub selection_class_tag: String,
+    pub selection_class_tag: DesignClassTag,
     /// Exact selection semantics carried by the first placement reference.
     pub selection: DesignCoilSelection,
     /// Second ordered placement-construction reference: the frame carrier.
@@ -809,7 +809,7 @@ pub struct DesignCoilPlacement {
     /// Byte offset of the frame carrier header.
     pub transform_record_byte_offset: u64,
     /// Dynamic class tag of the frame carrier.
-    pub transform_class_tag: String,
+    pub transform_class_tag: DesignClassTag,
     /// Explicit matrix and its byte offset; absent for the encoded identity form.
     pub explicit_transform: Option<Located<[[f64; 4]; 4]>>,
 }
@@ -874,11 +874,11 @@ impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
         Ok(Self {
             selection_record_index: wire.selection_record_index,
             selection_record_byte_offset: wire.selection_record_byte_offset,
-            selection_class_tag: wire.selection_class_tag,
+            selection_class_tag: wire.selection_class_tag.try_into()?,
             selection: wire.selection,
             transform_record_index: wire.transform_record_index,
             transform_record_byte_offset: wire.transform_record_byte_offset,
-            transform_class_tag: wire.transform_class_tag,
+            transform_class_tag: wire.transform_class_tag.try_into()?,
             explicit_transform,
         })
     }
@@ -890,11 +890,11 @@ impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
         Self {
             selection_record_index: record.selection_record_index,
             selection_record_byte_offset: record.selection_record_byte_offset,
-            selection_class_tag: record.selection_class_tag,
+            selection_class_tag: record.selection_class_tag.into(),
             selection: record.selection,
             transform_record_index: record.transform_record_index,
             transform_record_byte_offset: record.transform_record_byte_offset,
-            transform_class_tag: record.transform_class_tag,
+            transform_class_tag: record.transform_class_tag.into(),
             transform,
             transform_offset: record.explicit_transform.map(|matrix| matrix.offset),
         }
@@ -1691,7 +1691,7 @@ pub struct DesignRectangularPatternConstruction {
 pub enum DesignRectangularPatternInstances {
     Bodies(Vec<DesignPatternInstance>),
     Components {
-        component_guid: String,
+        component_guid: DesignRelaxedGuidText,
         seed: DesignPatternComponentInstance,
         generated: Vec<DesignPatternComponentInstance>,
     },
@@ -1706,7 +1706,7 @@ pub struct DesignPatternInstance {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignPatternComponentInstance {
     pub instance: DesignPatternInstance,
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
 }
 
 impl DesignRectangularPatternInstances {
@@ -1755,11 +1755,11 @@ struct DesignRectangularPatternInstancesWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
-    component_guid: String,
+    component_guid: DesignRelaxedGuidText,
     /// Existing seed occurrence.
-    seed_occurrence_guid: String,
+    seed_occurrence_guid: DesignRelaxedGuidText,
     /// Newly generated occurrences in pattern order after the seed.
-    generated_occurrence_guids: Vec<String>,
+    generated_occurrence_guids: Vec<DesignRelaxedGuidText>,
 }
 
 impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {
@@ -1881,7 +1881,7 @@ pub struct DesignAssemblySolvedFrame {
     /// Byte offset of the frame-carrier indexed header.
     pub record_byte_offset: u64,
     /// Dynamic class of the frame-carrier indexed record.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Row-major solved connector frame.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.
@@ -1891,7 +1891,7 @@ pub struct DesignAssemblySolvedFrame {
 /// A construction and its face selection in a legacy assembly operand.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignAssemblyLegacyOperand<C> {
-    pub construction_class_tag: String,
+    pub construction_class_tag: DesignClassTag,
     pub construction: C,
     pub selection: DesignAssemblyLegacySelection,
     pub reference_offset: u64,
@@ -1974,13 +1974,19 @@ impl DesignAssemblyLegacyOperands {
         }
         let carriers = Self {
             point: DesignAssemblyLegacyOperand {
-                construction_class_tag: point.construction_class_tag,
+                construction_class_tag: point
+                    .construction_class_tag
+                    .try_into()
+                    .map_err(|error| format!("construction_class_tag: {error}"))?,
                 construction: point_construction,
                 selection: point.selection,
                 reference_offset: point.frame.reference_offset,
             },
             hole: DesignAssemblyLegacyOperand {
-                construction_class_tag: hole.construction_class_tag,
+                construction_class_tag: hole
+                    .construction_class_tag
+                    .try_into()
+                    .map_err(|error| format!("construction_class_tag: {error}"))?,
                 construction: hole_construction,
                 selection: hole.selection,
                 reference_offset: hole.frame.reference_offset,
@@ -2000,7 +2006,7 @@ impl DesignAssemblyLegacyOperands {
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.point.construction.point_record_index,
                 construction_byte_offset: self.point.construction.point_record_byte_offset,
-                construction_class_tag: self.point.construction_class_tag,
+                construction_class_tag: self.point.construction_class_tag.into(),
                 construction: DesignAssemblyLegacyConstruction::Point(self.point.construction),
                 selection: self.point.selection,
                 frame: point_frame,
@@ -2008,7 +2014,7 @@ impl DesignAssemblyLegacyOperands {
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.hole.construction.point_record_index,
                 construction_byte_offset: self.hole.construction.point_record_byte_offset,
-                construction_class_tag: self.hole.construction_class_tag,
+                construction_class_tag: self.hole.construction_class_tag.into(),
                 construction: DesignAssemblyLegacyConstruction::Hole(self.hole.construction),
                 selection: self.hole.selection,
                 frame: hole_frame,
@@ -2057,13 +2063,13 @@ pub struct DesignAssemblyLegacySelection {
     /// Byte offset of the selection record header.
     pub byte_offset: u64,
     /// Dynamic class of the selection record.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE payload.
     pub asset_id_offset: u64,
     /// Context UUID qualifying the selection.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE payload.
     pub context_id_offset: u64,
     /// Indexed record containing the face recipe.
@@ -2417,7 +2423,7 @@ pub enum DesignAssemblyAxialOperandTarget {
         /// Construction carrier referenced by the operand frame.
         construction_record_index: u32,
         /// Dynamic class of the construction carrier's primary record.
-        construction_class_tag: String,
+        construction_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's primary indexed header.
         construction_byte_offset: u64,
         /// Byte offset of the construction carrier's transform.
@@ -2425,7 +2431,7 @@ pub enum DesignAssemblyAxialOperandTarget {
         /// Byte offsets of the two axis-record indices in the construction carrier.
         axis_record_index_offsets: [u64; 2],
         /// Dynamic class of the construction carrier's paired record.
-        construction_paired_class_tag: String,
+        construction_paired_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's paired indexed header.
         construction_paired_byte_offset: u64,
         /// Two axis selectors that identify the same connector object.
@@ -2449,21 +2455,21 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
     pub axis_record_index: u32,
     /// Dynamic class of the axis record's primary indexed header.
-    pub axis_class_tag: String,
+    pub axis_class_tag: DesignClassTag,
     /// Byte offset of the axis record's primary indexed header.
     pub axis_byte_offset: u64,
     /// Dynamic class of the axis record's paired indexed header.
-    pub axis_paired_class_tag: String,
+    pub axis_paired_class_tag: DesignClassTag,
     /// Byte offset of the axis record's paired indexed header.
     pub axis_paired_byte_offset: u64,
     /// Selector record three indices after the axis record.
     pub selector_record_index: u32,
     /// Dynamic class of the selector record's primary indexed header.
-    pub selector_class_tag: String,
+    pub selector_class_tag: DesignClassTag,
     /// Byte offset of the selector record's primary indexed header.
     pub selector_byte_offset: u64,
     /// Dynamic class of the selector record's paired indexed header.
-    pub selector_paired_class_tag: String,
+    pub selector_paired_class_tag: DesignClassTag,
     /// Byte offset of the selector record's paired indexed header.
     pub selector_paired_byte_offset: u64,
     /// Nested record named by the selector prefix.
@@ -2471,11 +2477,11 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Byte offset of `nested_record_index`.
     pub nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
-    pub selector_asset_id: String,
+    pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
-    pub selector_context_id: String,
+    pub selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     pub selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
@@ -2491,7 +2497,7 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Byte offset of `external_segment`.
     pub external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
-    pub external_asset_id: String,
+    pub external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     pub external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
@@ -2503,11 +2509,11 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Embedded record that carries the selected occurrence role.
     pub role_record_index: u32,
     /// Dynamic class of the occurrence-role record.
-    pub role_class_tag: String,
+    pub role_class_tag: DesignClassTag,
     /// Byte offset of the occurrence-role record's indexed header.
     pub role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
-    pub occurrence_role: String,
+    pub occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
     pub occurrence_role_offset: u64,
 }
@@ -2540,11 +2546,11 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of `nested_record_index`.
     nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
-    selector_asset_id: String,
+    selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
-    selector_context_id: String,
+    selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
@@ -2560,7 +2566,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of `external_segment`.
     external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
-    external_asset_id: String,
+    external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
@@ -2569,7 +2575,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<String>,
+    external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_property_key_offset: Option<u64>,
@@ -2586,7 +2592,7 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of the occurrence-role record's indexed header.
     role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
-    occurrence_role: String,
+    occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
     occurrence_role_offset: u64,
 }
@@ -2596,14 +2602,14 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
     fn try_from(wire: DesignAssemblyAxialSelectorIdentityWire) -> Result<Self, Self::Error> {
         Ok(Self {
             axis_record_index: wire.axis_record_index,
-            axis_class_tag: wire.axis_class_tag,
+            axis_class_tag: wire.axis_class_tag.try_into().map_err(|error| format!("axis_class_tag: {error}"))?,
             axis_byte_offset: wire.axis_byte_offset,
-            axis_paired_class_tag: wire.axis_paired_class_tag,
+            axis_paired_class_tag: wire.axis_paired_class_tag.try_into().map_err(|error| format!("axis_paired_class_tag: {error}"))?,
             axis_paired_byte_offset: wire.axis_paired_byte_offset,
             selector_record_index: wire.selector_record_index,
-            selector_class_tag: wire.selector_class_tag,
+            selector_class_tag: wire.selector_class_tag.try_into().map_err(|error| format!("selector_class_tag: {error}"))?,
             selector_byte_offset: wire.selector_byte_offset,
-            selector_paired_class_tag: wire.selector_paired_class_tag,
+            selector_paired_class_tag: wire.selector_paired_class_tag.try_into().map_err(|error| format!("selector_paired_class_tag: {error}"))?,
             selector_paired_byte_offset: wire.selector_paired_byte_offset,
             nested_record_index: wire.nested_record_index,
             nested_record_index_offset: wire.nested_record_index_offset,
@@ -2627,7 +2633,7 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
                 _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
             },
             role_record_index: wire.role_record_index,
-            role_class_tag: wire.role_class_tag,
+            role_class_tag: wire.role_class_tag.try_into().map_err(|error| format!("role_class_tag: {error}"))?,
             role_byte_offset: wire.role_byte_offset,
             occurrence_role: wire.occurrence_role,
             occurrence_role_offset: wire.occurrence_role_offset,
@@ -2639,14 +2645,14 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
     fn from(record: DesignAssemblyAxialSelectorIdentity) -> Self {
         Self {
             axis_record_index: record.axis_record_index,
-            axis_class_tag: record.axis_class_tag,
+            axis_class_tag: record.axis_class_tag.into(),
             axis_byte_offset: record.axis_byte_offset,
-            axis_paired_class_tag: record.axis_paired_class_tag,
+            axis_paired_class_tag: record.axis_paired_class_tag.into(),
             axis_paired_byte_offset: record.axis_paired_byte_offset,
             selector_record_index: record.selector_record_index,
-            selector_class_tag: record.selector_class_tag,
+            selector_class_tag: record.selector_class_tag.into(),
             selector_byte_offset: record.selector_byte_offset,
-            selector_paired_class_tag: record.selector_paired_class_tag,
+            selector_paired_class_tag: record.selector_paired_class_tag.into(),
             selector_paired_byte_offset: record.selector_paired_byte_offset,
             nested_record_index: record.nested_record_index,
             nested_record_index_offset: record.nested_record_index_offset,
@@ -2681,7 +2687,7 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
                 .as_ref()
                 .map(|version| version.version_urn.offset),
             role_record_index: record.role_record_index,
-            role_class_tag: record.role_class_tag,
+            role_class_tag: record.role_class_tag.into(),
             role_byte_offset: record.role_byte_offset,
             occurrence_role: record.occurrence_role,
             occurrence_role_offset: record.occurrence_role_offset,
@@ -2693,15 +2699,18 @@ impl DesignAssemblyAxialSelectorIdentity {
     /// Report whether two axis selectors carry the same persistent connector identity.
     pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
         self.selector_asset_id
-            .eq_ignore_ascii_case(&other.selector_asset_id)
+            .as_str()
+            .eq_ignore_ascii_case(other.selector_asset_id.as_str())
             && self
                 .selector_context_id
-                .eq_ignore_ascii_case(&other.selector_context_id)
+                .as_str()
+                .eq_ignore_ascii_case(other.selector_context_id.as_str())
             && self.external_object_reference == other.external_object_reference
             && self.external_segment == other.external_segment
             && self
                 .external_asset_id
-                .eq_ignore_ascii_case(&other.external_asset_id)
+                .as_str()
+                .eq_ignore_ascii_case(other.external_asset_id.as_str())
             && self.external_link_name == other.external_link_name
             && match (&self.external_version, &other.external_version) {
                 (None, None) => true,
@@ -2709,7 +2718,8 @@ impl DesignAssemblyAxialSelectorIdentity {
                     first
                         .property_key
                         .value
-                        .eq_ignore_ascii_case(&second.property_key.value)
+                        .as_str()
+                        .eq_ignore_ascii_case(second.property_key.value.as_str())
                         && first.version_urn.value == second.version_urn.value
                 }
                 _ => false,
@@ -2726,7 +2736,7 @@ pub struct DesignAssemblyOperandPathLink {
     /// Locator-record index named by the assembly scope.
     pub locator_record_index: u32,
     /// Dynamic indexed-record class carrying the locator.
-    pub locator_class_tag: String,
+    pub locator_class_tag: DesignClassTag,
     /// Byte offset of the locator's indexed header.
     pub locator_byte_offset: u64,
     /// Byte offset of the assembly-scope backlink in the locator.
@@ -2736,7 +2746,7 @@ pub struct DesignAssemblyOperandPathLink {
     /// Byte offset of the wrapper-record index in the locator.
     pub wrapper_reference_offset: u64,
     /// Dynamic indexed-record class carrying the wrapper.
-    pub wrapper_class_tag: String,
+    pub wrapper_class_tag: DesignClassTag,
     /// Byte offset of the wrapper's indexed header.
     pub wrapper_byte_offset: u64,
     /// Byte offset of the path-record index in the wrapper.
@@ -2754,12 +2764,12 @@ pub struct DesignAssemblyOperandPathLink {
 pub struct DesignAssemblyOperandPath {
     pub link: DesignAssemblyOperandPathLink,
     pub record_index: u32,
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     pub byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
-    pub occurrence_guids: Vec<Located<String>>,
+    pub occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
-    pub identity_guids: Vec<Located<String>>,
+    pub identity_guids: Vec<Located<DesignRelaxedGuidText>>,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -2775,12 +2785,12 @@ struct DesignAssemblyOperandPathWire {
     /// Byte offset of the indexed header.
     byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
-    occurrence_guids: Vec<String>,
+    occurrence_guids: Vec<DesignRelaxedGuidText>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
     occurrence_guid_offsets: Vec<u64>,
     /// Four ordered identity GUIDs following a class-390 occurrence path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    identity_guids: Vec<String>,
+    identity_guids: Vec<DesignRelaxedGuidText>,
     /// Byte offsets parallel to `identity_guids`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_guid_offsets: Vec<u64>,
@@ -2801,7 +2811,7 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         Ok(Self {
             link: wire.link,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             byte_offset: wire.byte_offset,
             occurrence_guids: wire
                 .occurrence_guids
@@ -2834,7 +2844,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
         Self {
             link: path.link,
             record_index: path.record_index,
-            class_tag: path.class_tag,
+            class_tag: path.class_tag.into(),
             byte_offset: path.byte_offset,
             occurrence_guids,
             occurrence_guid_offsets,
@@ -2864,11 +2874,11 @@ pub enum DesignAssemblyOperandQualifier {
         /// Referenced `JointOrigin` feature scope.
         scope_record_index: u32,
         /// Dynamic class of the scope's primary indexed header.
-        class_tag: String,
+        class_tag: DesignClassTag,
         /// Byte offset of the primary indexed header.
         byte_offset: u64,
         /// Dynamic class of the paired indexed header.
-        paired_class_tag: String,
+        paired_class_tag: DesignClassTag,
         /// Byte offset of the paired indexed header.
         paired_byte_offset: u64,
     },
@@ -2914,6 +2924,7 @@ pub struct DesignComponentInsertConstruction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     pub neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     pub neutron_role_offset: u64,
@@ -2962,6 +2973,7 @@ struct DesignComponentInsertConstructionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
+    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
@@ -3044,9 +3056,9 @@ pub struct DesignDerivedInstanceConstruction {
     /// Class-380 component-occurrence carrier named by the relation.
     pub carrier_record_index: u32,
     /// Component definition GUID carried by the joined occurrence.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Placed occurrence GUID carried by the joined occurrence.
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
     /// Row-major local-to-model placement in centimetres.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first scope-local transform scalar.
@@ -3064,7 +3076,7 @@ pub struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub id: String,
     /// Indexed-record class carrying this occurrence.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Indexed carrier record.
     pub record_index: u32,
     /// Byte offset of the indexed header.
@@ -3072,11 +3084,11 @@ pub struct DesignComponentOccurrence {
     /// Referenced component-definition record.
     pub component_record_index: u64,
     /// Stable component-definition GUID.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Byte offset of the component GUID payload.
     pub component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
-    pub occurrence_guid: String,
+    pub occurrence_guid: DesignRelaxedGuidText,
     /// Byte offset of the occurrence GUID payload.
     pub occurrence_guid_offset: u64,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
@@ -3127,11 +3139,11 @@ struct DesignComponentOccurrenceWire {
     /// Referenced component-definition record.
     component_record_index: u64,
     /// Stable component-definition GUID.
-    component_guid: String,
+    component_guid: DesignRelaxedGuidText,
     /// Byte offset of the component GUID payload.
     component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
-    occurrence_guid: String,
+    occurrence_guid: DesignRelaxedGuidText,
     /// Byte offset of the occurrence GUID payload.
     occurrence_guid_offset: u64,
     /// One-based occurrence ordinal within the component definition.
@@ -3150,7 +3162,7 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
         let transform = value.transform();
         Self {
             id: value.id,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
@@ -3179,7 +3191,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
         };
         Ok(Self {
             id: value.id,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.try_into()?,
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
@@ -3203,11 +3215,11 @@ pub struct DesignCopyPasteComponentOperation {
     /// Newly copied occurrence carrier.
     pub copied_occurrence_record_index: u32,
     /// Reusable component definition shared by source and copy.
-    pub component_guid: String,
+    pub component_guid: DesignRelaxedGuidText,
     /// Existing source occurrence identity.
-    pub source_occurrence_guid: String,
+    pub source_occurrence_guid: DesignRelaxedGuidText,
     /// Newly copied occurrence identity.
-    pub copied_occurrence_guid: String,
+    pub copied_occurrence_guid: DesignRelaxedGuidText,
     /// Source placement embedded by the scope.
     pub source_transform: [[f64; 4]; 4],
     /// Byte offset of the source placement.
@@ -3692,7 +3704,7 @@ pub enum DesignCombineForm {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExternalVersion {
-    pub property_key: Located<String>,
+    pub property_key: Located<DesignRelaxedGuidText>,
     pub version_urn: Located<String>,
 }
 
@@ -3705,11 +3717,11 @@ pub struct DesignExternalVersion {
 )]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
-    pub selector_asset_id: String,
+    pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
     /// Context GUID of the enclosing body selector.
-    pub selector_context_id: String,
+    pub selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     pub selector_context_id_offset: u64,
     /// Same-segment occurrence reference preceding the external body reference.
@@ -3725,7 +3737,7 @@ pub struct DesignCombineExternalBodyIdentity {
     /// Byte offset of `external_segment`.
     pub external_segment_offset: u64,
     /// Asset GUID carried by the cross-document body reference.
-    pub external_asset_id: String,
+    pub external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     pub external_asset_id_offset: u64,
     /// Link name carried by the cross-document body reference.
@@ -3746,11 +3758,11 @@ pub struct DesignCombineExternalBodyIdentity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCombineExternalBodyIdentityWire {
     /// Asset GUID of the enclosing body selector.
-    selector_asset_id: String,
+    selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     selector_asset_id_offset: u64,
     /// Context GUID of the enclosing body selector.
-    selector_context_id: String,
+    selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
     selector_context_id_offset: u64,
     /// Same-segment occurrence reference preceding the external body reference.
@@ -3766,7 +3778,7 @@ struct DesignCombineExternalBodyIdentityWire {
     /// Byte offset of `external_segment`.
     external_segment_offset: u64,
     /// Asset GUID carried by the cross-document body reference.
-    external_asset_id: String,
+    external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
     external_asset_id_offset: u64,
     /// Link name carried by the cross-document body reference.
@@ -3775,7 +3787,7 @@ struct DesignCombineExternalBodyIdentityWire {
     external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<String>,
+    external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_property_key_offset: Option<u64>,
@@ -4312,11 +4324,11 @@ pub struct DesignVertexRecipe {
     /// Byte offset of the owning indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
     /// Source per-file dynamic paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Indexed record containing the vertex recipe.
     pub recipe_record_index: u32,
     /// Byte offset of the vertex-recipe record header.
@@ -4389,9 +4401,9 @@ impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
         Self {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             recipe_record_index: value.recipe_record_index,
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
@@ -4427,9 +4439,9 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
         Ok(Self {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.try_into()?,
             paired_byte_offset: value.paired_byte_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.try_into()?,
             recipe_record_index: value.recipe_record_index,
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
@@ -4477,6 +4489,12 @@ pub struct DesignWorkPlaneConstruction {
     pub inputs: Box<[DesignVertexRecipe; 3]>,
 }
 
+/// Wire form of [`DesignWorkPlaneConstruction`].
+///
+/// The single variant is deliberate. It stamps `"kind": "three_point"` into
+/// the native JSON, keeping room for the other `WorkPlane` constructions
+/// Fusion authors, and — unlike an internally tagged struct, which ignores
+/// the tag field — it rejects any other `kind` on deserialization.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -4514,13 +4532,13 @@ impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointPlaneSelection {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -4544,13 +4562,13 @@ pub struct DesignWorkPointPlaneSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointSketchPointSelection {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -4972,13 +4990,13 @@ pub struct DesignHoleFaceSelection {
     /// Byte offset of the selection envelope header.
     pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -5010,11 +5028,11 @@ struct DesignHoleFaceSelectionWire {
     /// Source per-file dynamic primary class tag.
     class_tag: String,
     /// Asset UUID qualifying the selection namespace.
-    asset_id: String,
+    asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     asset_id_offset: u64,
     /// UUID of the selection context.
-    context_id: String,
+    context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -5052,7 +5070,7 @@ impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
         Ok(Self {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             asset_id: wire.asset_id,
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id,
@@ -5085,7 +5103,7 @@ impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
         Self {
             record_index: record.record_index,
             byte_offset: record.byte_offset,
-            class_tag: record.class_tag,
+            class_tag: record.class_tag.into(),
             asset_id: record.asset_id,
             asset_id_offset: record.asset_id_offset,
             context_id: record.context_id,
@@ -5313,7 +5331,7 @@ pub struct DesignParameterScope {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
@@ -5343,7 +5361,7 @@ pub struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
 }
@@ -6116,7 +6134,7 @@ pub struct DesignSurfaceTrimChainRecord {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Source per-file dynamic class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Bytes from the primary header to the following indexed header.
     pub frame_length: u64,
 }
@@ -6158,11 +6176,11 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the cell-table primary header.
     pub cell_table_byte_offset: u64,
     /// Dynamic class tag of the cell-table primary frame.
-    pub cell_table_class_tag: String,
+    pub cell_table_class_tag: DesignClassTag,
     /// Bytes from the cell-table primary header to its paired header.
     pub cell_table_frame_length: u64,
     /// Dynamic class tag of the cell-table paired frame.
-    pub cell_table_paired_class_tag: String,
+    pub cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
     pub cell_table_paired_byte_offset: u64,
     /// Count of entries in the cell table.
@@ -6228,7 +6246,7 @@ pub struct DesignRuledSurfaceOperation {
     /// Ordered auxiliary selection records between the edge-group runs.
     pub auxiliary_record_indices: Vec<u32>,
     /// Serialized direction entity identity; the all-zero UUID means absent.
-    pub direction_entity_id: Option<String>,
+    pub direction_entity_id: Option<DesignRelaxedGuidText>,
 }
 
 /// Boundary condition a `SurfacePatch` component imposes against its adjacent
@@ -7076,7 +7094,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire
+                .class_tag
+                .try_into()
+                .map_err(DesignParameterScopePayloadError)?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             kind_offset: wire.kind_offset,
@@ -7096,7 +7117,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire
+                .paired_class_tag
+                .try_into()
+                .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -7110,7 +7134,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let mut wire = DesignParameterScopeSerde {
             id: scope.id,
             byte_offset: scope.byte_offset,
-            class_tag: scope.class_tag,
+            class_tag: scope.class_tag.into(),
             record_index: scope.record_index,
             frame_length: scope.frame_length,
             kind,
@@ -7160,7 +7184,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             hole_construction: None,
             sketch_entity: None,
-            paired_class_tag: scope.paired_class_tag,
+            paired_class_tag: scope.paired_class_tag.into(),
             paired_byte_offset: scope.paired_byte_offset,
         };
         match scope.payload {
@@ -7842,7 +7866,7 @@ impl DesignParameterScope {
         Self {
             id: id.to_string(),
             byte_offset: 0,
-            class_tag: String::new(),
+            class_tag: DesignClassTag::try_from("256".to_owned()).unwrap(),
             record_index,
             frame_length: 0,
             kind_offset: 0,
@@ -7852,10 +7876,10 @@ impl DesignParameterScope {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 0,
-            reference_members: ReferenceRun::Unlocated(Vec::new()),
+            reference_members: ReferenceRun::unlocated(Vec::new()),
             payload: kind.into(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: String::new(),
+            paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 0,
         }
     }
@@ -8311,13 +8335,13 @@ pub struct DesignCopyPasteBodiesOperation {
     /// Counted body-selection group named by the scope prefix and reference table.
     pub body_group_record_index: u32,
     /// Dynamic class tag of the body group's primary header.
-    pub body_group_class_tag: String,
+    pub body_group_class_tag: DesignClassTag,
     /// Byte offset of the body group's primary header.
     pub body_group_byte_offset: u64,
     /// Indexed source-to-copy relation record named by the scope prefix.
     pub relation_record_index: u32,
     /// Dynamic class tag of the relation record's primary header.
-    pub relation_class_tag: String,
+    pub relation_class_tag: DesignClassTag,
     /// Byte offset of the relation record's primary header.
     pub relation_byte_offset: u64,
 }
@@ -8422,10 +8446,10 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
         Ok(Self {
             bodies,
             body_group_record_index: wire.body_group_record_index,
-            body_group_class_tag: wire.body_group_class_tag,
+            body_group_class_tag: wire.body_group_class_tag.try_into()?,
             body_group_byte_offset: wire.body_group_byte_offset,
             relation_record_index: wire.relation_record_index,
-            relation_class_tag: wire.relation_class_tag,
+            relation_class_tag: wire.relation_class_tag.try_into()?,
             relation_byte_offset: wire.relation_byte_offset,
         })
     }
@@ -8434,10 +8458,10 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
     fn from(value: DesignCopyPasteBodiesOperation) -> Self {
         Self {
             body_group_record_index: value.body_group_record_index,
-            body_group_class_tag: value.body_group_class_tag,
+            body_group_class_tag: value.body_group_class_tag.into(),
             body_group_byte_offset: value.body_group_byte_offset,
             relation_record_index: value.relation_record_index,
-            relation_class_tag: value.relation_class_tag,
+            relation_class_tag: value.relation_class_tag.into(),
             relation_byte_offset: value.relation_byte_offset,
             body_operand_record_indices: value
                 .bodies
@@ -8560,7 +8584,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Byte offset of `tag_body_based_on_faces`.
@@ -8575,7 +8599,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `scope_reference`.
         scope_reference_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Byte offset of `tag_body_based_on_faces`.
@@ -8586,7 +8610,7 @@ pub enum DesignBaseFeatureConstruction {
         /// Ordered snapshot bodies with their source fields.
         bodies: Vec<DesignBaseFeatureEntry<u64>>,
         /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
-        related_guids: [String; 3],
+        related_guids: [DesignRelaxedGuidText; 3],
         /// Byte offsets of the first code unit of each related GUID.
         related_guid_offsets: [u64; 3],
         /// Indexed record carried by the snapshot linkage tail.
@@ -8710,7 +8734,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Stored body-source property value.
@@ -8751,7 +8775,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Byte offset of `scope_reference`.
         scope_reference_offset: u64,
         /// LP-UTF-16 GUID carried by the envelope.
-        envelope_guid: String,
+        envelope_guid: DesignRelaxedGuidText,
         /// Byte offset of the first code unit of `envelope_guid`.
         envelope_guid_offset: u64,
         /// Stored body-source property value.
@@ -8768,7 +8792,7 @@ enum DesignBaseFeatureConstructionWire {
         /// Six-byte source fields parallel to `body_entity_suffixes`.
         body_entity_fields: Vec<[u8; 6]>,
         /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
-        related_guids: [String; 3],
+        related_guids: [DesignRelaxedGuidText; 3],
         /// Byte offsets of the first code unit of each related GUID.
         related_guid_offsets: [u64; 3],
         /// Indexed record carried by the snapshot linkage tail.

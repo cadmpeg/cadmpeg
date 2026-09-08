@@ -374,7 +374,7 @@ fn reads_class_328_form_envelope() {
         scope_record,
     );
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![group_record, metadata_record]);
+        crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
@@ -542,7 +542,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     let parameter = crate::records::DesignParameter {
         id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
         byte_offset: 0,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 7,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None)

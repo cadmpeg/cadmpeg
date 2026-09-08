@@ -776,7 +776,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .push(crate::records::DesignParameter {
             id: native_id.clone(),
             byte_offset: 0,
-            class_tag: "305".into(),
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
             record_index: 700,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::User {
@@ -803,7 +803,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .push(crate::records::DesignParameter {
             id: format!("f3d:{stream}:design-parameter#1"),
             byte_offset: 0,
-            class_tag: "305".into(),
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
             record_index: 701,
             source_ordinal: 1,
             source: crate::records::DesignParameterSource::User {

@@ -33,14 +33,9 @@ fn raw_body_map_pair(
     entity_suffix: u64,
 ) -> crate::design::decode::body::BodyBinding {
     crate::design::decode::body::BodyBinding {
-        blob_name: "BREP.synthetic.smbh".into(),
-        blob_name_offset: asm_key_offset + 32,
-        pair_count: 2,
-        pair_ordinal: 0,
         asm_key: 7,
         asm_key_offset,
         entity_suffix,
-        entity_suffix_offset: asm_key_offset + 8,
     }
 }
 
@@ -1093,15 +1088,19 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(sketch_header.class_tag.as_str(), "257");
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
-        sketch_header.module.as_deref(),
+        sketch_header.module(),
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
-    assert_eq!(sketch_header.record_reference, Some(584));
+    assert_eq!(
+        sketch_header
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(584)
+    );
     assert_eq!(sketch_header.declared_reference_count(), Some(2));
     assert_eq!(
         sketch_header
-            .references
-            .values()
+            .reference_values()
             .copied()
             .collect::<Vec<_>>(),
         [33, 44]
@@ -1113,7 +1112,7 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
-    assert_eq!(record_33.class_tag, "259");
+    assert_eq!(record_33.class_tag.as_str(), "259");
     assert_eq!(f3d_native(result.ir()).sketch_relations.len(), 2);
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].member_indices(),

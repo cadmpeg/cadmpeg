@@ -6,6 +6,7 @@ use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::feature::{DesignExtrudeExtent, DesignExtrudePrologue, DesignParameterScope};
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
     DesignExtrudeFaceRole, DesignFaceOperand,
@@ -26,8 +27,8 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count: usize,
 ) -> bool {
     side_one_offset_count == 0
-        && scope.class_tag == "330"
-        && scope.paired_class_tag == "258"
+        && scope.class_tag.as_str() == "330"
+        && scope.paired_class_tag.as_str() == "258"
         && scope.frame_length == 476
         && matches!(
             prologue,
@@ -195,8 +196,7 @@ pub(crate) fn resolved_body_recipe_selection(
     operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if group.scope_record_index != scope.record_index
-        || group.extrude_role.is_some()
-        || group.extrude_face_role().is_some()
+        || group.extrude_role().is_some()
         || group.members.is_empty()
     {
         return None;
@@ -252,7 +252,7 @@ pub(crate) fn resolved_body_recipe_shape(
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if crate::design::design_feature_family(&scope.kind())
         != Some(crate::design::DesignFeatureFamily::Extrude)
-        || group.role != 0x0000_0005_0000_0000
+        || group.role() != DesignOperandRole::ROLE_0X5
     {
         return None;
     }
@@ -300,7 +300,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-                && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+                && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
         })
         .collect::<Vec<_>>();
     profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
@@ -389,7 +389,7 @@ pub(crate) fn extrude_profile_group_operand_indices(
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == root.scope_record_index
-                && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+                && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
         })
         .collect::<Vec<_>>();
     let groups_by_record = profile_groups
@@ -486,7 +486,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
                         && group.scope_record_index == root.scope_record_index
                         && group.record_index == *record_index
                         && group.scope_reference_ordinal > root.scope_reference_ordinal
-                        && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+                        && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
                 });
                 let Some(child) = children.next() else {
                     return false;
@@ -611,7 +611,10 @@ pub(crate) fn resolved_loft_edge_profile_group(
     operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::Loft
-        || !matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000)
+        || !matches!(
+            group.role(),
+            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
+        )
         || group.members.is_empty()
         || !group.lost_edge_references.is_empty()
     {
@@ -897,7 +900,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
-        || group.role != 0x0000_0010_0000_0000
+        || group.role() != DesignOperandRole::ROLE_0X10
     {
         return None;
     }
@@ -922,7 +925,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     updated_face_slots: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
-        || group.role != 0x0000_0010_0000_0000
+        || group.role() != DesignOperandRole::ROLE_0X10
     {
         return None;
     }
@@ -942,7 +945,7 @@ fn split_face_updated_target_slots(
     updated_face_slots: &[i64],
 ) -> Option<Vec<i64>> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
-        || group.role != 0x0000_0010_0000_0000
+        || group.role() != DesignOperandRole::ROLE_0X10
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members.len()
     {
@@ -2295,7 +2298,8 @@ mod tests {
                 native: group.id.clone(),
             })
         );
-        group.extrude_role = Some(crate::records::topology::DesignExtrudeOperandRole::Profile);
+        group.operand_role =
+            crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
         let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,
@@ -3186,7 +3190,7 @@ mod tests {
                 "opaque_scalar_offset": 0,
                 "variant": false
             },
-            "role": 0,
+            "role": DesignOperandRole::FACES.raw(),
             "extrude_role": "faces",
             "extrude_face_role": "termination",
             "role_offset": 0,

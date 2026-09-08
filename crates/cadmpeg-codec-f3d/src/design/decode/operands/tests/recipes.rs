@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -23,7 +24,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "269".into(),
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 926,
@@ -46,17 +47,18 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 953,
 
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -301,7 +303,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         scope_reference_ordinal: 1,
         record_index: 90,
         byte_offset: 0,
-        class_tag: "287".into(),
+        class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 21,
@@ -321,16 +323,17 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "367".into(),
+        class_tag: crate::records::DesignClassTag::try_from("367".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -395,7 +398,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#1".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 200,
         kind_offset: 1100,
@@ -414,13 +417,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::Fillet.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -531,7 +534,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         record_index: 200,
     };
     let vertex_recipe = ConstructionRecipe {
@@ -715,7 +718,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "288".into(),
+        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 926,
@@ -739,11 +742,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 972,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        ),
         role_offset: 960,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1_000,
     };
     let recovered = crate::design::edge_resolve::resolved_edge_group(
@@ -803,13 +807,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         group_member_ordinal: ordinal,
         record_index,
         byte_offset: u64::from(record_index),
-        class_tag: "297".into(),
-        compact_layout: false,
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+        layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
         local_id: u64::from(record_index),
-        local_id_offset: 0,
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         historical: None,
         treatment_radius_candidates: Vec::new(),
@@ -1323,7 +1332,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_id: "recipe".into(),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: "423".into(),
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 4,
         prefix_offset: 0,
@@ -1624,7 +1633,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: operand.record_index,
             offset: 924,
@@ -1647,13 +1656,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 958,
             variant: false,
         },
-        role: 0x0000_0011_0000_0000,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces(Some(
-            DesignExtrudeFaceRole::Termination,
-        ))),
+        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            usage: DesignExtrudeFaceRole::Termination,
+        },
         role_offset: 946,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 980,
     };
     assert!(matches!(
@@ -1782,7 +1791,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
-    split_group.role = 0x0000_0010_0000_0000;
+    split_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     split_group.members = vec![operand.record_index, operand.record_index + 1]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

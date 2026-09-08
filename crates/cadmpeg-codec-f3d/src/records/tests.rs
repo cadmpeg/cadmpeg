@@ -29,7 +29,7 @@ fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
 
 #[test]
 fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
-    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
+    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
     let suffix = r#","next_record_index":6,"next_byte_offset":225}"#;
     for prefix in ["{", "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,"] {
         for identities in ["", ",\"secondary_identity\":249,\"secondary_identity_offset\":217", ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201"] {
@@ -60,6 +60,22 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         };
         assert!(error.contains("secondary_identity"));
         assert!(error.contains("curve_secondary_identity"));
+        for guid in [
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+        ] {
+            let wire = format!("{prefix}{fields}{suffix}").replace(guid, "not-a-guid");
+            let error = if prefix == "{" {
+                serde_json::from_str::<crate::records::feature::DesignHoleFaceSelection>(&wire)
+                    .expect_err("non-GUID hole selection identity")
+                    .to_string()
+            } else {
+                serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire)
+                    .expect_err("non-GUID entity selection identity")
+                    .to_string()
+            };
+            assert!(error.contains("GUID"), "{error}");
+        }
     }
 }
 
@@ -150,6 +166,10 @@ fn segment_base_guid_preserves_source_and_authored_wire() {
             wire.push_str(suffix);
             let parsed: crate::records::SegmentType =
                 serde_json::from_str(&wire).expect("base GUID");
+            assert_eq!(
+                parsed.base_type_guid.as_ref().unwrap().value.is_none(),
+                value == "\"\""
+            );
             assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
         }
     }
@@ -324,16 +344,9 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
 
 #[test]
 fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
-    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false"#;
+    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
     for (fields, references, offsets, members) in [
         ("", "[]", "[]", ""),
-        ("", "[34]", "[]", ""),
-        (
-            r#","record_reference":33,"declared_reference_count":1"#,
-            "[34]",
-            "[]",
-            "",
-        ),
         (
             r#","record_reference_offset":40,"declared_reference_count":0"#,
             "[]",
@@ -367,20 +380,6 @@ fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
             .is_err()
         );
     }
-}
-
-#[test]
-fn empty_reference_runs_compare_equal_across_wire_round_trip() {
-    let wire = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
-    let mut header: crate::records::DesignEntityHeader =
-        serde_json::from_str(wire).expect("empty header");
-    header.references = crate::records::ReferenceRun::Located(Vec::new());
-    header.members = crate::records::ReferenceRun::Located(Vec::new());
-    let serialized = serde_json::to_string(&header).expect("empty located runs");
-    assert_eq!(serialized, wire);
-    let decoded: crate::records::DesignEntityHeader =
-        serde_json::from_str(&serialized).expect("empty run wire");
-    assert_eq!(decoded, header);
 }
 
 #[test]
@@ -462,7 +461,7 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
     }
     let empty = crate::records::SketchCurveGeometry::Nurbs {
         carrier_reference: None,
-        subtype_class_tag: "302".into(),
+        subtype_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         subtype_record_index: 7,
         degree: 1,
         fit_tolerance: 0.125,
@@ -669,20 +668,31 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
     }
     let wire = serde_json::json!({
         "scope_reference_ordinal": 0, "record_index": 1, "byte_offset": 10,
-        "class_tag": "300", "asset_id": "asset", "asset_id_offset": 20,
+        "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "asset_id_offset": 20,
         "entity_id": "Sketch_00017", "entity_suffix": 17, "entity_reference_offset": 30,
         "paired_class_tag": "301", "paired_byte_offset": 40
     });
     let profile: crate::records::topology::DesignSketchProfileOperand =
         serde_json::from_value(wire.clone()).expect("valid profile ID");
     assert_eq!(serde_json::to_value(profile).unwrap(), wire);
-    let mut mismatch = wire;
+    let mut mismatch = wire.clone();
     mismatch["entity_suffix"] = 18.into();
     assert!(
         serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(mismatch)
             .expect_err("mismatched profile suffix")
             .to_string()
             .contains("entity_suffix")
+    );
+    let mut invalid_asset = wire;
+    invalid_asset["asset_id"] = "asset".into();
+    assert!(
+        serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(
+            invalid_asset
+        )
+        .expect_err("non-GUID profile asset identity")
+        .to_string()
+        .contains("GUID")
     );
 }
 
@@ -1060,20 +1070,20 @@ fn timeline_frame_rejects_invalid_source_spans() {
 
 #[test]
 fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() {
-    use crate::records::{SketchRelationDefinition as Definition, SketchRelationKind as Kind};
+    use crate::records::{SketchPatternDefinition as Kind, SketchRelationDefinition as Definition};
     let patterns = [
         (
             0x1000_0000,
-            Kind::Circular {
+            Some(Kind::Circular {
                 angle_parameter: 2,
                 count_parameter: 3,
                 evaluated_angle: 1.5,
                 evaluated_count: 2,
-            },
+            }),
         ),
         (
             0x2000_0000,
-            Kind::Rectangular {
+            Some(Kind::Rectangular {
                 directions: std::array::from_fn(|_| crate::records::SketchPatternDirection {
                     count_parameter: 2,
                     distance_parameter: 3,
@@ -1081,24 +1091,24 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
                     direction: [1.0, 0.0, 0.0],
                     evaluated_distance: 1.5,
                 }),
-            },
+            }),
         ),
-        (0x100_0000_0000, Kind::TextFrame { text_reference: 2 }),
+        (0x100_0000_0000, Some(Kind::TextFrame { text_reference: 2 })),
         (
             0x200_0000_0000,
-            Kind::TextPath {
+            Some(Kind::TextPath {
                 text_reference: 2,
                 glyph_transforms: Vec::new(),
-            },
+            }),
         ),
     ];
     for (mask, kind) in &patterns {
         for unknown in [0, 0x4000, 1 << 63] {
             let definition = Definition::new(mask | unknown, kind.clone()).unwrap();
             assert_eq!(definition.state(), mask | unknown);
-            assert_eq!(definition.kind(), kind);
+            assert_eq!(definition.pattern(), kind.as_ref());
         }
-        assert!(Definition::new(*mask, Kind::Unpatterned).is_err());
+        assert!(Definition::new(*mask, None).is_err());
         assert!(Definition::new(0, kind.clone()).is_err());
         assert!(Definition::new(mask | 1, kind.clone()).is_err());
         for (other_mask, _) in &patterns {
@@ -1108,10 +1118,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
         }
     }
     for state in [0, 1, 0x11, 0x4000, 0x8000_0000, 0x20_0000_0000, 0x1000_0001] {
-        assert_eq!(
-            Definition::new(state, Kind::Unpatterned).unwrap().state(),
-            state
-        );
+        assert_eq!(Definition::new(state, None).unwrap().state(), state);
     }
     let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
     let relation: crate::records::SketchRelation = serde_json::from_str(wire).unwrap();
@@ -1597,3 +1604,114 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
 }
 
 mod sketch_relation_wire;
+
+#[test]
+fn empty_reference_runs_have_one_representation() {
+    use crate::records::{Located, ReferenceRun};
+
+    let empty = ReferenceRun::<u32>::unlocated(Vec::new());
+    assert_eq!(empty, ReferenceRun::located(Vec::new()));
+    assert_eq!(empty.located_rows(), Some([].as_slice()));
+    assert_eq!(
+        ReferenceRun::<u32>::from_columns(Vec::new(), Vec::new(), "field").expect("empty columns"),
+        ReferenceRun::located(Vec::new())
+    );
+
+    let unlocated = ReferenceRun::unlocated(vec![7u32]);
+    assert!(unlocated.located_rows().is_none());
+    assert_ne!(
+        unlocated,
+        ReferenceRun::located(vec![Located {
+            value: 7u32,
+            offset: 0
+        }])
+    );
+
+    let header = crate::records::DesignEntityHeader {
+        id: "header".into(),
+        byte_offset: 10,
+        entity_id: crate::records::DesignEntityId::from_parts("Sketch", 7),
+        class_tag: "256".to_owned().try_into().unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: None,
+                record_reference_offset: 20,
+                references: Vec::new(),
+            }),
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    };
+    let wire = r#"{"id":"header","byte_offset":10,"entity_suffix":7,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    assert_eq!(serde_json::to_string(&header).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_str::<crate::records::DesignEntityHeader>(wire).unwrap(),
+        header
+    );
+}
+
+#[test]
+fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_index() {
+    let shared = r#""id":"pair","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80"#;
+    let loci = r#""first_geometry_reference_offset":50,"first_role":0,"first_role_offset":60,"second_geometry_record_index":41,"second_geometry_reference_offset":65,"second_role":1,"second_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}"#;
+    for (opaque, first, valid) in [
+        (r#","opaque_index":4,"opaque_index_offset":45"#, 40, true),
+        ("", 0, true),
+        (r#","opaque_index":4,"opaque_index_offset":45"#, 0, false),
+        ("", 40, false),
+        (r#","opaque_index":4"#, 40, false),
+    ] {
+        let wire = format!(r#"{{{shared}{opaque},"first_geometry_record_index":{first},{loci}"#);
+        let parsed = serde_json::from_str::<crate::records::DesignDimensionLocusPair>(&wire);
+        if valid {
+            assert_eq!(
+                serde_json::to_string(&parsed.expect("dimension locus pair")).expect("pair wire"),
+                wire
+            );
+        } else {
+            assert!(parsed.is_err(), "{wire}");
+        }
+    }
+}
+
+#[test]
+fn null_locus_arena_preserves_base_wire_fields_and_order() {
+    let entry = r#"{"id":"pair","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":50,"null_role":0,"null_role_offset":60,"geometry_record_index":41,"geometry_reference_offset":65,"geometry_role":1,"geometry_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}"#;
+    let wire = format!(r#"{{"design_dimension_null_locus_pairs":[{entry}]}}"#);
+    let native: crate::native::F3dNative = serde_json::from_str(&wire).unwrap();
+    let encoded = serde_json::to_string(&native).unwrap();
+    assert!(encoded.contains(&format!(r#""design_dimension_null_locus_pairs":[{entry}]"#)));
+    let decoded: crate::native::F3dNative = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, native);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).unwrap();
+    let arena: Vec<crate::records::dimension_null_locus_wire::Wire> = namespace
+        .arena_as("design_dimension_null_locus_pairs")
+        .unwrap();
+    assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
+    assert_eq!(crate::native::F3dNative::load(&namespace).unwrap(), native);
+}
+
+#[test]
+fn segment_type_guid_preserves_relaxed_text_and_rejects_invalid_text() {
+    for guid in ["g".repeat(36), "_".repeat(38), "bad".into()] {
+        let wire = format!(
+            r#"{{"id":"type","byte_offset":0,"type_guid":"{guid}","type_guid_offset":4,"version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}}"#
+        );
+        let decoded = serde_json::from_str::<crate::records::SegmentType>(&wire);
+        if guid == "bad" {
+            assert!(decoded.is_err());
+        } else {
+            assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), wire);
+        }
+    }
+}
+
+#[test]
+fn segment_base_guid_rejects_invalid_text() {
+    let wire = r#"{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"base_type_guid":"invalid","version":1,"version_offset":80,"module":"Fusion","entity_ids":[],"entity_id_offsets":[]}"#;
+    let error = serde_json::from_str::<crate::records::SegmentType>(wire).unwrap_err();
+    assert!(error.to_string().contains("base_type_guid"));
+}

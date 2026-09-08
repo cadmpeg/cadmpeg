@@ -51,7 +51,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "378".into(),
+        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
 

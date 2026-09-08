@@ -271,7 +271,10 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         occurrences
-            .entry((stream, occurrence.occurrence_guid.to_ascii_lowercase()))
+            .entry((
+                stream,
+                occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
+            ))
             .and_modify(|candidate| *candidate = None)
             .or_insert(Some(occurrence));
     }
@@ -375,20 +378,20 @@ fn project_qualified_operands(
         DesignAssemblyOperandQualifier::OccurrencePath { path } => {
             let root_guid = &path.occurrence_guids.first()?.value;
             let occurrence = occurrences
-                .get(&(stream, root_guid.to_ascii_lowercase()))
+                .get(&(stream, root_guid.as_str().to_ascii_lowercase()))
                 .copied()
                 .flatten();
             if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
                 return None;
             }
-            let object = root_guid.to_ascii_lowercase();
+            let object = root_guid.as_str().to_ascii_lowercase();
             let subelements = path.occurrence_guids[1..]
                 .iter()
-                .map(|guid| guid.value.to_ascii_lowercase())
+                .map(|guid| guid.value.as_str().to_ascii_lowercase())
                 .collect();
             Some(match occurrence {
                 Some(_) => JointOperand::occurrence(
-                    crate::ids::neutral_component_occurrence_id(root_guid),
+                    crate::ids::neutral_component_occurrence_id(root_guid.as_str()),
                     object,
                     subelements,
                 ),
@@ -510,20 +513,28 @@ mod tests {
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
         DesignAssemblyAxialSelectorIdentity {
             axis_record_index: 10,
-            axis_class_tag: "316".into(),
+            axis_class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
             axis_byte_offset: 100,
-            axis_paired_class_tag: "261".into(),
+            axis_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             axis_paired_byte_offset: 120,
             selector_record_index: 13,
-            selector_class_tag: "277".into(),
+            selector_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
             selector_byte_offset: 200,
-            selector_paired_class_tag: "261".into(),
+            selector_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             selector_paired_byte_offset: 560,
             nested_record_index: 16,
             nested_record_index_offset: 223,
-            selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef".into(),
+            selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_asset_id_offset: 241,
-            selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa".into(),
+            selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_context_id_offset: 317,
             occurrence_reference: 1_001,
             occurrence_reference_offset: 402,
@@ -531,15 +542,21 @@ mod tests {
             external_object_reference_offset: 417,
             external_segment: 7,
             external_segment_offset: 426,
-            external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef".into(),
+            external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             external_asset_id_offset: 434,
             external_link_name: "component-link".into(),
             external_link_name_offset: 511,
             external_version: None,
             role_record_index: 18,
-            role_class_tag: "298".into(),
+            role_class_tag: crate::records::DesignClassTag::try_from("298".to_owned()).unwrap(),
             role_byte_offset: 600,
-            occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into(),
+            occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             occurrence_role_offset: 629,
         }
     }
@@ -898,11 +915,15 @@ mod tests {
             DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                 component_insert_scope_record_index: 200,
                 construction_record_index: 70,
-                construction_class_tag: "305".into(),
+                construction_class_tag: crate::records::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
                 construction_byte_offset: 1_300,
                 construction_transform_offset: 1_348,
                 axis_record_index_offsets: [1_493, 1_509],
-                construction_paired_class_tag: "261".into(),
+                construction_paired_class_tag: crate::records::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 construction_paired_byte_offset: 1_680,
                 selectors: Box::new([selector(), second_selector()]),
             },
@@ -953,9 +974,24 @@ mod tests {
         let mut second = first.clone();
         second.occurrence_reference += 1;
         second.occurrence_reference_offset += 100;
-        second.selector_asset_id.make_ascii_uppercase();
-        second.selector_context_id.make_ascii_uppercase();
-        second.external_asset_id.make_ascii_uppercase();
+        second.selector_asset_id = second
+            .selector_asset_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
+        second.selector_context_id = second
+            .selector_context_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
+        second.external_asset_id = second
+            .external_asset_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
         assert!(first.selects_same_object(&second));
         assert_eq!(
             crate::ids::neutral_assembly_axial_object_id(&first),

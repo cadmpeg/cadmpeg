@@ -19,17 +19,17 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "273".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("273".to_owned()).unwrap();
     scope.frame_length = 637;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
-    scope.paired_class_tag = "259".into();
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.paired_byte_offset = 637;
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
         DesignParameterOwner {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "457".into(),
+            class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -155,15 +155,15 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     )
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
-    assert_eq!(identity_paths[0].class_tag, "390");
+    assert_eq!(identity_paths[0].class_tag.as_str(), "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
     assert_eq!(
         identity_paths[0]
             .identity_guids
             .iter()
-            .map(|guid| &guid.value)
+            .map(|guid| guid.value.as_str())
             .collect::<Vec<_>>(),
-        identities.iter().collect::<Vec<_>>()
+        identities.to_vec()
     );
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
@@ -178,7 +178,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
         .iter()
-        .all(|path| path.class_tag == "386"));
+        .all(|path| path.class_tag.as_str() == "386"));
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
     }
@@ -191,7 +191,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
-        path.class_tag == "329"
+        path.class_tag.as_str() == "329"
             && !path.occurrence_guids.is_empty()
             && path
                 .identity_guids
@@ -258,7 +258,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
                 path.record_index,
                 path.occurrence_guids
                     .iter()
-                    .map(|guid| guid.value.clone())
+                    .map(|guid| guid.value.as_str().to_owned())
                     .collect::<Vec<_>>(),
             )
         }),
@@ -389,7 +389,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
-        path.class_tag == "294"
+        path.class_tag.as_str() == "294"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids
@@ -409,7 +409,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-299 identity-qualified assembly occurrence paths");
     assert!(class_299_paths.iter().all(|path| {
-        path.class_tag == "299"
+        path.class_tag.as_str() == "299"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids
@@ -439,7 +439,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.push(99);
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     assert_eq!(
         exact_assembly_alignment(
@@ -460,11 +460,11 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "383".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("383".to_owned()).unwrap();
     scope.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
-    scope.paired_class_tag = "258".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.paired_byte_offset = scope.frame_length;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203, 204, 205,
         206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216, 217, 116, 117, 118,
         119, 400,
@@ -477,7 +477,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "284".into(),
+            class_tag: crate::records::DesignClassTag::try_from("284".to_owned()).unwrap(),
             record_index: 100 + ordinal as u32,
             scope_record_index,
             local_ordinal: ordinal as u32,
@@ -539,7 +539,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         [1.25, -2.5]
     );
     let paths = alignment.operand_paths().expect("legacy operand paths");
-    assert!(paths.iter().all(|path| path.class_tag == "386"));
+    assert!(paths.iter().all(|path| path.class_tag.as_str() == "386"));
     assert_eq!(
         paths.each_ref().map(|path| path.link.locator_record_index),
         [300, 400]
@@ -583,12 +583,12 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "388".into();
-    scope.paired_class_tag = "266".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("388".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
     scope.paired_byte_offset = scope.frame_length;
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(
+    scope.reference_members = crate::records::ReferenceRun::unlocated(
         (0..24)
             .map(|ordinal| 1_000 + ordinal)
             .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
@@ -604,7 +604,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "282".into(),
+            class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
             record_index: 1_000 + ordinal,
             scope_record_index,
             local_ordinal: ordinal,
@@ -807,19 +807,19 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link.locator_record_index, 5_001);
-    assert_eq!(paths[0].link.locator_class_tag, "451");
+    assert_eq!(paths[0].link.locator_class_tag.as_str(), "451");
     assert_eq!(paths[0].link.locator_byte_offset, first_locator_at as u64);
     assert_eq!(paths[0].link.wrapper_record_index, 5_004);
-    assert_eq!(paths[0].link.wrapper_class_tag, "369");
+    assert_eq!(paths[0].link.wrapper_class_tag.as_str(), "369");
     assert_eq!(paths[0].link.wrapper_byte_offset, first_wrapper_at as u64);
     assert_eq!(paths[0].record_index, 5_003);
-    assert_eq!(paths[0].class_tag, "412");
+    assert_eq!(paths[0].class_tag.as_str(), "412");
     assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
     assert_eq!(
         paths[0]
             .occurrence_guids
             .iter()
-            .map(|guid| guid.value.clone())
+            .map(|guid| guid.value.as_str().to_owned())
             .collect::<Vec<_>>(),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
@@ -871,10 +871,10 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         crate::records::feature::DesignFeatureKind::AsBuilt,
         scope_record_index,
     );
-    scope.class_tag = "439".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("439".to_owned()).unwrap();
     scope.frame_length = 399;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
-    scope.paired_class_tag = "262".into();
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope.paired_byte_offset = 399;
 
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
@@ -882,7 +882,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "321".into(),
+            class_tag: crate::records::DesignClassTag::try_from("321".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -1025,7 +1025,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: class_tag.into(),
+            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -1072,8 +1072,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             crate::records::feature::DesignFeatureKind::AsBuilt,
             scope_record_index,
         );
-        scope.class_tag = class_tag.into();
-        scope.paired_class_tag = paired_class_tag.into();
+        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         scope.frame_length = 421;
         scope.paired_byte_offset = 421;
         scope.reference_count_offset = 185;
@@ -1212,7 +1213,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         assert_eq!(solved_frame.reference_record_index, 200);
         assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
         assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
-        assert_eq!(solved_frame.class_tag, frame_class_tag);
+        assert_eq!(solved_frame.class_tag.as_str(), frame_class_tag);
         assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             solved_frame.transform_offset,

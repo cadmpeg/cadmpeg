@@ -524,6 +524,7 @@ fn typed_occurrence_placement_offsets(
         .filter(|design_type| {
             design_type
                 .type_guid
+                .as_str()
                 .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         })
         .flat_map(|design_type| design_type.entities.values().copied())

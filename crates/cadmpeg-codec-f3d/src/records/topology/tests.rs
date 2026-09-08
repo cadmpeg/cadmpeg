@@ -27,7 +27,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
-    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150"#;
+    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150"#;
     let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":80,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
     for fields in [
         "",
@@ -50,6 +50,17 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         )
         .expect_err("partial selector tail location");
         assert!(error.to_string().contains("selector_tail"));
+    }
+    for guid in [
+        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+    ] {
+        let error = serde_json::from_str::<crate::records::topology::DesignBodyRecipeOperand>(
+            &format!("{prefix}{suffix}").replace(guid, "not-a-guid"),
+        )
+        .expect_err("non-GUID body recipe identity")
+        .to_string();
+        assert!(error.contains("GUID"), "{error}");
     }
 }
 
@@ -304,6 +315,41 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
             .to_string();
         assert!(error.contains("members"));
         assert!(error.contains("member_offsets"));
+        for (roles, valid) in [
+            (r#""extrude_role":"bodies","#, true),
+            (
+                r#""extrude_role":"faces","extrude_face_role":"start","#,
+                true,
+            ),
+            (r#""extrude_role":"faces","#, false),
+            (r#""extrude_face_role":"start","#, false),
+            (
+                r#""extrude_role":"bodies","extrude_face_role":"start","#,
+                false,
+            ),
+        ] {
+            let role = if roles.contains("bodies") {
+                crate::records::topology::DesignOperandRole::BODIES_A
+            } else {
+                crate::records::topology::DesignOperandRole::FACES
+            };
+            let tagged = wire.replace(r#""role":0,"#, &format!("\"role\":{},{roles}", role.raw()));
+            let parsed = serde_json::from_str::<
+                crate::records::topology::DesignConstructionOperandGroup,
+            >(&tagged);
+            if valid {
+                assert_eq!(
+                    serde_json::to_string(&parsed.expect("tagged construction group"))
+                        .expect("tagged construction wire"),
+                    tagged
+                );
+            } else {
+                assert!(parsed
+                    .expect_err("unpaired extrude role")
+                    .to_string()
+                    .contains("extrude_face_role"));
+            }
+        }
     }
 }
 
@@ -635,12 +681,24 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         "id": "member", "group_record_index": 1, "group_member_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "346",
         "local_id": 17, "local_id_offset": 20,
-        "asset_id": "asset", "asset_id_offset": 30,
-        "context_id": "context", "context_id_offset": 40,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 30,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 40,
         "tail_slot_present": false, "tail_slot_offset": 0,
         "next_record_index": 3, "next_byte_offset": 50
     });
     check::<crate::records::topology::DesignExtrudeSelectionMember>(&member);
+    for field in ["asset_id", "context_id"] {
+        let mut invalid = member.clone();
+        invalid[field] = serde_json::json!("asset");
+        assert!(
+            serde_json::from_value::<crate::records::topology::DesignExtrudeSelectionMember>(
+                invalid
+            )
+            .expect_err("non-GUID selection identity")
+            .to_string()
+            .contains("GUID")
+        );
+    }
     for field in [
         "tail_slot_present",
         "tail_slot_offset",
@@ -651,7 +709,38 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     }
     member["scope_record_index"] = serde_json::json!(4);
     member["compact_layout"] = serde_json::json!(false);
+    member["local_id_offset"] = serde_json::json!(34);
     check::<crate::records::topology::DesignEdgeIdentityOperand>(&member);
+    for (compact, local_id_offset) in [(true, 32), (true, 33), (false, 34)] {
+        let mut framed = member.clone();
+        framed["compact_layout"] = compact.into();
+        framed["local_id_offset"] = local_id_offset.into();
+        let operand =
+            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
+                .expect("edge-identity prologue framing");
+        assert_eq!(operand.local_id_offset(), local_id_offset);
+        assert_eq!(operand.layout.is_compact(), compact);
+    }
+    for (compact, local_id_offset) in [(false, 32), (false, 33), (true, 34), (false, 20)] {
+        let mut framed = member.clone();
+        framed["compact_layout"] = compact.into();
+        framed["local_id_offset"] = local_id_offset.into();
+        assert!(
+            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
+                .is_err(),
+            "compact_layout {compact} with local_id_offset {local_id_offset}"
+        );
+    }
+    for field in ["asset_id", "context_id"] {
+        let mut invalid = member.clone();
+        invalid[field] = serde_json::json!("asset");
+        assert!(
+            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(invalid)
+                .expect_err("non-GUID edge identity")
+                .to_string()
+                .contains("GUID")
+        );
+    }
 }
 
 #[test]
@@ -824,5 +913,44 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
                 .to_string()
                 .contains("postlude")
         );
+    }
+}
+
+#[test]
+fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
+    use crate::records::topology::{DesignConstructionOperandGroup, DesignOperandRole};
+    let wire = serde_json::json!({
+        "id": "group", "scope_record_index": 1, "scope_reference_ordinal": 0,
+        "record_index": 2, "byte_offset": 10, "class_tag": "256",
+        "members": [], "member_offsets": [],
+        "frame": {"member_count_offset": 20, "opaque_index": 1,
+            "opaque_index_offset": 30, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 34, "variant": false},
+        "role": DesignOperandRole::PROFILE.raw(), "extrude_role": "profile",
+        "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
+    });
+    let group: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
+    let encoded = serde_json::to_value(&group).unwrap();
+    assert_eq!(encoded["role"], wire["role"]);
+    assert_eq!(encoded["extrude_role"], wire["extrude_role"]);
+    assert_eq!(
+        serde_json::from_value::<DesignConstructionOperandGroup>(encoded).unwrap(),
+        group
+    );
+    for (role, extrude_role, face_role) in [
+        (DesignOperandRole::PROFILE, "bodies", None),
+        (DesignOperandRole::BODIES_A, "profile", None),
+        (DesignOperandRole::PROFILE, "faces", Some("start")),
+        (DesignOperandRole::FACES, "faces", None),
+        (DesignOperandRole::PROFILE, "profile", Some("termination")),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["role"] = serde_json::json!(role.raw());
+        invalid["extrude_role"] = serde_json::json!(extrude_role);
+        if let Some(face_role) = face_role {
+            invalid["extrude_face_role"] = serde_json::json!(face_role);
+        }
+        let error = serde_json::from_value::<DesignConstructionOperandGroup>(invalid).unwrap_err();
+        assert!(error.to_string().contains("role"));
     }
 }

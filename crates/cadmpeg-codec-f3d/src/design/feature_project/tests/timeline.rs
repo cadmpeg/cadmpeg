@@ -75,7 +75,7 @@ fn history_state_predecessors_are_component_qualified() {
             ),
             byte_offset: component_record_index,
             component_record_index,
-            context_uuid: context_uuid.into(),
+            context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
             context_uuid_offset: component_record_index + 12,
         };
     let naming_spaces = [
@@ -294,7 +294,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         id: format!("{stream}:design-parameter-owner#40"),
         byte_offset: 0,
         frame_length: 0,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 40,
         scope_record_index: internal.record_index,
         local_ordinal: 0,
@@ -769,7 +769,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| DesignParameterScope {
         id: format!("f3d:native:scope#{record_index}"),
         byte_offset,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
@@ -790,7 +790,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             .expect("nonempty family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,
     };
     let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
@@ -814,7 +814,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         id: format!("f3d:native:owner#{record_index}"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index,
         scope_record_index,
         local_ordinal: parameter_record_index,

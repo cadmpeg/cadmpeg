@@ -1500,12 +1500,11 @@ pub(crate) fn validate_design_type_edits(
         let (before_entities, after_entities): (
             &[crate::records::Located<u64>],
             &[crate::records::Located<u64>],
-        ) = match (&before.entities, &after.entities) {
-            (
-                crate::records::ReferenceRun::Located(before),
-                crate::records::ReferenceRun::Located(after),
-            ) => (before, after),
-            (before, after) if before.is_empty() && after.is_empty() => (&[], &[]),
+        ) = match (
+            before.entities.located_rows(),
+            after.entities.located_rows(),
+        ) {
+            (Some(before), Some(after)) => (before, after),
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D design type {id} must retain its entity-id cardinality"
@@ -1537,21 +1536,32 @@ pub(crate) fn validate_design_type_edits(
         }
         let mut strings = Vec::new();
         if after.type_guid != before.type_guid {
-            validate_fixed_design_string(id, &before.type_guid, &after.type_guid)?;
-            strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
+            validate_fixed_design_string(id, before.type_guid.as_str(), after.type_guid.as_str())?;
+            strings.push((
+                after.type_guid_offset,
+                after.type_guid.as_str().as_bytes().to_vec(),
+            ));
         }
         if after.base_type_guid != before.base_type_guid {
             let before_base = before
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .map(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map_or("", crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .ok_or_else(|| {
                     CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
                 })?;
             let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
-            let after_base = after_field.value.as_str();
+            let after_base = after_field
+                .value
+                .as_ref()
+                .map_or("", crate::records::DesignRelaxedGuidText::as_str);
             validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
                 after_field.offset.ok_or_else(|| {
@@ -1666,53 +1676,32 @@ pub(crate) fn validate_entity_header_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_reference = before.record_reference;
-        normalized.references.clone_from(&before.references);
-        let same_reference_locations = match (&before.references, &after.references) {
-            (
-                crate::records::ReferenceRun::Located(before),
-                crate::records::ReferenceRun::Located(after),
-            ) => before
-                .iter()
-                .map(|row| row.offset)
-                .eq(after.iter().map(|row| row.offset)),
-            (
-                crate::records::ReferenceRun::Unlocated(_),
-                crate::records::ReferenceRun::Unlocated(_),
-            ) => true,
-            (before, after) => before.is_empty() && after.is_empty(),
-        };
-        if &normalized != before
-            || !same_reference_locations
-            || before.declared_reference_count() != after.declared_reference_count()
-        {
+        if let (Some(normalized), Some(before)) = (
+            normalized.sketch_references_mut(),
+            before.sketch_references(),
+        ) {
+            normalized.record_reference = before.record_reference;
+            for (row, before) in normalized.references.iter_mut().zip(&before.references) {
+                row.value = before.value;
+            }
+        }
+        if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D entity-header edit changes fields outside fixed record references: {id}"
             )));
         }
-        if after.record_reference == before.record_reference
-            && after.references.values().eq(before.references.values())
-        {
+        let (Some(before), Some(after)) = (before.sketch_references(), after.sketch_references())
+        else {
+            continue;
+        };
+        if after == before {
             continue;
         }
-        let after_references: &[crate::records::Located<u32>] = match &after.references {
-            crate::records::ReferenceRun::Located(references) => references,
-            crate::records::ReferenceRun::Unlocated(references) if references.is_empty() => &[],
-            crate::records::ReferenceRun::Unlocated(_) => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D entity header {id} has mismatched reference values and offsets"
-                )))
-            }
-        };
         let record_reference = if after.record_reference == before.record_reference {
             None
         } else {
             Some(Edit {
-                offset: after.record_reference_offset.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "F3D entity header {id} has no writable owning-record reference"
-                    ))
-                })?,
+                offset: after.record_reference_offset,
                 value: after.record_reference.ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "cannot remove F3D entity-header record reference: {id}"
@@ -1720,11 +1709,12 @@ pub(crate) fn validate_entity_header_edits(
                 })?,
             })
         };
-        let references = after_references
+        let references = after
+            .references
             .iter()
-            .zip(before.references.values())
+            .zip(&before.references)
             .filter_map(|(after, before)| {
-                (after.value != *before).then_some(Edit {
+                (after.value != before.value).then_some(Edit {
                     offset: after.offset,
                     value: after.value,
                 })
@@ -2656,10 +2646,8 @@ pub(crate) fn validate_sketch_relation_edits(
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
-        match &relation.auxiliary_references {
-            crate::records::ReferenceRun::Located(after)
-                if before.auxiliary_references.len() == after.len() =>
-            {
+        match relation.auxiliary_references.located_rows() {
+            Some(after) if before.auxiliary_references.len() == after.len() => {
                 values.extend(
                     before
                         .auxiliary_references
@@ -2672,8 +2660,6 @@ pub(crate) fn validate_sketch_relation_edits(
                         }),
                 );
             }
-            crate::records::ReferenceRun::Unlocated(after)
-                if after.is_empty() && before.auxiliary_references.is_empty() => {}
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D sketch relation {} must retain reference cardinality and offsets",

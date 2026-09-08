@@ -26,7 +26,7 @@ fn parameter(
     DesignParameter {
         id: format!("f3d:Design/BulkStream.dat:parameter#{record_index}"),
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)

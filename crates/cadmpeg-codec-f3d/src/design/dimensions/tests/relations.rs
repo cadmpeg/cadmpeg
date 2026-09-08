@@ -378,12 +378,12 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     let relation = SketchRelation {
         id: "f3d:native:sketch-relation#0".into(),
         record_index: 10,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 100,
         owner_reference: 1,
         owner_entity_id: "0_1".into(),
-        auxiliary_references: crate::records::ReferenceRun::Located(vec![
+        auxiliary_references: crate::records::ReferenceRun::located(vec![
             crate::records::Located {
                 value: 0,
                 offset: 80,
@@ -403,11 +403,8 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 90,
-        definition: crate::records::SketchRelationDefinition::new(
-            0x20_0000_0000,
-            crate::records::SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: ([
             (1, 120, curve(1, 10)),
@@ -479,7 +476,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         id,
         record_index,
         owner_reference: Some(100),
-        class_tag: "262".into(),
+        class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -512,7 +509,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#12"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 12,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
@@ -542,7 +539,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         companion_record_index: Some(15),
         governing_companion_record_index: 15,
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 14,
         frame_length: 100,
         operands: vec![
@@ -568,7 +565,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             value: std::num::NonZeroU32::new(10).unwrap(),
             offset: 0,
         }],
-        paired_class_tag: "256".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         paired_byte_offset: 0,
         owner_reference: 100,
         owner_reference_offset: 0,
@@ -835,7 +832,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 4,
         source: crate::records::DesignParameterSource::new(
@@ -864,7 +861,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 21,
         scope_record_index: 10,
         local_ordinal: 0,
@@ -878,7 +875,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,
-        class_tag: "408".into(),
+        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
         record_index: 22,
         owner_record_index: 21,
         timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
@@ -891,7 +888,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:design-dimension-locus-group#30"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 30,
         frame_length: 100,
         loci: vec![
@@ -922,7 +919,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "273".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         next_record_index: 31,
         next_byte_offset: 100,
     };
@@ -930,7 +927,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -951,7 +948,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             id: format!("{stream}:sketch-curve#{record_index}"),
             record_index,
             owner_reference: Some(100),
-            class_tag: "301".into(),
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             byte_offset: 0,
             geometry_offset: 0,
             entity_genesis: None,

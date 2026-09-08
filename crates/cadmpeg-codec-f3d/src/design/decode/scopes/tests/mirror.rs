@@ -58,7 +58,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
     let header = DesignRecordHeader {
         id: String::new(),
         record_index,
-        class_tag: "320".into(),
+        class_tag: crate::records::DesignClassTag::try_from("320".to_owned()).unwrap(),
         byte_offset: start as u64,
     };
 
@@ -78,8 +78,8 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = "413".into();
-    scope.paired_class_tag = "262".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("413".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope.kind_offset = 0;
     scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
@@ -107,8 +107,8 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = "369".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.kind_offset = 0;
     scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
@@ -141,8 +141,8 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = "391".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("391".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.kind_offset = 0;
     scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 88;
@@ -175,8 +175,8 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = "440".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("440".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.kind_offset = 0;
     scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
@@ -205,8 +205,8 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = "441".into();
-    scope.paired_class_tag = "267".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope.kind_offset = 0;
     scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 84;
@@ -257,10 +257,10 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
         crate::records::feature::DesignFeatureKind::Mirror,
         scope_record_index,
     );
-    scope.class_tag = "441".into();
-    scope.paired_class_tag = "267".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![1, 2, 3, count_record_index]);
+        crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
     let records = IndexedRecordOffsets::build(&bytes);
 
     assert_eq!(

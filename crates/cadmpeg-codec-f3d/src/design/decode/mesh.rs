@@ -361,7 +361,12 @@ fn validate_mesh_registration(
             .design_type
             .base_type_guid
             .as_ref()
-            .map(|field| field.value.as_str())
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
     {
         return Err(CodecError::malformed(format_args!(
@@ -430,13 +435,19 @@ fn validate_design_type(
 ) -> bool {
     design_type
         .type_guid
+        .as_str()
         .eq_ignore_ascii_case(expected_type_guid)
         && design_type.version == expected_version
         && design_type.module == expected_module
         && design_type
             .base_type_guid
             .as_ref()
-            .map(|field| field.value.as_str())
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
 }
 
@@ -904,7 +915,7 @@ fn parse_mesh_scope_record(
         let header = DesignRecordHeader {
             id: String::new(),
             record_index: identity.record_index(),
-            class_tag: identity.class_tag().to_owned(),
+            class_tag: identity.class_tag().clone(),
             byte_offset: u64::try_from(frame.start).ok()?,
         };
         let scope = parse_parameter_scope(bytes, records, &header)?;
@@ -1683,16 +1694,16 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: value.to_owned(),
+                value: Some(value.to_owned().try_into().expect("base GUID")),
                 offset: Some(0),
             }),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -2316,6 +2327,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_TYPE_GUID)
             })
             .expect("mesh-collection type");
@@ -2328,7 +2340,7 @@ mod tests {
             panic!("one mesh-collection entity");
         };
         let collection_entity = *collection_entity;
-        collection_type.entities = crate::records::ReferenceRun::Unlocated(Vec::new());
+        collection_type.entities = crate::records::ReferenceRun::unlocated(Vec::new());
         graph
             .meta
             .records
@@ -2582,6 +2594,7 @@ mod tests {
                 .find(|design_type| {
                     design_type
                         .type_guid
+                        .as_str()
                         .eq_ignore_ascii_case(SCENE_NODE_TYPE_GUID)
                 })
                 .expect("Scene-node type"),
@@ -2639,6 +2652,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type")
@@ -2650,6 +2664,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");
@@ -2682,6 +2697,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");
@@ -2718,6 +2734,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
             })
             .expect("collection-owner type");

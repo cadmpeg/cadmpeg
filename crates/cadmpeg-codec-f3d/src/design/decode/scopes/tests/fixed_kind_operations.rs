@@ -11,6 +11,7 @@ use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
 use crate::records::topology::DesignLoftLegacyBodyCarrier;
+use crate::records::topology::DesignOperandRole;
 
 pub(super) fn continue_fixed_kind_operations(
     mut bytes: Vec<u8>,
@@ -36,7 +37,7 @@ pub(super) fn continue_fixed_kind_operations(
     draft_scope.payload = crate::records::feature::DesignFeatureKind::Draft.into();
     draft_scope.frame_length = 361;
     draft_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+        crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
     let expected = Some(DesignDraftOperation {
         angle: 0.4,
         angle_record_index: 175,
@@ -58,7 +59,7 @@ pub(super) fn continue_fixed_kind_operations(
     // hold no fixed position in it. Their local ordinals order them, and moving
     // them within the table must not change the recovered operation.
     draft_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
+        crate::records::ReferenceRun::unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -71,7 +72,7 @@ pub(super) fn continue_fixed_kind_operations(
 
     // A table that reaches only one of the two lanes has no complete operation.
     draft_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![175, 181, 182, 186, 190, 193]);
+        crate::records::ReferenceRun::unlocated(vec![175, 181, 182, 186, 190, 193]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -83,7 +84,7 @@ pub(super) fn continue_fixed_kind_operations(
     );
 
     draft_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186]);
+        crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -94,7 +95,7 @@ pub(super) fn continue_fixed_kind_operations(
         None
     );
     draft_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+        crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -120,7 +121,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut fillet_scope = scope.clone();
     fillet_scope.payload = crate::records::feature::DesignFeatureKind::Fillet.into();
     fillet_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![77, 50, 78, 79, 87, 88]);
+        crate::records::ReferenceRun::unlocated(vec![77, 50, 78, 79, 87, 88]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -157,7 +158,7 @@ pub(super) fn continue_fixed_kind_operations(
             }],
         })
     );
-    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 77]);
+    fillet_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 77]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -195,7 +196,7 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&89u32.to_le_bytes());
-    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![89]);
+    fillet_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![89]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -232,7 +233,7 @@ pub(super) fn continue_fixed_kind_operations(
         scalar.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&scalar);
     }
-    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![92, 93, 94, 95]);
+    fillet_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![92, 93, 94, 95]);
     let fixed =
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
             .expect("two constant-radius Fillet scalar groups");
@@ -276,7 +277,7 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&chamfer_scalar);
     let mut chamfer_scope = scope.clone();
     chamfer_scope.payload = crate::records::feature::DesignFeatureKind::Chamfer.into();
-    chamfer_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![86]);
+    chamfer_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![86]);
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -301,7 +302,7 @@ pub(super) fn continue_fixed_kind_operations(
     second_chamfer_scalar.extend_from_slice(b"261");
     second_chamfer_scalar.extend_from_slice(&96u32.to_le_bytes());
     bytes.extend_from_slice(&second_chamfer_scalar);
-    chamfer_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![86, 96]);
+    chamfer_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![86, 96]);
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -327,7 +328,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 97,
         scope_record_index: chamfer_scope.record_index,
         local_ordinal: 0,
@@ -374,7 +375,7 @@ pub(super) fn continue_fixed_kind_operations(
     revolve_scope.payload = crate::records::feature::DesignFeatureKind::Revolve.into();
     revolve_scope.frame_length = 386;
     revolve_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
+        crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
     let revolve_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -409,16 +410,18 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&indexed_revolve);
     let mut indexed_revolve_scope = revolve_scope.clone();
     indexed_revolve_scope.byte_offset = indexed_revolve_start as u64;
-    indexed_revolve_scope.class_tag = "407".into();
-    indexed_revolve_scope.paired_class_tag = "258".into();
+    indexed_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("407".to_owned()).unwrap();
+    indexed_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     indexed_revolve_scope.frame_length = 377;
     indexed_revolve_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
+        crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
     let indexed_angle = DesignParameterOwner {
         id: indexed_revolve_scope.id.clone(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "372".into(),
+        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
         record_index: indexed_angle_record_index,
         scope_record_index: indexed_revolve_scope.record_index,
         local_ordinal: 0,
@@ -461,11 +464,12 @@ pub(super) fn continue_fixed_kind_operations(
     class403_revolve[107..183].copy_from_slice(&class403_guid);
     bytes.extend_from_slice(&class403_revolve);
     let mut class403_scope = revolve_scope.clone();
-    class403_scope.class_tag = "403".into();
-    class403_scope.paired_class_tag = "258".into();
+    class403_scope.class_tag = crate::records::DesignClassTag::try_from("403".to_owned()).unwrap();
+    class403_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     class403_scope.byte_offset = class403_start as u64;
     class403_scope.frame_length = 387;
-    class403_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    class403_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         200,
         201,
         202,
@@ -518,10 +522,12 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&legacy_revolve);
     let mut legacy_revolve_scope = revolve_scope.clone();
     legacy_revolve_scope.byte_offset = legacy_revolve_start as u64;
-    legacy_revolve_scope.class_tag = "409".into();
-    legacy_revolve_scope.paired_class_tag = "257".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 359;
-    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         200,
         201,
         202,
@@ -533,7 +539,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: legacy_revolve_scope.id.clone(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "372".into(),
+        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
         record_index: legacy_angle_record_index,
         scope_record_index: legacy_revolve_scope.record_index,
         local_ordinal: 0,
@@ -562,10 +568,12 @@ pub(super) fn continue_fixed_kind_operations(
             }
         ))
     );
-    legacy_revolve_scope.class_tag = "323".into();
-    legacy_revolve_scope.paired_class_tag = "260".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("323".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 381;
-    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         legacy_angle_record_index,
         200,
         201,
@@ -593,10 +601,12 @@ pub(super) fn continue_fixed_kind_operations(
             }
         ))
     );
-    legacy_revolve_scope.class_tag = "385".into();
-    legacy_revolve_scope.paired_class_tag = "262".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("385".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 369;
-    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         200,
         201,
         202,
@@ -630,10 +640,13 @@ pub(super) fn continue_fixed_kind_operations(
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
-    revolve_profile.role = 0x0000_0041_0000_0000;
+    revolve_profile.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let mut revolve_axis = revolve_profile.clone();
     revolve_axis.id = "stream:axis".into();
-    revolve_axis.role = 0x0000_0021_0000_0000;
+    revolve_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     assert_eq!(
         crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
@@ -656,7 +669,8 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
-    indexed_profile.role = 0x0000_0041_0000_0000;
+    indexed_profile.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
@@ -664,11 +678,14 @@ pub(super) fn continue_fixed_kind_operations(
         value: 900,
         offset: indexed_axis.members[0].offset,
     }];
-    indexed_axis.role = 0x0000_0021_0000_0000;
+    indexed_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
-    indexed_bodies.role = 0x0000_0004_0000_0000;
+    indexed_bodies.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:indexed-axis-selection".into(),
         scope_record_index: indexed_revolve_scope.record_index,
@@ -676,10 +693,16 @@ pub(super) fn continue_fixed_kind_operations(
         group_member_ordinal: 0,
         record_index: 900,
         byte_offset: 0,
-        class_tag: "377".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: 902,
         identity_record_offset: 0,
@@ -721,7 +744,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: "stream:indexed-axis-curve".into(),
         record_index: 905,
         owner_reference: Some(100),
-        class_tag: "450".into(),
+        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -852,9 +875,9 @@ pub(super) fn continue_fixed_kind_operations(
         }),
         record_index: 900,
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         paired_byte_offset: 0,
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         recipe_record_index: 903,
         recipe_record_byte_offset: 0,
         recipe_id: "stream:indexed-face-axis-recipe".into(),
@@ -1026,15 +1049,18 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let loft_record_index = loft_scope.record_index;
-    let loft_group = |ordinal: u32, role: u64| {
+    let loft_group = |ordinal: u32, role: DesignOperandRole| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:loft-group-{ordinal}");
         group.scope_record_index = loft_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.role = role;
+        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
         group
     };
-    let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
+    let role_41 = [
+        loft_group(0, DesignOperandRole::PROFILE),
+        loft_group(1, DesignOperandRole::PROFILE),
+    ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
@@ -1048,10 +1074,10 @@ pub(super) fn continue_fixed_kind_operations(
             if sections.len() == 2 && guides.is_empty()
     ));
     let guided_role_41 = [
-        loft_group(0, 0x41_0000_0000),
-        loft_group(1, 0x41_0000_0000),
-        loft_group(2, 0x41_0000_0000),
-        loft_group(3, 0x5_0000_0000),
+        loft_group(0, DesignOperandRole::PROFILE),
+        loft_group(1, DesignOperandRole::PROFILE),
+        loft_group(2, DesignOperandRole::PROFILE),
+        loft_group(3, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1068,7 +1094,7 @@ pub(super) fn continue_fixed_kind_operations(
     let role_shape = |groups: &[DesignConstructionOperandGroup]| {
         groups
             .iter()
-            .map(|group| (group.role, group.members.len()))
+            .map(|group| (group.role(), group.members.len()))
             .collect::<Vec<_>>()
     };
     assert!(crate::validate::loft_operand_roles_are_valid(
@@ -1085,9 +1111,9 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let cut = [
-        loft_group(0, 0x4_0000_0000),
-        loft_group(1, 0x41_0000_0000),
-        loft_group(2, 0x43_0000_0000),
+        loft_group(0, DesignOperandRole::BODIES_A),
+        loft_group(1, DesignOperandRole::PROFILE),
+        loft_group(2, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1113,7 +1139,7 @@ pub(super) fn continue_fixed_kind_operations(
         scope_record_index: loft_scope.record_index,
         record_index: 500,
         byte_offset: 0,
-        class_tag: "322".into(),
+        class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
         owner_scope_record_index_offset: 22,
         member: 900,
         member_offset: 36,
@@ -1129,13 +1155,13 @@ pub(super) fn continue_fixed_kind_operations(
         next_record_index: 501,
         next_reference_offset: 76,
         trailing_scope_reference_offset: None,
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         paired_byte_offset: 87,
     };
     let legacy_cut = [
-        loft_group(1, 0x8_0000_0000),
-        loft_group(2, 0x41_0000_0000),
-        loft_group(3, 0x43_0000_0000),
+        loft_group(1, DesignOperandRole::BODIES_B),
+        loft_group(2, DesignOperandRole::PROFILE),
+        loft_group(3, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1173,9 +1199,9 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let role_5 = [
-        loft_group(0, 0x5_0000_0000),
-        loft_group(1, 0x5_0000_0000),
-        loft_group(2, 0x5_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X5),
+        loft_group(1, DesignOperandRole::ROLE_0X5),
+        loft_group(2, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1190,9 +1216,9 @@ pub(super) fn continue_fixed_kind_operations(
             if sections.len() == 3 && guides.is_empty()
     ));
     let centered = [
-        loft_group(0, 0x43_0000_0000),
-        loft_group(1, 0x43_0000_0000),
-        loft_group(2, 0x7_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X43),
+        loft_group(1, DesignOperandRole::ROLE_0X43),
+        loft_group(2, DesignOperandRole::ROLE_0X7),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1211,10 +1237,10 @@ pub(super) fn continue_fixed_kind_operations(
         }) if sections.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
     ));
     let mixed = [
-        loft_group(0, 0x43_0000_0000),
-        loft_group(1, 0x43_0000_0000),
-        loft_group(2, 0x5_0000_0000),
-        loft_group(3, 0x7_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X43),
+        loft_group(1, DesignOperandRole::ROLE_0X43),
+        loft_group(2, DesignOperandRole::ROLE_0X5),
+        loft_group(3, DesignOperandRole::ROLE_0X7),
     ];
     assert_eq!(
         crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[],),
@@ -1224,13 +1250,13 @@ pub(super) fn continue_fixed_kind_operations(
         DesignExtrudeOperation::NewBody,
         &role_shape(&mixed),
     ));
-    let mut point = loft_group(0, 0x5_0000_0000);
+    let mut point = loft_group(0, DesignOperandRole::ROLE_0X5);
     point.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
         .collect();
-    let profile = loft_group(1, 0x43_0000_0000);
-    let mut boundary = loft_group(2, 0x5_0000_0000);
+    let profile = loft_group(1, DesignOperandRole::ROLE_0X43);
+    let mut boundary = loft_group(2, DesignOperandRole::ROLE_0X5);
     boundary.members = vec![20, 21, 22]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
@@ -1288,7 +1314,7 @@ pub(super) fn continue_fixed_kind_operations(
     sweep_scope.byte_offset = sweep_start as u64;
     sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep.into();
     sweep_scope.frame_length = 499;
-    sweep_scope.reference_members = crate::records::ReferenceRun::Unlocated((80..86).collect());
+    sweep_scope.reference_members = crate::records::ReferenceRun::unlocated((80..86).collect());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1319,17 +1345,17 @@ pub(super) fn continue_fixed_kind_operations(
         sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
     }
     let sweep_record_index = sweep_scope.record_index;
-    let sweep_group = |ordinal: u32, role: u64| {
+    let sweep_group = |ordinal: u32, role: DesignOperandRole| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:sweep-group-{ordinal}");
         group.scope_record_index = sweep_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.role = role;
+        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
         group
     };
-    let profile = sweep_group(0, 0x41_0000_0000);
-    let path = sweep_group(1, 0x5_0000_0000);
-    let body = sweep_group(2, 0x4_0000_0000);
+    let profile = sweep_group(0, DesignOperandRole::PROFILE);
+    let path = sweep_group(1, DesignOperandRole::ROLE_0X5);
+    let body = sweep_group(2, DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1349,7 +1375,7 @@ pub(super) fn continue_fixed_kind_operations(
             ..
         })
     ));
-    let rail = sweep_group(2, 0x5_0000_0000);
+    let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::DesignSweepConstruction {
@@ -1434,14 +1460,17 @@ pub(super) fn continue_fixed_kind_operations(
             scope_reference_ordinal: 3,
             record_index: 2795,
             byte_offset: 32_000,
-            class_tag: "312".into(),
-            asset_id: "asset".into(),
+            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 32_040,
             entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 32_080,
             region_selection: None,
-            paired_class_tag: "258".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
             paired_byte_offset: 32_180,
         });
         if let crate::records::feature::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload {
@@ -1460,7 +1489,7 @@ pub(super) fn continue_fixed_kind_operations(
         value: 2795,
         offset: profile_carrier.members[0].offset,
     }];
-    let mut guide_surface = sweep_group(4, 0x11_0000_0000);
+    let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:sweep-profile-selection".into(),
@@ -1469,10 +1498,16 @@ pub(super) fn continue_fixed_kind_operations(
         group_member_ordinal: 0,
         record_index: 2788,
         byte_offset: 31_000,
-        class_tag: "310".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 31_040,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 31_080,
         identity_record_index: 2791,
         identity_record_offset: 31_180,
@@ -1573,7 +1608,7 @@ pub(super) fn continue_fixed_kind_operations(
     pipe_scope.byte_offset = pipe_start as u64;
     pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
     pipe_scope.frame_length = 464;
-    pipe_scope.reference_members = crate::records::ReferenceRun::Unlocated((170..174).collect());
+    pipe_scope.reference_members = crate::records::ReferenceRun::unlocated((170..174).collect());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1617,7 +1652,7 @@ pub(super) fn continue_fixed_kind_operations(
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "342".into(),
+            class_tag: crate::records::DesignClassTag::try_from("342".to_owned()).unwrap(),
             record_index: owner_pipe_record_indexes[ordinal],
             scope_record_index: scope.record_index,
             local_ordinal: ordinal as u32,
@@ -1632,12 +1667,14 @@ pub(super) fn continue_fixed_kind_operations(
     let mut owner_pipe_scope = scope.clone();
     owner_pipe_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
     owner_pipe_scope.byte_offset = owner_pipe_start as u64;
-    owner_pipe_scope.class_tag = "421".into();
-    owner_pipe_scope.paired_class_tag = "257".into();
+    owner_pipe_scope.class_tag =
+        crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
+    owner_pipe_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     owner_pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
     owner_pipe_scope.frame_length = 405;
     owner_pipe_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(owner_pipe_record_indexes.into());
+        crate::records::ReferenceRun::unlocated(owner_pipe_record_indexes.into());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1660,7 +1697,8 @@ pub(super) fn continue_fixed_kind_operations(
         ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
-    wrong_owner_class[0].class_tag = "341".into();
+    wrong_owner_class[0].class_tag =
+        crate::records::DesignClassTag::try_from("341".to_owned()).unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1707,11 +1745,13 @@ pub(super) fn continue_fixed_kind_operations(
         }
         let mut legacy_scope = scope.clone();
         legacy_scope.byte_offset = legacy_pipe_start as u64;
-        legacy_scope.class_tag = class_tag.into();
-        legacy_scope.paired_class_tag = paired_class_tag.into();
+        legacy_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        legacy_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         legacy_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
         legacy_scope.frame_length = 383;
-        legacy_scope.reference_members = crate::records::ReferenceRun::Unlocated(
+        legacy_scope.reference_members = crate::records::ReferenceRun::unlocated(
             (first_record_index..first_record_index + 4).collect(),
         );
         assert_eq!(
@@ -1748,7 +1788,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut companion = DesignParameterCompanion {
         id: "f3d:native:parameter-companion#11".into(),
         byte_offset: 0,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 11,
         owner_record_index: 10,
         timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
@@ -1786,7 +1826,7 @@ pub(super) fn continue_fixed_kind_operations(
     let foreign_header = DesignRecordHeader {
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 70,
     };
     assert_eq!(
@@ -1860,12 +1900,12 @@ pub(super) fn continue_fixed_kind_operations(
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("366".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some("MSketch".into()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            None,
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     bind_parameter_companion_payloads(
         std::slice::from_mut(&mut companion),

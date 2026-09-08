@@ -55,10 +55,10 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         crate::records::feature::DesignFeatureKind::Thicken,
         1,
     );
-    scope.class_tag = "347".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("347".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 291;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 74]);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![200, 201, 74]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(
@@ -70,7 +70,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         ))
     ));
 
-    scope.paired_class_tag = "259".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         None

@@ -14,7 +14,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
 use super::attributes::source_less_body_key;
-use super::records::validate_dynamic_class_tag;
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
@@ -221,23 +220,20 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
 
 fn source_less_design_record_type<'a>(
     native: &'a F3dNative,
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     record_kind: &str,
 ) -> Result<&'a SegmentType, CodecError> {
-    validate_dynamic_class_tag(class_tag, record_kind)?;
-    let type_ordinal = class_tag
-        .parse::<usize>()
-        .ok()
-        .and_then(|class_tag| class_tag.checked_sub(256))
-        .ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D {record_kind} class tag {class_tag} is below the dynamic type range"
-            ))
-        })?;
+    let type_ordinal = class_tag.dynamic_ordinal().ok_or_else(|| {
+        CodecError::InvalidInput(format!(
+            "F3D {record_kind} class tag {} is below the dynamic type range",
+            class_tag.as_str()
+        ))
+    })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
         CodecError::InvalidInput(format!(
-            "F3D {record_kind} class tag {class_tag} is outside the Design type table"
+            "F3D {record_kind} class tag {} is outside the Design type table",
+            class_tag.as_str()
         ))
     })?;
     if !design_type
@@ -246,14 +242,18 @@ fn source_less_design_record_type<'a>(
         .any(|registered| *registered == u64::from(record_index))
     {
         return Err(CodecError::InvalidInput(format!(
-            "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
+            "F3D {record_kind} {record_index} is not registered by class tag {}",
+            class_tag.as_str()
         )));
     }
     Ok(design_type)
 }
 
 fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -> bool {
-    design_type.type_guid.eq_ignore_ascii_case(expected.0)
+    design_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(expected.0)
         && design_type.version == expected.1
         && design_type.module == expected.2
 }
@@ -269,41 +269,32 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .design_entity_headers
         .iter()
         .filter(|header| header.in_sketch_module())
-        .flat_map(|header| header.references.values().copied())
+        .flat_map(|header| header.reference_values().copied())
         .collect::<BTreeSet<_>>();
     let mut typed_indices = BTreeMap::<u32, &str>::new();
     let mut typed_records = Vec::new();
     for (record_index, id, class_tag) in native
         .sketch_points
         .iter()
-        .map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        })
-        .chain(native.sketch_curve_identities.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
-        .chain(native.sketch_relations.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
-        .chain(native.sketch_texts.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
+        .map(|record| (record.record_index, record.id.as_str(), &record.class_tag))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
             return Err(CodecError::InvalidInput(format!(
@@ -378,7 +369,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                     .entities
                     .values()
                     .any(|registered| *registered == u64::from(owner_reference))
-                    && design_type.type_guid.eq_ignore_ascii_case(
+                    && design_type.type_guid.as_str().eq_ignore_ascii_case(
                         crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                     )
             })
@@ -563,14 +554,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         {
             return Err(CodecError::InvalidInput(format!(
                 "duplicate F3D Design type GUID: {}",
-                design_type.type_guid
+                design_type.type_guid.as_str()
             )));
         }
         for entity_id in design_type.entities.values() {
             if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D Design entity {entity_id} is registered by both type {before} and type {}",
-                    design_type.type_guid
+                    design_type.type_guid.as_str()
                 )));
             }
             entity_modules.insert(*entity_id, design_type.module.clone());
@@ -579,11 +570,12 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     // A base type need not be registered by the same segment, so an unresolved
     // base GUID is legal; a resolved chain must still terminate.
     for design_type in &native.design_types {
-        if design_type
-            .base_type_guid
-            .as_ref()
-            .map(|field| field.value.as_str())
-            == Some(design_type.type_guid.as_str())
+        if design_type.base_type_guid.as_ref().and_then(|field| {
+            field
+                .value
+                .as_ref()
+                .map(crate::records::DesignRelaxedGuidText::as_str)
+        }) == Some(design_type.type_guid.as_str())
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
@@ -595,13 +587,18 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         while let Some(base) = cursor
             .base_type_guid
             .as_ref()
-            .map(|field| field.value.as_str())
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D Design type hierarchy contains a cycle at {}",
-                    base.type_guid
+                    base.type_guid.as_str()
                 )));
             }
             cursor = base;
@@ -609,19 +606,9 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     }
     for header in &native.design_entity_headers {
         let owned_module = entity_modules.get(&header.entity_id.suffix()).cloned();
-        if header.module != owned_module {
+        if header.module() != owned_module.as_deref() {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design header {} module conflicts with MetaStream ownership",
-                header.id
-            )));
-        }
-        if !header.in_sketch_module()
-            && (header.record_reference.is_some()
-                || header.reference_count_present
-                || !header.references.is_empty())
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D non-sketch Design header {} carries discarded sketch references",
                 header.id
             )));
         }

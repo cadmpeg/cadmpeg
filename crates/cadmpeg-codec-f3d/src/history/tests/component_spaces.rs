@@ -55,14 +55,20 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
             byte_offset: 0,
             component_record_index: 10,
-            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+            context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 12,
         },
         crate::records::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
             byte_offset: 100,
             component_record_index: 20,
-            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".into(),
+            context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             context_uuid_offset: 112,
         },
     ];
@@ -93,12 +99,18 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         group_member_ordinal: 0,
         record_index: 2,
         byte_offset: 400,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         local_id: 42,
         local_id_offset: 421,
-        asset_id: "11111111-2222-4333-8444-555555555555".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "11111111-2222-4333-8444-555555555555".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 429,
-        context_id: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 505,
         tail_slot_present: false,
         tail_slot_offset: 581,
@@ -291,9 +303,9 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     let recipe = crate::records::feature::DesignVertexRecipe {
         record_index: 1,
         byte_offset: 0,
-        class_tag: "264".into(),
+        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 11,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 4,
         recipe_record_byte_offset: 44,
         recipe_id: "recipe".into(),

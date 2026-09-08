@@ -12,6 +12,7 @@
 )]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
@@ -36,14 +37,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 110, 210, 300, 301]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
     let group = |record_index, scope_reference_ordinal, member| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 42,
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "282".into(),
+        class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -63,10 +64,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];
@@ -77,10 +79,16 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         group_member_ordinal: 0,
         record_index,
         byte_offset: 0,
-        class_tag: "377".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: record_index + 1,
         identity_record_offset: 0,

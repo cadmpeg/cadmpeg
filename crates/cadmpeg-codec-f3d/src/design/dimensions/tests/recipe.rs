@@ -34,7 +34,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 4,
         source: crate::records::DesignParameterSource::new(
@@ -63,7 +63,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 21,
         scope_record_index: 10,
         local_ordinal: 0,
@@ -77,7 +77,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,
-        class_tag: "408".into(),
+        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
         record_index: 22,
         owner_record_index: 21,
         timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
@@ -93,7 +93,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         recipe_id: format!("{stream}:construction-recipe#{record_index}"),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: "423".into(),
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index,
         frame_length: 10,
         prefix_offset: 0,
@@ -219,7 +219,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-point#50"),
         record_index: 50,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -236,7 +236,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-curve#51"),
         record_index: 51,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -259,7 +259,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#60"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 60,
         frame_length: 100,
         loci: vec![
@@ -290,7 +290,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "300".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         next_record_index: 61,
         next_byte_offset: 100,
     };
@@ -331,7 +331,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -347,7 +347,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#40"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 40,
         frame_length: 100,
         loci: vec![
@@ -378,7 +378,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "300".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         next_record_index: 42,
         next_byte_offset: 100,
     };
@@ -798,7 +798,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     let parameter = DesignParameter {
         id: "f3d:A:design-parameter#1".into(),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 1,
         source_ordinal: 1,
         source: crate::records::DesignParameterSource::new(
@@ -996,7 +996,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     let parameter = DesignParameter {
         id: "f3d:A:design-parameter#1".into(),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 1,
         source_ordinal: 1,
         source: crate::records::DesignParameterSource::new(

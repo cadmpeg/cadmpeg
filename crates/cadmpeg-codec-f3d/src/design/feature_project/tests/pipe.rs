@@ -8,6 +8,7 @@
 
 use super::prelude::*;
 use crate::records::feature::DesignPathFeatureConstruction;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
@@ -22,10 +23,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::feature::DesignFeatureKind::Pipe,
         1,
     );
-    scope.class_tag = "405".into();
-    scope.paired_class_tag = "259".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("405".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+        crate::records::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::DesignPipeConstruction {
@@ -49,7 +50,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                      evaluated_value: f64| DesignParameter {
         id: format!("f3d:test:pipe-parameter#{record_index}"),
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index,
         source_ordinal: record_index,
         source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
@@ -83,7 +84,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         scope_reference_ordinal: 4,
         record_index: 20,
         byte_offset: 0,
-        class_tag: "312".into(),
+        class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 21,
             offset: 0,
@@ -103,10 +104,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 
@@ -217,7 +219,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.push(23);
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
@@ -231,10 +233,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.reference_members = {
         let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
         values.pop();
-        crate::records::ReferenceRun::Unlocated(values)
+        crate::records::ReferenceRun::unlocated(values)
     };
-    scope.class_tag = "475".into();
-    scope.paired_class_tag = "260".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("475".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -244,8 +246,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_some());
 
-    scope.class_tag = "421".into();
-    scope.paired_class_tag = "257".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::DesignPipeConstruction {

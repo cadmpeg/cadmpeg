@@ -36,12 +36,10 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
 ) -> Option<LegacyAsBuilt421Alignment> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
-        return None;
-    };
+    let references = scope.reference_members.located_rows()?;
     if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || references.len() != 11
@@ -81,10 +79,9 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    if lanes
-        .iter()
-        .any(|owner| owner.class_tag != generation.owner_class_tag() || owner.frame_length != 103)
-    {
+    if lanes.iter().any(|owner| {
+        owner.class_tag.as_str() != generation.owner_class_tag() || owner.frame_length != 103
+    }) {
         return None;
     }
     let [offset_x, offset_y, offset_z, angle, limit_first, limit_second] = lanes else {
@@ -159,13 +156,11 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
 ) -> Option<DesignAssemblySolvedFrame> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
-        return None;
-    };
-    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references.as_slice() else {
+    let references = scope.reference_members.located_rows()?;
+    let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
         return None;
     };
     if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt {
@@ -224,7 +219,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,
         record_byte_offset: u64::try_from(frame_start).ok()?,
-        class_tag: expected_class_tag.into(),
+        class_tag: expected_class_tag.to_owned().try_into().ok()?,
         transform: rigid_transform_at(bytes, transform_at)?,
         transform_offset: u64::try_from(transform_at).ok()?,
     })
@@ -246,14 +241,12 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 ) -> Option<DesignAssemblyLegacyOperands> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
-    let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
-        return None;
-    };
+    let references = scope.reference_members.located_rows()?;
     let [point_reference, first_selection_reference, hole_reference, second_selection_reference, _, _, _, _, frame_reference, _, _] =
-        references.as_slice()
+        references
     else {
         return None;
     };
@@ -321,13 +314,13 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
     Some(DesignAssemblyLegacyOperands {
         point: DesignAssemblyLegacyOperand {
-            construction_class_tag: point_class_tag,
+            construction_class_tag: point_class_tag.try_into().ok()?,
             construction: Box::new(point),
             selection: first_selection,
             reference_offset: point_reference.offset,
         },
         hole: DesignAssemblyLegacyOperand {
-            construction_class_tag: hole_class_tag,
+            construction_class_tag: hole_class_tag.try_into().ok()?,
             construction: Box::new(hole),
             selection: second_selection,
             reference_offset: hole_reference.offset,
@@ -389,7 +382,7 @@ fn exact_legacy_as_built_face_selection(
             let header = DesignRecordHeader {
                 id: scope.id.clone(),
                 record_index,
-                class_tag: class_tag.clone(),
+                class_tag: class_tag.clone().try_into().ok()?,
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(
@@ -406,10 +399,10 @@ fn exact_legacy_as_built_face_selection(
             Some(DesignAssemblyLegacySelection {
                 record_index,
                 byte_offset: u64::try_from(byte_offset).ok()?,
-                class_tag,
-                asset_id: prefix.asset_id,
+                class_tag: header.class_tag,
+                asset_id: prefix.asset_id.try_into().ok()?,
                 asset_id_offset: prefix.asset_id_offset,
-                context_id: prefix.context_id,
+                context_id: prefix.context_id.try_into().ok()?,
                 context_id_offset: prefix.context_id_offset,
                 recipe_record_index: operand.recipe_record_index,
                 recipe_record_byte_offset: operand.recipe_record_byte_offset,

@@ -86,7 +86,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     let header = DesignRecordHeader {
         id: "stream:record-100".into(),
         record_index: RECORD_INDEX,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let early = ConstructionRecipe {
@@ -124,8 +124,8 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
     assert_eq!(selection.byte_offset, selection_at as u64);
-    assert_eq!(selection.class_tag, "327");
-    assert_eq!(selection.companion_class_tag, "261");
+    assert_eq!(selection.class_tag.as_str(), "327");
+    assert_eq!(selection.companion_class_tag.as_str(), "261");
     assert_eq!(
         selection
             .regions

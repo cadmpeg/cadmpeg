@@ -189,6 +189,7 @@ pub(crate) mod extrude_sheet_metal;
 pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;
 
+use crate::records::topology::DesignOperandRole;
 use extrude_sheet_metal::{
     bind_hem_operation_from_parameters, exact_base_flange_operation, exact_edge_flange_operation,
     exact_extrude_prologue, exact_ruled_surface_operation, exact_surface_stitch_operation,
@@ -749,10 +750,10 @@ pub(crate) fn exact_thread_construction(
     )?;
     let class_pair_is_valid = match construction.form {
         DesignThreadForm::StandardLegacy => {
-            scope.class_tag == "334" && scope.paired_class_tag == "262"
+            scope.class_tag.as_str() == "334" && scope.paired_class_tag.as_str() == "262"
         }
         DesignThreadForm::CompactLegacy => {
-            scope.class_tag == "414" && scope.paired_class_tag == "263"
+            scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "263"
         }
         DesignThreadForm::Standard | DesignThreadForm::Compact(_) => true,
     };
@@ -1076,7 +1077,9 @@ fn exact_assembly_axial_operand_target(
                     && scope
                         .component_insert_construction()
                         .is_some_and(|construction| {
-                            construction.neutron_role.eq_ignore_ascii_case(role)
+                            construction
+                                .neutron_role
+                                .eq_ignore_ascii_case(role.as_str())
                         })
             });
             let component_insert = matches.next()?;
@@ -1087,11 +1090,14 @@ fn exact_assembly_axial_operand_target(
                 DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                     component_insert_scope_record_index: component_insert.record_index,
                     construction_record_index: component.construction_record_index,
-                    construction_class_tag: component.construction_class_tag,
+                    construction_class_tag: component.construction_class_tag.try_into().ok()?,
                     construction_byte_offset: component.construction_byte_offset,
                     construction_transform_offset: component.construction_transform_offset,
                     axis_record_index_offsets: component.axis_record_index_offsets,
-                    construction_paired_class_tag: component.construction_paired_class_tag,
+                    construction_paired_class_tag: component
+                        .construction_paired_class_tag
+                        .try_into()
+                        .ok()?,
                     construction_paired_byte_offset: component.construction_paired_byte_offset,
                     selectors: component.selectors,
                 },
@@ -1224,7 +1230,8 @@ fn exact_assembly_axial_component_operand_at(
     if !first.selects_same_object(&second)
         || !first
             .occurrence_role
-            .eq_ignore_ascii_case(&second.occurrence_role)
+            .as_str()
+            .eq_ignore_ascii_case(second.occurrence_role.as_str())
     {
         return None;
     }
@@ -1288,9 +1295,11 @@ fn exact_assembly_axial_selector(
     let selector_context_at = after_selector_asset_id;
     let (selector_context_id, after_selector_context_id) =
         lp_utf16_bounded(bytes, selector_context_at, 36..=36)?;
-    if !is_guid_relaxed(&selector_asset_id)
-        || !is_guid_relaxed(&selector_context_id)
-        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+    let selector_asset_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
+    let selector_context_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_context_id).ok()?;
+    if View::u32_le_at(bytes, after_selector_context_id)? != 2
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
@@ -1309,7 +1318,12 @@ fn exact_assembly_axial_selector(
     }
     cursor = cursor.checked_add(4)?;
     let external = take_external_reference_identity(bytes, &mut cursor)?;
-    if !external.asset_id.eq_ignore_ascii_case(&selector_asset_id) || cursor > selector_paired_at {
+    if !external
+        .asset_id
+        .as_str()
+        .eq_ignore_ascii_case(selector_asset_id.as_str())
+        || cursor > selector_paired_at
+    {
         return None;
     }
 
@@ -1336,20 +1350,21 @@ fn exact_assembly_axial_selector(
     let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
     let (occurrence_role, after_occurrence_role) =
         lp_utf16_bounded(bytes, occurrence_role_at, 36..=36)?;
-    if !is_guid_relaxed(&occurrence_role) || after_occurrence_role > limit {
+    let occurrence_role = crate::records::DesignRelaxedGuidText::try_from(occurrence_role).ok()?;
+    if after_occurrence_role > limit {
         return None;
     }
 
     Some(DesignAssemblyAxialSelectorIdentity {
         axis_record_index,
-        axis_class_tag: axis.class_tag,
+        axis_class_tag: axis.class_tag.try_into().ok()?,
         axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
-        axis_paired_class_tag: axis.paired_class_tag,
+        axis_paired_class_tag: axis.paired_class_tag.try_into().ok()?,
         axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
         selector_record_index,
-        selector_class_tag,
+        selector_class_tag: selector_class_tag.try_into().ok()?,
         selector_byte_offset: u64::try_from(selector_at).ok()?,
-        selector_paired_class_tag,
+        selector_paired_class_tag: selector_paired_class_tag.try_into().ok()?,
         selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
         nested_record_index,
         nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
@@ -1369,7 +1384,7 @@ fn exact_assembly_axial_selector(
         external_link_name_offset: external.link_name_offset,
         external_version: external.version,
         role_record_index,
-        role_class_tag,
+        role_class_tag: role_class_tag.try_into().ok()?,
         role_byte_offset: u64::try_from(role_at).ok()?,
         occurrence_role,
         occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
@@ -1425,8 +1440,8 @@ fn exact_single_joint_origin_frame(
     scope: &DesignParameterScope,
 ) -> Option<(u32, ScopePlacementFrame)> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::Assemble
-        || scope.class_tag != "276"
-        || scope.paired_class_tag != "258"
+        || scope.class_tag.as_str() != "276"
+        || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length != 604
     {
         return None;
@@ -1561,7 +1576,7 @@ fn exact_surface_offset_face_groups(
         let Some(group) = group else {
             continue;
         };
-        if group.role != 0x0000_0041_0000_0000
+        if group.role() != DesignOperandRole::PROFILE
             || group.frame.opaque_index != 252
             || group.members.is_empty()
             || !covered_references.insert(group.record_index)
@@ -1612,7 +1627,7 @@ fn exact_construction_operand_group(
         let header = DesignRecordHeader {
             id: String::new(),
             record_index,
-            class_tag: class_tag.clone(),
+            class_tag: class_tag.clone().try_into().ok()?,
             byte_offset: u64::try_from(start).ok()?,
         };
         if let ConstructionOperandGroupParse::Complete(group) =
@@ -1787,20 +1802,20 @@ pub(crate) fn exact_assembly_alignment(
     }
     let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )
     .is_some();
     let legacy_class_383 = crate::design::assembly::legacy_class_383_258_scope(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     );
     let legacy_class_388 = matches!(
         crate::design::assembly::operand_frame_variant(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     );
@@ -1830,8 +1845,8 @@ pub(crate) fn exact_assembly_alignment(
         if matches!(scope.frame_length, 671 | 744 | 748)
             && crate::design::assembly::operand_frame_variant(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_none()
         {
@@ -1839,8 +1854,8 @@ pub(crate) fn exact_assembly_alignment(
         }
         let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
             lanes.len(),
         )?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
@@ -1875,7 +1890,7 @@ pub(crate) fn exact_assembly_alignment(
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "282" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "282" || owner.frame_length != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1895,7 +1910,7 @@ pub(crate) fn exact_assembly_alignment(
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "284" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "284" || owner.frame_length != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1907,12 +1922,12 @@ pub(crate) fn exact_assembly_alignment(
                 return None;
             }
         } else if crate::design::assembly::variable_reference_assembly_generation(
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ) {
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "289" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "289" || owner.frame_length != 103)
                 || (0..scope.reference_members.len())
                     .filter(|&start| {
                         scope
@@ -1959,8 +1974,8 @@ pub(crate) fn exact_assembly_alignment(
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
             } else if crate::design::assembly::variable_reference_assembly_generation(
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             ) {
                 assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
                     bytes, records, scope, &frames,
@@ -1996,8 +2011,8 @@ pub(crate) fn exact_derived_instance_construction(
     occurrences: &[DesignComponentOccurrence],
 ) -> Option<DesignDerivedInstanceConstruction> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::DerivedInstance
-        || scope.class_tag != "279"
-        || scope.paired_class_tag != "261"
+        || scope.class_tag.as_str() != "279"
+        || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length != derived_instance_279_261::LEN as u64
         || scope.reference_members.len() != 1
     {
@@ -2072,7 +2087,7 @@ pub(crate) fn exact_derived_instance_construction(
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
-                && occurrence.class_tag == "380"
+                && occurrence.class_tag.as_str() == "380"
                 && occurrence.record_index == carrier_record_index
                 && occurrence.byte_offset < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(transform)
@@ -2167,43 +2182,43 @@ pub(crate) fn exact_component_insert_construction(
                     View::u64_le_at(bytes, start + 29)?,
                 )
             }
-            (261, "263") if scope.class_tag == "296" => (
+            (261, "263") if scope.class_tag.as_str() == "296" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "261") if scope.class_tag == "410" => (
+            (261, "261") if scope.class_tag.as_str() == "410" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "258") if scope.class_tag == "426" => (
+            (261, "258") if scope.class_tag.as_str() == "426" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "266") if scope.class_tag == "434" => (
+            (261, "266") if scope.class_tag.as_str() == "434" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "264") if scope.class_tag == "414" => (
+            (261, "264") if scope.class_tag.as_str() == "414" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (257 | 267, "264") if scope.class_tag == "414" => (
+            (257 | 267, "264") if scope.class_tag.as_str() == "414" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope_shifted(bytes, start, relation_record_index)?,
             ),
-            (389, "264") if scope.class_tag == "414" => {
+            (389, "264") if scope.class_tag.as_str() == "414" => {
                 exact_component_insert_scope_414_264_389(bytes, start, relation_record_index)?
             }
-            (257, "262") if scope.class_tag == "283" => {
+            (257, "262") if scope.class_tag.as_str() == "283" => {
                 exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
             }
-            (385, "262") if scope.class_tag == "283" => {
+            (385, "262") if scope.class_tag.as_str() == "283" => {
                 exact_component_insert_scope_283_262_385(bytes, start, relation_record_index)?
             }
             _ => return None,
@@ -2249,7 +2264,7 @@ pub(crate) fn exact_component_insert_construction(
             }
         }
         (carrier_record_index, placements)
-    } else if scope.class_tag == "426" && scope.paired_class_tag == "258" {
+    } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
         exact_component_insert_class_426_relation(
             bytes,
             records,
@@ -2274,7 +2289,7 @@ pub(crate) fn exact_component_insert_construction(
         }
         let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-        if scope.class_tag == "283" && scope.paired_class_tag == "262" {
+        if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
             let (role, role_offset) = exact_component_insert_carrier_334(
                 bytes,
                 carrier_at,
@@ -2282,7 +2297,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "296" && scope.paired_class_tag == "263" {
+        } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity(
                 bytes,
                 carrier_at,
@@ -2290,7 +2305,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "410" && scope.paired_class_tag == "261" {
+        } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
                 bytes,
                 carrier_at,
@@ -2298,7 +2313,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "434" && scope.paired_class_tag == "266" {
+        } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
                 bytes,
                 carrier_at,
@@ -2306,7 +2321,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "414" && scope.paired_class_tag == "264" {
+        } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264" {
             let (role, role_offset, carrier_transform_offset) =
                 crate::xref::repeated_target_component_insert(
                     bytes,
@@ -2891,7 +2906,8 @@ fn exact_copy_paste_component_operation(
                 && occurrence.byte_offset < copied.byte_offset
                 && occurrence
                     .component_guid
-                    .eq_ignore_ascii_case(&copied.component_guid)
+                    .as_str()
+                    .eq_ignore_ascii_case(copied.component_guid.as_str())
                 && occurrence.transform().is_none()
         })
         .collect::<Vec<_>>();
@@ -2944,13 +2960,14 @@ fn bind_component_pattern_occurrences(
     }
     let Some(component_guid) = generated
         .first()
-        .map(|(occurrence, _)| &occurrence.component_guid)
+        .map(|(occurrence, _)| occurrence.component_guid.as_str())
     else {
         return;
     };
     if generated.iter().any(|(occurrence, _)| {
         !occurrence
             .component_guid
+            .as_str()
             .eq_ignore_ascii_case(component_guid)
     }) {
         return;
@@ -2962,6 +2979,7 @@ fn bind_component_pattern_occurrences(
                 && occurrence.byte_offset < byte_offset
                 && occurrence
                     .component_guid
+                    .as_str()
                     .eq_ignore_ascii_case(component_guid)
                 && matches!(
                     occurrence.placement,
@@ -2976,7 +2994,7 @@ fn bind_component_pattern_occurrences(
         return;
     };
     *instances = DesignRectangularPatternInstances::Components {
-        component_guid: component_guid.clone(),
+        component_guid: seed.component_guid.clone(),
         seed: crate::records::feature::DesignPatternComponentInstance {
             instance: seed_frame,
             occurrence_guid: seed.occurrence_guid.clone(),
@@ -3021,8 +3039,8 @@ fn exact_assembly_operand_frames(
     let start = usize::try_from(scope.byte_offset).ok()?;
     let frame_variant = crate::design::assembly::operand_frame_variant(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let frame_offsets = match frame_variant {
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
@@ -3032,7 +3050,7 @@ fn exact_assembly_operand_frames(
             class_388_assemble::SECOND_OPERAND_TRANSFORM,
         ),
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
-            if scope.class_tag == "383" && scope.paired_class_tag == "258" =>
+            if scope.class_tag.as_str() == "383" && scope.paired_class_tag.as_str() == "258" =>
         {
             (
                 class_383_scope::FIRST_OPERAND_REFERENCE,
@@ -3042,7 +3060,7 @@ fn exact_assembly_operand_frames(
             )
         }
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
-            if scope.class_tag == "406" && scope.paired_class_tag == "261" =>
+            if scope.class_tag.as_str() == "406" && scope.paired_class_tag.as_str() == "261" =>
         {
             (
                 class_406_assemble::FIRST_OPERAND_REFERENCE,
@@ -3084,8 +3102,8 @@ fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
         let standard_tail_marker_offset = if scope.frame_length == class_383_scope::LEN as u64
-            && scope.class_tag == "383"
-            && scope.paired_class_tag == "258"
+            && scope.class_tag.as_str() == "383"
+            && scope.paired_class_tag.as_str() == "258"
         {
             class_383_scope::STANDARD_TAIL_MARKER
         } else {
@@ -3097,8 +3115,8 @@ fn exact_assembly_operand_frames(
             || bytes.get(start + 33..start + 40)? != [0; 7]
             || bytes.get(start + 173..start + 180)? != [0; 7]
             || !crate::design::assembly::variable_reference_assembly_generation(
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             ) && bytes
                 .get(start + standard_tail_marker_offset..start + standard_tail_marker_offset + 4)?
                 != [0; 4]
@@ -3149,8 +3167,8 @@ fn exact_assembly_operand_frames(
 }
 
 fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> Option<()> {
-    if scope.class_tag != "388"
-        || scope.paired_class_tag != "266"
+    if scope.class_tag.as_str() != "388"
+        || scope.paired_class_tag.as_str() != "266"
         || scope.frame_length != class_388_assemble::LEN as u64
         || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
@@ -3317,8 +3335,8 @@ fn exact_legacy_class_383_operand_paths(
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !crate::design::assembly::legacy_class_383_258_scope(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     ) || scope.reference_members.len() != 38
     {
         return None;
@@ -3558,17 +3576,17 @@ fn exact_legacy_class_383_operand_path(
         link: DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
-            locator_class_tag: "378".into(),
+            locator_class_tag: "378".to_owned().try_into().ok()?,
             locator_byte_offset: u64::try_from(carrier_at).ok()?,
             locator_scope_reference_offset,
             wrapper_record_index: leading_identity_record_index,
             wrapper_reference_offset,
-            wrapper_class_tag: "359".into(),
+            wrapper_class_tag: "359".to_owned().try_into().ok()?,
             wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
             path_reference_offset: occurrence_guid_offset,
         },
         record_index: leading_identity_record_index,
-        class_tag: "386".into(),
+        class_tag: "386".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(leading_identity_at).ok()?,
         occurrence_guids: vec![crate::records::Located {
             value: leading_occurrence_guid,
@@ -3600,14 +3618,19 @@ fn exact_legacy_class_383_record_frame(
 fn exact_legacy_class_383_identity_guids(
     bytes: &[u8],
     start: usize,
-) -> Option<(String, String, u64, u64)> {
+) -> Option<(
+    crate::records::DesignRelaxedGuidText,
+    crate::records::DesignRelaxedGuidText,
+    u64,
+    u64,
+)> {
     let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
     let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
     let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, first_at, 36..=36)?;
     let (identity_guid, after_identity) = lp_utf16_bounded(bytes, second_at, 36..=36)?;
-    if !crate::bytes::is_guid_relaxed(&occurrence_guid)
-        || !crate::bytes::is_guid_relaxed(&identity_guid)
-        || after_occurrence != second_at
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    if after_occurrence != second_at
         || after_identity
             != start
                 .checked_add(class_383_identity::IDENTITY_GUID)?
@@ -3626,8 +3649,8 @@ fn exact_legacy_class_383_identity_guids(
 struct LegacyClass412Path {
     record_index: u32,
     byte_offset: u64,
-    occurrence_guid: crate::records::Located<String>,
-    identity_guids: Vec<crate::records::Located<String>>,
+    occurrence_guid: crate::records::Located<crate::records::DesignRelaxedGuidText>,
+    identity_guids: Vec<crate::records::Located<crate::records::DesignRelaxedGuidText>>,
 }
 
 fn exact_legacy_class_388_operand_paths(
@@ -3638,8 +3661,8 @@ fn exact_legacy_class_388_operand_paths(
     if !matches!(
         crate::design::assembly::operand_frame_variant(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
@@ -3829,17 +3852,17 @@ fn exact_legacy_class_388_operand_path_envelope(
         link: DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
-            locator_class_tag,
+            locator_class_tag: locator_class_tag.try_into().ok()?,
             locator_byte_offset: u64::try_from(locator_at).ok()?,
             locator_scope_reference_offset,
             wrapper_record_index,
             wrapper_reference_offset,
-            wrapper_class_tag,
+            wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset: final_path_reference_offset?,
         },
         record_index: final_path.record_index,
-        class_tag: "412".into(),
+        class_tag: "412".to_owned().try_into().ok()?,
         byte_offset: final_path.byte_offset,
         occurrence_guids,
         identity_guids: final_path.identity_guids,
@@ -3877,9 +3900,8 @@ fn exact_legacy_class_412_path(
         start.checked_add(class_412_path::OCCURRENCE_GUID)?,
         36..=36,
     )?;
-    if !is_guid_relaxed(&occurrence_guid)
-        || occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)?
-    {
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
         return None;
     }
     let identity_offsets = [
@@ -3892,9 +3914,7 @@ fn exact_legacy_class_412_path(
     for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
         let identity_at = start.checked_add(relative_offset)?;
         let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-        if !is_guid_relaxed(&identity_guid) {
-            return None;
-        }
+        let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
         let expected_end = match ordinal {
             0 => class_412_path::SECOND_IDENTITY_GUID,
             1 => class_412_path::IDENTITY_SEPARATOR,
@@ -3953,8 +3973,8 @@ fn exact_assembly_operand_paths(
         .checked_add(11)?;
     let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
@@ -4019,8 +4039,8 @@ fn exact_assembly_operand_path_envelope(
 ) -> Option<DesignAssemblyOperandPath> {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
     let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     );
     let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
         if variable_reference {
@@ -4158,12 +4178,12 @@ fn exact_assembly_operand_path_envelope(
     let link = DesignAssemblyOperandPathLink {
         locator_reference_offset,
         locator_record_index,
-        locator_class_tag,
+        locator_class_tag: locator_class_tag.try_into().ok()?,
         locator_byte_offset: u64::try_from(locator_at).ok()?,
         locator_scope_reference_offset,
         wrapper_record_index,
         wrapper_reference_offset,
-        wrapper_class_tag,
+        wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
         wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
         path_reference_offset,
     };
@@ -4171,12 +4191,12 @@ fn exact_assembly_operand_path_envelope(
         exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
     });
     let mut path = paths.next()??;
-    if variable_reference && path.class_tag != "330" {
+    if variable_reference && path.class_tag.as_str() != "330" {
         return None;
     }
     for continuation in paths {
         let continuation = continuation?;
-        if !variable_reference || continuation.class_tag != "330" {
+        if !variable_reference || continuation.class_tag.as_str() != "330" {
             return None;
         }
         path.occurrence_guids.extend(continuation.occurrence_guids);
@@ -4211,9 +4231,7 @@ fn exact_assembly_operand_path(
             let mut position = after_tag + 18;
             let (occurrence, after_occurrence) =
                 lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-            if !crate::bytes::is_guid_relaxed(&occurrence) {
-                return None;
-            }
+            let occurrence = crate::records::DesignRelaxedGuidText::try_from(occurrence).ok()?;
             occurrence_guids.push(crate::records::Located {
                 value: occurrence,
                 offset: u64::try_from(position + 4).ok()?,
@@ -4221,9 +4239,7 @@ fn exact_assembly_operand_path(
             position = after_occurrence;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 identity_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4236,9 +4252,7 @@ fn exact_assembly_operand_path(
             position += 8;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 identity_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4262,9 +4276,7 @@ fn exact_assembly_operand_path(
             let mut position = after_tag + 18;
             for _ in 0..count {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
-                    return None;
-                }
+                let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                 occurrence_guids.push(crate::records::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -4279,9 +4291,7 @@ fn exact_assembly_operand_path(
                 for _ in 0..2 {
                     let (guid, after_guid) =
                         lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    if !crate::bytes::is_guid_relaxed(&guid) {
-                        return None;
-                    }
+                    let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                     identity_guids.push(crate::records::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -4295,9 +4305,7 @@ fn exact_assembly_operand_path(
                 for _ in 0..2 {
                     let (guid, after_guid) =
                         lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    if !crate::bytes::is_guid_relaxed(&guid) {
-                        return None;
-                    }
+                    let guid = crate::records::DesignRelaxedGuidText::try_from(guid).ok()?;
                     identity_guids.push(crate::records::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -4319,7 +4327,7 @@ fn exact_assembly_operand_path(
     Some(DesignAssemblyOperandPath {
         link,
         record_index,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         byte_offset: u64::try_from(start).ok()?,
         occurrence_guids,
         identity_guids,
@@ -4940,7 +4948,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
     }
     let frame = bytes.get(*start..*paired)?;
     let owner = crate::design::decode::parameters::parse_parameter_owner(frame)?;
-    if owner.class_tag != "426"
+    if owner.class_tag.as_str() != "426"
         || owner.record_index != count_record_index
         || owner.scope_record_index != scope.record_index
         || owner.local_ordinal != mirror_441_count::LOCAL_ORDINAL_VALUE
@@ -5137,12 +5145,17 @@ pub fn bind_mirror_constructions(
         let seed_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000))
+            .filter(|group| {
+                matches!(
+                    group.role(),
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                )
+            })
             .collect::<Vec<_>>();
         let plane_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| group.role == 0x0000_0005_0000_0000)
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
             .collect::<Vec<_>>();
         let ([seed_group], [plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice())
         else {
@@ -5213,7 +5226,7 @@ pub fn bind_mirror_constructions(
                 continue;
             };
         let seed_feature = match seed_group.members.as_slice() {
-            _ if seed_group.role != 0x0000_0008_0000_0000 => None,
+            _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))
@@ -5577,10 +5590,10 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     Some(DesignCopyPasteBodiesOperation {
         bodies,
         body_group_record_index,
-        body_group_class_tag,
+        body_group_class_tag: body_group_class_tag.try_into().ok()?,
         body_group_byte_offset: u64::try_from(body_group_at).ok()?,
         relation_record_index,
-        relation_class_tag,
+        relation_class_tag: relation_class_tag.try_into().ok()?,
         relation_byte_offset: u64::try_from(relation_at).ok()?,
     })
 }
@@ -5612,10 +5625,14 @@ pub(crate) fn exact_base_feature_construction(
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
         });
     }
-    let legacy_290_261 = scope.class_tag == "290" && scope.paired_class_tag == "261";
-    let legacy_360_258 = scope.class_tag == "360" && scope.paired_class_tag == "258";
-    let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
-    let legacy_444_263 = scope.class_tag == "444" && scope.paired_class_tag == "263";
+    let legacy_290_261 =
+        scope.class_tag.as_str() == "290" && scope.paired_class_tag.as_str() == "261";
+    let legacy_360_258 =
+        scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
+    let legacy_409_262 =
+        scope.class_tag.as_str() == "409" && scope.paired_class_tag.as_str() == "262";
+    let legacy_444_263 =
+        scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
     if legacy_409_262 && scope.frame_length == 258 {
         if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset) {
             return None;
@@ -5947,8 +5964,8 @@ fn exact_base_feature_body_snapshot(
     // Fixed prefix, linkage and GUID blocks, generic scope prefix, kind
     // prefix, ordinal, and closing tail; the kind payload adds 2L bytes.
     const FIXED_FRAME_LENGTH: u64 = 431;
-    if scope.class_tag != "314"
-        || scope.paired_class_tag != "259"
+    if scope.class_tag.as_str() != "314"
+        || scope.paired_class_tag.as_str() != "259"
         || scope.reference_members.len() != 1
     {
         return None;
@@ -5997,7 +6014,11 @@ fn exact_base_feature_body_snapshot(
     };
     let parse_guid = |at: usize| {
         let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
-        crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + snapshot_guid::GUID_UTF16))
+        Some((
+            crate::records::DesignRelaxedGuidText::try_from(guid).ok()?,
+            end,
+            at + snapshot_guid::GUID_UTF16,
+        ))
     };
     let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
     let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
@@ -6184,7 +6205,7 @@ fn exact_pipe_owner_lanes(
                     .reference_members
                     .values()
                     .any(|value| value == &owner.record_index)
-                && owner.class_tag == "342"
+                && owner.class_tag.as_str() == "342"
                 && owner.frame_length == 103
                 && owner.evaluated_value.is_finite()
         })
@@ -6223,8 +6244,8 @@ fn exact_legacy_thicken_class_347(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    if scope.class_tag != "347"
-        || scope.paired_class_tag != "258"
+    if scope.class_tag.as_str() != "347"
+        || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length != u64::try_from(thicken_347::LEN).ok()?
         || scope.reference_members.len() != 3
     {
@@ -6294,8 +6315,8 @@ fn exact_shell_class_369_261(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    if scope.class_tag != "369"
-        || scope.paired_class_tag != "261"
+    if scope.class_tag.as_str() != "369"
+        || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length != shell_369_261::LEN as u64
         || scope.reference_members.len() != 3
     {
@@ -6394,8 +6415,8 @@ pub(crate) fn exact_direct_face_operation(
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset).ok()?;
     if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
-        && scope.class_tag == "369"
-        && scope.paired_class_tag == "261"
+        && scope.class_tag.as_str() == "369"
+        && scope.paired_class_tag.as_str() == "261"
     {
         return exact_shell_class_369_261(bytes, records, scope);
     }
@@ -7120,8 +7141,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "407"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "407"
+                && scope.paired_class_tag.as_str() == "258"
                 && parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members.len() == 8
                 && View::u32_le_at(bytes, start + 25) == Some(2)
@@ -7148,8 +7169,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "403"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "403"
+                && scope.paired_class_tag.as_str() == "258"
                 && scope.frame_length == 387
                 && scope.reference_members.len() == 8
                 && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
@@ -7172,10 +7193,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Loft
-            if scope.class_tag.len() == 3
-                && bytes
-                    .get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
-                    == Some(&[0; 10])
+            if bytes.get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
+                == Some(&[0; 10])
                 && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
                     == Some(&[1; 4])
                 && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
@@ -7191,8 +7210,7 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Loft
-            if scope.class_tag.len() == 3
-                && parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
+            if parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
         {
             Some(DesignPathFeatureConstruction::Loft(
                 crate::records::feature::DesignLoftConstruction {
@@ -8065,28 +8083,35 @@ fn exact_hole_face_selection(
             else {
                 continue;
             };
-            if class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                || after_tag != start + 7
-                || View::u32_le_at(bytes, after_tag) != Some(*record_index)
-            {
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
+                continue;
+            };
+            if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
             let Some(frame) = parse_entity_selection_frame(
                 bytes,
                 *record_index,
                 u64::try_from(start).ok()?,
-                &class_tag,
+                class_tag.as_str(),
             ) else {
+                continue;
+            };
+            let Ok(asset_id) = crate::records::DesignRelaxedGuidText::try_from(frame.asset_id)
+            else {
+                continue;
+            };
+            let Ok(context_id) = crate::records::DesignRelaxedGuidText::try_from(frame.context_id)
+            else {
                 continue;
             };
             candidates.push(DesignHoleFaceSelection {
                 record_index: frame.record_index,
                 byte_offset: frame.byte_offset,
-                class_tag: frame.class_tag,
-                asset_id: frame.asset_id,
+                class_tag,
+                asset_id,
                 asset_id_offset: frame.asset_id_offset,
-                context_id: frame.context_id,
+                context_id,
                 context_id_offset: frame.context_id_offset,
                 identity_record_index: frame.identity_record_index,
                 identity_record_offset: frame.identity_record_offset,
@@ -8219,11 +8244,12 @@ pub(crate) fn exact_combine_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let compact = scope.class_tag == "387"
-        && scope.paired_class_tag == "258"
+    let compact = scope.class_tag.as_str() == "387"
+        && scope.paired_class_tag.as_str() == "258"
         && parameter_scope_payload_length(scope) == Some(314);
-    let extended_reference =
-        scope.class_tag == "329" && scope.paired_class_tag == "261" && scope.frame_length == 363;
+    let extended_reference = scope.class_tag.as_str() == "329"
+        && scope.paired_class_tag.as_str() == "261"
+        && scope.frame_length == 363;
     let (form, operation_offset, keep_tools_offset) = if compact {
         if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
             != [0; 10]
@@ -8352,7 +8378,7 @@ struct ExternalReferenceIdentity {
     target_offset: u64,
     segment: u32,
     segment_offset: u64,
-    asset_id: String,
+    asset_id: crate::records::DesignRelaxedGuidText,
     asset_id_offset: u64,
     link_name: String,
     link_name_offset: u64,
@@ -8375,7 +8401,8 @@ fn take_external_reference_identity(
     let segment = View::u32_le_at(bytes, segment_at)?;
     let asset_at = segment_at.checked_add(4)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_at, 1..=256)?;
-    if !is_guid_relaxed(&asset_id) || bytes.get(after_asset_id) != Some(&0) {
+    let asset_id = crate::records::DesignRelaxedGuidText::try_from(asset_id).ok()?;
+    if bytes.get(after_asset_id) != Some(&0) {
         return None;
     }
     let link_name_at = after_asset_id.checked_add(1)?;
@@ -8388,9 +8415,8 @@ fn take_external_reference_identity(
                 lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
             let version_urn_at = after_property_key;
             let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
-            if !is_guid_relaxed(&property_key) {
-                return None;
-            }
+            let property_key =
+                crate::records::DesignRelaxedGuidText::try_from(property_key).ok()?;
             (
                 Some(crate::records::feature::DesignExternalVersion {
                     property_key: crate::records::Located {
@@ -8450,9 +8476,11 @@ fn exact_combine_external_body_identity(
     let selector_context_at = after_selector_asset_id;
     let (selector_context_id, after_selector_context_id) =
         lp_utf16_bounded(bytes, selector_context_at, 1..=256)?;
-    if !is_guid_relaxed(&selector_asset_id)
-        || !is_guid_relaxed(&selector_context_id)
-        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+    let selector_asset_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
+    let selector_context_id =
+        crate::records::DesignRelaxedGuidText::try_from(selector_context_id).ok()?;
+    if View::u32_le_at(bytes, after_selector_context_id)? != 2
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
@@ -8669,7 +8697,7 @@ pub(crate) fn parameter_scope_candidate_headers(
                     Some(DesignRecordHeader {
                         id: String::new(),
                         record_index,
-                        class_tag,
+                        class_tag: class_tag.try_into().ok()?,
                         byte_offset: *at as u64,
                     })
                 })
@@ -8837,7 +8865,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            &header.class_tag,
+            header.class_tag.as_str(),
             &paired_class_tag,
             reference_members,
         )
@@ -8869,7 +8897,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            &header.class_tag,
+            header.class_tag.as_str(),
             &paired_class_tag,
             *reference_count_at,
             reference_members,
@@ -8938,7 +8966,7 @@ pub(crate) fn parse_parameter_scope(
             .and_then(|offset| u64::try_from(offset).ok())
             .filter(|&offset| offset != 0),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
-        reference_members: crate::records::ReferenceRun::Located(
+        reference_members: crate::records::ReferenceRun::located(
             reference_members
                 .iter()
                 .copied()
@@ -8948,7 +8976,7 @@ pub(crate) fn parse_parameter_scope(
         ),
         payload: kind.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_at as u64,
     };
     if let Some(prologue) = extrude_prologue {
@@ -9162,8 +9190,8 @@ fn exact_coil_placement(
     let frame_length = transform_paired.checked_sub(transform_start)?;
     let explicit_transform = match frame_length {
         coil_legacy_identity::LEN
-            if scope.class_tag == "393"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "393"
+                && scope.paired_class_tag.as_str() == "258"
                 && transform_class_tag == "395"
                 && transform_paired_class_tag == "258"
                 && exact_coil_legacy_identity_frame(
@@ -9270,17 +9298,19 @@ fn exact_coil_placement(
         u64::try_from(selection_start).ok()?,
         &selection_class_tag,
     )
-    .map(|selection| DesignCoilSelection::Persistent {
-        asset_id: selection.asset_id,
-        context_id: selection.context_id,
-        identity_record_index: selection.identity_record_index,
-        primary_identity: selection.primary_identity,
-        secondary: selection
-            .secondary
-            .map(|identity| crate::records::DesignSecondaryIdentity {
-                identity: identity.identity.value,
-                curve_identity: identity.curve_identity.map(|identity| identity.value),
+    .and_then(|selection| {
+        Some(DesignCoilSelection::Persistent {
+            asset_id: selection.asset_id.try_into().ok()?,
+            context_id: selection.context_id.try_into().ok()?,
+            identity_record_index: selection.identity_record_index,
+            primary_identity: selection.primary_identity,
+            secondary: selection.secondary.map(|identity| {
+                crate::records::DesignSecondaryIdentity {
+                    identity: identity.identity.value,
+                    curve_identity: identity.curve_identity.map(|identity| identity.value),
+                }
             }),
+        })
     })
     .or_else(|| {
         exact_coil_face_selection(
@@ -9296,11 +9326,11 @@ fn exact_coil_placement(
     Some(DesignCoilPlacement {
         selection_record_index,
         selection_record_byte_offset: u64::try_from(selection_start).ok()?,
-        selection_class_tag,
+        selection_class_tag: selection_class_tag.try_into().ok()?,
         selection,
         transform_record_index,
         transform_record_byte_offset: u64::try_from(transform_start).ok()?,
-        transform_class_tag,
+        transform_class_tag: transform_class_tag.try_into().ok()?,
         explicit_transform,
     })
 }
@@ -9468,7 +9498,7 @@ fn exact_coil_face_selection(
     let header = DesignRecordHeader {
         id: scope.id.clone(),
         byte_offset: u64::try_from(selection_start).ok()?,
-        class_tag: selection_class_tag.to_owned(),
+        class_tag: selection_class_tag.to_owned().try_into().ok()?,
         record_index: selection_record_index,
     };
     let face = parse_face_operand(
@@ -9486,8 +9516,8 @@ fn exact_coil_face_selection(
     }
     let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
     Some(DesignCoilSelection::FaceRecipe {
-        asset_id: prefix.asset_id,
-        context_id: prefix.context_id,
+        asset_id: prefix.asset_id.try_into().ok()?,
+        context_id: prefix.context_id.try_into().ok()?,
         recipe_record_index: face.recipe_record_index,
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),

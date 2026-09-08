@@ -32,8 +32,11 @@ fn generated_source_less_writes_design_type_metastream() {
             id: "generated:design-type#0".into(),
             byte_offset: 0,
             module: "Fusion".to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![1, 2]),
-            type_guid: "11111111-2222-3333-4444-555555555555".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![1, 2]),
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 7,
@@ -43,11 +46,19 @@ fn generated_source_less_writes_design_type_metastream() {
             id: "generated:design-type#1".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![277]),
-            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![277]),
+            type_guid: "22222222-3333-4444-5555-666666666666"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: "11111111-2222-3333-4444-555555555555".into(),
+                value: Some(
+                    "11111111-2222-3333-4444-555555555555"
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: None,
             }),
             version: 9,
@@ -57,11 +68,19 @@ fn generated_source_less_writes_design_type_metastream() {
             id: "generated:design-type#2".into(),
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![999]),
-            type_guid: "33333333-4444-5555-6666-777777777777".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![999]),
+            type_guid: "33333333-4444-5555-6666-777777777777"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: "11111111-2222-3333-4444-555555555555".into(),
+                value: Some(
+                    "11111111-2222-3333-4444-555555555555"
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: None,
             }),
             version: 11,
@@ -87,7 +106,12 @@ fn generated_source_less_writes_design_type_metastream() {
         .contains("Design type module name is GUID-shaped"));
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
         Some(crate::records::RecordedValue {
-            value: "22222222-3333-4444-5555-666666666666".into(),
+            value: Some(
+                "22222222-3333-4444-5555-666666666666"
+                    .to_owned()
+                    .try_into()
+                    .expect("base GUID"),
+            ),
             offset: None,
         });
     let error = F3dCodec
@@ -104,7 +128,9 @@ fn generated_source_less_writes_design_type_metastream() {
     assert_eq!(types.len(), 3);
     let fusion = types
         .iter()
-        .find(|design_type| design_type.type_guid == "11111111-2222-3333-4444-555555555555")
+        .find(|design_type| {
+            design_type.type_guid.as_str() == "11111111-2222-3333-4444-555555555555"
+        })
         .expect("Fusion type");
     assert_eq!(fusion.module, "Fusion");
     assert_eq!(
@@ -119,10 +145,10 @@ fn generated_source_less_writes_design_type_metastream() {
         .expect("sketch-module type");
     assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), [277]);
     assert_eq!(
-        sketch
-            .base_type_guid
+        sketch.base_type_guid.as_ref().and_then(|field| field
+            .value
             .as_ref()
-            .map(|field| field.value.as_str()),
+            .map(crate::records::DesignRelaxedGuidText::as_str)),
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);
@@ -344,8 +370,11 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         id: "generated:design-type#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-        entities: crate::records::ReferenceRun::Unlocated(vec![277]),
-        type_guid: "22222222-3333-4444-5555-666666666666".into(),
+        entities: crate::records::ReferenceRun::unlocated(vec![277]),
+        type_guid: "22222222-3333-4444-5555-666666666666"
+            .to_owned()
+            .try_into()
+            .expect("type GUID"),
         type_guid_offset: 0,
         base_type_guid: None,
         version: 4,
@@ -373,24 +402,31 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(584),
-        record_reference_offset: None,
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Unlocated(vec![33, 44]),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: vec![33, 44]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     }];
     native.design_record_headers = vec![
         DesignRecordHeader {
             id: "generated:record-header#0".into(),
             record_index: 33,
-            class_tag: "350".into(),
+            class_tag: crate::records::DesignClassTag::try_from("350".to_owned()).unwrap(),
             byte_offset: 0,
         },
         DesignRecordHeader {
             id: "generated:record-header#1".into(),
             record_index: 44,
-            class_tag: "351".into(),
+            class_tag: crate::records::DesignClassTag::try_from("351".to_owned()).unwrap(),
             byte_offset: 0,
         },
     ];
@@ -403,7 +439,13 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         .expect("source-less Design ownership encode");
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.design_entity_headers[0].module = Some("Body".to_owned());
+        native.design_entity_headers[0].registration =
+            crate::records::DesignEntityRegistration::new(
+                Some("Body".to_owned()),
+                None,
+                crate::records::ReferenceRun::unlocated(Vec::new()),
+            )
+            .expect("body registration");
     }
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -425,25 +467,29 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         native.design_entity_headers[0].declared_reference_count(),
         Some(2)
     );
-    assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
     assert_eq!(
         native.design_entity_headers[0]
-            .references
-            .values()
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(584)
+    );
+    assert_eq!(
+        native.design_entity_headers[0]
+            .reference_values()
             .copied()
             .collect::<Vec<_>>(),
         [33, 44]
     );
     assert_eq!(native.design_record_headers.len(), 2);
     assert_eq!(native.design_record_headers[0].record_index, 33);
-    assert_eq!(native.design_record_headers[1].class_tag, "351");
+    assert_eq!(native.design_record_headers[1].class_tag.as_str(), "351");
 }
 
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
         DesignEntityHeader, SegmentType, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationReturnMember,
+        SketchRelation, SketchRelationMember, SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -454,8 +500,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-00-object#0".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![277]),
-            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID.into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![277]),
+            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 1,
@@ -465,8 +514,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-01-relation#0".into(),
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![33]),
-            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![33]),
+            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 1,
@@ -476,8 +528,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-02-point#0".into(),
             byte_offset: 2,
             module: "Geometry".into(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![100]),
-            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![100]),
+            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 11,
@@ -487,8 +542,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-03-line#0".into(),
             byte_offset: 3,
             module: "Geometry".into(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![600]),
-            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![600]),
+            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 2,
@@ -498,8 +556,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-04-circular#0".into(),
             byte_offset: 4,
             module: "Geometry".into(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![601]),
-            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![601]),
+            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 0,
@@ -509,8 +570,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-05-nurbs#0".into(),
             byte_offset: 5,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![602]),
-            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B".into(),
+            entities: crate::records::ReferenceRun::unlocated(vec![602]),
+            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: 3,
@@ -520,10 +584,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-type-06-point-companion#0".into(),
             byte_offset: 6,
             module: "Geometry".into(),
-            entities: crate::records::ReferenceRun::Unlocated(vec![101]),
+            entities: crate::records::ReferenceRun::unlocated(vec![101]),
             type_guid: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE
                 .0
-                .into(),
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
             version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
@@ -538,18 +604,25 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(584),
-        record_reference_offset: None,
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Unlocated(vec![33]),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: vec![33]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     }];
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: Some(277),
-        class_tag: "258".into(),
+        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -570,7 +643,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#0".into(),
             record_index: 600,
             owner_reference: Some(277),
-            class_tag: "259".into(),
+            class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: Some(901),
@@ -587,7 +660,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#1".into(),
             record_index: 601,
             owner_reference: Some(277),
-            class_tag: "260".into(),
+            class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -606,7 +679,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#2".into(),
             record_index: 602,
             owner_reference: Some(277),
-            class_tag: "261".into(),
+            class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -614,7 +687,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             secondary_id: 705,
             geometry: Some(SketchCurveGeometry::Nurbs {
                 carrier_reference: None,
-                subtype_class_tag: "365".into(),
+                subtype_class_tag: crate::records::DesignClassTag::try_from("365".to_owned())
+                    .unwrap(),
                 subtype_record_index: 602,
                 degree: 2,
                 fit_tolerance: 1.0e-8,
@@ -640,13 +714,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_relations = vec![SketchRelation {
         id: "generated:sketch-relation#0".into(),
         record_index: 33,
-        class_tag: "257".into(),
+        class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
         owner_entity_id: String::new(),
         owner_reference_offset: 0,
-        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: (vec![
             SketchRelationMember::from_index(100),
@@ -654,11 +728,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ])
         .try_into()
         .expect("uniform member resolution"),
-        definition: crate::records::SketchRelationDefinition::new(
-            0x11,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x11, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(600),
@@ -710,14 +781,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6].entities =
-        crate::records::ReferenceRun::Unlocated(Vec::new());
+        crate::records::ReferenceRun::unlocated(Vec::new());
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require a registered inverse companion");
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).design_types[6].entities =
-        crate::records::ReferenceRun::Unlocated(vec![101]);
+        crate::records::ReferenceRun::unlocated(vec![101]);
     f3d_native_mut(&mut source_less).design_types[2].version = 10;
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

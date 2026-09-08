@@ -56,7 +56,7 @@ pub(crate) fn exact_surface_trim_operation(
         chain_records.push(DesignSurfaceTrimChainRecord {
             record_index,
             byte_offset: u64::try_from(chain_start).ok()?,
-            class_tag,
+            class_tag: class_tag.try_into().ok()?,
             frame_length,
         });
         chain_start = frame_end;
@@ -132,9 +132,9 @@ pub(crate) fn exact_surface_trim_operation(
         chain_records,
         cell_table_record_index,
         cell_table_byte_offset: u64::try_from(primary).ok()?,
-        cell_table_class_tag,
+        cell_table_class_tag: cell_table_class_tag.try_into().ok()?,
         cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
-        cell_table_paired_class_tag,
+        cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
         cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
         cell_count,
         cell_count_offset: u64::try_from(cell_count_offset).ok()?,

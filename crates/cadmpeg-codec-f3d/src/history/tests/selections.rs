@@ -143,10 +143,16 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
     let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
-        class_tag: "333".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
+        asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         context_id_offset: 0,
         identity_record_index: 103,
         identity_record_offset: 0,
@@ -253,10 +259,10 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "class_tag": "277",
             "compact_layout": true,
             "local_id": record_index,
-            "local_id_offset": 0,
-            "asset_id": "asset",
+            "local_id_offset": 23,
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
             "asset_id_offset": 0,
-            "context_id": "context",
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
             "context_id_offset": 0
         }))
         .expect("edge identity")
@@ -487,10 +493,16 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 },
                 record_index,
                 byte_offset: 0,
-                class_tag: "389".into(),
-                asset_id: "asset".into(),
+                class_tag: crate::records::DesignClassTag::try_from("389".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 0,
-                context_id: "context".into(),
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
                 context_id_offset: 0,
                 selector_tail: None,
 
@@ -570,9 +582,15 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
 
     let identity =
         |occurrence_reference| crate::records::feature::DesignCombineExternalBodyIdentity {
-            selector_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            selector_asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_asset_id_offset: 0,
-            selector_context_id: "22222222-2222-4222-8222-222222222222".into(),
+            selector_context_id: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_context_id_offset: 0,
             occurrence_reference,
             occurrence_reference_offset: 0,
@@ -580,7 +598,10 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             external_body_reference_offset: 0,
             external_segment: 2,
             external_segment_offset: 0,
-            external_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            external_asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             external_asset_id_offset: 0,
             external_link_name: "component-body-link".into(),
             external_link_name_offset: 0,
@@ -1660,8 +1681,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
-            "byte_offset": 0, "class_tag": "313", "asset_id": "asset",
-            "asset_id_offset": 0, "context_id": "context", "context_id_offset": 0,
+            "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
             "identity_record_index": 41, "identity_record_offset": 0,
             "primary_identity": 10, "primary_identity_offset": 0,
             "next_record_index": 42, "next_byte_offset": 0

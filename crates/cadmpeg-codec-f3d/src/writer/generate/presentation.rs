@@ -30,11 +30,11 @@ pub(crate) struct GeneratedDesignType {
 impl From<&SegmentType> for GeneratedDesignType {
     fn from(value: &SegmentType) -> Self {
         Self {
-            type_guid: value.type_guid.clone(),
+            type_guid: value.type_guid.as_str().to_owned(),
             base_type_guid: value
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.clone()),
+                .and_then(|field| field.value.as_ref().map(|guid| guid.as_str().to_owned())),
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
@@ -50,18 +50,24 @@ pub(crate) struct GeneratedBrowserNode {
     pub visible: bool,
 }
 
+/// A generated body map and its registered identity.
+pub(crate) struct GeneratedBodyMap {
+    pub entries: BTreeMap<u64, u64>,
+    pub record_index: u32,
+    pub class_tag: crate::records::DesignClassTag,
+}
+
+/// Generated browser nodes and their registered class.
+pub(crate) struct GeneratedBrowserNodes {
+    pub nodes: Vec<GeneratedBrowserNode>,
+    pub class_tag: crate::records::DesignClassTag,
+}
+
 /// The common registry consumed by both generated Design streams.
-///
-/// Construction allocates every synthetic record identity and adds its type
-/// membership once. The stream encoders therefore cannot derive different
-/// class tags, record indices, or browser-node identities.
 pub(crate) struct GeneratedDesignRegistry {
     pub types: Vec<GeneratedDesignType>,
-    pub body_map: BTreeMap<u64, u64>,
-    pub body_map_record_index: Option<u32>,
-    pub body_map_class_tag: Option<String>,
-    pub browser_nodes: Vec<GeneratedBrowserNode>,
-    pub browser_node_class_tag: Option<String>,
+    pub body_map: Option<GeneratedBodyMap>,
+    pub browser_nodes: Option<GeneratedBrowserNodes>,
 }
 
 impl GeneratedDesignRegistry {
@@ -162,21 +168,26 @@ impl GeneratedDesignRegistry {
             .iter()
             .map(GeneratedDesignType::from)
             .collect::<Vec<_>>();
-        let body_map_type = body_map_record_index
+        let body_map = body_map_record_index
             .map(|record_index| {
-                register_generated_type(
+                let type_index = register_generated_type(
                     &mut types,
                     BODY_MAP_CARRIER_TYPE_GUID,
                     BODY_MAP_CARRIER_BASE_TYPE_GUID,
                     BODY_MAP_CARRIER_TYPE_VERSION,
                     DESIGN_MODULE_BODY,
                     vec![u64::from(record_index)],
-                )
+                )?;
+                Ok::<_, CodecError>(GeneratedBodyMap {
+                    entries: body_map,
+                    record_index,
+                    class_tag: dynamic_class_tag(type_index)?,
+                })
             })
             .transpose()?;
-        let browser_node_type = (!browser_nodes.is_empty())
+        let browser_nodes = (!browser_nodes.is_empty())
             .then(|| {
-                register_generated_type(
+                let type_index = register_generated_type(
                     &mut types,
                     BROWSER_NODE_TYPE_GUID,
                     BROWSER_NODE_BASE_TYPE_GUID,
@@ -186,14 +197,15 @@ impl GeneratedDesignRegistry {
                         .iter()
                         .map(|node| u64::from(node.record_index))
                         .collect(),
-                )
+                )?;
+                Ok::<_, CodecError>(GeneratedBrowserNodes {
+                    nodes: browser_nodes,
+                    class_tag: dynamic_class_tag(type_index)?,
+                })
             })
             .transpose()?;
 
         Ok(Self {
-            body_map_class_tag: body_map_type.map(dynamic_class_tag).transpose()?,
-            body_map_record_index,
-            browser_node_class_tag: browser_node_type.map(dynamic_class_tag).transpose()?,
             types,
             body_map,
             browser_nodes,
@@ -265,7 +277,9 @@ fn register_generated_type(
     Ok(ordinal)
 }
 
-pub(crate) fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecError> {
+pub(crate) fn dynamic_class_tag(
+    type_ordinal: usize,
+) -> Result<crate::records::DesignClassTag, CodecError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))
@@ -275,7 +289,8 @@ pub(crate) fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecErro
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
-    Ok(tag.to_string())
+    crate::records::DesignClassTag::try_from(tag.to_string())
+        .map_err(|error| CodecError::malformed(format_args!("generated Design type: {error}")))
 }
 
 /// Build an RFC 9562 version-8 UUID from a domain-separated stable identity.
@@ -319,16 +334,24 @@ mod tests {
         crate::records::SegmentType {
             id: "synthetic:design-type#body-map".into(),
             byte_offset: 0,
-            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+            type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                value: Some(
+                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: Some(0),
             }),
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -341,16 +364,24 @@ mod tests {
         crate::records::SegmentType {
             id: "synthetic:design-type#browser-node".into(),
             byte_offset: 0,
-            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID.into(),
+            type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: Some(crate::records::RecordedValue {
-                value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(),
+                value: Some(
+                    crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                ),
                 offset: Some(0),
             }),
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::ReferenceRun::Located(
+            entities: crate::records::ReferenceRun::located(
                 entity_ids
                     .into_iter()
                     .map(|value| crate::records::Located { value, offset: 0 })
@@ -432,6 +463,7 @@ mod tests {
             .expect("generated Design registry")
             .browser_nodes
             .into_iter()
+            .flat_map(|group| group.nodes)
             .map(|node| (node.entity_suffix, node.node_guid))
             .collect()
     }
@@ -466,12 +498,16 @@ mod tests {
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
             .expect("generated Design registry");
-        let [node] = registry.browser_nodes.as_slice() else {
+        let Some(super::GeneratedBrowserNodes { nodes, .. }) = &registry.browser_nodes else {
+            panic!("generated browser nodes")
+        };
+        let [node] = nodes.as_slice() else {
             panic!("one visible body must generate one browser node")
         };
-        let body_map = registry
-            .body_map_record_index
-            .expect("one visible body must generate one body map");
+        let Some(body_map) = &registry.body_map else {
+            panic!("one visible body must generate one body map")
+        };
+        let body_map = body_map.record_index;
         assert_ne!(u64::from(node.record_index), node.entity_suffix);
         assert_ne!(u64::from(body_map), node.entity_suffix);
         assert_ne!(body_map, node.record_index);
@@ -491,7 +527,10 @@ mod tests {
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
             .expect("generated Design registry");
-        let record_index = registry.body_map_record_index.expect("generated body map");
+        let Some(body_map) = &registry.body_map else {
+            panic!("generated body map")
+        };
+        let record_index = body_map.record_index;
         let body_map_type = registry
             .types
             .iter()
@@ -519,7 +558,10 @@ mod tests {
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
             .expect("generated Design registry");
-        let [node] = registry.browser_nodes.as_slice() else {
+        let Some(super::GeneratedBrowserNodes { nodes, .. }) = &registry.browser_nodes else {
+            panic!("generated browser nodes")
+        };
+        let [node] = nodes.as_slice() else {
             panic!("one visible body must generate one browser node")
         };
         let node_type = registry
@@ -548,6 +590,6 @@ mod tests {
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
             .expect("no browser-node allocation is needed");
-        assert!(registry.browser_nodes.is_empty());
+        assert!(registry.browser_nodes.is_none());
     }
 }

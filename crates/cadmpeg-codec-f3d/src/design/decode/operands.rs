@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+use crate::records::topology::{DesignConstructionOperandRole, DesignExtrudeFaceEncoding};
+
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
@@ -35,6 +37,7 @@ use crate::records::feature::{
     DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointRule, DesignWorkPointSketchPointSelection,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
@@ -338,12 +341,9 @@ pub fn bind_work_point_input_carriers(
                 }));
                 continue;
             }
-            if let Some(selection) = parse_work_point_sketch_point_frame(
-                bytes,
-                input.record_index,
-                header.byte_offset,
-                &header.class_tag,
-            ) {
+            if let Some(selection) =
+                parse_work_point_sketch_point_frame(bytes, input.record_index, header.byte_offset)
+            {
                 let point_matches = sketch_points
                     .iter()
                     .filter(|point| {
@@ -352,13 +352,19 @@ pub fn bind_work_point_input_carriers(
                             && point.persistent_id() == Some(selection.point_persistent_id)
                     })
                     .collect::<Vec<_>>();
+                let (Ok(asset_id), Ok(context_id)) = (
+                    crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
+                    crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
+                ) else {
+                    continue;
+                };
                 if let [point] = point_matches.as_slice() {
                     input.carrier = Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
                         selection: DesignWorkPointSketchPointSelection {
-                            class_tag: selection.class_tag,
-                            asset_id: selection.asset_id,
+                            class_tag: header.class_tag.clone(),
+                            asset_id,
                             asset_id_offset: selection.asset_id_offset,
-                            context_id: selection.context_id,
+                            context_id,
                             context_id_offset: selection.context_id_offset,
                             identity_record_index: selection.identity_record_index,
                             identity_record_offset: selection.identity_record_offset,
@@ -378,7 +384,7 @@ pub fn bind_work_point_input_carriers(
                 bytes,
                 input.record_index,
                 header.byte_offset,
-                &header.class_tag,
+                header.class_tag.as_str(),
             ) else {
                 continue;
             };
@@ -394,12 +400,18 @@ pub fn bind_work_point_input_carriers(
             if selection.secondary.is_some() {
                 continue;
             }
+            let (Ok(asset_id), Ok(context_id)) = (
+                crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
+                crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
+            ) else {
+                continue;
+            };
             input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection {
                     class_tag: header.class_tag.clone(),
-                    asset_id: selection.asset_id,
+                    asset_id,
                     asset_id_offset: selection.asset_id_offset,
-                    context_id: selection.context_id,
+                    context_id,
                     context_id_offset: selection.context_id_offset,
                     identity_record_index: selection.identity_record_index,
                     identity_record_offset: selection.identity_record_offset,
@@ -628,6 +640,12 @@ pub fn decode_edge_identity_operands(
             let Ok(group_member_ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
+            let (Ok(asset_id), Ok(context_id)) = (
+                crate::records::DesignRelaxedGuidText::try_from(parsed.asset_id),
+                crate::records::DesignRelaxedGuidText::try_from(parsed.context_id),
+            ) else {
+                continue;
+            };
             out.push(DesignEdgeIdentityOperand {
                 id: ids::native_design_edge_identity_operand_id(&entry.name, header.byte_offset),
                 scope_record_index: scope.record_index,
@@ -636,12 +654,11 @@ pub fn decode_edge_identity_operands(
                 record_index,
                 byte_offset: header.byte_offset,
                 class_tag: header.class_tag.clone(),
-                compact_layout: parsed.compact_layout,
+                layout: parsed.layout,
                 local_id: parsed.local_id,
-                local_id_offset: parsed.local_id_offset,
-                asset_id: parsed.asset_id,
+                asset_id,
                 asset_id_offset: parsed.asset_id_offset,
-                context_id: parsed.context_id,
+                context_id,
                 context_id_offset: parsed.context_id_offset,
                 historical: None,
                 treatment_radius_candidates: Vec::new(),
@@ -683,37 +700,40 @@ pub fn decode_face_operands(
             continue;
         };
         let is_extrude_operand = matches!(
-            group.extrude_role,
+            group.extrude_role(),
             Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces(_))
         );
         let is_offset_faces_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::OffsetFaces)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_shell_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Shell)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_loft_profile = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Loft)
-            && matches!(group.role, 0x0000_0041_0000_0000 | 0x0000_0043_0000_0000);
+            && matches!(
+                group.role(),
+                DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
+            );
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
-            && group.role == 0x0000_0011_0000_0000;
+            && group.role() == DesignOperandRole::FACES;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
-            && group.role == 0x0000_0021_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X21;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
         let is_circular_pattern_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::CircularPattern)
-            && group.role == 0x0000_0008_0000_0000;
+            && group.role() == DesignOperandRole::BODIES_B;
         let is_mirror_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == 0x0000_0008_0000_0000;
+            && group.role() == DesignOperandRole::BODIES_B;
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == 0x0000_0005_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X5;
         let is_split_face_operand =
             scope.kind() == crate::records::feature::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
@@ -722,17 +742,17 @@ pub fn decode_face_operands(
                 | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_thread_face = scope.kind() == crate::records::feature::DesignFeatureKind::Thread
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_hole_face = scope.kind() == crate::records::feature::DesignFeatureKind::Hole
-            && group.role == 0x0000_0004_0000_0000;
+            && group.role() == DesignOperandRole::BODIES_A;
         let is_draft_operand =
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
-            && group.role == 0x0000_0041_0000_0000;
+            && group.role() == DesignOperandRole::PROFILE;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -753,7 +773,7 @@ pub fn decode_face_operands(
         {
             continue;
         }
-        if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+        if group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
             && scope.extrude_profile().is_some()
         {
             continue;
@@ -815,8 +835,8 @@ pub fn decode_face_operands(
             == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_some();
         matches!(
@@ -848,8 +868,8 @@ pub fn decode_face_operands(
         let ordinals = if scope.kind() == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_some()
         {
@@ -873,8 +893,8 @@ pub fn decode_face_operands(
                 == crate::records::feature::DesignFeatureKind::AsBuilt
                 && crate::design::assembly::legacy_as_built_421_generation(
                     scope.frame_length,
-                    &scope.class_tag,
-                    &scope.paired_class_tag,
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
                 )
                 .is_some()
             {
@@ -991,13 +1011,13 @@ pub fn decode_face_source_groups(
                         value: DesignFaceSourceMember {
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
-                            class_tag: source_class_tag,
+                            class_tag: source_class_tag.try_into().ok()?,
                             persistent_identity: DesignConstructionPersistentIdentity {
                                 local_id: member.local_id,
                                 local_id_offset: member.local_id_offset,
-                                asset_id: member.asset_id,
+                                asset_id: member.asset_id.try_into().ok()?,
                                 asset_id_offset: member.asset_id_offset,
-                                context_id: member.context_id,
+                                context_id: member.context_id.try_into().ok()?,
                                 context_id_offset: member.context_id_offset,
                                 tail_slot_present: member.tail_slot_present,
                                 tail_slot_offset: member.tail_slot_offset,
@@ -1025,15 +1045,21 @@ pub fn decode_face_source_groups(
             else {
                 continue;
             };
+            let (Ok(carrier_class_tag), Ok(paired_class_tag)) = (
+                crate::records::DesignClassTag::try_from(carrier_class_tag.clone()),
+                crate::records::DesignClassTag::try_from(paired_class_tag.clone()),
+            ) else {
+                continue;
+            };
             out.push(DesignFaceSourceGroup {
                 id: ids::native_design_face_source_group_id(&entry.name, *carrier_byte_offset),
                 scope_record_index: scope.record_index,
                 carrier_reference_ordinal,
                 carrier_record_index: *carrier_record_index,
                 carrier_span,
-                carrier_class_tag: carrier_class_tag.clone(),
+                carrier_class_tag,
                 paired_record_index: *paired_record_index,
-                paired_class_tag: paired_class_tag.clone(),
+                paired_class_tag,
                 source_members,
             });
         }
@@ -1635,7 +1661,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         next_record_index,
         next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned(),
+        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
 }
@@ -1644,24 +1670,28 @@ pub(crate) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
-    let mut face_groups = groups.iter_mut().filter(|group| {
-        group
-            .extrude_role
-            .is_some_and(|role| matches!(role, DesignExtrudeOperandRole::Faces(_)))
-    });
+    let mut face_groups =
+        groups
+            .iter_mut()
+            .filter_map(|group| match extrude_operand_role(scope, group.role()) {
+                Some(PendingExtrudeRole::Faces(encoding)) => Some((group, encoding)),
+                _ => None,
+            });
     if scope.extrude_prologue().map(DesignExtrudePrologue::start)
         == Some(DesignExtrudeStart::FromFace)
     {
-        if let Some(group) = face_groups.next() {
-            group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
-                DesignExtrudeFaceRole::Start,
-            )));
+        if let Some((group, encoding)) = face_groups.next() {
+            group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+                encoding,
+                usage: DesignExtrudeFaceRole::Start,
+            };
         }
     }
-    for group in face_groups {
-        group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
-            DesignExtrudeFaceRole::Termination,
-        )));
+    for (group, encoding) in face_groups {
+        group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+            encoding,
+            usage: DesignExtrudeFaceRole::Termination,
+        };
     }
 }
 
@@ -1932,6 +1962,16 @@ impl ConstructionOperandGroupParse {
     }
 }
 
+/// Extrude operand role before the ordered face groups are separated into
+/// start and termination uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingExtrudeRole {
+    BodiesA,
+    BodiesB,
+    Profile,
+    Faces(DesignExtrudeFaceEncoding),
+}
+
 /// Interpret the role of a counted group owned by an Extrude scope.
 ///
 /// The `0x12` face-group role is a legacy spelling of the one-sided-to-face
@@ -1941,32 +1981,39 @@ impl ConstructionOperandGroupParse {
 /// a global role alias.
 fn extrude_operand_role(
     scope: &DesignParameterScope,
-    role: u64,
-) -> Option<DesignExtrudeOperandRole> {
+    role: DesignOperandRole,
+) -> Option<PendingExtrudeRole> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
     match role {
-        0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
-        0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-        0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces(None)),
-        0x0000_0005_0000_0000
+        DesignOperandRole::BODIES_A => Some(PendingExtrudeRole::BodiesA),
+        DesignOperandRole::BODIES_B => Some(PendingExtrudeRole::BodiesB),
+        DesignOperandRole::PROFILE => Some(PendingExtrudeRole::Profile),
+        DesignOperandRole::FACES => {
+            Some(PendingExtrudeRole::Faces(DesignExtrudeFaceEncoding::Faces))
+        }
+        DesignOperandRole::ROLE_0X5
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces(None))
+            Some(PendingExtrudeRole::Faces(
+                DesignExtrudeFaceEncoding::SelectedStart,
+            ))
         }
-        0x0000_0012_0000_0000
+        DesignOperandRole::ROLE_0X12
             if scope
                 .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces(None))
+            Some(PendingExtrudeRole::Faces(
+                DesignExtrudeFaceEncoding::LegacyTermination,
+            ))
         }
-        0x0000_0012_0000_0000 if is_class_296_two_sided_to_faces_scope(scope) => {
-            Some(DesignExtrudeOperandRole::Faces(None))
-        }
+        DesignOperandRole::ROLE_0X12 if is_class_296_two_sided_to_faces_scope(scope) => Some(
+            PendingExtrudeRole::Faces(DesignExtrudeFaceEncoding::LegacyTermination),
+        ),
         _ => None,
     }
 }
@@ -2061,7 +2108,7 @@ pub(crate) fn parse_construction_operand_group(
         });
     }
     let legacy_move_class_328 = scope.kind() == crate::records::feature::DesignFeatureKind::Move
-        && header.class_tag == "328"
+        && header.class_tag.as_str() == "328"
         && auxiliary_reference_slots == [false, true]
         && header.record_index.checked_add(13).is_some_and(|expected| {
             auxiliary_records.len() == 1 && auxiliary_records[0].value == expected
@@ -2081,6 +2128,7 @@ pub(crate) fn parse_construction_operand_group(
     ) else {
         return NotAGroup;
     };
+    let role = DesignOperandRole::from_raw(role);
     cursor += 8;
     if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
         return NotAGroup;
@@ -2161,13 +2209,24 @@ pub(crate) fn parse_construction_operand_group(
         return Unclosed;
     };
 
-    let extrude_role = extrude_operand_role(scope, role);
+    // Face groups take their start/termination use from their ordered position
+    // in the scope, which `assign_extrude_face_roles` resolves once every group
+    // of the scope is decoded.
+    let operand_role = match extrude_operand_role(scope, role) {
+        Some(PendingExtrudeRole::BodiesA) => DesignConstructionOperandRole::ExtrudeBodiesA,
+        Some(PendingExtrudeRole::BodiesB) => DesignConstructionOperandRole::ExtrudeBodiesB,
+        Some(PendingExtrudeRole::Profile) => DesignConstructionOperandRole::ExtrudeProfile,
+        Some(PendingExtrudeRole::Faces(_)) | None => DesignConstructionOperandRole::Other(role),
+    };
     let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
         u64::try_from(member_count_at),
         u64::try_from(role_at),
         u64::try_from(opaque_index_at),
         u64::try_from(paired_at),
     ) else {
+        return Unclosed;
+    };
+    let Ok(paired_class_tag) = paired_class_tag.try_into() else {
         return Unclosed;
     };
     Complete(Box::new(DesignConstructionOperandGroup {
@@ -2193,8 +2252,7 @@ pub(crate) fn parse_construction_operand_group(
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
         },
-        role,
-        extrude_role,
+        operand_role,
         role_offset,
         paired_class_tag,
         paired_byte_offset,
@@ -2229,7 +2287,8 @@ fn legacy_body_group_tail(
     {
         return None;
     }
-    if scope.kind() == crate::records::feature::DesignFeatureKind::Move && header.class_tag == "328"
+    if scope.kind() == crate::records::feature::DesignFeatureKind::Move
+        && header.class_tag.as_str() == "328"
     {
         if bytes.get(tail) != Some(&0) {
             return None;
@@ -2265,7 +2324,7 @@ fn legacy_body_group_tail(
     }
     let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
     if scope.kind() == crate::records::feature::DesignFeatureKind::Move
-        && header.class_tag == "328"
+        && header.class_tag.as_str() == "328"
         && paired_class_tag != "263"
     {
         return None;
@@ -2441,7 +2500,7 @@ pub(crate) fn parse_construction_operand_path(
         nested_record_index_offset,
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
-        following_class_tag,
+        following_class_tag: following_class_tag.try_into().ok()?,
     })
 }
 
@@ -2473,7 +2532,7 @@ pub(crate) fn parse_construction_operand_transform(
             transform_offset: u64::try_from(transform_at).ok()?,
             following_record_index,
             following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag,
+            following_class_tag: following_class_tag.try_into().ok()?,
         },
     )
 }
@@ -2697,7 +2756,7 @@ pub(crate) fn parse_construction_operand_identity(
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
-        current_class_tag = next_class_tag;
+        current_class_tag = next_class_tag.try_into().ok()?;
         chain_started = true;
     }
     let tracking_path = parse_construction_tracking_path(
@@ -2715,19 +2774,19 @@ pub(crate) fn parse_construction_operand_identity(
     if !chain_started {
         return None;
     }
-    let persistent_identity = parse_extrude_identity_member(bytes, current_at).map(|member| {
-        DesignConstructionPersistentIdentity {
+    let persistent_identity = parse_extrude_identity_member(bytes, current_at).and_then(|member| {
+        Some(DesignConstructionPersistentIdentity {
             local_id: member.local_id,
             local_id_offset: member.local_id_offset,
-            asset_id: member.asset_id,
+            asset_id: member.asset_id.try_into().ok()?,
             asset_id_offset: member.asset_id_offset,
-            context_id: member.context_id,
+            context_id: member.context_id.try_into().ok()?,
             context_id_offset: member.context_id_offset,
             tail_slot_present: member.tail_slot_present,
             tail_slot_offset: member.tail_slot_offset,
             next_record_index: member.next_record_index,
             next_byte_offset: member.next_byte_offset,
-        }
+        })
     });
     Some(DesignConstructionOperandIdentity {
         id: String::new(),
@@ -2745,7 +2804,7 @@ pub(crate) fn parse_construction_tracking_path(
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_record_index: u32,
-    wrapper_class_tag: &str,
+    wrapper_class_tag: &crate::records::DesignClassTag,
 ) -> Option<DesignConstructionTrackingPath> {
     if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
         || bytes.get(wrapper_at + 21) != Some(&1)
@@ -2787,10 +2846,10 @@ pub(crate) fn parse_construction_tracking_path(
     Some(DesignConstructionTrackingPath {
         wrapper_record_index,
         wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
-        wrapper_class_tag: wrapper_class_tag.to_owned(),
+        wrapper_class_tag: wrapper_class_tag.clone(),
         carrier_record_index,
         carrier_byte_offset: u64::try_from(carrier_at).ok()?,
-        carrier_class_tag,
+        carrier_class_tag: carrier_class_tag.try_into().ok()?,
         primary_identity,
         primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
         selector,
@@ -2801,7 +2860,7 @@ pub(crate) fn parse_construction_tracking_path(
         second_related_identity,
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
-        following_class_tag,
+        following_class_tag: following_class_tag.try_into().ok()?,
     })
 }
 
@@ -2901,7 +2960,7 @@ pub(crate) fn parse_extrude_selection_group(
         opaque_scalar,
         opaque_scalar_offset: u64::try_from(position + 4).ok()?,
         variant: bytes[position + 28] != 0,
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
 }
@@ -2994,7 +3053,7 @@ pub(crate) fn parse_entity_selection_operand(
         bytes,
         header.record_index,
         header.byte_offset,
-        &header.class_tag,
+        header.class_tag.as_str(),
     )?;
     Some(DesignEntitySelectionOperand {
         id: String::new(),
@@ -3004,9 +3063,9 @@ pub(crate) fn parse_entity_selection_operand(
         record_index: frame.record_index,
         byte_offset: frame.byte_offset,
         class_tag: frame.class_tag,
-        asset_id: frame.asset_id,
+        asset_id: frame.asset_id.try_into().ok()?,
         asset_id_offset: frame.asset_id_offset,
-        context_id: frame.context_id,
+        context_id: frame.context_id.try_into().ok()?,
         context_id_offset: frame.context_id_offset,
         identity_record_index: frame.identity_record_index,
         identity_record_offset: frame.identity_record_offset,
@@ -3027,7 +3086,7 @@ pub(crate) fn parse_entity_selection_operand(
 pub(crate) struct EntitySelectionFrame {
     pub(crate) record_index: u32,
     pub(crate) byte_offset: u64,
-    pub(crate) class_tag: String,
+    pub(crate) class_tag: crate::records::DesignClassTag,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
     pub(crate) context_id: String,
@@ -3123,7 +3182,6 @@ pub(crate) fn entity_selection_matches_curve(
 /// Direct sketch-point identity carried by a `WorkPoint` input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WorkPointSketchPointFrame {
-    class_tag: String,
     asset_id: String,
     asset_id_offset: u64,
     context_id: String,
@@ -3148,7 +3206,6 @@ fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
-    class_tag: &str,
 ) -> Option<WorkPointSketchPointFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
@@ -3197,7 +3254,6 @@ fn parse_work_point_sketch_point_frame(
         identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
     )?);
     Some(WorkPointSketchPointFrame {
-        class_tag: class_tag.to_owned(),
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -3326,7 +3382,7 @@ pub(crate) fn parse_entity_selection_frame(
     Some(EntitySelectionFrame {
         record_index,
         byte_offset,
-        class_tag: class_tag.to_owned(),
+        class_tag: class_tag.to_owned().try_into().ok()?,
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -3708,9 +3764,9 @@ fn parse_body_recipe_operand_frame_with_index(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        asset_id,
+        asset_id: asset_id.try_into().ok()?,
         asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
-        context_id,
+        context_id: context_id.try_into().ok()?,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         selector_tail: Some(crate::records::Located {
             value: selector_tail,
@@ -3905,9 +3961,9 @@ pub(crate) fn parse_extrude_selection_member(
         class_tag: header.class_tag.clone(),
         local_id: member.local_id,
         local_id_offset: member.local_id_offset,
-        asset_id: member.asset_id,
+        asset_id: member.asset_id.try_into().ok()?,
         asset_id_offset: member.asset_id_offset,
-        context_id: member.context_id,
+        context_id: member.context_id.try_into().ok()?,
         context_id_offset: member.context_id_offset,
         tail_slot_present: member.tail_slot_present,
         tail_slot_offset: member.tail_slot_offset,
@@ -4000,9 +4056,8 @@ fn parse_extrude_identity_member(
 }
 
 pub(crate) struct ParsedEdgeIdentityMember {
-    pub(crate) compact_layout: bool,
+    pub(crate) layout: crate::records::topology::DesignEdgeIdentityLayout,
     pub(crate) local_id: u64,
-    pub(crate) local_id_offset: u64,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
     pub(crate) context_id: String,
@@ -4013,15 +4068,17 @@ pub(crate) fn parse_edge_identity_member(
     bytes: &[u8],
     start: usize,
 ) -> Option<ParsedEdgeIdentityMember> {
-    let (compact_layout, marker_offset) = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
-        (false, 23)
+    use crate::records::topology::DesignEdgeIdentityLayout;
+    let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
+        DesignEdgeIdentityLayout::Full
     } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
-        (true, 22)
+        DesignEdgeIdentityLayout::Compact
     } else if bytes.get(start + 11..start + 21) == Some(&[0; 10]) {
-        (true, 21)
+        DesignEdgeIdentityLayout::Shortest
     } else {
         return None;
     };
+    let marker_offset = usize::try_from(layout.marker_offset()).ok()?;
     let local_id_offset = marker_offset + 1;
     let asset_offset = marker_offset + 15;
     if bytes.get(start + marker_offset) != Some(&1)
@@ -4037,9 +4094,8 @@ pub(crate) fn parse_edge_identity_member(
         return None;
     }
     Some(ParsedEdgeIdentityMember {
-        compact_layout,
+        layout,
         local_id,
-        local_id_offset: u64::try_from(start + local_id_offset).ok()?,
         asset_id,
         asset_id_offset: u64::try_from(start + asset_offset + 4).ok()?,
         context_id,
@@ -4120,12 +4176,12 @@ pub(crate) fn parse_sketch_profile(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        asset_id,
+        asset_id: asset_id.try_into().ok()?,
         asset_id_offset: u64::try_from(start + 40).ok()?,
         entity_id: entity.entity_id.clone(),
         entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
         region_selection,
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
 }
@@ -4287,13 +4343,13 @@ fn parse_sketch_profile_region_selection(
     Some(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         region_count_offset: u64::try_from(
             selection_at.checked_add(region_selection::REGION_COUNT)?,
         )
         .ok()?,
         regions,
-        companion_class_tag,
+        companion_class_tag: companion_class_tag.try_into().ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
     })
 }
@@ -4348,7 +4404,7 @@ pub(crate) fn parse_vertex_recipe(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: parsed.paired_byte_offset,
-        paired_class_tag: parsed.paired_class_tag,
+        paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
         recipe_record_index: parsed.recipe_record_index,
         recipe_record_byte_offset: parsed.recipe_record_byte_offset,
         recipe_id: parsed.recipe_id,
@@ -4534,7 +4590,7 @@ pub(crate) fn parse_edge_operand(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: parsed.paired_byte_offset,
-        paired_class_tag: parsed.paired_class_tag,
+        paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
         recipe_record_index: parsed.recipe_record_index,
         recipe_record_byte_offset: parsed.recipe_record_byte_offset,
         recipe_id: parsed.recipe_id,
@@ -5114,7 +5170,7 @@ pub(crate) fn parse_face_operand(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone(),
+        paired_class_tag: indexed[0].0.clone().try_into().ok()?,
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),

@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_filtered, lp_utf16_bounded};
 use crate::records::SegmentType;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
@@ -311,16 +311,26 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
-            lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
-                .filter(|(guid, _)| is_guid_relaxed(guid)),
+            lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
+                crate::records::DesignRelaxedGuidText::try_from(guid)
+                    .ok()
+                    .map(|guid| (guid, next))
+            }),
             "type GUID",
             at,
         )?;
         at = next;
         let base_type_guid_offset = require(at.checked_add(4), "base type GUID", at)?;
         let (base_type_guid, next) = require(
-            lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)
-                .filter(|(guid, _)| guid.is_empty() || is_guid_relaxed(guid)),
+            lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
+                if guid.is_empty() {
+                    Some((None, next))
+                } else {
+                    crate::records::DesignRelaxedGuidText::try_from(guid)
+                        .ok()
+                        .map(|guid| (Some(guid), next))
+                }
+            }),
             "base type GUID",
             at,
         )?;
@@ -365,17 +375,17 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             byte_offset: entry_at as u64,
             type_guid,
             type_guid_offset: type_guid_offset as u64,
-            base_type_guid: (!base_type_guid.is_empty()).then_some(crate::records::RecordedValue {
-                value: base_type_guid,
+            base_type_guid: base_type_guid.map(|guid| crate::records::RecordedValue {
+                value: Some(guid),
                 offset: Some(base_type_guid_offset as u64),
             }),
             version,
             version_offset: version_offset as u64,
             module,
             entities: if entity_ids.is_empty() {
-                crate::records::ReferenceRun::Unlocated(entity_ids)
+                crate::records::ReferenceRun::unlocated(entity_ids)
             } else {
-                crate::records::ReferenceRun::Located(
+                crate::records::ReferenceRun::located(
                     entity_ids
                         .into_iter()
                         .enumerate()
@@ -699,12 +709,12 @@ mod tests {
         assert_eq!(types.len(), 3);
 
         // Every field of an entry belongs to that entry, not to its successor.
-        assert_eq!(types[0].type_guid, first);
+        assert_eq!(types[0].type_guid.as_str(), first);
         assert_eq!(
-            types[0]
-                .base_type_guid
+            types[0].base_type_guid.as_ref().and_then(|field| field
+                .value
                 .as_ref()
-                .map(|field| field.value.as_str()),
+                .map(crate::records::DesignRelaxedGuidText::as_str)),
             Some(base)
         );
         assert_eq!(types[0].version, 3);
@@ -714,7 +724,7 @@ mod tests {
             [10, 11]
         );
 
-        assert_eq!(types[1].type_guid, second);
+        assert_eq!(types[1].type_guid.as_str(), second);
         assert_eq!(types[1].base_type_guid, None);
 
         assert_eq!(types[1].version, 7);
@@ -724,12 +734,12 @@ mod tests {
             [20]
         );
 
-        assert_eq!(types[2].type_guid, third);
+        assert_eq!(types[2].type_guid.as_str(), third);
         assert_eq!(
-            types[2]
-                .base_type_guid
+            types[2].base_type_guid.as_ref().and_then(|field| field
+                .value
                 .as_ref()
-                .map(|field| field.value.as_str()),
+                .map(crate::records::DesignRelaxedGuidText::as_str)),
             Some(second)
         );
         assert_eq!(types[2].version, 11);
@@ -756,16 +766,16 @@ mod tests {
             assert!(design_type.byte_offset < design_type.type_guid_offset);
             assert_eq!(
                 string_at(design_type.type_guid_offset, 36),
-                design_type.type_guid
+                design_type.type_guid.as_str()
             );
             assert_eq!(u32_at(design_type.version_offset), design_type.version);
             if let Some(base) = &design_type.base_type_guid {
                 assert_eq!(
                     string_at(base.offset.expect("parsed base location"), 36),
-                    base.value
+                    base.value.as_ref().expect("base GUID").as_str()
                 );
             }
-            let crate::records::ReferenceRun::Located(entities) = &design_type.entities else {
+            let Some(entities) = design_type.entities.located_rows() else {
                 panic!("parsed entity locations");
             };
             for crate::records::Located {

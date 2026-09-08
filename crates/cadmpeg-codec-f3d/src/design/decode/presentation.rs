@@ -82,7 +82,12 @@ pub(crate) fn browser_node_records(
                 .design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -160,7 +165,12 @@ pub(crate) fn body_presentations(
                 .design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -627,16 +637,16 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: value.to_owned(),
+                value: Some(value.to_owned().try_into().expect("base GUID")),
                 offset: Some(0),
             }),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 

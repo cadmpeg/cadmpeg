@@ -11,6 +11,7 @@
 use super::prelude::*;
 use super::project_rectangular_pattern_scalars;
 use crate::records::feature::{DesignParameterScope, DesignRectangularPatternConstruction};
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
 };
@@ -20,14 +21,18 @@ use cadmpeg_ir::features::{
 
 const EPS_SPACING: f64 = 1.0e-12;
 
-fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstructionOperandGroup {
+fn group(
+    scope_record_index: u32,
+    record_index: u32,
+    role: DesignOperandRole,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
         scope_record_index,
         scope_reference_ordinal: 1,
         record_index,
         byte_offset: 0,
-        class_tag: "313".into(),
+        class_tag: crate::records::DesignClassTag::try_from("313".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: record_index + 1,
             offset: 0,
@@ -47,10 +52,9 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
         role_offset: 0,
-        paired_class_tag: "263".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("263".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
@@ -100,7 +104,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 #[test]
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
-    let body_group = group(10, 20, 0x0000_0008_0000_0000);
+    let body_group = group(10, 20, DesignOperandRole::BODIES_B);
     let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
         .expect("body rectangular pattern");
     assert_linear_seed(
@@ -111,7 +115,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
     );
 
     let face_scope = rectangular_scope();
-    let face_group = group(10, 30, 0x0000_0004_0000_0000);
+    let face_group = group(10, 30, DesignOperandRole::BODIES_A);
     let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
         .expect("face rectangular pattern");
     assert_linear_seed(

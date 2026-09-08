@@ -9,6 +9,7 @@
 )]
 use super::prelude::*;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -44,7 +45,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 1100,
@@ -63,13 +64,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "332".into(),
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -122,8 +123,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [26, 37]
     );
-    assert_eq!(group.role, 0x0000_0008_0000_0000);
-    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
+    assert_eq!(group.role(), DesignOperandRole::BODIES_B);
+    assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
     assert!(group.frame.auxiliary_records.is_empty());
     assert_eq!(
@@ -146,9 +147,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
         .complete()
         .expect("counted Extrude whole-body group");
-    assert_eq!(whole_body.role, 0x0000_0004_0000_0000);
+    assert_eq!(whole_body.role(), DesignOperandRole::BODIES_A);
     assert_eq!(
-        whole_body.extrude_role,
+        whole_body.extrude_role(),
         Some(DesignExtrudeOperandRole::Bodies)
     );
 
@@ -178,7 +179,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagged.role, 0x0000_0008_0000_0000);
+    assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
     start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
@@ -187,7 +188,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
             .complete()
             .expect("counted Extrude retained role-five group");
-    assert_eq!(retained_role_five.extrude_role, None);
+    assert_eq!(retained_role_five.extrude_role(), None);
 
     let mut from_face_scope = scope.clone();
     if let crate::records::feature::DesignScopePayload::Extrude(slot)
@@ -213,14 +214,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 start_offset: 1042,
             });
     }
-    let start_face =
+    let mut start_face =
         parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude start-face group");
-    assert_eq!(start_face.role, 0x0000_0005_0000_0000);
+    assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
+    assert_eq!(start_face.extrude_role(), None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &from_face_scope,
+        std::slice::from_mut(&mut start_face),
+    );
     assert_eq!(
-        start_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        start_face.extrude_role(),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Start
+        ))
     );
 
     let mut to_face_scope = from_face_scope.clone();
@@ -250,14 +258,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut to_face_bytes = bytes.clone();
     to_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
-    let legacy_to_face =
+    let mut legacy_to_face =
         parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
             .complete()
             .expect("counted Extrude legacy to-face group");
-    assert_eq!(legacy_to_face.role, 0x0000_0012_0000_0000);
+    assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
+    assert_eq!(legacy_to_face.extrude_role(), None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &to_face_scope,
+        std::slice::from_mut(&mut legacy_to_face),
+    );
     assert_eq!(
-        legacy_to_face.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        legacy_to_face.extrude_role(),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
@@ -282,7 +297,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(flagless.role, 0x0000_0008_0000_0000);
+    assert_eq!(flagless.role(), DesignOperandRole::BODIES_B);
     assert!(!flagless.frame.variant);
     assert_eq!(
         flagless.paired_byte_offset,
@@ -336,10 +351,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let auxiliary_paired_at = auxiliary.len();
     header(&mut auxiliary, *b"259", 100);
     let auxiliary_record = DesignRecordHeader {
-        class_tag: "283".into(),
+        class_tag: crate::records::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
     };
-    let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
+    let mut auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
         .complete()
         .expect("Extrude face group carrying both optional references");
     assert_eq!(
@@ -377,10 +392,17 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         [37, 48]
     );
     assert!(auxiliary.frame.trailing_records.is_empty());
-    assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
+    assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
+    assert_eq!(auxiliary.extrude_role(), None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &scope,
+        std::slice::from_mut(&mut auxiliary),
+    );
     assert_eq!(
-        auxiliary.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        auxiliary.extrude_role(),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
@@ -395,7 +417,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    tool_group.role = 0x0000_0021_0000_0000;
+    tool_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     let mut target_group = group.clone();
     target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     target_group.record_index = 400;
@@ -404,7 +428,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 500,
         offset: 1129,
     }];
-    target_group.role = 0x0000_0010_0000_0000;
+    target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     let split_groups = [tool_group, target_group];
     let (features, _) = project_parameter_design(
         &[],
@@ -427,8 +453,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut compact_split_scope = split_scope.clone();
-    compact_split_scope.class_tag = "418".into();
-    compact_split_scope.paired_class_tag = "266".into();
+    compact_split_scope.class_tag =
+        crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
+    compact_split_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     compact_split_scope.frame_length = 330;
     let (compact_features, _) = project_parameter_design(
         &[],
@@ -478,10 +506,16 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             group_member_ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: "372".into(),
-            asset_id: "asset".into(),
+            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 0,
-            context_id: "context".into(),
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
             context_id_offset: 0,
             identity_record_index: record_index + 3,
             identity_record_offset: 0,
@@ -554,7 +588,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
     assert_eq!(plane_split.dependencies, expected_planes);
 
-    compact_split_scope.class_tag = "375".into();
+    compact_split_scope.class_tag =
+        crate::records::DesignClassTag::try_from("375".to_owned()).unwrap();
     let (mismatched_features, _) = project_parameter_design(
         &[],
         &[],
@@ -587,7 +622,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 200,
         offset: 1096,
     }];
-    split_tool_group.role = 0x0000_0009_0000_0000;
+    split_tool_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
     let mut split_target_group = group.clone();
     split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     split_target_group.record_index = 400;
@@ -596,7 +632,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 500,
         offset: 1118,
     }];
-    split_target_group.role = 0x0000_0004_0000_0000;
+    split_target_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let split_tool = DesignFaceOperand {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
@@ -607,9 +644,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }),
         record_index: 200,
         byte_offset: 1200,
-        class_tag: "297".into(),
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
         paired_byte_offset: 1400,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         recipe_record_index: 203,
         recipe_record_byte_offset: 1300,
         recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
@@ -679,7 +716,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut multiple_targets_scope = split_body_scope.clone();
     multiple_targets_scope.frame_length = 358;
     multiple_targets_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 400, 500, 501]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
     let mut multiple_targets = split_target_group.clone();
     multiple_targets.members = vec![500, 501]
         .into_iter()
@@ -697,9 +734,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut construction_tool_scope = split_body_scope.clone();
     construction_tool_scope.frame_length = 347;
     construction_tool_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 400, 500]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
     let mut construction_tool = split_tool_group.clone();
-    construction_tool.role = 0x0000_0021_0000_0000;
+    construction_tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X21,
+    );
     construction_tool.members = vec![200, 201]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
@@ -731,7 +770,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         match mutate {
             0 => tool.scope_reference_ordinal = 1,
             1 => tool.record_index = 101,
-            2 => tool.role = 0x0000_0008_0000_0000,
+            2 => {
+                tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                );
+            }
             3 => {
                 tool.members = vec![crate::records::Located {
                     value: 201,
@@ -747,7 +790,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         match mutate {
             0 => target.scope_reference_ordinal = 3,
             1 => target.record_index = 401,
-            2 => target.role = 0x0000_0005_0000_0000,
+            2 => {
+                target.operand_role =
+                    crate::records::topology::DesignConstructionOperandRole::Other(
+                        DesignOperandRole::ROLE_0X5,
+                    );
+            }
             3 => {
                 target.members = vec![crate::records::Located {
                     value: 501,
@@ -789,7 +837,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         value: 200,
         offset: 1096,
     }];
-    delete_group.role = 0x0000_0010_0000_0000;
+    delete_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
+        DesignOperandRole::ROLE_0X10,
+    );
     let mut delete_face_operand = split_tool.clone();
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
     delete_face_operand.scope_record_index = delete_scope.record_index;
@@ -960,8 +1010,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ("545", "257", 250, 139),
         ("545", "257", 257, 146),
     ] {
-        surface_scope.class_tag = class_tag.into();
-        surface_scope.paired_class_tag = paired_class_tag.into();
+        surface_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        surface_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         surface_scope.frame_length = base_frame + reference_bytes;
         surface_scope.kind_offset = surface_scope.byte_offset + base_kind + reference_bytes;
         let (features, _) = project_parameter_design(
@@ -980,8 +1032,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
-    surface_scope.class_tag = "327".into();
-    surface_scope.paired_class_tag = "258".into();
+    surface_scope.class_tag = crate::records::DesignClassTag::try_from("327".to_owned()).unwrap();
+    surface_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     surface_scope.frame_length = 250 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
     let (features, _) = project_parameter_design(
@@ -1004,8 +1057,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
         delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
-        delete_scope.class_tag = class_tag.into();
-        delete_scope.paired_class_tag = paired_class_tag.into();
+        delete_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        delete_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         delete_scope.frame_length = 232 + reference_bytes;
         delete_scope.kind_offset = delete_scope.byte_offset + 135 + reference_bytes;
         let (features, _) = project_parameter_design(
@@ -1024,8 +1079,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
-    delete_scope.class_tag = "264".into();
-    delete_scope.paired_class_tag = "263".into();
+    delete_scope.class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
+    delete_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1048,7 +1104,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody.into();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    remove_group.role = 0x0000_0004_0000_0000;
+    remove_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert_eq!(
         crate::design::feature_project::project_remove_body(
             &remove_scope,
@@ -1063,7 +1120,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut stitch_scope = scope;
     stitch_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceStitch.into();
     stitch_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
     if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
         &mut stitch_scope.payload
     {
@@ -1079,7 +1136,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
         .collect();
-    stitch_group.role = 0x0000_0005_0000_0000;
+    stitch_group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
             &stitch_scope,
@@ -1177,11 +1235,11 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             scope_kind,
             scope_record_index,
         );
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![group_record_index]);
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![group_record_index]);
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
             byte_offset: frame_at,
-            class_tag: class_tag.to_owned(),
+            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index: group_record_index,
         };
         let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
@@ -1196,7 +1254,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
                 .collect::<Vec<_>>(),
             [group_record_index + 3]
         );
-        assert_eq!(group.role, 0x0000_0004_0000_0000);
+        assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
     }
@@ -1210,12 +1268,12 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         296_536,
     );
     scope.byte_offset = 1000;
-    scope.class_tag = "296".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
+        crate::records::ReferenceRun::unlocated((0..13).map(|index| 296_500 + index).collect());
     if let crate::records::feature::DesignScopePayload::Extrude(slot)
     | crate::records::feature::DesignScopePayload::Extrusion(slot)
     | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
@@ -1270,15 +1328,22 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:group#296501".into(),
         byte_offset: 0,
-        class_tag: "323".into(),
+        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
-    let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
+    let mut group = parse_construction_operand_group(&bytes, &scope, 0, &header)
         .complete()
         .expect("class-296 two-sided-to-faces construction group");
+    assert_eq!(group.extrude_role(), None);
+    crate::design::decode::operands::assign_extrude_face_roles(
+        &scope,
+        std::slice::from_mut(&mut group),
+    );
     assert_eq!(
-        group.extrude_role,
-        Some(DesignExtrudeOperandRole::Faces(None))
+        group.extrude_role(),
+        Some(DesignExtrudeOperandRole::Faces(
+            DesignExtrudeFaceRole::Termination
+        ))
     );
 
     let mut wrong_length = scope.clone();
@@ -1286,7 +1351,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &header)
         .complete()
         .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role, None);
+    assert_eq!(group.extrude_role(), None);
 
     let mut wrong_extent = scope;
     let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
@@ -1298,7 +1363,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &header)
         .complete()
         .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role, None);
+    assert_eq!(group.extrude_role(), None);
 }
 
 #[test]
@@ -1326,7 +1391,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
         byte_offset: 0,
-        class_tag: "339".into(),
+        class_tag: crate::records::DesignClassTag::try_from("339".to_owned()).unwrap(),
         record_index,
     };
 
@@ -1336,7 +1401,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     assert_eq!(parsed.transform_offset, 22);
     assert_eq!(parsed.following_record_index, 301);
     assert_eq!(parsed.following_byte_offset, following_at as u64);
-    assert_eq!(parsed.following_class_tag, "432");
+    assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
     assert!(parse_construction_operand_transform(&bytes, &header).is_none());
@@ -1379,7 +1444,7 @@ fn construction_operand_trailing_flag_has_exact_compact_frame() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#33602".into(),
         byte_offset: 0,
-        class_tag: "374".into(),
+        class_tag: crate::records::DesignClassTag::try_from("374".to_owned()).unwrap(),
         record_index: 33602,
     };
 
@@ -1431,7 +1496,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let expanded_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "304".into(),
+        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         record_index,
     };
     let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
@@ -1514,8 +1579,13 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     }
 
     let absent = tracking_path(None, None);
-    let absent = parse_construction_tracking_path(&absent, 0, 300, "361")
-        .expect("tracking path without related identities");
+    let absent = parse_construction_tracking_path(
+        &absent,
+        0,
+        300,
+        &crate::records::DesignClassTag::try_from("361".to_owned()).unwrap(),
+    )
+    .expect("tracking path without related identities");
     assert_eq!(absent.carrier_record_index, 301);
     assert_eq!(absent.carrier_byte_offset, 33);
     assert_eq!(absent.primary_identity, 268);
@@ -1528,8 +1598,13 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.following_byte_offset, 114);
 
     let present = tracking_path(Some(113), Some(119));
-    let present = parse_construction_tracking_path(&present, 0, 300, "361")
-        .expect("tracking path with related identities");
+    let present = parse_construction_tracking_path(
+        &present,
+        0,
+        300,
+        &crate::records::DesignClassTag::try_from("361".to_owned()).unwrap(),
+    )
+    .expect("tracking path with related identities");
     assert_eq!(
         present
             .first_related_identity
@@ -1624,12 +1699,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
     .expect("class-322 legacy Loft carrier");
-    assert_eq!(parsed_322.paired_class_tag, "262");
+    assert_eq!(parsed_322.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322.paired_byte_offset, 87);
     assert_eq!(parsed_322.member, 900);
     assert_eq!(parsed_322.member_offset, 36);
@@ -1651,12 +1726,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322-tail".into(),
             record_index: 200,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
     .expect("class-322 legacy Loft carrier with scope tail");
-    assert_eq!(parsed_322_tail.paired_class_tag, "262");
+    assert_eq!(parsed_322_tail.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
     assert_eq!(
         parsed_322_tail
@@ -1673,12 +1748,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-411".into(),
             record_index: 300,
-            class_tag: "411".into(),
+            class_tag: crate::records::DesignClassTag::try_from("411".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
     .expect("class-411 legacy Loft carrier");
-    assert_eq!(parsed_411.paired_class_tag, "266");
+    assert_eq!(parsed_411.paired_class_tag.as_str(), "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
     assert_eq!(
         parsed_411
@@ -1696,7 +1771,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
@@ -1709,7 +1784,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 400,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )

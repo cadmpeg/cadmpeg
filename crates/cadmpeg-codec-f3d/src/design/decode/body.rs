@@ -97,7 +97,7 @@ pub fn decode_body_bounds(
     let mut out = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.module.as_deref() == Some(DESIGN_MODULE_BODY))
+        .filter(|entity| entity.module() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
@@ -340,33 +340,39 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
 /// body-map record, with the named B-rep blob the key resolves in and the
 /// suffix's byte offset for native patching.
 pub(crate) struct BodyBinding {
-    /// Basename of the B-rep blob entry the ASM key resolves in.
-    pub blob_name: String,
-    /// Byte offset of the BREP blob name's UTF-16LE code units.
-    pub blob_name_offset: usize,
-    /// Number of pairs in the enclosing map.
-    pub pair_count: u32,
-    /// Zero-based position in the enclosing map.
-    pub pair_ordinal: u32,
     /// The referenced ASM body key.
     pub asm_key: u64,
     /// Byte offset of `asm_key` within the stream.
     pub asm_key_offset: usize,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
-    /// Byte offset of `entity_suffix` within the stream.
-    pub entity_suffix_offset: usize,
+}
+
+impl BodyBinding {
+    /// Byte offset of `entity_suffix`, which follows `asm_key` in the pair.
+    pub fn entity_suffix_offset(&self) -> usize {
+        self.asm_key_offset + 8
+    }
 }
 
 /// One exactly framed Design body-map record.
+///
+/// The record owns the blob name and its location, and its ordered `bindings`
+/// are the map's pairs: a binding's ordinal is its index and the pair count is
+/// `bindings.len()`.
 pub(crate) struct BodyMapRecord {
     pub blob_name: String,
+    /// Byte offset of the BREP blob name's UTF-16LE code units.
+    pub blob_name_offset: usize,
     pub bindings: Vec<BodyBinding>,
 }
 
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
     meta.types.iter().any(|design_type| {
-        design_type.type_guid.eq_ignore_ascii_case(type_guid)
+        design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
             && design_type
                 .entities
                 .values()
@@ -460,6 +466,7 @@ pub(crate) fn snapshot_body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -476,7 +483,12 @@ pub(crate) fn snapshot_body_map_records(
             || !design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -627,18 +639,14 @@ fn parse_snapshot_body_map_frame(
             for pair in 0..count {
                 let at = pairs_start + pair * 16;
                 bindings.push(BodyBinding {
-                    blob_name: blob_name.clone(),
-                    blob_name_offset: name_at + 4,
-                    pair_count,
-                    pair_ordinal: u32::try_from(pair).expect("pair ordinal is below its u32 count"),
                     asm_key: View::u64_le_at(bytes, at).expect("validated pair extent"),
                     asm_key_offset: at,
                     entity_suffix: View::u64_le_at(bytes, at + 8).expect("validated pair extent"),
-                    entity_suffix_offset: at + 8,
                 });
             }
             return Ok(Some(BodyMapRecord {
                 blob_name,
+                blob_name_offset: name_at + 4,
                 bindings,
             }));
         }
@@ -671,6 +679,7 @@ fn body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -685,7 +694,12 @@ fn body_map_records(
             || !design_type
                 .base_type_guid
                 .as_ref()
-                .map(|field| field.value.as_str())
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -756,15 +770,8 @@ fn body_map_records(
                     )));
                 }
             }
-            if let Some(bindings) = matched {
-                let blob_name = bindings
-                    .first()
-                    .map(|binding| binding.blob_name.clone())
-                    .unwrap_or_default();
-                out.push(BodyMapRecord {
-                    blob_name,
-                    bindings,
-                });
+            if let Some(record) = matched {
+                out.push(record);
             }
         }
     }
@@ -860,7 +867,7 @@ fn parse_body_map_frame(
     start: usize,
     end: usize,
     prefix_len: usize,
-) -> Result<Option<Vec<BodyBinding>>, CodecError> {
+) -> Result<Option<BodyMapRecord>, CodecError> {
     let Some(count_at) = start
         .checked_add(indexed_header::LEN)
         .and_then(|payload| payload.checked_add(prefix_len))
@@ -946,17 +953,16 @@ fn parse_body_map_frame(
             )));
         };
         bindings.push(BodyBinding {
-            blob_name: blob_name.clone(),
-            blob_name_offset: name_at + 4,
-            pair_count,
-            pair_ordinal: u32::try_from(pair).expect("pair ordinal is below its u32 pair count"),
             asm_key: key,
             asm_key_offset: at,
             entity_suffix: suffix,
-            entity_suffix_offset: at + 8,
         });
     }
-    Ok(Some(bindings))
+    Ok(Some(BodyMapRecord {
+        blob_name,
+        blob_name_offset: name_at + 4,
+        bindings,
+    }))
 }
 
 fn is_brep_blob_basename(value: &str) -> bool {
@@ -986,33 +992,34 @@ pub fn decode_design_body_bindings(
         else {
             continue;
         };
-        for binding in selected_body_map_records(bytes, &metadata)?
-            .into_iter()
-            .flat_map(|record| record.bindings)
-        {
-            let source_bodies = body_keys
-                .iter()
-                .filter(|key| {
-                    key.source_brep.as_deref().map_or_else(
-                        || active_basename == Some(binding.blob_name.as_str()),
-                        |source| source == binding.blob_name,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-            out.push(DesignBodyBinding {
-                id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                stream: entry.name.clone(),
-                pair_count: binding.pair_count,
-                pair_ordinal: binding.pair_ordinal,
-                asm_body_key: binding.asm_key,
-                asm_body_key_offset: binding.asm_key_offset as u64,
-                entity_suffix: binding.entity_suffix,
-                entity_suffix_offset: binding.entity_suffix_offset as u64,
-                blob_name: binding.blob_name,
-                blob_name_offset: binding.blob_name_offset as u64,
-                body,
-            });
+        for record in selected_body_map_records(bytes, &metadata)? {
+            let pair_count = u32::try_from(record.bindings.len())
+                .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
+            for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
+                let source_bodies = body_keys
+                    .iter()
+                    .filter(|key| {
+                        key.source_brep.as_deref().map_or_else(
+                            || active_basename == Some(record.blob_name.as_str()),
+                            |source| source == record.blob_name,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
+                out.push(DesignBodyBinding {
+                    id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                    stream: entry.name.clone(),
+                    pair_count,
+                    pair_ordinal: ordinal,
+                    asm_body_key: binding.asm_key,
+                    asm_body_key_offset: binding.asm_key_offset as u64,
+                    entity_suffix: binding.entity_suffix,
+                    entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                    blob_name: record.blob_name.clone(),
+                    blob_name_offset: record.blob_name_offset as u64,
+                    body,
+                });
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1074,13 +1081,13 @@ pub(crate) fn decode_all_body_visibility(
             continue;
         };
         let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
-        for binding in selected_body_map_records(bytes, &metadata)?
-            .into_iter()
-            .flat_map(|record| record.bindings)
-        {
-            if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
+        for record in selected_body_map_records(bytes, &metadata)? {
+            for binding in record.bindings {
+                let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
+                    continue;
+                };
                 out.insert(
-                    (binding.blob_name, binding.asm_key),
+                    (record.blob_name.clone(), binding.asm_key),
                     DecodedBodyVisibility {
                         stream: entry.name.clone(),
                         byte_offset: node.byte_offset,
@@ -1255,16 +1262,16 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
-                value: value.to_owned(),
+                value: Some(value.to_owned().try_into().expect("base GUID")),
                 offset: Some(0),
             }),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -1320,16 +1327,24 @@ mod tests {
                 crate::records::SegmentType {
                     id: String::new(),
                     byte_offset: 0,
-                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("type GUID"),
                     type_guid_offset: 0,
                     base_type_guid: Some(crate::records::RecordedValue {
-                        value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                        value: Some(
+                            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                                .to_owned()
+                                .try_into()
+                                .expect("base GUID"),
+                        ),
                         offset: Some(0),
                     }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entities: crate::records::ReferenceRun::Located(vec![
+                    entities: crate::records::ReferenceRun::located(vec![
                         crate::records::Located {
                             value: 900,
                             offset: 0,
@@ -1498,7 +1513,7 @@ mod tests {
     #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
-        metadata.types[2].entities = crate::records::ReferenceRun::Unlocated(Vec::new());
+        metadata.types[2].entities = crate::records::ReferenceRun::unlocated(Vec::new());
         assert!(
             snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")
@@ -1559,9 +1574,7 @@ mod tests {
         let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
             .expect("65-pair body map");
         assert_eq!(bindings.len(), 65);
-        assert!(bindings.iter().all(|binding| binding.pair_count == 65));
-        assert_eq!(bindings[0].pair_ordinal, 0);
-        assert_eq!(bindings[64].pair_ordinal, 64);
+        assert_eq!(bindings[0].asm_key, 1000);
         assert_eq!(bindings[64].asm_key, 1064);
         assert_eq!(bindings[64].entity_suffix, (1u64 << 40) + 64);
     }
@@ -1585,7 +1598,7 @@ mod tests {
                 parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
-            assert!(frame.is_empty());
+            assert!(frame.bindings.is_empty());
             assert!(body_bindings(&bytes, &body_map_metadata())
                 .expect("empty typed body map")
                 .is_empty());

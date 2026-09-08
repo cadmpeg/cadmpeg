@@ -11,6 +11,7 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
@@ -34,7 +35,7 @@ fn group() -> DesignConstructionOperandGroup {
         scope_reference_ordinal: 0,
         record_index: 9,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![
             crate::records::Located {
                 value: 10,
@@ -60,10 +61,11 @@ fn group() -> DesignConstructionOperandGroup {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x5_0000_0000,
-        extrude_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
@@ -80,10 +82,16 @@ fn operand(
         group_member_ordinal: ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: record_index + 1,
         identity_record_offset: 0,
@@ -130,7 +138,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         id: format!("stream:curve-{record_index}"),
         record_index,
         owner_reference: Some(42),
-        class_tag: "450".into(),
+        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -224,7 +232,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         scope_reference_ordinal: 0,
         record_index: 9,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         member_count_offset: 0,
         members: vec![crate::records::Located {
             value: 10,
@@ -235,7 +243,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         opaque_scalar: 0.0,
         opaque_scalar_offset: 0,
         variant: false,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let mut member = DesignExtrudeSelectionMember {
@@ -244,12 +252,18 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         group_member_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "278".into(),
+        class_tag: crate::records::DesignClassTag::try_from("278".to_owned()).unwrap(),
         local_id: 200,
         local_id_offset: 0,
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         tail_slot_present: false,
         tail_slot_offset: 0,
@@ -620,15 +634,18 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id.clone(),
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 13,
             byte_offset: 0,
-            class_tag: "303".into(),
+            class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -644,10 +661,11 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     ],
                 },
             ],
-            companion_class_tag: "304".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("304".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "301".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let placements = [placement];
@@ -904,7 +922,8 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -963,7 +982,8 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     group.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
@@ -1035,15 +1055,18 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
-        asset_id: placement.entity_id.as_str().to_owned(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id,
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 11,
             byte_offset: 0,
-            class_tag: "301".into(),
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -1055,10 +1078,11 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     members: vec![profile_region_member(100)],
                 },
             ],
-            companion_class_tag: "302".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "303".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 

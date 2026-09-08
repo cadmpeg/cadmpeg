@@ -77,7 +77,7 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     );
     scope.frame_length = 317;
     scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![101, 102, 103, 104, 105]);
+        crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
     (bytes, scope, position_at)
 }
 
@@ -105,7 +105,7 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
         100,
     );
     scope.frame_length = frame_length as u64;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(reference_members);
+    scope.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
     (bytes, scope, position_at)
 }
 

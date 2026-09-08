@@ -158,7 +158,7 @@ pub(crate) fn encode_design_bulkstream(
         || native
             .design_entity_headers
             .iter()
-            .any(|header| !header.members.is_empty())
+            .any(|header| header.member_values().next().is_some())
     {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
@@ -189,21 +189,17 @@ pub(crate) fn encode_design_bulkstream(
 
     let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    if !registry.body_map.is_empty() {
-        let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no registered type".into())
-        })?;
-        let record_index = registry.body_map_record_index.ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no record identity".into())
-        })?;
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = body_map.class_tag.as_str();
+        let record_index = body_map.record_index;
         primary_records.push(primary_record(record_index, out.len())?);
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(registry.body_map.len())
+        let count = u32::try_from(body_map.entries.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in &registry.body_map {
+        for (&body_key, &entity_suffix) in &body_map.entries {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -265,10 +261,13 @@ pub(crate) fn encode_design_bulkstream(
         }
         native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
-            let count = u32::try_from(header.references.len()).map_err(|_| {
+            let count = u32::try_from(header.reference_values().count()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
             })?;
-            match header.record_reference {
+            match header
+                .sketch_references()
+                .and_then(|list| list.record_reference)
+            {
                 Some(record_reference) => {
                     out.extend_from_slice(&record_reference.to_le_bytes());
                     out.extend_from_slice(&[0; 4]);
@@ -278,7 +277,7 @@ pub(crate) fn encode_design_bulkstream(
             }
             out.push(1);
             out.extend_from_slice(&count.to_le_bytes());
-            for reference in header.references.values() {
+            for reference in header.reference_values() {
                 out.push(1);
                 out.extend_from_slice(&reference.to_le_bytes());
                 out.extend_from_slice(&[0; 6]);
@@ -286,8 +285,7 @@ pub(crate) fn encode_design_bulkstream(
         }
     }
     for header in &native.design_record_headers {
-        validate_dynamic_class_tag(&header.class_tag, "Design record header")?;
-        native_lp_ascii(&mut out, &header.class_tag)?;
+        native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
@@ -421,7 +419,6 @@ pub(super) fn encode_document_parameters(
                 parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
             )));
         }
-        validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
         let crate::records::DesignParameterSource::User {
             family_discriminator,
         } = &parameter.source
@@ -451,7 +448,7 @@ pub(super) fn encode_document_parameters(
                 parameter.id
             )));
         }
-        native_lp_ascii(&mut out, &parameter.class_tag)?;
+        native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
         out.extend_from_slice(&parameter.record_index.to_le_bytes());
         out.extend_from_slice(&[0; 11]);
         out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
@@ -477,14 +474,12 @@ pub(super) fn encode_document_parameters(
 
 fn encode_sketch_record_header(
     out: &mut [u8],
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
-) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(class_tag, "sketch record")?;
+) {
     out[0..4].copy_from_slice(&3u32.to_le_bytes());
     out[4..7].copy_from_slice(class_tag.as_bytes());
     out[7..11].copy_from_slice(&record_index.to_le_bytes());
-    Ok(())
 }
 
 fn encode_sketch_point(
@@ -522,7 +517,7 @@ fn encode_sketch_point(
     };
     let shift = usize::from(entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
+    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = entity_genesis {
@@ -558,7 +553,7 @@ fn encode_sketch_point(
 
 fn encode_sketch_point_companion(
     out: &mut Vec<u8>,
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
     companion: Option<crate::records::SketchPointCompanionRef<'_>>,
@@ -575,7 +570,7 @@ fn encode_sketch_point_companion(
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
     let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    encode_sketch_record_header(&mut record, class_tag, record_index);
     if prefix_present_zero {
         record[20] = 1;
     }
@@ -601,7 +596,7 @@ fn encode_sketch_curve_identity(
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
+    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = curve.entity_genesis {
@@ -720,7 +715,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
-    subtype_class_tag: &str,
+    subtype_class_tag: &crate::records::DesignClassTag,
     subtype_record_index: u32,
     degree: u32,
     fit_tolerance: f64,
@@ -728,7 +723,6 @@ fn encode_sketch_nurbs(
     knots: &[f64],
     poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(subtype_class_tag, "sketch NURBS subtype")?;
     if scalar_width != 8 {
         return Err(CodecError::Malformed(
             "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),
@@ -783,7 +777,6 @@ fn encode_sketch_nurbs(
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(&text.class_tag, "sketch text")?;
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
         &text.raw_bytes,
         "Design/BulkStream.dat",
@@ -826,7 +819,7 @@ fn encode_sketch_relation(
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 19];
-    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
+    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
@@ -890,16 +883,6 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
         PersistentReferenceKind::Point => b"pt_tag",
         PersistentReferenceKind::CurvePrimary => b"crv_primary_id",
         PersistentReferenceKind::CurveSecondary => b"crv_secondary_id",
-    }
-}
-
-pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(), CodecError> {
-    if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "{field} class tag must be three ASCII digits: {value}"
-        )))
     }
 }
 
@@ -1002,13 +985,11 @@ fn encode_browser_nodes(
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
 ) -> Result<(), CodecError> {
-    if registry.browser_nodes.is_empty() {
+    let Some(browser_nodes) = &registry.browser_nodes else {
         return Ok(());
-    }
-    let node_class_tag = registry.browser_node_class_tag.as_deref().ok_or_else(|| {
-        CodecError::Malformed("generated F3D browser nodes have no registered type".into())
-    })?;
-    for node in &registry.browser_nodes {
+    };
+    let node_class_tag = browser_nodes.class_tag.as_str();
+    for node in &browser_nodes.nodes {
         primary_records.push(primary_record(node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;
         out.extend_from_slice(&node.record_index.to_le_bytes());
@@ -1050,16 +1031,7 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
 }
 
 fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
-    let bytes = value.as_bytes();
-    let valid = bytes.len() == 36
-        && [8, 13, 18, 23]
-            .into_iter()
-            .all(|index| bytes.get(index) == Some(&b'-'))
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit());
-    if valid {
+    if crate::bytes::is_guid_hyphenated(value) {
         Ok(())
     } else {
         Err(CodecError::malformed(format_args!(

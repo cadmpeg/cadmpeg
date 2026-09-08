@@ -19,7 +19,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
-const DECAL_TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
+const DECAL_TARGET_ROLE: crate::records::topology::DesignOperandRole =
+    crate::records::topology::DesignOperandRole::BODIES_A;
 
 /// Decode every structurally complete Decal image record.
 pub fn decode_decal_images(
@@ -73,7 +74,7 @@ pub fn project_decal_images(
         let Some(group) = groups.iter().find(|group| {
             group.scope_record_index == scope.record_index
                 && group.record_index == image.target_group_record_index
-                && group.role == DECAL_TARGET_ROLE
+                && group.role() == DECAL_TARGET_ROLE
                 && group.members.len() == 1
                 && ids::native_stream(&group.id) == native_stream
         }) else {

@@ -2142,28 +2142,33 @@ struct DecodeSessionState {
     report_scope: crate::report::ReportScope,
 }
 
+struct DeferredBodylessInputs {
+    xref: Result<Option<crate::xref::XrefTable>, CodecError>,
+    non_root_act: usize,
+    has_appearance: bool,
+}
+
+enum SessionPath {
+    Geometry {
+        index: GeometryIndex,
+        materials: materials::DecodedMaterials,
+    },
+    Bodyless {
+        deferred: Option<DeferredBodylessInputs>,
+    },
+}
+
 /// Private decode accumulator for one `.f3d` document.
-///
-/// Geometry presence is an optional index on this session. History, parameters,
-/// sketches, dimensions, body bindings, configurations, materials, products,
-/// native storage, annotations, and the report all flow through one finalizer
-/// so a missing BREP does not fork unrelated product decoding.
 struct F3dDecodeSession<'a> {
     ctx: &'a DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
-    geometry: Option<GeometryIndex>,
-    /// Geometry-path materials, decoded before the shared design graph runs.
-    geometry_materials: Option<materials::DecodedMaterials>,
+    path: SessionPath,
     native: F3dNative,
     ir: CadIr,
     source_attributes: std::collections::BTreeMap<String, String>,
     report: DecodeBody,
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
-    /// No-BREP finalize inputs retained across product decode.
-    deferred_xref: Option<Result<Option<crate::xref::XrefTable>, CodecError>>,
-    deferred_non_root_act: Option<usize>,
-    deferred_has_appearance: Option<bool>,
     admitted_entities: u64,
 }
 
@@ -2221,21 +2226,20 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(Self {
             ctx,
             scan,
-            geometry: Some(GeometryIndex {
-                primary_model_brep_name: primary_model_brep.name.clone(),
-                annotation_records,
-                mesh_projection,
-            }),
-            geometry_materials: Some(geometry_materials),
+            path: SessionPath::Geometry {
+                index: GeometryIndex {
+                    primary_model_brep_name: primary_model_brep.name.clone(),
+                    annotation_records,
+                    mesh_projection,
+                },
+                materials: geometry_materials,
+            },
             native,
             ir,
             source_attributes,
             report,
             report_scope,
             unknowns,
-            deferred_xref: None,
-            deferred_non_root_act: None,
-            deferred_has_appearance: None,
             admitted_entities,
         })
     }
@@ -2253,17 +2257,13 @@ impl<'a> F3dDecodeSession<'a> {
         Self {
             ctx,
             scan,
-            geometry: None,
-            geometry_materials: None,
+            path: SessionPath::Bodyless { deferred: None },
             native: F3dNative::default(),
             ir,
             source_attributes,
             report: crate::report::build_decode_report(scan, false, false, container_losses(scan)),
             report_scope,
             unknowns,
-            deferred_xref: None,
-            deferred_non_root_act: None,
-            deferred_has_appearance: None,
             admitted_entities,
         }
     }
@@ -2353,7 +2353,9 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
                 &dimension_inputs,
-            )?;
+            )?
+            .try_into()
+            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                 &dimension_inputs,
@@ -2374,7 +2376,9 @@ impl<'a> F3dDecodeSession<'a> {
                 &dimension_inputs,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
-            )?;
+            )?
+            .try_into()
+            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         crate::design::dimensions::remove_dimension_frame_relations(
             &mut self.native.sketch_relations,
             &self.native.design_dimension_locus_pairs,
@@ -2392,7 +2396,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_curve_identities,
         )?;
         self.native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-        if self.geometry.is_none() {
+        if matches!(self.path, SessionPath::Bodyless { .. }) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
                     scan,
@@ -2443,7 +2447,10 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_surface_trim_operations,
         );
-        if let Some(geometry) = &self.geometry {
+        if let SessionPath::Geometry {
+            index: geometry, ..
+        } = &self.path
+        {
             bind_mesh_feature_definitions(
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
@@ -2666,7 +2673,7 @@ impl<'a> F3dDecodeSession<'a> {
                 arrangement_budget: &arrangement_budget,
             },
         );
-        if self.geometry.is_some() {
+        if matches!(self.path, SessionPath::Geometry { .. }) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
         let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
@@ -2765,74 +2772,79 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.act_root_components = act.root_components;
         self.native.act_table_references = act.table_references;
 
-        if self.geometry.is_some() {
-            report_unretained_act_component_links(&mut self.report, non_root_act_component_links);
-            report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
-            report_unresolved_configuration_rules(&mut self.report, &self.native, &self.ir);
-            let materials = self
-                .geometry_materials
-                .take()
-                .expect("geometry-path materials");
-            report_untyped_material_distances(
-                &mut self.report,
-                materials.untyped_distance_properties,
-            );
-            self.ir.model.appearances = materials.appearances;
-            self.ir.model.appearance_bindings = materials.bindings;
-            resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
-            apply_appearance_base_colors(&mut self.ir);
-            self.ir
-                .model
-                .appearance_bindings
-                .sort_by(|a, b| a.id.cmp(&b.id));
-            reconcile_appearance_loss(
-                &mut self.report,
-                &self.ir,
-                materials.has_topology_assignments,
-            );
-            annotate_docstruct(&mut self.source_attributes, scan);
-            match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
-                Ok(Some(table)) => {
-                    report_xref_placement_failures(&mut self.report, &table);
-                    report_xref_placement_overrides(&mut self.report, &table);
-                    self.ir.model.occurrences = crate::xref::project_occurrences(&table);
+        match &mut self.path {
+            SessionPath::Geometry { materials, .. } => {
+                report_unretained_act_component_links(
+                    &mut self.report,
+                    non_root_act_component_links,
+                );
+                report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
+                report_unresolved_configuration_rules(&mut self.report, &self.native, &self.ir);
+                let materials = std::mem::take(materials);
+                report_untyped_material_distances(
+                    &mut self.report,
+                    materials.untyped_distance_properties,
+                );
+                self.ir.model.appearances = materials.appearances;
+                self.ir.model.appearance_bindings = materials.bindings;
+                resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
+                apply_appearance_base_colors(&mut self.ir);
+                self.ir
+                    .model
+                    .appearance_bindings
+                    .sort_by(|a, b| a.id.cmp(&b.id));
+                reconcile_appearance_loss(
+                    &mut self.report,
+                    &self.ir,
+                    materials.has_topology_assignments,
+                );
+                annotate_docstruct(&mut self.source_attributes, scan);
+                match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
+                    Ok(Some(table)) => {
+                        report_xref_placement_failures(&mut self.report, &table);
+                        report_xref_placement_overrides(&mut self.report, &table);
+                        self.ir.model.occurrences = crate::xref::project_occurrences(&table);
+                        crate::xref::bind_component_insert_features(
+                            &mut self.ir.model.features,
+                            &self.native.design_parameter_scopes,
+                            &table,
+                        );
+                        self.native.xref_designs = table.designs;
+                        self.native.xref_references = table.references;
+                    }
+                    Ok(None) => {}
+                    Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                }
+            }
+            SessionPath::Bodyless { deferred } => {
+                let decoded_materials = materials::decode(self.ctx, scan)?;
+                report_untyped_material_distances(
+                    &mut self.report,
+                    decoded_materials.untyped_distance_properties,
+                );
+                self.ir.model.appearances = decoded_materials.appearances;
+                self.ir.model.appearance_bindings = decoded_materials.bindings;
+                annotate_docstruct(&mut self.source_attributes, scan);
+                let xref_table =
+                    crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
+                if let Ok(Some(table)) = &xref_table {
+                    report_xref_placement_failures(&mut self.report, table);
+                    report_xref_placement_overrides(&mut self.report, table);
+                    self.ir.model.occurrences = crate::xref::project_occurrences(table);
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
                         &self.native.design_parameter_scopes,
-                        &table,
+                        table,
                     );
-                    self.native.xref_designs = table.designs;
-                    self.native.xref_references = table.references;
+                    self.native.xref_designs.clone_from(&table.designs);
+                    self.native.xref_references.clone_from(&table.references);
                 }
-                Ok(None) => {}
-                Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                *deferred = Some(DeferredBodylessInputs {
+                    xref: xref_table,
+                    non_root_act: non_root_act_component_links,
+                    has_appearance: decoded_materials.has_topology_assignments,
+                });
             }
-        } else {
-            let decoded_materials = materials::decode(self.ctx, scan)?;
-            report_untyped_material_distances(
-                &mut self.report,
-                decoded_materials.untyped_distance_properties,
-            );
-            self.deferred_has_appearance = Some(decoded_materials.has_topology_assignments);
-            self.ir.model.appearances = decoded_materials.appearances;
-            self.ir.model.appearance_bindings = decoded_materials.bindings;
-            annotate_docstruct(&mut self.source_attributes, scan);
-            let xref_table =
-                crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
-            if let Ok(Some(table)) = &xref_table {
-                report_xref_placement_failures(&mut self.report, table);
-                report_xref_placement_overrides(&mut self.report, table);
-                self.ir.model.occurrences = crate::xref::project_occurrences(table);
-                crate::xref::bind_component_insert_features(
-                    &mut self.ir.model.features,
-                    &self.native.design_parameter_scopes,
-                    table,
-                );
-                self.native.xref_designs.clone_from(&table.designs);
-                self.native.xref_references.clone_from(&table.references);
-            }
-            self.deferred_xref = Some(xref_table);
-            self.deferred_non_root_act = Some(non_root_act_component_links);
         }
 
         let (components, occurrences) = crate::design::components::project_local_components(
@@ -2866,69 +2878,79 @@ impl<'a> F3dDecodeSession<'a> {
     fn finalize(mut self) -> Result<Decoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
-        if self.geometry.is_none() {
-            report_unretained_act_component_links(
-                &mut self.report,
-                self.deferred_non_root_act.take().unwrap_or(0),
-            );
-            let has_appearance = self.deferred_has_appearance.take().unwrap_or(false);
-            reconcile_appearance_loss(&mut self.report, &self.ir, has_appearance);
-            let mesh_projection =
-                project_mesh_bodies(scan, &mut self.ir, &mut self.native, &mut self.report)?;
-            bind_mesh_feature_definitions(
-                &mut self.ir.model.features,
-                &self.native.design_parameter_scopes,
-                &mesh_projection,
-            );
-            report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
-            self.admit_model_entities("admit F3D entities")?;
-            self.native.store(self.ir.native.namespace_mut("f3d"))?;
-            let annotations =
-                populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
-            let source_image = preserve_source_image(scan);
-            if mesh_projection.count > 0 {
-                apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
-            } else {
-                apply_bodyless_design_classification(
-                    &mut self.report,
-                    container::design_breps(scan).count(),
-                    container::text_brep_names(scan).len(),
-                    self.native.design_body_bindings.len() + self.native.design_body_members.len(),
-                    self.ir.model.sketch_entities.len()
-                        + self.ir.model.spatial_sketch_entities.len(),
-                    self.native.design_canvas_images.len(),
+        let geometry = match self.path {
+            SessionPath::Geometry { index, .. } => index,
+            SessionPath::Bodyless { deferred } => {
+                if let Some(inputs) = &deferred {
+                    report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
+                    reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
+                }
+                let mesh_projection =
+                    project_mesh_bodies(scan, &mut self.ir, &mut self.native, &mut self.report)?;
+                bind_mesh_feature_definitions(
+                    &mut self.ir.model.features,
+                    &self.native.design_parameter_scopes,
+                    &mesh_projection,
+                );
+                report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+                ctx.admit_entities(
+                    self.ir.model.entity_count() as u64,
+                    &mut self.admitted_entities,
+                    "admit F3D entities",
+                )?;
+                self.native.store(self.ir.native.namespace_mut("f3d"))?;
+                let annotations =
+                    populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
+                let source_image = preserve_source_image(scan);
+                if mesh_projection.count > 0 {
+                    apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
+                } else {
+                    apply_bodyless_design_classification(
+                        &mut self.report,
+                        container::design_breps(scan).count(),
+                        container::text_brep_names(scan).len(),
+                        self.native.design_body_bindings.len()
+                            + self.native.design_body_members.len(),
+                        self.ir.model.sketch_entities.len()
+                            + self.ir.model.spatial_sketch_entities.len(),
+                        self.native.design_canvas_images.len(),
+                    );
+                }
+                report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
+                if let Some(inputs) = deferred {
+                    match inputs.xref {
+                        Ok(Some(table)) => {
+                            apply_assembly_classification(&mut self.report, scan, &table);
+                        }
+                        Ok(None) => {}
+                        Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                    }
+                }
+                let mut admitted_entities = self.admitted_entities;
+                return decode_result(
+                    ctx,
+                    scan,
+                    self.report_scope,
+                    self.ir,
+                    self.report,
+                    RetainedArtifacts {
+                        annotations,
+                        unknowns: self.unknowns,
+                        source_image,
+                        source_attributes: self.source_attributes,
+                    },
+                    &mut admitted_entities,
                 );
             }
-            report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
-            match self.deferred_xref.take() {
-                Some(Ok(Some(table))) => {
-                    apply_assembly_classification(&mut self.report, scan, &table);
-                }
-                Some(Ok(None)) => {}
-                Some(Err(error)) => self.report.losses.push(xref_parse_loss(&error)),
-                None => {}
-            }
-            let mut admitted_entities = self.admitted_entities;
-            return decode_result(
-                ctx,
-                scan,
-                self.report_scope,
-                self.ir,
-                self.report,
-                RetainedArtifacts {
-                    annotations,
-                    unknowns: self.unknowns,
-                    source_image,
-                    source_attributes: self.source_attributes,
-                },
-                &mut admitted_entities,
-            );
-        }
+        };
 
         report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
-        self.admit_model_entities("admit F3D entities")?;
+        ctx.admit_entities(
+            self.ir.model.entity_count() as u64,
+            &mut self.admitted_entities,
+            "admit F3D entities",
+        )?;
         self.native.store(self.ir.native.namespace_mut("f3d"))?;
-        let geometry = self.geometry.take().expect("geometry");
         let annotations = populate_annotations(
             &self.ir,
             scan,
