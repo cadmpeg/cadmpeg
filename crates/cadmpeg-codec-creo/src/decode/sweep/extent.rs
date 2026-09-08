@@ -47,7 +47,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
         .chain(
             transform
                 .into_iter()
-                .flat_map(|transform| transform.origin()),
+                .flat_map(crate::placement::FeatureSectionTransform::origin),
         )
         .map(f64::abs)
         .fold(length.max(1.0), f64::max);
