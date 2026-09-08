@@ -23,6 +23,7 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
+use clap::builder::TypedValueParser;
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
@@ -405,18 +406,73 @@ pub struct ExtractArgs {
     pub file: PathBuf,
     /// Exact entry or stream path (quotes removed).
     pub member: String,
-    /// Output file for the extracted bytes; omit it or pass `-` to write
-    /// them to standard output.
-    #[arg(short = 'o', long)]
-    pub output: Option<PathBuf>,
-    /// Replace an existing output file.
-    #[arg(long)]
-    pub force: bool,
+    #[command(flatten)]
+    pub output: ExtractDestination,
     /// Resource-limit profile applied while reading the archive.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
+}
+
+/// Extracted-byte destination and its file overwrite policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtractDestination {
+    Stdout,
+    File(crate::application::artifact_store::FileDestination),
+}
+
+fn parse_destination(value: std::ffi::OsString) -> ExtractDestination {
+    if value == "-" {
+        ExtractDestination::Stdout
+    } else {
+        ExtractDestination::File(crate::application::artifact_store::FileDestination {
+            path: value.into(),
+            overwrite: false,
+        })
+    }
+}
+
+impl clap::Args for ExtractDestination {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(
+                clap::Arg::new("output")
+                    .short('o')
+                    .long("output")
+                    .help("Output file; omit it or pass - for standard output")
+                    .default_value("-")
+                    .value_parser(clap::builder::OsStringValueParser::new().map(parse_destination)),
+            )
+            .arg(
+                clap::Arg::new("force")
+                    .long("force")
+                    .help("Replace an existing output file")
+                    .action(clap::ArgAction::SetTrue),
+            )
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for ExtractDestination {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let mut destination = matches
+            .get_one::<Self>("output")
+            .cloned()
+            .unwrap_or(Self::Stdout);
+        if let Self::File(file) = &mut destination {
+            file.overwrite = matches.get_flag("force");
+        }
+        Ok(destination)
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
 /// Arguments for `cadmpeg inspect cmp`.
@@ -695,13 +751,9 @@ fn extract_entry(args: &ExtractArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
     let payload = container::extract(&bytes, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
-    let destination = crate::application::artifact_store::FileDestination::optional(
-        args.output.clone().filter(|path| path != Path::new("-")),
-        args.force,
-    );
-    match destination {
-        None => write_payload_to_stdout(&payload),
-        Some(destination) => {
+    match &args.output {
+        ExtractDestination::Stdout => write_payload_to_stdout(&payload),
+        ExtractDestination::File(destination) => {
             let path = &destination.path;
             if path.exists() && !destination.overwrite {
                 bail!("{} exists; pass --force to replace it", path.display());
@@ -793,4 +845,23 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
         .unwrap_or(usize::MAX)
         .min(bytes.len());
     hexdump::render(begin as u64, &bytes[begin..end], 16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::FromArgMatches;
+
+    #[test]
+    fn extract_stdout_spellings_have_one_destination() {
+        let parse = |args: Vec<&str>| {
+            let matches = ExtractArgs::augment_args(clap::Command::new("extract"))
+                .try_get_matches_from(args)
+                .unwrap();
+            ExtractArgs::from_arg_matches(&matches).unwrap()
+        };
+        let omitted = parse(vec!["extract", "input.zip", "entry"]);
+        let explicit = parse(vec!["extract", "input.zip", "entry", "-o", "-", "--force"]);
+        assert_eq!(omitted.output, explicit.output);
+    }
 }
