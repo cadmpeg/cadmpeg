@@ -787,16 +787,17 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let annotation = super::text_semantic_annotation("nx:text#1", 7, &["plate label", "Arial"])
-        .expect("valid text annotation");
-    assert_eq!(annotation.object, "nx:text#1");
+    let annotation =
+        super::text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
+            .expect("valid text annotation");
+    assert_eq!(annotation.object, "nx:test:text#1");
     assert_eq!(
         annotation.kind,
         cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
     );
     assert_eq!(annotation.text, ["plate label"]);
     assert_eq!(annotation.parameters["font_family"], "Arial");
-    assert_eq!(annotation.native_ref, "nx:text#1");
+    assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
     let empty = super::text_semantic_annotation("nx:text#empty", 8, &["", ""])

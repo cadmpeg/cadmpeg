@@ -1300,7 +1300,7 @@ mod tests {
         definition: FeatureDefinition,
     ) -> Feature {
         Feature {
-            id: FeatureId::mint(id.to_string()).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
@@ -1317,7 +1317,7 @@ mod tests {
 
     fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId::mint(id.to_string()).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
