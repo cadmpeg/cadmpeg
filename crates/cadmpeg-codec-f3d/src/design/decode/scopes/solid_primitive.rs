@@ -66,7 +66,10 @@ pub(crate) fn exact_solid_primitive(
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        valid_sketch_transform(&transform).then_some((transform, matrix_at as u64))
+        Some((
+            crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
+            matrix_at as u64,
+        ))
     };
     match scope.kind_name() {
         "SpherePrimitive"
@@ -188,7 +191,7 @@ pub(crate) fn exact_solid_primitive(
 struct ExactShiftedCylinderPrimitivePrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
-    transform: Option<crate::records::Located<[[f64; 4]; 4]>>,
+    transform: Option<crate::records::Located<crate::records::SketchPlacementMatrix>>,
 }
 
 fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<usize> {
@@ -397,7 +400,7 @@ fn exact_shifted_cylinder_primitive_prologue(
                 return None;
             }
             Some(crate::records::Located {
-                value: transform,
+                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
                 offset: u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?,
             })
         }

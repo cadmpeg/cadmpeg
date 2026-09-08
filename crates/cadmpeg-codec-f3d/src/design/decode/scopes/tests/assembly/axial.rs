@@ -176,7 +176,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         crate::records::feature::DesignFeatureKind::JointOrigin,
         80,
     );
-    origin.with_joint_origin_transform(second_transform);
+    origin.with_joint_origin_transform(second_transform.try_into().unwrap());
     let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
 
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);

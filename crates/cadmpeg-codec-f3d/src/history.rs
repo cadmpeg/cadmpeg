@@ -2793,7 +2793,10 @@ pub(crate) fn bind_vertex_recipe_history(
         if first.0 == second.0
             || first.0 == third.0
             || second.0 == third.0
-            || !three_point_plane_matches(transform, [first.1, second.1, third.1])
+            || !three_point_plane_matches(
+                transform.map(|matrix| matrix.rows()),
+                [first.1, second.1, third.1],
+            )
         {
             continue;
         }

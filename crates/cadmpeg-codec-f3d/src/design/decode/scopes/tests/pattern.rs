@@ -872,10 +872,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut conflicting_assembly = single_frame_scopes[0].clone();
     conflicting_assembly.assembly_alignment_mut().unwrap().form = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
-    conflicting_joint_origin
-        .joint_origin_frame_mut()
-        .unwrap()
-        .joint_origin_transform[2][3] += 1.0;
+    let frame = conflicting_joint_origin.joint_origin_frame_mut().unwrap();
+    let mut transform = frame.joint_origin_transform.rows();
+    transform[2][3] += 1.0;
+    frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(

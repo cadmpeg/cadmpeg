@@ -112,7 +112,9 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 [0.0, 1.0, 0.0, -2.5],
                 [0.0, 0.0, 1.0, 3.75],
                 [0.0, 0.0, 0.0, 1.0],
-            ],
+            ]
+            .try_into()
+            .unwrap(),
             transform_offset: 77,
         });
     }

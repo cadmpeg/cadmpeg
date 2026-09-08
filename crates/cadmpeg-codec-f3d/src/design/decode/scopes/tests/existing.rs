@@ -534,12 +534,15 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         );
         assert_eq!(
             *placement.transform(),
-            matrix.unwrap_or([
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ])
+            matrix
+                .unwrap_or([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .try_into()
+                .unwrap()
         );
     }
 }
@@ -561,6 +564,8 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
             [0.0, 0.0, -1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]
+        .try_into()
+        .unwrap()
     );
     assert_eq!(
         placement.explicit_transform.map(|matrix| matrix.offset),
@@ -605,6 +610,8 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]
+        .try_into()
+        .unwrap()
     );
     assert_eq!(
         placement.explicit_transform.map(|matrix| matrix.offset),
@@ -639,6 +646,8 @@ fn legacy_coil_placement_accepts_identity_frame() {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]
+        .try_into()
+        .unwrap()
     );
 }
 

@@ -2244,8 +2244,41 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 }
 
 /// A finite affine placement with orthonormal basis columns.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
 pub struct SketchPlacementMatrix([[f64; 4]; 4]);
+
+impl SketchPlacementMatrix {
+    /// The identity placement.
+    pub const IDENTITY: Self = Self(IDENTITY_MATRIX);
+    /// The row-major matrix coefficients.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0
+    }
+    /// The matrix rows in storage order.
+    pub fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
+        self.0.iter()
+    }
+}
+
+impl AsRef<[[f64; 4]; 4]> for SketchPlacementMatrix {
+    fn as_ref(&self) -> &[[f64; 4]; 4] {
+        &self.0
+    }
+}
+
+impl std::ops::Index<usize> for SketchPlacementMatrix {
+    type Output = [f64; 4];
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl From<SketchPlacementMatrix> for [[f64; 4]; 4] {
+    fn from(matrix: SketchPlacementMatrix) -> Self {
+        matrix.0
+    }
+}
 
 impl TryFrom<[[f64; 4]; 4]> for SketchPlacementMatrix {
     type Error = String;

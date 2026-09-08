@@ -819,7 +819,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         neutron_role_offset: 0,
         placement: Some(crate::records::feature::DesignComponentInsertMatrix {
             scope: crate::records::Located {
-                value: selected,
+                value: selected.try_into().unwrap(),
                 offset: 0,
             },
             carrier_offset: Some(0),
@@ -829,7 +829,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         neutron_role: "other".into(),
         placement: Some(crate::records::feature::DesignComponentInsertMatrix {
             scope: crate::records::Located {
-                value: ignored,
+                value: ignored.try_into().unwrap(),
                 offset: 0,
             },
             carrier_offset: Some(0),

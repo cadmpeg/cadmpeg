@@ -2041,13 +2041,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && instances.instance_count() == count
                         && instances.frames().all(|frame| {
                             let transform = &frame.transform.value;
-                            crate::records::valid_sketch_transform(transform)
-                                && (0..3).all(|row| {
-                                    (0..3).all(|column| {
-                                        (transform[row][column] - first[row][column]).abs()
-                                            <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10
-                                    })
+                            (0..3).all(|row| {
+                                (0..3).all(|column| {
+                                    (transform[row][column] - first[row][column]).abs()
+                                        <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10
                                 })
+                            })
                         })
                         && (distance - extent.abs()).abs()
                             <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
@@ -2236,9 +2235,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             frame.reference_record_index,
                                         ))
                                     };
-                                    crate::records::valid_sketch_transform(&frame.transform)
-                                        && offsets_match
-                                        && reference_exists
+                                    offsets_match && reference_exists
                                 })
                         })
                     };
@@ -2262,7 +2259,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && frame.transform_offset
                             == frame.record_byte_offset
                                 + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
-                        && crate::records::valid_sketch_transform(&frame.transform)
                 });
                 let operand_qualifiers_link = match alignment.form.as_ref() {
                     Some(records::feature::DesignAssemblyAlignmentForm::Qualified(operands)) => {
@@ -2607,7 +2603,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .eq([construction.relation_record_index])
                     && construction.carrier_record_index != construction.relation_record_index
                     && role_valid
-                    && crate::records::valid_sketch_transform(construction.transform())
                     && frame_matches_transform
                     && relation.is_some_and(|relation| {
                         construction
@@ -2617,7 +2612,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && (native.xref_references.is_empty()
                         || native.xref_references.iter().any(|reference| {
                             reference.neutron_role == construction.neutron_role
-                                && reference.transform == Some(*construction.transform())
+                                && reference.transform == Some((*construction.transform()).into())
                         }))
             }
         };
@@ -2653,8 +2648,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         != operation.copied_occurrence_record_index
                     && operation.source_transform_offset == scope.byte_offset + source_at
                     && operation.copied_transform_offset == scope.byte_offset + source_at + 156
-                    && crate::records::valid_sketch_transform(&operation.source_transform)
-                    && crate::records::valid_sketch_transform(&operation.copied_transform)
                     && source.is_some_and(|source| {
                         source
                             .component_guid
@@ -3001,8 +2994,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && reference.joint_origin_reference_offset == assembly.byte_offset + 25
                 })
             });
-            crate::records::valid_sketch_transform(&transform)
-                && (inline || assembly_operand || single_operand_assembly)
+            inline || assembly_operand || single_operand_assembly
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream);
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
@@ -3967,7 +3959,6 @@ fn valid_work_plane_construction(
     else {
         return false;
     };
-    let transform = frame.work_plane_transform;
     let transform_offset = frame.work_plane_transform_offset;
     let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
         design_stream(owner.id()) == native_stream
@@ -3990,7 +3981,6 @@ fn valid_work_plane_construction(
             .work_plane_frame()
             .and_then(|frame| frame.reference.as_ref())
             .is_some()
-        && crate::records::valid_sketch_transform(&transform)
         && transform_offset > placement_header.byte_offset
         && inputs
             .iter()
@@ -4121,7 +4111,6 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 } => {
                     (occurrence.class_tag.as_str() == "327" || ordinal.get() > 1)
                         && transform.offset == occurrence.byte_offset + 209
-                        && crate::records::valid_sketch_transform(&transform.value)
                 }
             };
         // The duplicated references must agree within one carrier, which
@@ -4292,7 +4281,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == transform.byte_offset
                                 && header.class_tag == transform.class_tag
                         })
-                    && crate::records::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
                     && transform.transform_offset == transform.byte_offset.saturating_add(22)
                     && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
@@ -4317,8 +4305,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
                     && transform.second_transform_offset
                         == transform.byte_offset.saturating_add(149)
-                    && crate::records::valid_sketch_transform(&transform.first_transform)
-                    && crate::records::valid_sketch_transform(&transform.second_transform)
             })
             && frame.trailing_flags().iter().all(|flag| {
                 frame
@@ -4366,7 +4352,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     == path.byte_offset.saturating_add(174)
                                 && path.following_byte_offset
                                     == path.byte_offset.saturating_add(190)
-                                && crate::records::valid_sketch_transform(&transform.value)
                         }
                         crate::records::topology::DesignConstructionPathPlacement::Compact(_) => {
                             path.scope_record_index_offset == path.byte_offset.saturating_add(35)

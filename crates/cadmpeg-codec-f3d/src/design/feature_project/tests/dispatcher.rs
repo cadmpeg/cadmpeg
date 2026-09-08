@@ -21,14 +21,14 @@ fn dispatcher_projects_datum_feature_scopes() {
         crate::records::feature::DesignFeatureKind::JointOrigin,
         1,
     );
-    joint_origin.with_joint_origin_transform(transform);
+    joint_origin.with_joint_origin_transform(transform.try_into().unwrap());
 
     let mut work_plane = DesignParameterScope::empty(
         "f3d:native:parameter-scope#2",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         2,
     );
-    work_plane.with_work_plane_transform(transform);
+    work_plane.with_work_plane_transform(transform.try_into().unwrap());
 
     let mut work_point = DesignParameterScope::empty(
         "f3d:native:parameter-scope#3",
@@ -132,7 +132,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         10,
     );
-    referenced.with_work_plane_transform(identity_matrix());
+    referenced.with_work_plane_transform(identity_matrix().try_into().unwrap());
     referenced.with_work_plane_reference(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
@@ -179,7 +179,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         20,
     );
-    plane.with_work_plane_transform(identity_matrix());
+    plane.with_work_plane_transform(identity_matrix().try_into().unwrap());
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
             placement_record_index: 21,
@@ -216,7 +216,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             record_index,
         );
-        scope.with_work_plane_transform(identity_matrix());
+        scope.with_work_plane_transform(identity_matrix().try_into().unwrap());
         scope
     });
     let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {
@@ -595,9 +595,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            source_transform: identity_matrix(),
+            source_transform: identity_matrix().try_into().unwrap(),
             source_transform_offset: 0,
-            copied_transform: identity_matrix(),
+            copied_transform: identity_matrix().try_into().unwrap(),
             copied_transform_offset: 0,
         });
     }
