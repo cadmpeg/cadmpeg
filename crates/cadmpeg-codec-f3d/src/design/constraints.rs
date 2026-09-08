@@ -114,7 +114,7 @@ pub fn project_sketch_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let native_operand = |scope: &str, field: &str, record_index: u32| {
+    let native_operand = |scope: &str, field: &'static str, record_index: u32| {
         let (family, native_ref) = if let Some(native_ref) =
             point_native_refs.get(&(scope, record_index)).copied()
         {
@@ -127,11 +127,9 @@ pub fn project_sketch_constraints(
             ("record", None)
         };
         SketchNativeOperand {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new(family)
-                .expect("source operand kind is nonempty"),
+            native_kind: crate::design::literals::nonempty(family),
             field: Some(NativeOperandField {
-                name: cadmpeg_ir::products::NonEmptyString::new(field)
-                    .expect("source field name is nonempty"),
+                name: crate::design::literals::nonempty(field),
                 role: None,
             }),
             object_index: record_index,

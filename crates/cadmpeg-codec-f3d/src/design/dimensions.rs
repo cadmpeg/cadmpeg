@@ -348,28 +348,28 @@ fn project_all_dimension_constraints(
             .flatten()
             .and_then(|owner| sketches.get(&(scope, owner)).cloned())
     };
-    let native_operand = |scope: &str, field: &str, role: Option<u32>, record_index: u32| {
-        let (native_kind, _, native_ref) = native_geometry
-            .get(&(scope, record_index))
-            .copied()
-            .unwrap_or(("record", None, ""));
-        SketchNativeOperand {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new(native_kind)
-                .expect("source operand kind is nonempty"),
-            field: Some(NativeOperandField {
-                name: cadmpeg_ir::products::NonEmptyString::new(field)
-                    .expect("source field name is nonempty"),
-                role,
-            }),
-            object_index: record_index,
-            native_ref: (!native_ref.is_empty() && !projected.contains_key(&(scope, record_index)))
+    let native_operand =
+        |scope: &str, field: &'static str, role: Option<u32>, record_index: u32| {
+            let (native_kind, _, native_ref) = native_geometry
+                .get(&(scope, record_index))
+                .copied()
+                .unwrap_or(("record", None, ""));
+            SketchNativeOperand {
+                native_kind: crate::design::literals::nonempty(native_kind),
+                field: Some(NativeOperandField {
+                    name: crate::design::literals::nonempty(field),
+                    role,
+                }),
+                object_index: record_index,
+                native_ref: (!native_ref.is_empty()
+                    && !projected.contains_key(&(scope, record_index)))
                 .then(|| native_ref.to_owned()),
-        }
-    };
+            }
+        };
     let native_definition = |scope: &str,
                              source_kind: &str,
                              state: Option<u64>,
-                             operands: &[(&str, Option<u32>, u32)],
+                             operands: &[(&'static str, Option<u32>, u32)],
                              parameter| Definition::Native {
         native_kind: source_kind.to_owned(),
         native_state: state,
@@ -836,13 +836,9 @@ fn project_all_dimension_constraints(
                         .iter()
                         .map(|operand| match operand.geometry_record_index {
                             None => SketchNativeOperand {
-                                native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                    "null_locus",
-                                )
-                                .expect("source operand kind is nonempty"),
+                                native_kind: crate::design::literals::nonempty("null_locus"),
                                 field: Some(NativeOperandField {
-                                    name: cadmpeg_ir::products::NonEmptyString::new("locus")
-                                        .expect("source field name is nonempty"),
+                                    name: crate::design::literals::nonempty("locus"),
                                     role: Some(operand.role),
                                 }),
                                 object_index: 0,
@@ -928,11 +924,9 @@ fn project_all_dimension_constraints(
             }
             let operands = vec![
                 SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("null_locus")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: crate::design::literals::nonempty("null_locus"),
                     field: Some(NativeOperandField {
-                        name: cadmpeg_ir::products::NonEmptyString::new("locus")
-                            .expect("source field name is nonempty"),
+                        name: crate::design::literals::nonempty("locus"),
                         role: Some(pair.loci[0].role),
                     }),
                     object_index: 0,
@@ -1073,13 +1067,11 @@ fn project_all_dimension_constraints(
                         operands: records
                             .into_iter()
                             .map(|record| SketchNativeOperand {
-                                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                native_kind: crate::design::literals::nonempty(
                                     "construction_recipe",
-                                )
-                                .expect("source operand kind is nonempty"),
+                                ),
                                 field: Some(NativeOperandField {
-                                    name: cadmpeg_ir::products::NonEmptyString::new("recipe")
-                                        .expect("source field name is nonempty"),
+                                    name: crate::design::literals::nonempty("recipe"),
                                     role: None,
                                 }),
                                 object_index: record.record_index,
@@ -1255,11 +1247,9 @@ fn project_all_dimension_constraints(
             entities: Vec::new(),
             parameter: Some(parameter_id.clone()),
             operands: vec![SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_companion")
-                    .expect("source operand kind is nonempty"),
+                native_kind: crate::design::literals::nonempty("dimension_companion"),
                 field: Some(NativeOperandField {
-                    name: cadmpeg_ir::products::NonEmptyString::new("companion_payload")
-                        .expect("source field name is nonempty"),
+                    name: crate::design::literals::nonempty("companion_payload"),
                     role: None,
                 }),
                 object_index: companion.record_index,
@@ -2679,17 +2669,15 @@ pub fn project_spatial_dimension_constraints(
                 native_state: None,
                 parameter: Some(parameter_id),
                 operands: vec![SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension_companion")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: crate::design::literals::nonempty("dimension_companion"),
                     field: Some(NativeOperandField {
-                        name: cadmpeg_ir::products::NonEmptyString::new(
+                        name: crate::design::literals::nonempty(
                             if companion.payload_byte_length == 0 {
                                 "companion"
                             } else {
                                 "companion_payload"
                             },
-                        )
-                        .expect("source field name is nonempty"),
+                        ),
                         role: None,
                     }),
                     object_index: companion.record_index,
