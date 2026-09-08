@@ -8721,15 +8721,25 @@ pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
 ) -> Option<usize> {
-    parameter_scope_previous_history_offset_for_form(kind.as_ref(), tail_length, false)
+    parameter_scope_previous_history_offset_for_form(
+        kind.as_ref(),
+        tail_length,
+        ScopeTailForm::Fixed,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScopeTailForm {
+    Fixed,
+    Named,
 }
 
 fn parameter_scope_previous_history_offset_for_form(
     kind: &str,
     tail_length: usize,
-    named_tail: bool,
+    tail_form: ScopeTailForm,
 ) -> Option<usize> {
-    if named_tail {
+    if tail_form == ScopeTailForm::Named {
         return None;
     }
     match (kind, tail_length) {
@@ -8770,7 +8780,13 @@ pub(crate) fn parse_parameter_scope(
         };
         let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
         if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
-            candidates.push((at, kind_end, tail_length, kind.clone(), false));
+            candidates.push((
+                at,
+                kind_end,
+                tail_length,
+                kind.clone(),
+                ScopeTailForm::Fixed,
+            ));
         }
         let named_tail = (78..=590).contains(&tail_length)
             && tail_length.is_multiple_of(2)
@@ -8778,13 +8794,18 @@ pub(crate) fn parse_parameter_scope(
             && named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                 .is_some_and(|valid| valid);
         if named_tail {
-            candidates.push((at, kind_end, tail_length, kind, true));
+            candidates.push((at, kind_end, tail_length, kind, ScopeTailForm::Named));
         }
     }
-    if candidates.iter().filter(|candidate| candidate.4).count() == 1 {
-        candidates.retain(|candidate| candidate.4);
+    if candidates
+        .iter()
+        .filter(|candidate| candidate.4 == ScopeTailForm::Named)
+        .count()
+        == 1
+    {
+        candidates.retain(|candidate| candidate.4 == ScopeTailForm::Named);
     }
-    let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
+    let [(kind_at, kind_end, tail_length, kind, tail_form)] = candidates.as_slice() else {
         return None;
     };
     let kind_text = kind.clone();
@@ -8800,7 +8821,7 @@ pub(crate) fn parse_parameter_scope(
     let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
         &kind_text,
         *tail_length,
-        *named_tail,
+        *tail_form,
     ) {
         Some(offset) => Some(kind_end.checked_add(offset)?),
         None => None,
