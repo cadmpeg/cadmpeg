@@ -340,6 +340,10 @@ pub(crate) struct AssemblyOccurrenceRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "AssemblyPlacementRecordWire",
+    into = "AssemblyPlacementRecordWire"
+)]
 pub(crate) struct AssemblyPlacementRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -357,7 +361,76 @@ pub(crate) struct AssemblyPlacementRecord {
     pub(crate) graphics_index: u32,
     pub(crate) object_reference: u32,
     pub(crate) suffix_len: u64,
+    suffix_sha256: digest::Sha256Hex,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct AssemblyPlacementRecordWire {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) header_id: u16,
+    pub(crate) owner_reference: u32,
+    pub(crate) attribute_reference: u32,
+    pub(crate) state: u8,
+    pub(crate) transform_prefix: bool,
+    #[serde(flatten, with = "crate::compact_matrix::assembly_wire")]
+    pub(crate) transform: crate::compact_matrix::CompactMatrix,
+    pub(crate) branch: u8,
+    pub(crate) graphics_state: u8,
+    pub(crate) occurrence_id: u32,
+    pub(crate) graphics_index: u32,
+    pub(crate) object_reference: u32,
+    pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
+}
+
+impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
+    type Error = String;
+    fn try_from(wire: AssemblyPlacementRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            segment_token: wire.segment_token,
+            record_ordinal: wire.record_ordinal,
+            header_id: wire.header_id,
+            owner_reference: wire.owner_reference,
+            attribute_reference: wire.attribute_reference,
+            state: wire.state,
+            transform_prefix: wire.transform_prefix,
+            transform: wire.transform,
+            branch: wire.branch,
+            graphics_state: wire.graphics_state,
+            occurrence_id: wire.occurrence_id,
+            graphics_index: wire.graphics_index,
+            object_reference: wire.object_reference,
+            suffix_len: wire.suffix_len,
+            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+                .map_err(|error| format!("suffix_sha256: {error}"))?,
+        })
+    }
+}
+
+impl From<AssemblyPlacementRecord> for AssemblyPlacementRecordWire {
+    fn from(value: AssemblyPlacementRecord) -> Self {
+        Self {
+            id: value.id,
+            segment_token: value.segment_token,
+            record_ordinal: value.record_ordinal,
+            header_id: value.header_id,
+            owner_reference: value.owner_reference,
+            attribute_reference: value.attribute_reference,
+            state: value.state,
+            transform_prefix: value.transform_prefix,
+            transform: value.transform,
+            branch: value.branch,
+            graphics_state: value.graphics_state,
+            occurrence_id: value.occurrence_id,
+            graphics_index: value.graphics_index,
+            object_reference: value.object_reference,
+            suffix_len: value.suffix_len,
+            suffix_sha256: value.suffix_sha256.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1534,7 +1607,7 @@ mod tests {
             "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
                           [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
-            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": ""
+            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         });
         let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
             .expect("assembly matrix fixture agrees with its masks");
@@ -1542,6 +1615,21 @@ mod tests {
             serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
             wire
         );
+        for digest in ["a".repeat(63), "g".repeat(64)] {
+            let mut invalid = wire.clone();
+            invalid["suffix_sha256"] = serde_json::json!(digest);
+            assert!(
+                serde_json::from_value::<super::AssemblyPlacementRecord>(invalid)
+                    .expect_err("invalid digest")
+                    .to_string()
+                    .contains("suffix_sha256")
+            );
+        }
+        let mut nonfinite = wire.clone();
+        nonfinite["transform_encoding"] = serde_json::json!([0, 0]);
+        nonfinite["transform"][0][0] = serde_json::json!("overflow");
+        let json = nonfinite.to_string().replace("\"overflow\"", "1e999");
+        assert!(serde_json::from_str::<super::AssemblyPlacementRecord>(&json).is_err());
         wire["transform"][0][0] = serde_json::json!(2.0);
         assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
         wire["transform_encoding"] = serde_json::json!([0, 0]);
