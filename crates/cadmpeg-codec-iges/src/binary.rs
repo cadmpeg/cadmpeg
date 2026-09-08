@@ -73,7 +73,10 @@ struct BinaryParameter {
     entity_type: i64,
     directory_pointer: i64,
     values: Vec<BinaryValue>,
-    text: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct NormalizedParameter {
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
 }
@@ -886,9 +889,6 @@ fn read_parameters(
             entity_type,
             directory_pointer: i64::from(directory_pointer),
             values,
-            text: Vec::new(),
-            lines: Vec::new(),
-            first_sequence: 0,
         });
         cursor = body_end;
     }
@@ -898,7 +898,7 @@ fn read_parameters(
 fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
-    parameters: &mut [BinaryParameter],
+    parameters: &[BinaryParameter],
     ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
     let directory_by_offset = directory
@@ -912,7 +912,9 @@ fn normalize_directory_and_parameters(
         .map(|(index, record)| (record.offset, index))
         .collect::<BTreeMap<_, _>>();
     let mut referenced_parameters = BTreeSet::new();
-    for parameter in parameters.iter_mut() {
+    let mut normalized = Vec::with_capacity(parameters.len());
+    let mut parameter_sequence = 1_u32;
+    for parameter in parameters {
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
         let directory_index = *directory_by_offset
@@ -923,18 +925,19 @@ fn normalize_directory_and_parameters(
                 "Binary Directory and Parameter entity types disagree",
             ));
         }
-        parameter.text = parameter_text(parameter.entity_type, &parameter.values)?;
-        parameter.lines = render_parameter_lines(&parameter.text, parameter.entity_type == 306)?;
-    }
-    let mut parameter_sequence = 1_u32;
-    for parameter in parameters.iter_mut() {
-        parameter.first_sequence = parameter_sequence;
+        let text = parameter_text(parameter.entity_type, &parameter.values)?;
+        let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
+        let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
-                u32::try_from(parameter.lines.len())
+                u32::try_from(lines.len())
                     .map_err(|_| malformed("normalized Parameter Data line count exceeds u32"))?,
             )
             .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
+        normalized.push(NormalizedParameter {
+            lines,
+            first_sequence,
+        });
     }
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
@@ -959,8 +962,8 @@ fn normalize_directory_and_parameters(
                 "Binary Parameter Data entry is referenced by more than one Directory Entry",
             ));
         }
-        parameter_starts[directory_index] = parameters[parameter_index].first_sequence;
-        parameter_counts[directory_index] = parameters[parameter_index].lines.len();
+        parameter_starts[directory_index] = normalized[parameter_index].first_sequence;
+        parameter_counts[directory_index] = normalized[parameter_index].lines.len();
     }
     if referenced_parameters.len() != parameters.len() {
         return Err(malformed(
@@ -1023,7 +1026,7 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in parameters.iter() {
+    for (parameter, normalized) in parameters.iter().zip(&normalized) {
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
         let directory_index = *directory_by_offset
@@ -1037,7 +1040,7 @@ fn normalize_directory_and_parameters(
                     .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
             )
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
-        for line in &parameter.lines {
+        for line in &normalized.lines {
             render_parameter_line(output, line, directory_sequence, parameter_sequence)?;
             parameter_sequence = parameter_sequence
                 .checked_add(1)
@@ -1130,8 +1133,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .enumerate()
         .map(|(index, record)| (record.offset, index))
         .collect::<BTreeMap<_, _>>();
-    let mut parameters =
-        read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
+    let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -1143,7 +1145,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let global_count = global_sequence.saturating_sub(1) as usize;
     let (directory_count, parameter_count) =
-        normalize_directory_and_parameters(&mut output, &directory, &mut parameters, ctx)?;
+        normalize_directory_and_parameters(&mut output, &directory, &parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,
