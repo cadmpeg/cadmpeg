@@ -367,6 +367,21 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
 }
 
 #[test]
+fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
+    let native = crate::native::CatiaNative::decode(&b2_circle_stream());
+    let [circle] = native.consolidated_circles.as_slice() else {
+        panic!("one consolidated circle")
+    };
+    let mut wire = serde_json::to_value(circle).expect("serialize CATIA circle");
+    let full_circle = wire["full_circle"].as_bool().expect("serialized circle flag");
+    wire["full_circle"] = serde_json::json!(!full_circle);
+
+    let error = serde_json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)
+        .expect_err("full_circle mismatch must fail admission");
+    assert!(error.to_string().contains("full_circle"), "{error}");
+}
+
+#[test]
 fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     let mut stream = b2_cylinder_stream();
     stream.extend_from_slice(&b2_implicit_axis_cylinder_stream());
