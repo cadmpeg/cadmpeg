@@ -486,7 +486,7 @@ impl<'a> Container<'a> {
         self.entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(crate::container::DirEntry::file_span.map(|span| (entry, span)))
+            .filter_map(|entry| entry.file_span().map(|span| (entry, span)))
             .flat_map(|(entry, (offset, size))| {
                 let Ok(offset) = usize::try_from(offset) else {
                     return Vec::new();
@@ -555,7 +555,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(crate::container::DirEntry::file_span.is_some())?;
+            .filter(|entry| entry.file_span().is_some())?;
         let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
