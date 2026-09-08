@@ -264,16 +264,9 @@ pub(crate) fn patch_payload(
             &native_value.to_be_bytes(),
             &record.id,
         )?;
-        let precision = u8::try_from(semantic.precision)
-            .ok()
-            .filter(|value| *value < 128)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} requires fixint precision",
-                    record.id
-                ))
-            })?;
-        patch_bytes(payload, record.precision_offset, &[precision], &record.id)?;
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision")
+            .and_then(|slot| slot.write(i64::from(semantic.precision)))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         for (offset, value) in [
             (record.basic_offset, semantic.basic),
             (record.inspection_offset, semantic.inspection),
@@ -306,6 +299,89 @@ pub(crate) fn patch_payload(
         }
     }
     Ok(())
+}
+
+enum IntegerPatchSlot<'a> {
+    Fix(&'a mut u8),
+    U8(&'a mut [u8; 1]),
+    U16(&'a mut [u8; 2]),
+    U32(&'a mut [u8; 4]),
+    U64(&'a mut [u8; 8]),
+    I8(&'a mut [u8; 1]),
+    I16(&'a mut [u8; 2]),
+    I32(&'a mut [u8; 4]),
+    I64(&'a mut [u8; 8]),
+}
+
+impl<'a> IntegerPatchSlot<'a> {
+    fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, String> {
+        let invalid = || format!("DimSemData {field} has an invalid integer patch slot");
+        let mut cursor = usize::try_from(offset).map_err(|_| invalid())?;
+        let outer = parse_value(payload, &mut cursor, 0).ok_or_else(invalid)?;
+        let ValueKind::Map(outer) = outer.kind else {
+            return Err(invalid());
+        };
+        let ValueKind::Array(items) = &outer.get("dimItems").ok_or_else(invalid)?.kind else {
+            return Err(invalid());
+        };
+        let ValueKind::Map(item) = &items.first().ok_or_else(invalid)?.kind else {
+            return Err(invalid());
+        };
+        let value = item.get(field).ok_or_else(invalid)?;
+        let marker = Marker::from_u8(*payload.get(value.start).ok_or_else(invalid)?);
+        let bytes = payload.get_mut(value.data_offset..).ok_or_else(invalid)?;
+        macro_rules! slot {
+            ($variant:ident, $width:literal) => {
+                Self::$variant(
+                    bytes
+                        .get_mut(..$width)
+                        .ok_or_else(invalid)?
+                        .try_into()
+                        .map_err(|_| invalid())?,
+                )
+            };
+        }
+        Ok(match marker {
+            Marker::FixPos(_) | Marker::FixNeg(_) => {
+                Self::Fix(bytes.first_mut().ok_or_else(invalid)?)
+            }
+            Marker::U8 => slot!(U8, 1),
+            Marker::U16 => slot!(U16, 2),
+            Marker::U32 => slot!(U32, 4),
+            Marker::U64 => slot!(U64, 8),
+            Marker::I8 => slot!(I8, 1),
+            Marker::I16 => slot!(I16, 2),
+            Marker::I32 => slot!(I32, 4),
+            Marker::I64 => slot!(I64, 8),
+            _ => return Err(invalid()),
+        })
+    }
+
+    fn write(self, value: i64) -> Result<(), String> {
+        let invalid = || "DimSemData valPrecision exceeds its integer encoding".to_string();
+        macro_rules! write {
+            ($bytes:ident, $ty:ty) => {
+                *$bytes = <$ty>::try_from(value).map_err(|_| invalid())?.to_be_bytes()
+            };
+        }
+        match self {
+            Self::Fix(byte) => {
+                if !(-32..=127).contains(&value) {
+                    return Err(invalid());
+                }
+                *byte = value as u8;
+            }
+            Self::U8(bytes) => write!(bytes, u8),
+            Self::U16(bytes) => write!(bytes, u16),
+            Self::U32(bytes) => write!(bytes, u32),
+            Self::U64(bytes) => write!(bytes, u64),
+            Self::I8(bytes) => write!(bytes, i8),
+            Self::I16(bytes) => write!(bytes, i16),
+            Self::I32(bytes) => write!(bytes, i32),
+            Self::I64(bytes) => *bytes = value.to_be_bytes(),
+        }
+        Ok(())
+    }
 }
 
 fn patch_bytes(
@@ -637,17 +713,20 @@ fn extract_dimension(
             .to_string(),
         value,
         value_offset: value_field.data_offset as u64,
-        precision: int_from(precision_field).unwrap_or_default(),
+        precision: int_from(precision_field)
+            .ok_or_else(|| "valPrecision is not an integer".to_string())?,
         precision_offset: precision_field.data_offset as u64,
         display_text: outer.get("dimText").and_then(|field| match &field.kind {
             ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
             _ => None,
         }),
-        basic: bool_from(basic_field).unwrap_or(false),
+        basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
         basic_offset: basic_field.data_offset as u64,
-        inspection: bool_from(inspection_field).unwrap_or(false),
+        inspection: bool_from(inspection_field)
+            .ok_or_else(|| "inspection is not a boolean".to_string())?,
         inspection_offset: inspection_field.data_offset as u64,
-        reference_only: bool_from(reference_field).unwrap_or(false),
+        reference_only: bool_from(reference_field)
+            .ok_or_else(|| "reference_only is not a boolean".to_string())?,
         reference_only_offset: reference_field.data_offset as u64,
     }))
 }
