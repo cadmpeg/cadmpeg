@@ -24,12 +24,9 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
         data: (&[] as &[u8]).into(),
         physical_size: 0,
         layout: if legacy_cfb {
-            crate::container::ContainerLayout::LegacyCfb {
-                version,
-                entry_count: 0,
-            }
+            crate::container::ContainerLayout::LegacyCfb { version }
         } else {
-            crate::container::test_modern_layout(version, 0)
+            crate::container::test_modern_layout(version)
         },
         entries: Vec::new(),
         indexed_section_layouts: OnceLock::new(),

@@ -320,21 +320,21 @@ fn build_container_body(
 pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<String>) {
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
+    let header_entry_count = c.entry_count(crate::container::Region::Header);
+    let footer_entry_count = c.entry_count(crate::container::Region::Footer);
     let mut notes = match c.layout {
-        crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => vec![format!(
+        crate::container::ContainerLayout::LegacyCfb { .. } => vec![format!(
             "legacy CFB container: {} directory entr{}",
-            entry_count,
-            if entry_count == 1 {
+            header_entry_count,
+            if header_entry_count == 1 {
                 "y"
             } else {
                 "ies"
             },
         )],
         crate::container::ContainerLayout::Modern {
-            header_entry_count,
             file_tag,
             footer_offset,
-            footer_entry_count,
             footer_fingerprint,
             ..
         } => vec![format!(
