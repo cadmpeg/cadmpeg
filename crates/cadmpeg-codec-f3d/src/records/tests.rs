@@ -1746,3 +1746,22 @@ fn visual_token_wire_preserves_revision_spelling() {
         );
     }
 }
+
+#[test]
+fn sketch_link_sidecar_rejects_present_sentinels() {
+    for sense in [-1, super::SKETCH_LINK_SENSE_UNCONSTRAINED] {
+        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+            "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
+        assert!(serde_json::from_value::<super::SketchCurveLink>(wire).is_err());
+    }
+}
+
+#[test]
+fn sketch_link_sidecar_preserves_all_non_sentinel_senses() {
+    for sense in [i64::MIN, -2, 0, 1, 2, i64::MAX] {
+        let wire = serde_json::json!({"id": "link", "target": {"kind": "document"},
+            "sketch_curve_id": 1, "ref_b": 0, "sense": sense, "role": 0, "closure": 0});
+        let record: super::SketchCurveLink = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+}

@@ -1421,7 +1421,7 @@ fn decode_transfers_generated_sketch_curve_link() {
         )
     );
     assert_eq!(link.sketch_curve_id, 113);
-    assert_eq!(link.sense, Some(1));
+    assert_eq!(link.sense.map(i64::from), Some(1));
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
@@ -1441,7 +1441,10 @@ fn a_sketch_link_keeps_the_second_tuple_member_the_source_writes() {
     let link = decoded_sketch_link(SketchLinkForm::Tagged("113 4550 1 0 2 3"))
         .expect("a non-zero second member does not refuse the link");
     assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
-    assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    assert_eq!(
+        (link.sense.map(i64::from), link.role, link.closure),
+        (Some(1), 2, 3)
+    );
     // The member reaches the full unsigned 64-bit range, so it does not fit the
     // signed reading the other members take.
     let link = decoded_sketch_link(SketchLinkForm::Tagged("113 18446744073709551615 1 0 2 3"))
@@ -1459,7 +1462,10 @@ fn a_sketch_link_decodes_in_every_payload_form() {
     ] {
         let link = decoded_sketch_link(form).expect("integer-form sketch link");
         assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
-        assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+        assert_eq!(
+            (link.sense.map(i64::from), link.role, link.closure),
+            (Some(1), 2, 3)
+        );
     }
     // An integer form spells the unconstrained sense as the signed `-1` of the
     // same 32-bit pattern the tagged field spells as `4294967295`.
@@ -1484,7 +1490,9 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        f3d_native(decoded.ir()).sketch_curve_links[0].sense,
+        f3d_native(decoded.ir()).sketch_curve_links[0]
+            .sense
+            .map(i64::from),
         None,
         "4294967295 is the disabled sense, not a stored one"
     );
@@ -1514,7 +1522,10 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sketch-link round trip");
     let link = &f3d_native(round_trip.ir()).sketch_curve_links[0];
-    assert_eq!((link.sketch_curve_id, link.sense), (113, None));
+    assert_eq!(
+        (link.sketch_curve_id, link.sense.map(i64::from)),
+        (113, None)
+    );
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
