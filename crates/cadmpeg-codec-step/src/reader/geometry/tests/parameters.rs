@@ -312,11 +312,24 @@ fn directrix_parameter_units_follow_step_curve_equations() {
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let mut ir = CadIr::empty();
+    let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
+    ir.model.curves.push(Curve {
+        id: child.clone(),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: None,
+    });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Composite {
-            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(Vec::new()).unwrap(),
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                cadmpeg_ir::geometry::CompositeCurveSegment {
+                    curve: child,
+                    same_sense: true,
+                    transition: cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous,
+                },
+            ])
+            .unwrap(),
             self_intersect: None,
         },
         source_object: None,
