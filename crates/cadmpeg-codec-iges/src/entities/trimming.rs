@@ -1620,9 +1620,9 @@ pub(super) fn project(
             continue;
         };
         if pcurve.is_some_and(|pcurve| {
-            entries
-                .get(&pcurve)
-                .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
+            entries.get(&pcurve).is_none_or(|entry| {
+                entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
+            })
         }) {
             losses.push(entity_loss(
                 entry,
@@ -1713,10 +1713,9 @@ pub(super) fn project(
                     pcurves.clear();
                     break;
                 };
-                if entries
-                    .get(&pcurve)
-                    .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
-                {
+                if entries.get(&pcurve).is_none_or(|entry| {
+                    entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
+                }) {
                     losses.push(entity_loss(
                         entry,
                         "boundary pcurve does not have entity-use flag 05",

@@ -502,10 +502,7 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
             view: 0,
             transform,
             label_display: 0,
-            status: crate::directory::SourceStatus::from_codes(
-                [0, 0, 0, 0],
-                crate::global::GlobalTable::V5Later,
-            ),
+            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
             line_weight: 0,
             color: 0,
             parameter_line_count: 0,
@@ -1209,10 +1206,7 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
             view: 0,
             transform,
             label_display: 0,
-            status: crate::directory::SourceStatus::from_codes(
-                [0, 0, 0, 0],
-                crate::global::GlobalTable::V5Later,
-            ),
+            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
             line_weight: 0,
             color: 0,
             parameter_line_count: 0,
