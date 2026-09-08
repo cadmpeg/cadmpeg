@@ -1365,13 +1365,14 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             "nx:om-object-indices#94,122".to_string(),
         )
         .into_selection(),
-        BodySelection::Local {
-            bodies: vec![
+        BodySelection::local(
+            vec![
                 "nx:om-body-object#94".to_string(),
                 "nx:om-body-object#122".to_string(),
             ],
-            native: "nx:om-object-indices#94,122".to_string(),
-        }
+            "nx:om-object-indices#94,122".to_string()
+        )
+        .unwrap()
     );
     assert!(matches!(
         super::feature_body_selection(
@@ -1392,10 +1393,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             "nx:om-object-indices#94,150".to_string(),
         )
         .into_selection(),
-        BodySelection::Local {
-            bodies: vec!["nx:om-body-object#94".to_string()],
-            native: "nx:om-object-indices#94,150".to_string(),
-        }
+        BodySelection::local(
+            vec!["nx:om-body-object#94".to_string()],
+            "nx:om-object-indices#94,150".to_string()
+        )
+        .unwrap()
     );
     let bindings = BTreeMap::from([(94, vec![first.clone()])]);
     let segment_binding = |id: &str, stream_ordinal, body_object_index, alias| {
@@ -1460,10 +1462,11 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
     );
     assert_eq!(
         selection.into_selection(),
-        BodySelection::Local {
-            bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
-            native: "nx:om-object-index#94".to_string(),
-        }
+        BodySelection::local(
+            vec!["nx:om-data-blocks-3:block#94".to_string()],
+            "nx:om-object-index#94".to_string()
+        )
+        .unwrap()
     );
 }
 #[test]
@@ -1725,10 +1728,11 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
                 bodies: vec![body.clone()],
                 native: "nx:om-object-index#94".to_string(),
             },
-            tools: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#122".to_string()],
-                native: "nx:om-object-indices#122".to_string(),
-            },
+            tools: BodySelection::local(
+                vec!["nx:om-body-object#122".to_string()],
+                "nx:om-object-indices#122".to_string()
+            )
+            .unwrap(),
             op: BooleanKind::Cut,
             keep_tools: false,
         }
@@ -1780,17 +1784,19 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
             &BTreeMap::new(),
         ),
         FeatureDefinition::Combine {
-            target: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-3:block#401".to_string()],
-                native: "nx:om-object-index#401".to_string(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec![
+            target: BodySelection::local(
+                vec!["nx:om-data-blocks-3:block#401".to_string()],
+                "nx:om-object-index#401".to_string()
+            )
+            .unwrap(),
+            tools: BodySelection::local(
+                vec![
                     "nx:om-data-blocks-3:block#402".to_string(),
                     "nx:om-data-blocks-3:block#403".to_string(),
                 ],
-                native: "nx:om-object-indices#402,403".to_string(),
-            },
+                "nx:om-object-indices#402,403".to_string()
+            )
+            .unwrap(),
             op: BooleanKind::Join,
             keep_tools: false,
         }

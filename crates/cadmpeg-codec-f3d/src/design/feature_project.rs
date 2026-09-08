@@ -2044,7 +2044,9 @@ pub(crate) fn project_combine(
                     .tools
                     .iter()
                     .map(|tool| selection(tool.record_index))
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .ok()?,
             )
         },
         op: operation.operation,

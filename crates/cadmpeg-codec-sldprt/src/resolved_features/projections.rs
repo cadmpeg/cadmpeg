@@ -581,14 +581,17 @@ pub(crate) fn project_compact_body_selections(
             _ => continue,
         };
         if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
-            *bodies = cadmpeg_ir::features::BodySelection::Local {
-                bodies: selection
+            let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
+                selection
                     .local_body_ids
                     .iter()
                     .map(u32::to_string)
                     .collect(),
-                native: compact_body_selection_value(&selection.local_body_ids),
+                compact_body_selection_value(&selection.local_body_ids),
+            ) else {
+                continue;
             };
+            *bodies = selection;
         }
         if let Some(mode) = mode {
             if matches!(*mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
@@ -1139,13 +1142,13 @@ pub(crate) fn project_compact_surface_selections(
                     .map(|local_id| local_id.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
-                *targets = BodySelection::Generated {
-                    bodies: vec![cadmpeg_ir::features::GeneratedBodyRef {
-                        feature: (*producer).clone(),
-                        local_id,
-                    }],
-                    native: target_native,
+                let Ok(body) =
+                    cadmpeg_ir::features::GeneratedBodyRef::new((*producer).clone(), local_id)
+                else {
+                    continue;
                 };
+                *targets = BodySelection::generated(vec![body], target_native.clone())
+                    .unwrap_or(BodySelection::Native(target_native));
                 if !feature.dependencies.contains(producer) {
                     feature.dependencies.push((*producer).clone());
                 }

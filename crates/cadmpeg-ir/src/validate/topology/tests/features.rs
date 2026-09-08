@@ -62,11 +62,12 @@ fn historical_body_overlap_ignores_set_ordering_form() {
 
     let state =
         FeatureInputTopologyId::mint("test:model:entity#test:input").expect("valid identity");
-    let target = BodySelection::Historical {
-        state: state.clone(),
-        bodies: vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
-        native: "target".into(),
-    };
+    let target = BodySelection::historical(
+        state.clone(),
+        vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
+        "target".into(),
+    )
+    .unwrap();
     let overlapping = BodySelection::HistoricalUnorderedSet {
         state: state.clone(),
         selection: crate::features::HistoricalUnorderedBodySelection::try_from_parts(
@@ -1057,25 +1058,17 @@ fn feature_operand_roles_must_be_disjoint() {
             },
         },
         FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#targets".into(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#tools".into(),
-            },
+            targets: BodySelection::local(vec![body_key.clone()], "test:selection#targets".into())
+                .unwrap(),
+            tools: BodySelection::local(vec![body_key.clone()], "test:selection#tools".into())
+                .unwrap(),
             keep: BodyTrimSide::Forward,
         },
         FeatureDefinition::SectionShape {
-            first: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#first".into(),
-            },
-            second: BodySelection::Local {
-                bodies: vec![body_key.clone()],
-                native: "test:selection#second".into(),
-            },
+            first: BodySelection::local(vec![body_key.clone()], "test:selection#first".into())
+                .unwrap(),
+            second: BodySelection::local(vec![body_key.clone()], "test:selection#second".into())
+                .unwrap(),
             approximate: Some(false),
         },
         FeatureDefinition::ReplaceFace {
@@ -1083,10 +1076,7 @@ fn feature_operand_roles_must_be_disjoint() {
             replacements: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
         },
         FeatureDefinition::SewBodies {
-            bodies: BodySelection::Local {
-                bodies: vec![body_key],
-                native: "test:selection#sew".into(),
-            },
+            bodies: BodySelection::local(vec![body_key], "test:selection#sew".into()).unwrap(),
             gap_tolerance: None,
         },
     ]
@@ -1624,13 +1614,14 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Generated {
-                bodies: vec![GeneratedBodyRef {
+            bodies: BodySelection::generated(
+                vec![GeneratedBodyRef {
                     feature: producer,
-                    local_id: "body#declared".into(),
+                    local_id: "body#declared".to_owned().try_into().unwrap(),
                 }],
-                native: "synthetic:native-selection#0".into(),
-            },
+                "synthetic:native-selection#0".into(),
+            )
+            .unwrap(),
         },
         native_ref: None,
     });
@@ -1643,7 +1634,10 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     else {
         panic!("test consumer must retain its generated body selection");
     };
-    bodies[0].local_id = "body#undeclared".into();
+    *bodies =
+        vec![GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into()).unwrap()]
+            .try_into()
+            .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

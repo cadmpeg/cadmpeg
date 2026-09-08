@@ -335,16 +335,17 @@ pub(crate) fn validate_compact_body_selection_edits(
         let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
             continue;
         };
-        let expected = BodySelection::Local {
-            bodies: selection
+        let expected = BodySelection::local(
+            selection
                 .local_body_ids
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            native: crate::resolved_features::component_paths::compact_body_selection_value(
+            crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
             ),
-        };
+        )
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact body selection",

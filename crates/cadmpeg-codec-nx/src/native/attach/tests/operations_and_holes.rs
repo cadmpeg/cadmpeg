@@ -71,14 +71,16 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             )]),
         ),
         FeatureDefinition::Combine {
-            target: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
-                native: "nx:om-object-index#94".to_string(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-3:block#122".to_string()],
-                native: "nx:om-object-indices#122".to_string(),
-            },
+            target: BodySelection::local(
+                vec!["nx:om-data-blocks-3:block#94".to_string()],
+                "nx:om-object-index#94".to_string()
+            )
+            .unwrap(),
+            tools: BodySelection::local(
+                vec!["nx:om-data-blocks-3:block#122".to_string()],
+                "nx:om-object-indices#122".to_string()
+            )
+            .unwrap(),
             op: BooleanKind::Cut,
             keep_tools: false,
         }
@@ -146,14 +148,15 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     assert_eq!(
         super::sew_body_feature_definition(Some(10), &[], &references, &roots, &BTreeMap::new(),),
         Some(FeatureDefinition::SewBodies {
-            bodies: BodySelection::Local {
-                bodies: vec![
+            bodies: BodySelection::local(
+                vec![
                     "nx:om-body-object#10".to_string(),
                     "nx:om-body-object#20".to_string(),
                     "nx:om-body-object#30".to_string(),
                 ],
-                native: "nx:om-object-indices#10,20,30".to_string(),
-            },
+                "nx:om-object-indices#10,20,30".to_string()
+            )
+            .unwrap(),
             gap_tolerance: None,
         })
     );
@@ -168,7 +171,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Local { bodies, .. },
             ..
-        }) if bodies == [
+        }) if bodies.as_slice() == [
             "nx:om-body-object#736",
             "nx:om-body-object#20",
             "nx:om-body-object#30",
@@ -222,13 +225,14 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             &BTreeMap::new(),
         ),
         Some(FeatureDefinition::SewBodies {
-            bodies: BodySelection::Local {
-                bodies: vec![
+            bodies: BodySelection::local(
+                vec![
                     "nx:om-body-object#10".to_string(),
                     "nx:om-body-object#20".to_string(),
                 ],
-                native: "nx:om-object-indices#10,20,30".to_string(),
-            },
+                "nx:om-object-indices#10,20,30".to_string()
+            )
+            .unwrap(),
             gap_tolerance: None,
         })
     );
@@ -266,14 +270,15 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             &BTreeMap::new(),
         ),
         Some(FeatureDefinition::SewBodies {
-            bodies: BodySelection::Local {
-                bodies: vec![
+            bodies: BodySelection::local(
+                vec![
                     "nx:om-data-blocks-4:block#72".to_string(),
                     "nx:om-data-blocks-4:block#71".to_string(),
                     "nx:om-data-blocks-4:block#70".to_string(),
                 ],
-                native: "nx:om-object-indices#72,71,70".to_string(),
-            },
+                "nx:om-object-indices#72,71,70".to_string()
+            )
+            .unwrap(),
             gap_tolerance: None,
         })
     );
@@ -309,10 +314,11 @@ fn nx_delete_body_requires_a_primary_body_field() {
             &BTreeMap::new()
         ),
         FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#20".to_string()],
-                native: "nx:om-object-index#20".to_string(),
-            },
+            bodies: BodySelection::local(
+                vec!["nx:om-body-object#20".to_string()],
+                "nx:om-object-index#20".to_string()
+            )
+            .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         }
     );
@@ -323,10 +329,11 @@ fn nx_delete_body_requires_a_primary_body_field() {
             &BTreeMap::new()
         ),
         FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#72".to_string()],
-                native: "nx:om-object-index#72".to_string(),
-            },
+            bodies: BodySelection::local(
+                vec!["nx:om-body-object#72".to_string()],
+                "nx:om-object-index#72".to_string()
+            )
+            .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         }
     );
@@ -340,10 +347,11 @@ fn nx_delete_body_requires_a_primary_body_field() {
             &BTreeMap::new(),
         ),
         FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
-                native: "nx:om-object-index#72".to_string(),
-            },
+            bodies: BodySelection::local(
+                vec!["nx:om-data-blocks-2:block#72".to_string()],
+                "nx:om-object-index#72".to_string()
+            )
+            .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         }
     );
@@ -370,14 +378,16 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
     assert_eq!(
         super::offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &[&operand],),
         Some(FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
-                native: "nx:om-object-index#114".to_string(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#113".to_string()],
-                native: "nx:om-object-indices#113".to_string(),
-            },
+            targets: BodySelection::local(
+                vec!["nx:om-data-blocks-2:block#114".to_string()],
+                "nx:om-object-index#114".to_string()
+            )
+            .unwrap(),
+            tools: BodySelection::local(
+                vec!["nx:om-data-blocks-2:block#113".to_string()],
+                "nx:om-object-indices#113".to_string()
+            )
+            .unwrap(),
             keep: BodyTrimSide::Unresolved,
         })
     );
@@ -392,10 +402,11 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             &[],
         ),
         Some(FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
-                native: "nx:om-object-index#114".to_string(),
-            },
+            targets: BodySelection::local(
+                vec!["nx:om-data-blocks-2:block#114".to_string()],
+                "nx:om-object-index#114".to_string()
+            )
+            .unwrap(),
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         })
@@ -427,14 +438,16 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
         FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#10".to_string()],
-                native: "nx:om-object-index#10".to_string(),
-            },
-            tools: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#20".to_string()],
-                native: "nx:om-object-indices#20".to_string(),
-            },
+            targets: BodySelection::local(
+                vec!["nx:om-body-object#10".to_string()],
+                "nx:om-object-index#10".to_string()
+            )
+            .unwrap(),
+            tools: BodySelection::local(
+                vec!["nx:om-body-object#20".to_string()],
+                "nx:om-object-indices#20".to_string()
+            )
+            .unwrap(),
             keep: BodyTrimSide::Unresolved,
         }
     );
@@ -469,10 +482,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     assert_eq!(
         super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
         FeatureDefinition::TrimBodies {
-            targets: BodySelection::Local {
-                bodies: vec!["nx:om-body-object#10".to_string()],
-                native: "nx:om-object-index#10".to_string(),
-            },
+            targets: BodySelection::local(
+                vec!["nx:om-body-object#10".to_string()],
+                "nx:om-object-index#10".to_string()
+            )
+            .unwrap(),
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         }
@@ -840,10 +854,11 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
             &BTreeMap::new(),
         ),
         FeatureDefinition::ExtractBody {
-            source: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
-                native: "nx:om-object-index#72".to_string(),
-            },
+            source: BodySelection::local(
+                vec!["nx:om-data-blocks-2:block#72".to_string()],
+                "nx:om-object-index#72".to_string()
+            )
+            .unwrap(),
         }
     );
     assert_eq!(

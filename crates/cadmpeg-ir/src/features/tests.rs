@@ -1141,14 +1141,13 @@ fn body_selections_round_trip_through_json() {
             )
             .expect("valid body selection rows"),
         },
-        BodySelection::Historical {
-            state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
+        BodySelection::historical(
+            FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            bodies: vec![
-                HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity")
-            ],
-            native: "body:16".into(),
-        },
+            vec![HistoricalBodyId::mint("synthetic:history-input:body#0").expect("valid identity")],
+            "body:16".into(),
+        )
+        .unwrap(),
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
@@ -1178,7 +1177,7 @@ fn body_selections_round_trip_through_json() {
             .expect("valid unordered historical body selection"),
         },
         BodySelection::Native("body:17,body:18".into()),
-        BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()]),
+        BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()].try_into().unwrap()),
     ];
     let json = serde_json::to_string(&selections).unwrap();
     assert_eq!(
@@ -1862,4 +1861,34 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
             .unwrap(),
         active,
     );
+}
+
+#[test]
+fn body_selection_admission_rejects_invalid_members() {
+    use super::{BodySelection, GeneratedBodyRef, NativeSelections};
+    use crate::ids::FeatureInputTopologyId;
+    for names in [
+        vec![],
+        vec![" ".to_owned()],
+        vec!["a".to_owned(), "a".to_owned()],
+    ] {
+        assert!(BodySelection::local(names.clone(), "native".into()).is_err());
+        assert!(NativeSelections::try_from(names).is_err());
+    }
+    assert!(BodySelection::local(vec!["body".into()], " ".into()).is_err());
+    let state = FeatureInputTopologyId::mint("test:input#1").unwrap();
+    assert!(BodySelection::historical(state, vec![], "native".into()).is_err());
+    assert!(GeneratedBodyRef::new(
+        super::FeatureId::mint("test:feature#1").unwrap(),
+        " ".into()
+    )
+    .is_err());
+    for value in [
+        serde_json::json!({"kind":"local","value":{"bodies":[],"native":"source"}}),
+        serde_json::json!({"kind":"local","value":{"bodies":["a","a"],"native":"source"}}),
+        serde_json::json!({"kind":"generated","value":{"bodies":[],"native":"source"}}),
+        serde_json::json!({"kind":"native_set","value":[" "]}),
+    ] {
+        assert!(serde_json::from_value::<BodySelection>(value).is_err());
+    }
 }

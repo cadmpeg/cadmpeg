@@ -1005,13 +1005,14 @@ pub(crate) fn project_compact_combine_paths(
                 .collect::<Vec<_>>()
                 .join(",");
             Some((
-                cadmpeg_ir::features::BodySelection::Generated {
-                    bodies: vec![cadmpeg_ir::features::GeneratedBodyRef {
-                        feature: feature.clone(),
-                        local_id,
-                    }],
-                    native: native.to_owned(),
-                },
+                cadmpeg_ir::features::BodySelection::generated(
+                    vec![
+                        cadmpeg_ir::features::GeneratedBodyRef::new(feature.clone(), local_id)
+                            .ok()?,
+                    ],
+                    native.to_owned(),
+                )
+                .unwrap(),
                 components,
                 feature,
             ))

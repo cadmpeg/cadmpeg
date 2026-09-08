@@ -144,13 +144,13 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
 
 pub(super) fn body_selection_value(selection: &BodySelection) -> Option<String> {
     match selection {
-        BodySelection::Native(native)
-        | BodySelection::Resolved { native, .. }
-        | BodySelection::Generated { native, .. }
-        | BodySelection::Local { native, .. }
+        BodySelection::Native(native) | BodySelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
+        }
+        BodySelection::Generated { native, .. } | BodySelection::Local { native, .. } => {
+            Some(native.as_str().to_owned())
         }
         BodySelection::Bodies(bodies) if !bodies.is_empty() => Some(
             bodies
