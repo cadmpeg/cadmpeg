@@ -395,7 +395,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         fields: Vec::new(),
         face_reference_ordinals: faces,
         edge_reference_ordinals: edges,
-        payload_entry_count: 0,
+
         entries: Vec::new(),
     };
     let structure = DesignSurfacePatchRecipeStructure {

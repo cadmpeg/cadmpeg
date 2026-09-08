@@ -1305,11 +1305,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         };
     let side = |entries: Vec<crate::records::topology::DesignTopologyRecipeEntry>| {
         crate::records::topology::DesignTopologyRecipeSide {
-            field_count: std::num::NonZeroU32::new(3).unwrap(),
             header_value: 0,
             scalars: vec![0, 0],
             payload_prefix: vec![0],
-            payload_entry_count: u32::try_from(entries.len()).unwrap(),
+
             entries,
         }
     };

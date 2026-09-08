@@ -4692,7 +4692,7 @@ pub(crate) fn surface_patch_recipe_structure(
             fields,
             face_reference_ordinals,
             edge_reference_ordinals,
-            payload_entry_count,
+
             entries,
         });
     }
@@ -4853,11 +4853,10 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
             let entries = edge_recipe_entries(remaining.get(entries_at..entries_end)?)?;
             Some((
                 DesignTopologyRecipeSide {
-                    field_count,
                     header_value,
                     scalars: scalars.clone(),
                     payload_prefix: remaining[..entry_count_at].to_vec(),
-                    payload_entry_count,
+
                     entries,
                 },
                 remaining.get(entries_end..)?,
