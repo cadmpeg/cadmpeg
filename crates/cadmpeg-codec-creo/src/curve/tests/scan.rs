@@ -191,6 +191,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
     assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
     assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields().contains_key("suffix_candidate_count"));
     assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]

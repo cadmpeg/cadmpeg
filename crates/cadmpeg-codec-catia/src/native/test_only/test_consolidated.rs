@@ -149,8 +149,6 @@ pub(super) fn validate_consolidated_circles(
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, circle) in circles.iter().enumerate() {
-        let full_circle =
-            crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
         let compact_len =
             usize::from(u8::from(circle.layout)).checked_sub(5 * size_of::<f64>() + 9);
         let record_id_fits_layout = matches!(
@@ -168,7 +166,6 @@ pub(super) fn validate_consolidated_circles(
             || circle.center_pair.iter().any(|value| value.abs() > 1e6)
             || circle.radius <= 0.0
             || circle.range[0] >= circle.range[1]
-            || circle.full_circle != full_circle
             || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

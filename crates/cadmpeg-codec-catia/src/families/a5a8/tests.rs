@@ -267,8 +267,8 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
         ),
         (3, 3)
     );
-    assert_eq!(headers[0].u_multiplicities, [3, 3]);
-    assert_eq!(headers[0].v_multiplicities, [3, 3]);
+    assert_eq!(headers[0].u_knots.multiplicities(), [3, 3]);
+    assert_eq!(headers[0].v_knots.multiplicities(), [3, 3]);
     assert_eq!(
         headers[0].pole_storage,
         crate::families::a5a8::records::PoleStorage::Inline
@@ -885,7 +885,7 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
         assert_eq!(curves[0].knots(), vec![0.0, 1.0]);
-        assert_eq!(curves[0].sites[1].site.radius, 2.0);
+        assert_eq!(curves[0].sites[1].site.radius(), 2.0);
     }
 
     let mut wrong_degree = a5_freeform_curve_stream();
@@ -928,7 +928,7 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
         .try_into()
         .expect("one rolling-ball jet");
     assert_eq!(curve.knots(), [0.0, 1.0]);
-    assert_eq!(curve.sites[1].site.radius, 2.0);
+    assert_eq!(curve.sites[1].site.radius(), 2.0);
 }
 
 #[test]
@@ -979,7 +979,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let [curve] = crate::families::a5a8::records::a5_freeform_curves(&a5)
             .try_into()
             .expect("one consolidated rolling-ball jet");
-        assert_eq!(curve.sites[0].site.radius, radius);
+        assert_eq!(curve.sites[0].site.radius(), radius);
 
         let mut a8 = a8_freeform_curve_stream();
         a8[36..44].copy_from_slice(&le_f64(radius));
@@ -987,7 +987,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let [curve] = crate::families::a5a8::records::a8_freeform_curves(&a8)
             .try_into()
             .expect("one common-form rolling-ball jet");
-        assert_eq!(curve.sites[0].site.radius, radius);
+        assert_eq!(curve.sites[0].site.radius(), radius);
     }
 }
 
@@ -1006,7 +1006,7 @@ fn consolidated_curve_parser_reads_width2_frame() {
     let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].knots().len(), 2);
-    assert_eq!(curves[0].sites[1].site.radius, 2.0);
+    assert_eq!(curves[0].sites[1].site.radius(), 2.0);
 }
 
 #[test]
@@ -1067,7 +1067,7 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
     assert_eq!(curves[0].multiplicities(), vec![6, 6]);
-    assert_eq!(curves[0].sites[1].site.radius, 2.0);
+    assert_eq!(curves[0].sites[1].site.radius(), 2.0);
 
     let mut repeated_knot = a8_freeform_curve_stream();
     repeated_knot[26..34].copy_from_slice(&le_f64(0.0));

@@ -31,3 +31,22 @@ fn object_names_follow_the_lane_name_class_token() {
         ["Favorites", "Boss"]
     );
 }
+
+#[test]
+#[should_panic(expected = "native kind name must not be empty")]
+fn native_kind_literal_rejects_empty_text() {
+    super::checked_nonempty_name("");
+}
+
+#[test]
+fn operand_kind_names_preserve_wire_spelling() {
+    use crate::records::FeatureInputOperandKind;
+    for (kind, expected) in [
+        (FeatureInputOperandKind::D6, "d6"),
+        (FeatureInputOperandKind::E1, "e1"),
+        (FeatureInputOperandKind::Native(0x80d5), "d580"),
+        (FeatureInputOperandKind::Native(0), "0000"),
+    ] {
+        assert_eq!(super::operand_kind_name(kind).as_str(), expected);
+    }
+}

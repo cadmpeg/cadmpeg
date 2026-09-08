@@ -21,18 +21,12 @@ struct TopologyStream<'a> {
     delta_census: Option<Census>,
 }
 
-struct TopologyPreparation<'a> {
-    streams: Vec<TopologyStream<'a>>,
-    unmatched_tombstone_counts: BTreeMap<&'static str, usize>,
-}
-
 /// The topology-merged bytes per stream: each stream's inflated bytes with delta
 /// full-record merges applied. Unpaired delta streams that carry records or tombstones
 /// are merged against an empty partition; paired delta streams are merged into their
 /// partition and then cleared.
 pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
-    prepare_topology_streams(scan, false)
-        .streams
+    prepare_topology_streams(scan, None)
         .into_iter()
         .map(|stream| stream.bytes)
         .collect()
@@ -40,8 +34,9 @@ pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
 
 fn prepare_topology_streams<'a>(
     scan: &'a Scan<'_>,
-    collect_unmatched_tombstones: bool,
-) -> TopologyPreparation<'a> {
+    mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
+) -> Vec<TopologyStream<'a>> {
+    let collect_unmatched_tombstones = unmatched_tombstone_counts.is_some();
     let mut semantic = scan
         .streams
         .iter()
@@ -52,13 +47,11 @@ fn prepare_topology_streams<'a>(
         .collect::<Vec<_>>();
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut unmatched_tombstone_counts = BTreeMap::new();
     let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
-        if !collect_unmatched_tombstones {
-            return;
-        }
-        for (family, count) in counts {
-            *unmatched_tombstone_counts.entry(family).or_default() += count;
+        if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
+            for (family, count) in counts {
+                *totals.entry(family).or_default() += count;
+            }
         }
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
@@ -92,10 +85,7 @@ fn prepare_topology_streams<'a>(
             semantic[delta].delta_census = Some(census);
         }
     }
-    TopologyPreparation {
-        streams: semantic,
-        unmatched_tombstone_counts,
-    }
+    semantic
 }
 
 /// Map each partition stream ordinal to the delta stream ordinals that pair with it,
@@ -278,9 +268,9 @@ impl<'a> ParsedStreams<'a> {
     /// auxiliary-replacement deltas. NURBS parsing is deferred until a geometry
     /// consumer requests the selected stream's geometry.
     pub(crate) fn parse(scan: &'a Scan) -> Self {
-        let topology = prepare_topology_streams(scan, true);
-        let mut topology_streams = topology.streams;
-        let unmatched_tombstone_counts = topology.unmatched_tombstone_counts;
+        let mut unmatched_tombstone_counts = BTreeMap::new();
+        let mut topology_streams =
+            prepare_topology_streams(scan, Some(&mut unmatched_tombstone_counts));
         let delta_pairs = paired_delta_streams(scan);
         let paired_deltas = delta_pairs
             .values()

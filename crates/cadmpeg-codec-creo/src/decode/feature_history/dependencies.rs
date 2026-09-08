@@ -336,6 +336,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
 ) -> BTreeMap<u32, Vec<u32>> {
     let mut dependencies = BTreeMap::new();
     for (prototype, row, _) in unique_surface_prototype_associations(scan) {
+        let prototype = prototype.record();
         let mut fields = prototype
             .parameters
             .iter()

@@ -39,10 +39,43 @@ pub(super) enum TerminationVote {
     },
     Face {
         condition: FaceCondition,
-        reference: Option<String>,
+        reference: FaceReference,
         identity: String,
+    },
+}
+
+/// A lane reference with its fallback or a resolved consensus reference.
+#[derive(Clone)]
+pub(super) enum FaceReference {
+    Lane {
+        reference: String,
         canonical: Option<String>,
     },
+    Canonical(String),
+    Unresolved,
+}
+
+impl FaceReference {
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Lane { reference, .. } | Self::Canonical(reference) => Some(reference),
+            Self::Unresolved => None,
+        }
+    }
+
+    fn canonical(&self) -> Self {
+        match self {
+            Self::Lane {
+                canonical: Some(reference),
+                ..
+            }
+            | Self::Canonical(reference) => Self::Canonical(reference.clone()),
+            Self::Lane {
+                canonical: None, ..
+            }
+            | Self::Unresolved => Self::Unresolved,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,7 +107,7 @@ impl TerminationVote {
     pub(super) fn reference(&self) -> Option<&str> {
         match self {
             Self::ToVertex { reference } => Some(reference),
-            Self::Face { reference, .. } => reference.as_deref(),
+            Self::Face { reference, .. } => reference.as_str(),
             _ => None,
         }
     }
@@ -360,7 +393,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .or_insert(reference);
             }
             TerminationVote::Face {
-                reference: Some(reference),
+                reference:
+                    FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
                 ..
             } => {
                 feature.properties.entry("Face".into()).or_insert(reference);
@@ -396,18 +430,13 @@ pub(super) fn consensus_termination_vote(
         return None;
     }
     let mut consensus = first.clone();
-    if let TerminationVote::Face {
-        reference,
-        canonical,
-        ..
-    } = &mut consensus
-    {
+    if let TerminationVote::Face { reference, .. } = &mut consensus {
         if !votes
             .iter()
             .filter_map(Option::as_ref)
             .all(|vote| vote.reference() == first.reference())
         {
-            reference.clone_from(canonical);
+            *reference = reference.canonical();
         }
     }
     Some(consensus)
@@ -441,9 +470,11 @@ fn compact_termination_face_vote(
     let identity = reference_identity.unwrap_or_else(|| reference.clone());
     TerminationVote::Face {
         condition,
-        reference: Some(reference),
+        reference: FaceReference::Lane {
+            reference,
+            canonical: canonical_reference,
+        },
         identity,
-        canonical: canonical_reference,
     }
 }
 

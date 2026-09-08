@@ -240,16 +240,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(object.id.clone()),
             ));
         }
-        if object
-            .dependency_allow_partial
-            .is_some_and(|value| value <= 0)
-        {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!("{} has invalid partial-load capability", object.id),
-                Some(object.id.clone()),
-            ));
-        }
         for dependency in &object.dependencies {
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
@@ -651,9 +641,9 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
         for name in map
             .maps
-            .last()
-            .into_iter()
-            .flat_map(|node| &node.groups)
+            .root()
+            .groups
+            .iter()
             .flat_map(|group| &group.names)
             .flatten()
         {

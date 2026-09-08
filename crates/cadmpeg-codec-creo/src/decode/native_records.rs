@@ -3,25 +3,213 @@
 
 use serde::Serialize;
 
-use crate::feature::definitions::{DecodedField, DimensionValue};
+use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes, ScalarLane};
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchSectionPoint {
     pub(crate) point_id: u32,
-    pub(crate) u: Option<f64>,
-    pub(crate) v: Option<f64>,
-    pub(crate) state: &'static str,
+    #[serde(flatten, serialize_with = "serialize_section_point_state")]
+    pub(crate) state: CreoSketchPointState,
+}
+
+/// Reconciled section-point coordinate state.
+pub(crate) enum CreoSketchPointState {
+    Conflicting,
+    Resolved([f64; 2]),
+    PartialU(f64),
+    PartialV(f64),
+    Unresolved,
+}
+
+fn serialize_section_point_state<S: serde::Serializer>(
+    state: &CreoSketchPointState,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (state, u, v) = match state {
+        CreoSketchPointState::Conflicting => ("conflicting", None, None),
+        CreoSketchPointState::Resolved([u, v]) => ("resolved", Some(*u), Some(*v)),
+        CreoSketchPointState::PartialU(u) => ("partial", Some(*u), None),
+        CreoSketchPointState::PartialV(v) => ("partial", None, Some(*v)),
+        CreoSketchPointState::Unresolved => ("unresolved", None, None),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("state", state)?;
+    map.serialize_entry("u", &u)?;
+    map.serialize_entry("v", &v)?;
+    map.end()
 }
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchTableHeader {
-    pub(crate) kind: &'static str,
-    pub(crate) declared_count: Option<u32>,
-    pub(crate) entity_ref: Option<u32>,
-    pub(crate) entry_ref: Option<u32>,
-    pub(crate) buckets: Vec<CreoSketchBucketHeader>,
+    #[serde(flatten, serialize_with = "serialize_sketch_table_kind")]
+    pub(crate) kind: CreoSketchTableKind,
     pub(crate) row_count: usize,
     pub(crate) offset: usize,
+}
+
+/// Sketch table kind and its header fields.
+pub(crate) enum CreoSketchTableKind {
+    Variables {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Equations {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Segments {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Order {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Dimensions {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    Relations {
+        declared_count: u32,
+        entity_ref: Option<u32>,
+    },
+    SolverIncidences {
+        declared_count: u32,
+        entity_ref: u32,
+    },
+    RelationTriples {
+        declared_count: u32,
+        entity_ref: u32,
+    },
+    TrimEntities {
+        declared_count: Option<u32>,
+        entity_ref: Option<u32>,
+        entry_ref: Option<u32>,
+        buckets: Vec<CreoSketchBucketHeader>,
+    },
+    TrimVertices {
+        declared_count: Option<u32>,
+        entity_ref: Option<u32>,
+        entry_ref: Option<u32>,
+        buckets: Vec<CreoSketchBucketHeader>,
+    },
+    SavedEntities,
+}
+
+fn serialize_sketch_table_kind<S: serde::Serializer>(
+    header: &CreoSketchTableKind,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let (kind, declared_count, entity_ref, entry_ref, buckets) = match header {
+        CreoSketchTableKind::Variables {
+            declared_count,
+            entity_ref,
+        } => (
+            "variables",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Equations {
+            declared_count,
+            entity_ref,
+        } => (
+            "equations",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Segments {
+            declared_count,
+            entity_ref,
+        } => (
+            "segments",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Order {
+            declared_count,
+            entity_ref,
+        } => ("order", Some(*declared_count), *entity_ref, None, &[][..]),
+        CreoSketchTableKind::Dimensions {
+            declared_count,
+            entity_ref,
+        } => (
+            "dimensions",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::Relations {
+            declared_count,
+            entity_ref,
+        } => (
+            "relations",
+            Some(*declared_count),
+            *entity_ref,
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::SolverIncidences {
+            declared_count,
+            entity_ref,
+        } => (
+            "solver_incidences",
+            Some(*declared_count),
+            Some(*entity_ref),
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::RelationTriples {
+            declared_count,
+            entity_ref,
+        } => (
+            "relation_triples",
+            Some(*declared_count),
+            Some(*entity_ref),
+            None,
+            &[][..],
+        ),
+        CreoSketchTableKind::TrimEntities {
+            declared_count,
+            entity_ref,
+            entry_ref,
+            buckets,
+        } => (
+            "trim_entities",
+            *declared_count,
+            *entity_ref,
+            *entry_ref,
+            buckets.as_slice(),
+        ),
+        CreoSketchTableKind::TrimVertices {
+            declared_count,
+            entity_ref,
+            entry_ref,
+            buckets,
+        } => (
+            "trim_vertices",
+            *declared_count,
+            *entity_ref,
+            *entry_ref,
+            buckets.as_slice(),
+        ),
+        CreoSketchTableKind::SavedEntities => ("saved_entities", None, None, None, &[][..]),
+    };
+    let mut map = serializer.serialize_map(Some(5))?;
+    map.serialize_entry("kind", &kind)?;
+    map.serialize_entry("declared_count", &declared_count)?;
+    map.serialize_entry("entity_ref", &entity_ref)?;
+    map.serialize_entry("entry_ref", &entry_ref)?;
+    map.serialize_entry("buckets", &buckets)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -36,12 +224,40 @@ pub(crate) struct CreoSketchBucketHeader {
 pub(crate) struct CreoSketchSection3d {
     pub(crate) sketch_plane_entity_id: Option<u32>,
     pub(crate) sketch_plane_flip: Option<bool>,
-    pub(crate) reference_plane_entity_ids: Vec<u32>,
-    pub(crate) reference_plane_rows: Vec<CreoSketchReferencePlane>,
+    #[serde(flatten, serialize_with = "serialize_reference_planes")]
+    pub(crate) reference_planes: ReferencePlanes,
     pub(crate) reference_plane_datum_geometry_id: Option<u32>,
     pub(crate) orientation: CreoSketchSectionOrientation,
     pub(crate) dimension_ids: Vec<u32>,
     pub(crate) offset: usize,
+}
+
+fn serialize_reference_planes<S: serde::Serializer>(
+    planes: &ReferencePlanes,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let rows = match planes {
+        ReferencePlanes::Named(_) => &[][..],
+        ReferencePlanes::Positional(rows) => rows.as_slice(),
+    }
+    .iter()
+    .map(|row| CreoSketchReferencePlane {
+        plane_entity_id: row.plane_entity_id,
+        reference_type: row.reference_type,
+        external_reference_id: row.external_reference_id,
+        segment_id: row.segment_id,
+        sub_index: row.sub_index,
+        reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
+    })
+    .collect::<Vec<_>>();
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry(
+        "reference_plane_entity_ids",
+        &planes.entity_ids().collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry("reference_plane_rows", &rows)?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -211,18 +427,43 @@ fn serialize_dimension_value<S: serde::Serializer>(
 pub(crate) struct CreoSketchVariable {
     pub(crate) variable_type: u32,
     pub(crate) key: u32,
-    pub(crate) value: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_variable_value")]
+    pub(crate) value: ScalarLane,
     pub(crate) value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resolved_value: Option<f64>,
-    pub(crate) guess: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_variable_guess")]
+    pub(crate) guess: ScalarLane,
     pub(crate) guess_body: Vec<u8>,
-    pub(crate) guess_dimension_driven: bool,
     pub(crate) known: Option<u32>,
     pub(crate) homogeneity: Option<u32>,
     pub(crate) uvar_id: Option<u32>,
-    pub(crate) dimension_driven: bool,
     pub(crate) offset: usize,
+}
+
+fn serialize_variable_value<S: serde::Serializer>(
+    value: &ScalarLane,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("value", &value.value())?;
+    map.serialize_entry("dimension_driven", &(value == &ScalarLane::DimensionDriven))?;
+    map.end()
+}
+
+fn serialize_variable_guess<S: serde::Serializer>(
+    value: &ScalarLane,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("guess", &value.value())?;
+    map.serialize_entry(
+        "guess_dimension_driven",
+        &(value == &ScalarLane::DimensionDriven),
+    )?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -441,11 +682,8 @@ pub(crate) struct CreoFeatureOperationState {
     pub(crate) state_ordinal: usize,
     pub(crate) current: bool,
     pub(crate) family: String,
-    pub(crate) display_name_stored: bool,
-    pub(crate) stored_name: Option<String>,
-    pub(crate) stored_name_bytes: Option<Vec<u8>>,
-    pub(crate) identifier_keyword: Option<String>,
-    pub(crate) stored_name_prefix: Option<String>,
+    #[serde(flatten, serialize_with = "serialize_operation_name")]
+    pub(crate) name: crate::feature::operations::OperationName,
     pub(crate) recipe: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) recipe_conflict: Option<bool>,
@@ -455,6 +693,25 @@ pub(crate) struct CreoFeatureOperationState {
     pub(crate) parent_feature_id: Option<u32>,
     pub(crate) offset: usize,
     pub(crate) state_offset: usize,
+}
+
+fn serialize_operation_name<S: serde::Serializer>(
+    name: &crate::feature::operations::OperationName,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(5))?;
+    map.serialize_entry("display_name_stored", &name.display_name_stored())?;
+    map.serialize_entry("stored_name", &name.stored_name())?;
+    map.serialize_entry("stored_name_bytes", &name.stored_name_bytes())?;
+    map.serialize_entry("identifier_keyword", &name.identifier_keyword())?;
+    map.serialize_entry(
+        "stored_name_prefix",
+        &name
+            .stored_name_prefix()
+            .map(|prefix| char::from(prefix).to_string()),
+    )?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -506,12 +763,11 @@ pub(crate) struct CreoFc05CircleRecord {
     pub(crate) center_row_frame: [f64; 2],
     pub(crate) radius_mm: f64,
     pub(crate) sample_direction_row_frame: [f64; 2],
-    pub(crate) reference_direction_row_frame: Option<[f64; 2]>,
-    pub(crate) parameter_sign: Option<i8>,
+    #[serde(flatten, serialize_with = "serialize_angle_parameter")]
+    pub(crate) angle_parameter: crate::curve::Fc05AngleParameterRelation,
     pub(crate) cap_ordinate_row_frame: Option<f64>,
     pub(crate) point_count: usize,
     pub(crate) max_residual: f64,
-    pub(crate) angle_parameter_consistent: bool,
     pub(crate) offset: usize,
     pub(crate) source_section: String,
 }
@@ -520,9 +776,8 @@ pub(crate) struct CreoFc05CircleRecord {
 pub(crate) struct CreoFc05CylinderCapPairRecord {
     pub(crate) id: String,
     pub(crate) surface_id: u32,
-    pub(crate) curve_ids: Vec<u32>,
-    pub(crate) cap_plane_ids: Vec<u32>,
-    pub(crate) curve_cap_ordinates_row_frame: Vec<f64>,
+    #[serde(flatten, serialize_with = "serialize_cap_edges")]
+    pub(crate) cap_edges: Vec<crate::curve::Fc05CapEdge>,
     pub(crate) center_row_frame: [f64; 2],
     pub(crate) radius_mm: f64,
     pub(crate) reference_direction_row_frame: [f64; 2],
@@ -530,6 +785,33 @@ pub(crate) struct CreoFc05CylinderCapPairRecord {
     pub(crate) cap_ordinates_row_frame: Vec<f64>,
     pub(crate) offset: usize,
     pub(crate) source_section: String,
+}
+
+fn serialize_cap_edges<S: serde::Serializer>(
+    edges: &[crate::curve::Fc05CapEdge],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry(
+        "curve_ids",
+        &edges.iter().map(|edge| edge.curve_id).collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry(
+        "cap_plane_ids",
+        &edges
+            .iter()
+            .map(|edge| edge.cap_plane_id)
+            .collect::<Vec<_>>(),
+    )?;
+    map.serialize_entry(
+        "curve_cap_ordinates_row_frame",
+        &edges
+            .iter()
+            .map(|edge| edge.cap_ordinate_row_frame)
+            .collect::<Vec<_>>(),
+    )?;
+    map.end()
 }
 
 #[derive(Serialize)]
@@ -630,4 +912,24 @@ pub(crate) struct CreoCurveParameterOpaqueSpan {
     pub(crate) raw: Vec<u8>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
+}
+
+fn serialize_angle_parameter<S: serde::Serializer>(
+    relation: &crate::curve::Fc05AngleParameterRelation,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use crate::curve::Fc05AngleParameterRelation;
+    use serde::ser::SerializeMap;
+    let (direction, sign) = match relation {
+        Fc05AngleParameterRelation::Inconsistent => (None, None),
+        Fc05AngleParameterRelation::Consistent {
+            sense,
+            reference_direction_row_frame,
+        } => (Some(reference_direction_row_frame), Some(sense.as_i8())),
+    };
+    let mut map = serializer.serialize_map(Some(3))?;
+    map.serialize_entry("reference_direction_row_frame", &direction)?;
+    map.serialize_entry("parameter_sign", &sign)?;
+    map.serialize_entry("angle_parameter_consistent", &sign.is_some())?;
+    map.end()
 }

@@ -290,7 +290,7 @@ impl ArenaLengths {
         ids.extend(
             ir.model.tessellations[self.tessellations..]
                 .iter()
-                .map(|entity| entity.id.clone()),
+                .map(|entity| entity.id.to_string()),
         );
         ids.extend(
             ir.model.procedural_curves[self.procedural_curves..]
@@ -362,7 +362,7 @@ impl ArenaLengths {
             .retain(|entity| !ids.contains(&entity.id.to_string()));
         ir.model
             .tessellations
-            .retain(|entity| !ids.contains(&entity.id));
+            .retain(|entity| !ids.contains(entity.id.as_str()));
         ir.model
             .procedural_curves
             .retain(|entity| !ids.contains(&entity.id.to_string()));
@@ -2048,26 +2048,40 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
-            for vertex in mesh.vertices_mut() {
-                *vertex = transform.apply_point(*vertex);
-            }
-            if let Some(normals) = mesh.normals_mut() {
-                for value in normals {
-                    *value = transform
-                        .apply_normal(*value)
-                        .ok_or_else(|| "mesh normal transform is singular".to_string())?;
+            mesh.edit_vertices(|vertices| {
+                for vertex in vertices {
+                    *vertex = transform.apply_point(*vertex);
                 }
+            })
+            .map_err(|error| error.to_string())?;
+            if !mesh.normals().is_empty() {
+                let normals = mesh
+                    .normals()
+                    .iter()
+                    .map(|value| {
+                        transform
+                            .apply_normal(*value)
+                            .ok_or_else(|| "mesh normal transform is singular".to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                mesh.edit_normals(|values| values.copy_from_slice(&normals))
+                    .map_err(|error| error.to_string())?;
             }
-            links.push(mesh.id.clone());
-            derived_ids.push(mesh.id.clone());
+            links.push(mesh.id.to_string());
+            derived_ids.push(mesh.id.to_string());
         }
         for subd in before
             .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
-            for vertex in &mut subd.vertices {
-                vertex.point = transform.apply_point(vertex.point);
-            }
+            subd.cage
+                .edit_vertices(|vertices| {
+                    for vertex in vertices {
+                        vertex.set_point(transform.apply_point(vertex.point()))?;
+                    }
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())?;
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
         }
@@ -2944,10 +2958,13 @@ impl<'a> DecodeContext<'a> {
                 return Err("extrusion cap staging failed".to_string());
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
-                mesh.tessellation.id = format!("rhino:object:tessellation#{key}.cache-{index}");
+                mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                    "rhino:object:tessellation#{key}.cache-{index}"
+                ))
+                .map_err(|error| error.to_string())?;
                 mesh.tessellation.source_object = Some(association.clone());
-                annotate_derived(candidate_annotations, &mesh.tessellation.id);
-                links.push(mesh.tessellation.id.clone());
+                annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
+                links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
             }
             Ok(links)
@@ -3054,7 +3071,7 @@ impl<'a> DecodeContext<'a> {
                 .into_iter()
                 .map(|warning| format!("{}: {warning}", identity.source_id)),
         );
-        let id = mesh.tessellation.id.clone();
+        let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity));
         self.ir.model.tessellations.push(tessellation);
@@ -3742,7 +3759,7 @@ impl BrepDraft {
                     .model()
                     .tessellations
                     .iter()
-                    .map(|value| value.id.clone()),
+                    .map(|value| value.id.to_string()),
             )
             .chain(
                 self.draft
@@ -3817,14 +3834,14 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                 Ok(mesh) => {
                     staged.warnings.extend(mesh.warnings.clone());
                     staged.draft.exactness(
-                        mesh.tessellation.id.clone(),
+                        mesh.tessellation.id.to_string(),
                         if mesh.scaled {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
                         },
                     );
-                    staged.links.push(mesh.tessellation.id.clone());
+                    staged.links.push(mesh.tessellation.id.to_string());
                     staged
                         .draft
                         .model_mut()

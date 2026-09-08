@@ -535,21 +535,14 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
 
 /// Convert a repeated knot vector into ordered values and multiplicities.
 fn compress_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
-    let mut values = Vec::new();
-    let mut mults = Vec::new();
+    let mut runs: Vec<(f64, usize)> = Vec::new();
     for &k in knots {
-        if let Some(last) = values.last() {
-            if *last == k {
-                *mults
-                    .last_mut()
-                    .expect("invariant: mults and values grow in lockstep") += 1;
-                continue;
-            }
+        match runs.last_mut() {
+            Some((value, multiplicity)) if *value == k => *multiplicity += 1,
+            _ => runs.push((k, 1)),
         }
-        values.push(k);
-        mults.push(1);
     }
-    (values, mults)
+    runs.into_iter().unzip()
 }
 
 fn int_list(xs: &[usize]) -> String {

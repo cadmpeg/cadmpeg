@@ -95,7 +95,7 @@ pub(crate) enum PmDcExpressionKind {
     Value {
         value: f64,
         value_type: u16,
-        state: Option<u32>,
+        state: u32,
     },
     ParameterReference {
         operand: PmDcReference,
@@ -701,11 +701,7 @@ fn parse_value_expression(
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let value = cursor.f64("literal expression value")?;
     let value_type = cursor.u16("literal expression type")?;
-    let state = if version > 14 {
-        Some(cursor.u32("literal expression state")?)
-    } else {
-        None
-    };
+    let state = cursor.u32("literal expression state")?;
     cursor.finish("literal expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -1023,7 +1019,7 @@ mod tests {
             parsed.kind,
             PmDcExpressionKind::Value {
                 value: 25.4,
-                state: Some(0),
+                state: 0,
                 ..
             }
         ));
@@ -1161,7 +1157,7 @@ mod tests {
                 kind: PmDcExpressionKind::Value {
                     value: 60.96,
                     value_type: 0,
-                    state: Some(0),
+                    state: 0,
                 },
             },
             String::new(),

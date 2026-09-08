@@ -608,6 +608,37 @@ fn profiled_hole_construction(
     profiled_hole_construction_with_evidence(profile, sketch, entities, ProfileEvidence::Dimensions)
 }
 
+#[derive(Clone, Copy)]
+struct DimensionOnlyHole {
+    diameter: Length,
+    depth: Length,
+    drill_point_angle: Option<Angle>,
+}
+
+impl DimensionOnlyHole {
+    fn into_construction(self) -> ProfiledHoleConstruction {
+        let (kind, bottom) = match self.drill_point_angle {
+            Some(angle) => (
+                HoleKind::SimpleDrilled {
+                    drill_point_angle: angle,
+                },
+                HoleBottom::Angled {
+                    included_angle: angle,
+                    depth_to_tip: false,
+                },
+            ),
+            None => (HoleKind::Simple, HoleBottom::Flat),
+        };
+        ProfiledHoleConstruction {
+            diameter: self.diameter,
+            extent: LinearTermination::Blind { length: self.depth },
+            kind,
+            bottom: Some(bottom),
+            taper_angle: None,
+        }
+    }
+}
+
 fn profiled_hole_construction_with_evidence(
     profile: &crate::records::Feature,
     sketch: &SketchId,
@@ -664,28 +695,15 @@ fn profiled_hole_construction_with_evidence(
     lengths.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only = if crate::history::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
-            ([diameter], [depth], []) => Some(ProfiledHoleConstruction {
+            ([diameter], [depth], []) => Some(DimensionOnlyHole {
                 diameter: Length(*diameter),
-                extent: LinearTermination::Blind {
-                    length: Length(*depth),
-                },
-                kind: HoleKind::Simple,
-                bottom: Some(HoleBottom::Flat),
-                taper_angle: None,
+                depth: Length(*depth),
+                drill_point_angle: None,
             }),
-            ([diameter], [depth], [drill_point_angle]) => Some(ProfiledHoleConstruction {
+            ([diameter], [depth], [drill_point_angle]) => Some(DimensionOnlyHole {
                 diameter: Length(*diameter),
-                extent: LinearTermination::Blind {
-                    length: Length(*depth),
-                },
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(*drill_point_angle),
-                },
-                bottom: Some(HoleBottom::Angled {
-                    included_angle: Angle(*drill_point_angle),
-                    depth_to_tip: false,
-                }),
-                taper_angle: None,
+                depth: Length(*depth),
+                drill_point_angle: Some(Angle(*drill_point_angle)),
             }),
             _ => None,
         }
@@ -693,8 +711,8 @@ fn profiled_hole_construction_with_evidence(
         None
     };
     if evidence == ProfileEvidence::Dimensions {
-        if let Some(construction) = dimension_only.clone() {
-            return Some(construction);
+        if let Some(construction) = dimension_only {
+            return Some(construction.into_construction());
         }
     }
     let lines = entities
@@ -762,9 +780,7 @@ fn profiled_hole_construction_with_evidence(
         })
     };
     if let Some(construction) = dimension_only {
-        let LinearTermination::Blind { length } = construction.extent else {
-            unreachable!("dimension-only hole profiles are blind");
-        };
+        let length = construction.depth;
         let radius = construction.diameter.0 / 2.0;
         for swap in [false, true] {
             for axial_sign in [-1.0, 1.0] {
@@ -789,7 +805,7 @@ fn profiled_hole_construction_with_evidence(
                         (axis_end, axis_entry),
                     ];
                     if profile_translation(&edges, 2).is_some() {
-                        return Some(construction);
+                        return Some(construction.into_construction());
                     }
                 }
             }
@@ -3021,24 +3037,21 @@ fn plane_owned_bore_placements(
                 plane_origin.z - origin.z,
             )
             .dot(axis);
-            HolePlacement::Axis {
-                origin: Point3::new(
+            (
+                Point3::new(
                     origin.x + station * axis.x,
                     origin.y + station * axis.y,
                     origin.z + station * axis.z,
                 ),
-                axis: plane_normal,
-            }
+                plane_normal,
+            )
         })
         .fold(
-            HashMap::<[i64; 3], HolePlacement>::new(),
-            |mut placements, placement| {
-                let HolePlacement::Axis { origin, .. } = placement else {
-                    unreachable!("bore carriers always produce axis placements");
-                };
+            HashMap::<[i64; 3], (Point3, Vector3)>::new(),
+            |mut placements, (origin, axis)| {
                 placements
                     .entry([quantize(origin.x), quantize(origin.y), quantize(origin.z)])
-                    .or_insert(placement);
+                    .or_insert((origin, axis));
                 placements
             },
         )
@@ -3047,7 +3060,7 @@ fn plane_owned_bore_placements(
     placements.sort_by_key(|(key, _)| *key);
     let placements = placements
         .into_iter()
-        .map(|(_, placement)| placement)
+        .map(|(_, (origin, axis))| HolePlacement::Axis { origin, axis })
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
 }
