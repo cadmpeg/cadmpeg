@@ -9,8 +9,8 @@ use crate::records::{
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::HashMap;
 
@@ -43,7 +43,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         relation_owner_markers(&relation, &markers),
         vec![&owner, &point]
     );
-    let Some(SketchConstraintDefinition::Native { operands, .. }) =
+    let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
         typed_marker_relation_definition(&relation, &markers, &HashMap::new())
     else {
         panic!("native relation");
@@ -179,7 +179,7 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
             &markers,
             &HashMap::new(),
         ),
-        Some(SketchConstraintDefinition::SameCoordinate {
+        Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(first_entity.id().clone()),
                 SketchLocus::Entity(second_entity.id().clone()),
@@ -216,7 +216,7 @@ fn object_index_collision_remains_a_forward_curve_operand() {
 
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::Horizontal {
+        Some(SketchConstraintDefinitionInput::Horizontal {
             entity: SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
         })
     );
@@ -267,7 +267,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &loci),
-        Some(SketchConstraintDefinition::ArcAngle {
+        Some(SketchConstraintDefinitionInput::ArcAngle {
             entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
             angle: Angle(std::f64::consts::FRAC_PI_2),
         })
@@ -377,7 +377,7 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
         ),
     ]);
 
-    let Some(SketchConstraintDefinition::Native {
+    let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     }) = typed_marker_relation_definition(&relation, &markers, &loci)
     else {
@@ -442,7 +442,7 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Vertical { entity: exact })
+        Some(SketchConstraintDefinitionInput::Vertical { entity: exact })
     );
 }
 
@@ -495,7 +495,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Fixed {
+        Some(SketchConstraintDefinitionInput::Fixed {
             entity: point_id.clone(),
         })
     );
@@ -540,7 +540,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
 
@@ -549,7 +549,7 @@ fn resolved_wrong_family_relation_is_inactive() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::EllipseAngle180);
     let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
-    let definition = SketchConstraintDefinition::Native {
+    let definition = SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:34".into(),
         native_state: None,
         native_flags: None,
@@ -583,7 +583,7 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
         SketchEntityId::mint("synthetic:test:id#first").unwrap(),
         SketchEntityId::mint("synthetic:test:id#second").unwrap(),
     ];
-    let definition = SketchConstraintDefinition::Native {
+    let definition = SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:9".into(),
         native_state: None,
         native_flags: None,
@@ -626,7 +626,7 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             geometry,
         )
     };
-    let definition = |entities| SketchConstraintDefinition::Native {
+    let definition = |entities| SketchConstraintDefinitionInput::Native {
         native_kind: "sldprt:marker-relation:4".into(),
         native_state: None,
         native_flags: None,
@@ -680,7 +680,7 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     ));
     assert!(marker_relation_is_inactive(
         &relation,
-        &SketchConstraintDefinition::Native {
+        &SketchConstraintDefinitionInput::Native {
             native_kind: "sldprt:marker-relation:4".into(),
             native_state: None,
             native_flags: None,

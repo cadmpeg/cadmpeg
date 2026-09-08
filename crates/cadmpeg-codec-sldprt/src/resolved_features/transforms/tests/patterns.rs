@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1029,8 +1029,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     );
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Native { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native { .. }
     )));
 
     project_relation_solved_line_geometry(
@@ -1070,8 +1070,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     );
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::Distance { entities, .. } if entities.len() == 2
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Distance { entities, .. } if entities.len() == 2
     )));
     project_relation_bindings(
         &mut constraints,
@@ -1228,11 +1228,11 @@ fn roster_point_line_distance_materializes_one_solver_line() {
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
-    let SketchConstraintDefinition::DistanceLoci {
+    let SketchConstraintDefinitionInput::DistanceLoci {
         first,
         second,
         parameter: parameter_ref,
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("typed point-line constraint");
     };
@@ -1424,8 +1424,8 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         panic!("one point-line constraint");
     };
     assert!(matches!(
-        &constraint.definition,
-        SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
             if first == &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#resolved-point").unwrap())
                 && second == &SketchLocus::Entity(solver_line.id().clone())
     ));
@@ -1606,8 +1606,8 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         );
         let second = match definition {
             Some(
-                SketchConstraintDefinition::DistanceLoci { second, .. }
-                | SketchConstraintDefinition::HorizontalDistance { second, .. },
+                SketchConstraintDefinitionInput::DistanceLoci { second, .. }
+                | SketchConstraintDefinitionInput::HorizontalDistance { second, .. },
             ) => second,
             other => panic!("unexpected relation definition: {other:?}"),
         };

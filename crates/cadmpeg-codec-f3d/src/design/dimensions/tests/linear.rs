@@ -86,7 +86,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             parameter.clone(),
             0.0,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let rounded = entity(
         "generated:test:point#rounded",
@@ -102,7 +102,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
 
     let horizontal = entity(
@@ -391,7 +391,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
 
@@ -413,7 +413,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Radius { entity, .. })
+        Some(SketchConstraintDefinitionInput::Radius { entity, .. })
             if entity.as_str() == "generated:entity#796"
     ));
     assert!(matches!(
@@ -425,7 +425,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
     let ambiguous_tangent = parse_design_parameter(&parameter_record(
@@ -470,7 +470,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     );
     assert!(matches!(
         point_definition,
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
 }
 
@@ -522,7 +522,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             parameter_id.clone(),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, parameter: actual })
+        Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
             if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
     ));
 
@@ -572,7 +572,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::VerticalDistance {
+        SketchConstraintDefinitionInput::VerticalDistance {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
@@ -589,7 +589,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
                 .expect("identity grammar"),
             0.0,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let square = entity("generated:test:point#square", Point2::new(6.0, 18.0));
     assert!(directional_point_dimension(
@@ -632,7 +632,7 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
     assert!(matches!(
         two_locus_distance_dimension(&[&point, &line], parameter.clone()),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
         }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter == &parameter
@@ -713,23 +713,23 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
 
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &vertical]),
-        Some(SketchConstraintDefinition::Perpendicular { .. })
+        Some(SketchConstraintDefinitionInput::Perpendicular { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &parallel]),
-        Some(SketchConstraintDefinition::Parallel { .. })
+        Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &point]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&point, &duplicate_point]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&arc_start, &arc]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
 }
@@ -922,8 +922,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     assert_eq!(constraints.len(), 1);
     assert!(matches!(
-        constraints[0].definition,
-        SketchConstraintDefinition::VerticalDistance { .. }
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
 
     let spatial_sketch = SpatialSketch {
@@ -1151,8 +1151,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     );
     assert_eq!(duplicate.len(), 1);
     assert!(matches!(
-        duplicate[0].definition,
-        SketchConstraintDefinition::Native { ref operands, .. }
+        duplicate[0].definition.kind(),
+        SketchConstraintDefinitionInput::Native { ref operands, .. }
             if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
                 == [
                     (Some("first_locus"), Some(7), 40),
@@ -1201,20 +1201,20 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     assert!(matches!(
         grouped.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native {
                 native_state: Some(0),
                 native_flags: None,
                 operands,
                 ..
-            },
-            ..
-        }] if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
+            } if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
             == [
                 (Some("locus"), Some(0), 40),
                 (Some("owner"), Some(0), 100),
                 (Some("return"), None, 40),
             ]
-    ));
+    )));
 
     let mut indirect_group = group;
     indirect_group.owner_reference = 999;
@@ -1243,7 +1243,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchEntityId, SketchLocus,
     };
 

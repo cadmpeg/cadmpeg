@@ -4,8 +4,8 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -59,6 +59,11 @@ pub(super) fn project_endpoint_constraints(
             Ok(id) => id,
             Err(_) => continue,
         };
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::CoincidentLoci { loci },
+        ) else {
+            continue;
+        };
         crate::annotations::note(
             annotations,
             id.as_str().to_owned(),
@@ -70,7 +75,7 @@ pub(super) fn project_endpoint_constraints(
         constraints.push(SketchConstraint {
             id,
             sketch: sketch.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            definition,
             name: None,
             driving: None,
             active: None,

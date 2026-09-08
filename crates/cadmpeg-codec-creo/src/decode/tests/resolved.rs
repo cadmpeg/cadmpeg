@@ -11,7 +11,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::sketches::SketchConstraintDefinition;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
 use crate::loss::CreoLossCode;
 use crate::test_support::*;
@@ -112,19 +112,19 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .iter()
             .find(|constraint| {
                 matches!(
-                    &constraint.definition,
-                    SketchConstraintDefinition::Native { .. }
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 )
             })
             .expect("reference-line verhor");
         assert!(reference_verhor.id.as_str().starts_with(&format!(
             "creo:featdefs:sketch_constraint#{identity_scope}:verhor:reference_line:offset:"
         )));
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_properties,
             operands,
             ..
-        } = &reference_verhor.definition
+        } = reference_verhor.definition.kind()
         else {
             panic!("reference-line verhor must remain native");
         };

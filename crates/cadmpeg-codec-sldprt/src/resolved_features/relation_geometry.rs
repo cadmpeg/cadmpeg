@@ -36,8 +36,8 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
+    SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
     SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
@@ -2359,8 +2359,8 @@ pub(crate) fn project_relation_bindings(
             let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
-                    &constraints[index].definition,
-                    SketchConstraintDefinition::Native { .. }
+                    constraints[index].definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 )
             }) {
                 continue;
@@ -2423,7 +2423,7 @@ pub(crate) fn project_relation_bindings(
                     !(reference_parameter
                         && relation_constraint_is_inactive(parameter, definition, sketch_entities))
                 })
-                .unwrap_or_else(|| SketchConstraintDefinition::Native {
+                .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
                     native_kind: native_kind.into(),
                     native_state: None,
                     native_flags: None,
@@ -2448,6 +2448,11 @@ pub(crate) fn project_relation_bindings(
                 .then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(relation, lane).is_some();
+            let Ok(definition) =
+                cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+            else {
+                continue;
+            };
             let projected = SketchConstraint {
                 id: match SketchConstraintId::mint(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
@@ -2474,8 +2479,8 @@ pub(crate) fn project_relation_bindings(
             };
             if let Some(index) = existing {
                 if !matches!(
-                    &projected.definition,
-                    SketchConstraintDefinition::Native { .. }
+                    projected.definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 ) {
                     constraints[index] = projected;
                 }
@@ -2490,8 +2495,8 @@ pub(crate) fn project_relation_bindings(
             let existing = constraints_by_native_ref.get(marker.id.as_str()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
-                    &constraints[index].definition,
-                    SketchConstraintDefinition::Native { .. }
+                    constraints[index].definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 )
             }) {
                 continue;
@@ -2514,6 +2519,11 @@ pub(crate) fn project_relation_bindings(
             };
             let active =
                 marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
+            let Ok(definition) =
+                cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+            else {
+                continue;
+            };
             let projected = SketchConstraint {
                 id: match SketchConstraintId::mint(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
@@ -2537,8 +2547,8 @@ pub(crate) fn project_relation_bindings(
             };
             if let Some(index) = existing {
                 if !matches!(
-                    &projected.definition,
-                    SketchConstraintDefinition::Native { .. }
+                    projected.definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 ) {
                     constraints[index] = projected;
                 }
@@ -3000,8 +3010,8 @@ mod relation_geometry_tests {
             panic!("one solver-point constraint");
         };
         assert!(matches!(
-            &constraint.definition,
-            SketchConstraintDefinition::DistanceLoci { first, second, .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
                 if first == &SketchLocus::Entity(
                     SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:0").unwrap()
                 ) && second == &SketchLocus::Entity(

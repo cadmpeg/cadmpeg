@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -308,7 +308,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -318,7 +318,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -328,7 +328,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Midpoint { .. })
+        Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -338,7 +338,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::ArcAngle { .. })
+        Some(SketchConstraintDefinitionInput::ArcAngle { .. })
     ));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -352,7 +352,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Symmetric {
+        Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(symmetric_first.id().clone()),
             second: SketchLocus::Entity(symmetric_second.id().clone()),
             axis: symmetry_axis.id().clone(),
@@ -366,7 +366,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::AtIntersection {
+        Some(SketchConstraintDefinitionInput::AtIntersection {
             point: SketchLocus::Entity(first.id().clone()),
             first: line.id().clone(),
             second: symmetry_axis.id().clone(),
@@ -387,7 +387,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     .expect("typed coincident relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::CoincidentLoci { .. }
+        SketchConstraintDefinitionInput::CoincidentLoci { .. }
     ));
     assert!(marker_relation_is_inactive(
         &coincident,
@@ -409,7 +409,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -419,7 +419,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
@@ -436,7 +436,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     symmetric_second.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(2.0, 2.0),
@@ -450,7 +450,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
 
@@ -1092,7 +1092,7 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Fixed { entity: point_id })
+        Some(SketchConstraintDefinitionInput::Fixed { entity: point_id })
     );
 }
 

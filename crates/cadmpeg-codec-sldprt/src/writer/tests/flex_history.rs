@@ -21,7 +21,7 @@ fn encoder_writes_source_less_curved_sketches() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
         SketchGeometryDefinition, SketchId, SketchLocus,
     };
@@ -355,10 +355,13 @@ fn encoder_writes_source_less_curved_sketches() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle").unwrap(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::ArcAngle {
-            entity: entity_ids[1].clone(),
-            angle: Angle(std::f64::consts::PI),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::ArcAngle {
+                entity: entity_ids[1].clone(),
+                angle: Angle(std::f64::consts::PI),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -373,10 +376,13 @@ fn encoder_writes_source_less_curved_sketches() {
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:constraint#arc-angle-ellipse").unwrap(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::EllipseAngle {
-            entity: entity_ids[23].clone(),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::EllipseAngle {
+                entity: entity_ids[23].clone(),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -391,28 +397,28 @@ fn encoder_writes_source_less_curved_sketches() {
     for (suffix, definition) in [
         (
             "collinear",
-            SketchConstraintDefinition::Collinear {
+            SketchConstraintDefinitionInput::Collinear {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "concentric",
-            SketchConstraintDefinition::Concentric {
+            SketchConstraintDefinitionInput::Concentric {
                 first: entity_ids[1].clone(),
                 second: entity_ids[9].clone(),
             },
         ),
         (
             "coradial",
-            SketchConstraintDefinition::Coradial {
+            SketchConstraintDefinitionInput::Coradial {
                 first: entity_ids[1].clone(),
                 second: entity_ids[22].clone(),
             },
         ),
         (
             "dimension-angle",
-            SketchConstraintDefinition::Angle {
+            SketchConstraintDefinitionInput::Angle {
                 first: entity_ids[5].clone(),
                 second: entity_ids[8].clone(),
                 parameter: angle_parameter,
@@ -420,14 +426,14 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-diameter",
-            SketchConstraintDefinition::Diameter {
+            SketchConstraintDefinitionInput::Diameter {
                 entity: entity_ids[17].clone(),
                 parameter: diameter_parameter,
             },
         ),
         (
             "dimension-horizontal",
-            SketchConstraintDefinition::HorizontalDistance {
+            SketchConstraintDefinitionInput::HorizontalDistance {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[14].clone()),
                 parameter: horizontal_parameter,
@@ -435,14 +441,14 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-line-line",
-            SketchConstraintDefinition::Distance {
+            SketchConstraintDefinitionInput::Distance {
                 entities: vec![entity_ids[18].clone(), entity_ids[19].clone()],
                 parameter: line_line_parameter,
             },
         ),
         (
             "dimension-point-line",
-            SketchConstraintDefinition::DistanceLoci {
+            SketchConstraintDefinitionInput::DistanceLoci {
                 first: SketchLocus::Entity(entity_ids[15].clone()),
                 second: SketchLocus::Entity(entity_ids[5].clone()),
                 parameter: point_line_parameter,
@@ -450,7 +456,7 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "dimension-vertical",
-            SketchConstraintDefinition::VerticalDistance {
+            SketchConstraintDefinitionInput::VerticalDistance {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[15].clone()),
                 parameter: vertical_parameter,
@@ -458,7 +464,7 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "distance",
-            SketchConstraintDefinition::DistanceLoci {
+            SketchConstraintDefinitionInput::DistanceLoci {
                 first: SketchLocus::Entity(entity_ids[13].clone()),
                 second: SketchLocus::Entity(entity_ids[14].clone()),
                 parameter: distance_parameter,
@@ -466,21 +472,21 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "equal-arcs",
-            SketchConstraintDefinition::Equal {
+            SketchConstraintDefinitionInput::Equal {
                 first: entity_ids[1].clone(),
                 second: entity_ids[2].clone(),
             },
         ),
         (
             "equal-lines",
-            SketchConstraintDefinition::Equal {
+            SketchConstraintDefinitionInput::Equal {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "horizontal-points",
-            SketchConstraintDefinition::SameCoordinate {
+            SketchConstraintDefinitionInput::SameCoordinate {
                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                     SketchLocus::Entity(entity_ids[13].clone()),
                     SketchLocus::Entity(entity_ids[14].clone()),
@@ -491,42 +497,42 @@ fn encoder_writes_source_less_curved_sketches() {
         ),
         (
             "midpoint",
-            SketchConstraintDefinition::Midpoint {
+            SketchConstraintDefinitionInput::Midpoint {
                 point: SketchLocus::Entity(entity_ids[16].clone()),
                 entity: entity_ids[12].clone(),
             },
         ),
         (
             "parallel",
-            SketchConstraintDefinition::Parallel {
+            SketchConstraintDefinitionInput::Parallel {
                 first: entity_ids[5].clone(),
                 second: entity_ids[6].clone(),
             },
         ),
         (
             "perpendicular",
-            SketchConstraintDefinition::Perpendicular {
+            SketchConstraintDefinitionInput::Perpendicular {
                 first: entity_ids[5].clone(),
                 second: entity_ids[8].clone(),
             },
         ),
         (
             "radius",
-            SketchConstraintDefinition::Radius {
+            SketchConstraintDefinitionInput::Radius {
                 entity: entity_ids[0].clone(),
                 parameter: radius_parameter,
             },
         ),
         (
             "tangent",
-            SketchConstraintDefinition::Tangent {
+            SketchConstraintDefinitionInput::Tangent {
                 first: entity_ids[5].clone(),
                 second: entity_ids[17].clone(),
             },
         ),
         (
             "vertical-points",
-            SketchConstraintDefinition::SameCoordinate {
+            SketchConstraintDefinitionInput::SameCoordinate {
                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                     SketchLocus::Entity(entity_ids[13].clone()),
                     SketchLocus::Entity(entity_ids[15].clone()),
@@ -539,7 +545,8 @@ fn encoder_writes_source_less_curved_sketches() {
         ir.model.sketch_constraints.push(SketchConstraint {
             id: SketchConstraintId::mint(format!("synthetic:test:constraint#{suffix}")).unwrap(),
             sketch: sketch_id.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .unwrap(),
             name: None,
             driving: None,
             active: None,
@@ -569,8 +576,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Coradial { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Coradial { .. }
         )));
     assert!(decoded
         .ir()
@@ -578,8 +585,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::EllipseAngle { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::EllipseAngle { .. }
         )));
     assert!(decoded
         .ir()
@@ -587,8 +594,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::DistanceLoci { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::DistanceLoci { .. }
         )));
     assert!(decoded
         .ir()
@@ -596,8 +603,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Radius { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Radius { .. }
         )));
     assert!(decoded.ir().model.parameters.iter().any(|parameter| {
         parameter.name == "D10" && parameter.value == Some(ParameterValue::Length(Length(4.0)))
@@ -624,18 +631,18 @@ fn encoder_writes_source_less_curved_sketches() {
                 .sketch_constraints
                 .iter()
                 .any(|constraint| matches!(
-                    (expected, &constraint.definition),
-                    ("line-line", SketchConstraintDefinition::Distance { .. })
-                        | (
-                            "horizontal",
-                            SketchConstraintDefinition::HorizontalDistance { .. }
-                        )
-                        | (
-                            "vertical",
-                            SketchConstraintDefinition::VerticalDistance { .. }
-                        )
-                        | ("angle", SketchConstraintDefinition::Angle { .. })
-                        | ("diameter", SketchConstraintDefinition::Diameter { .. })
+                    (expected, constraint.definition.kind()),
+                    (
+                        "line-line",
+                        SketchConstraintDefinitionInput::Distance { .. }
+                    ) | (
+                        "horizontal",
+                        SketchConstraintDefinitionInput::HorizontalDistance { .. }
+                    ) | (
+                        "vertical",
+                        SketchConstraintDefinitionInput::VerticalDistance { .. }
+                    ) | ("angle", SketchConstraintDefinitionInput::Angle { .. })
+                        | ("diameter", SketchConstraintDefinitionInput::Diameter { .. })
                 )),
             "missing regenerated {expected} dimension"
         );
@@ -697,8 +704,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::ArcAngle {
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::ArcAngle {
                     angle: Angle(value),
                     ..
                 } if (value - std::f64::consts::PI).abs() < 1.0e-12
@@ -727,8 +734,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Parallel { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Parallel { .. }
         )));
     assert!(decoded
         .ir()
@@ -736,8 +743,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Perpendicular { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Perpendicular { .. }
         )));
     assert!(decoded
         .ir()
@@ -745,8 +752,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Collinear { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Collinear { .. }
         )));
     assert!(decoded
         .ir()
@@ -754,8 +761,8 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_constraints
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Concentric { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Concentric { .. }
         )));
     assert!(
         decoded
@@ -764,8 +771,8 @@ fn encoder_writes_source_less_curved_sketches() {
             .sketch_constraints
             .iter()
             .filter(|constraint| matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Equal { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Equal { .. }
             ))
             .count()
             >= 2
@@ -782,17 +789,17 @@ fn encoder_writes_source_less_curved_sketches() {
             .sketch_constraints
             .iter()
             .any(|constraint| {
-                match (&constraint.definition, definition) {
+                match (constraint.definition.kind(), definition) {
                     (
-                        SketchConstraintDefinition::SameCoordinate { relation },
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
                         "horizontal_points",
                     ) => relation.axis() == SketchCoordinateAxis::V,
                     (
-                        SketchConstraintDefinition::SameCoordinate { relation },
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
                         "vertical_points",
                     ) => relation.axis() == SketchCoordinateAxis::U,
-                    (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
-                    | (SketchConstraintDefinition::Tangent { .. }, "tangent") => true,
+                    (SketchConstraintDefinitionInput::Midpoint { .. }, "midpoint")
+                    | (SketchConstraintDefinitionInput::Tangent { .. }, "tangent") => true,
                     _ => false,
                 }
             }));

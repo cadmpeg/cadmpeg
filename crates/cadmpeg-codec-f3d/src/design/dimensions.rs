@@ -222,7 +222,7 @@ fn project_all_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraint, SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
     };
 
@@ -745,7 +745,8 @@ fn project_all_dimension_constraints(
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .ok()?,
                 name: None,
                 driving: None,
                 active: None,
@@ -802,7 +803,8 @@ fn project_all_dimension_constraints(
             Some(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index)?,
                 sketch,
-                definition,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .ok()?,
                 name: None,
                 driving: None,
                 active: None,
@@ -881,7 +883,8 @@ fn project_all_dimension_constraints(
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .ok()?,
                 name: None,
                 driving: None,
                 active: None,
@@ -919,7 +922,10 @@ fn project_all_dimension_constraints(
                         return Some(SketchConstraint {
                             id: constraint_id,
                             sketch,
-                            definition,
+                            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                                definition,
+                            )
+                            .ok()?,
                             name: None,
                             driving: None,
                             active: None,
@@ -956,22 +962,25 @@ fn project_all_dimension_constraints(
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition: Definition::Native {
-                    native_kind: parameter.source_kind().to_owned(),
-                    native_state: None,
-                    native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities: indices
-                        .iter()
-                        .filter_map(|record_index| {
-                            projected
-                                .get(&(scope, *record_index))
-                                .map(|entity| entity.id().clone())
-                        })
-                        .collect(),
-                    parameter: Some(parameter_id),
-                    operands,
-                },
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    Definition::Native {
+                        native_kind: parameter.source_kind().to_owned(),
+                        native_state: None,
+                        native_flags: None,
+                        native_properties: std::collections::BTreeMap::new(),
+                        entities: indices
+                            .iter()
+                            .filter_map(|record_index| {
+                                projected
+                                    .get(&(scope, *record_index))
+                                    .map(|entity| entity.id().clone())
+                            })
+                            .collect(),
+                        parameter: Some(parameter_id),
+                        operands,
+                    },
+                )
+                .ok()?,
                 name: None,
                 driving: None,
                 active: None,
@@ -1100,7 +1109,8 @@ fn project_all_dimension_constraints(
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .ok()?,
                 name: None,
                 driving: None,
                 active: None,
@@ -1116,7 +1126,7 @@ fn project_all_dimension_constraints(
     ));
     let projected_parameters = constraints
         .iter()
-        .flat_map(|constraint| constraint_parameters(&constraint.definition))
+        .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
         .cloned()
         .collect::<HashSet<_>>();
     let container_only_payload_companions = container_only_dimension_companions(
@@ -1277,7 +1287,8 @@ fn project_all_dimension_constraints(
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
             sketch,
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .ok()?,
             name: None,
             driving: None,
             active: None,
@@ -1305,9 +1316,9 @@ fn presentation_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !design_dimension_unit(parameter) {
@@ -1391,9 +1402,9 @@ fn tangent_radius_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let radius = match entity.geometry.definition() {
@@ -1415,9 +1426,9 @@ fn tangent_entity_distance_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let circle_geometry =
@@ -1504,9 +1515,9 @@ fn explicit_linear_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     let expected = parameter.evaluated_value * 10.0;
@@ -1559,9 +1570,9 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Angular Dimension")
@@ -1648,9 +1659,9 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Angular Dimension")
@@ -1699,9 +1710,9 @@ pub(crate) fn parallel_group_axis_angle_definition(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
     };
 
@@ -1740,9 +1751,9 @@ pub(crate) fn concentric_circle_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchGeometryDefinition, SketchLocus,
     };
 
@@ -1811,9 +1822,9 @@ pub(crate) fn unique_point_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -1870,9 +1881,9 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -1919,9 +1930,9 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2016,9 +2027,9 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2073,9 +2084,9 @@ pub(crate) fn unique_point_class_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2193,8 +2204,8 @@ pub(crate) fn owner_scoped_radial_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if !design_dimension_unit(parameter) {
         return None;
@@ -2251,9 +2262,9 @@ pub(crate) fn owner_scoped_radial_dimension_definition(
 }
 
 pub(crate) fn constraint_parameters(
-    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
 ) -> Vec<&cadmpeg_ir::features::ParameterId> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     match definition {
         Definition::Offset { parameter, .. } => {
@@ -2345,7 +2356,7 @@ pub(crate) fn bind_offset_dimension_parameters(
     constraints: &mut Vec<cadmpeg_ir::sketches::SketchConstraint>,
     parameters: &[DesignParameter],
 ) {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let parameter_values = parameters
         .iter()
@@ -2361,7 +2372,7 @@ pub(crate) fn bind_offset_dimension_parameters(
             parameter: Some(parameter),
             operands,
             ..
-        } = &dimension.definition
+        } = dimension.definition.kind()
         else {
             continue;
         };
@@ -2389,7 +2400,7 @@ pub(crate) fn bind_offset_dimension_parameters(
                     pairs,
                     distance,
                     parameter: None,
-                } = &constraint.definition
+                } = constraint.definition.kind()
                 else {
                     return None;
                 };
@@ -2412,19 +2423,25 @@ pub(crate) fn bind_offset_dimension_parameters(
         counts
     });
     bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
-    for (_, offset_index, parameter, parameter_value) in &bindings {
-        let Definition::Offset {
-            parameter: driving_parameter,
-            ..
-        } = &mut constraints[*offset_index].definition
-        else {
-            unreachable!("offset binding index was selected from typed offsets")
-        };
-        *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: parameter.clone(),
-            negated: parameter_value.is_sign_negative(),
-        });
-    }
+    bindings.retain(|(_, offset_index, parameter, parameter_value)| {
+        constraints[*offset_index]
+            .definition
+            .edit(|kind| {
+                let Definition::Offset {
+                    parameter: driving_parameter,
+                    ..
+                } = kind
+                else {
+                    return false;
+                };
+                *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
+                    id: parameter.clone(),
+                    negated: parameter_value.is_sign_negative(),
+                });
+                true
+            })
+            .unwrap_or(false)
+    });
     let removed = bindings
         .into_iter()
         .map(|(dimension, _, _, _)| dimension)
@@ -2446,7 +2463,7 @@ pub fn project_spatial_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchNativeOperand, SpatialSketchConstraint,
+        SketchConstraintDefinitionInput, SketchNativeOperand, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition,
     };
 
@@ -2521,7 +2538,7 @@ pub fn project_spatial_dimension_constraints(
     let source_constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance);
     let parameter_constraint_counts = source_constraints
         .iter()
-        .flat_map(|constraint| constraint_parameters(&constraint.definition))
+        .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
         .fold(HashMap::new(), |mut counts, parameter| {
             *counts.entry(parameter.clone()).or_insert(0usize) += 1;
             counts
@@ -2532,12 +2549,12 @@ pub fn project_spatial_dimension_constraints(
         .filter_map(|constraint| {
             let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
             source_parameters.extend(
-                constraint_parameters(&constraint.definition)
+                constraint_parameters(constraint.definition.kind())
                     .into_iter()
                     .cloned(),
             );
-            let definition = match constraint.definition {
-                SketchConstraintDefinition::Native {
+            let definition = match constraint.definition.into_kind() {
+                SketchConstraintDefinitionInput::Native {
                     native_kind,
                     native_state,
                     parameter,
@@ -3374,11 +3391,11 @@ fn spatial_parallel_line_span_distance(
 }
 
 pub(crate) fn repeated_linear_dimension(
-    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchLocus,
     };
 
@@ -3450,9 +3467,9 @@ pub(crate) fn null_locus_dimension_definition(
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
     };
 
@@ -3494,7 +3511,7 @@ pub(crate) fn radial_dimension_definition(
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     radial_dimension_definition_at_tolerance(entity, source_kind, evaluated_value, parameter, 0.0)
 }
 
@@ -3504,9 +3521,9 @@ fn radial_dimension_definition_at_tolerance(
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
 
     let radius = match entity.geometry.definition() {
@@ -3563,9 +3580,9 @@ pub(crate) fn annotation_offset_dimension_definition(
     curves: &[SketchCurveIdentity],
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
     if !parameter.source_kind().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
@@ -3702,9 +3719,9 @@ pub(crate) fn radial_locus_dimension_definition(
     source_kind: &str,
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let unique = |mut definitions: Vec<_>| {
@@ -4020,9 +4037,9 @@ fn insert_dimension_binding(
 pub(crate) fn exact_atomic_constraint(
     kind: SketchConstraintKind,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchCoordinateAxis,
+        SketchConstraintDefinitionInput as Definition, SketchCoordinateAxis,
         SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
@@ -4214,9 +4231,10 @@ pub(crate) fn exact_atomic_constraint(
 
 pub(crate) fn exact_coincident_loci(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
+        SketchLocus,
     };
 
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
@@ -4289,9 +4307,10 @@ pub(crate) fn exact_coincident_loci(
 
 fn midpoint_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
+        SketchLocus,
     };
 
     let (line, point) = match entities {
@@ -4404,9 +4423,9 @@ pub(crate) fn directional_point_dimension(
     evaluated_mm: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     let [first, second] = entities else {
@@ -4457,9 +4476,9 @@ pub(crate) fn recipe_linear_dimension_candidates(
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let sketch_entities = entities
@@ -4550,9 +4569,9 @@ pub(crate) fn recipe_linear_dimension_candidates(
 }
 
 pub(crate) fn recipe_dimension_candidate_entities(
-    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
 ) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let mut entities = Vec::new();
     for candidate in candidates {
@@ -4583,12 +4602,12 @@ pub(crate) fn recipe_dimension_candidate_entities(
 /// detached point on the extension of an axis-aligned bounded line. The other
 /// measured point must be an endpoint of that same line.
 pub(crate) fn recipe_extension_point_dimension(
-    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let sketch_entities = entities
@@ -4722,8 +4741,8 @@ pub(crate) fn symmetric_parallel_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if first_role == 0
         || second_role == 0
@@ -4895,8 +4914,8 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
 pub(crate) fn two_locus_distance_dimension(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     (entities.len() == 2 && entities[0].id() != entities[1].id()).then(|| Definition::Distance {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
@@ -4908,7 +4927,7 @@ pub(crate) fn two_locus_distance_dimension(
 pub(crate) fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u32,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     counted_role_relation_at_tolerance(entities, owner_role, 0.0)
 }
 
@@ -4916,9 +4935,9 @@ pub(crate) fn counted_role_relation_at_tolerance(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u32,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition as Geometry,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
 
     match owner_role {
@@ -5211,9 +5230,9 @@ const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     let [first, second] = entities else {
@@ -5266,9 +5285,9 @@ fn exact_centered_entity_relation(
 
 pub(crate) fn exact_counted_dimension_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition, SketchLocus,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if let Some(definition) = exact_centered_entity_relation(entities) {
@@ -5650,9 +5669,9 @@ pub(crate) fn exact_offset_constraint(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
     if relation.unknown_constraint_bits() != 0
         || !matches!(

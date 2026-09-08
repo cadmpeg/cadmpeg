@@ -35,7 +35,7 @@ use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
     SketchLocus,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -900,8 +900,8 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
@@ -937,8 +937,8 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         section_equation_same_coordinate_constraints(&function_two, &sketch);
     assert_eq!(function_two_constraints.len(), 2);
     assert_eq!(
-        function_two_constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
+        *(function_two_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",).unwrap()
@@ -1064,14 +1064,14 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let second = SketchEntityId::mint("synthetic:test:id#second".to_string()).unwrap();
     let emitted = BTreeSet::from([first.clone()]);
 
-    let mut horizontal = SketchConstraintDefinition::Horizontal {
+    let mut horizontal = SketchConstraintDefinitionInput::Horizontal {
         entity: first.clone(),
     };
     assert!(reconcile_constraint_entity_references(
         &mut horizontal,
         &emitted
     ));
-    let mut parallel = SketchConstraintDefinition::Parallel {
+    let mut parallel = SketchConstraintDefinitionInput::Parallel {
         first: first.clone(),
         second: second.clone(),
     };
@@ -1079,7 +1079,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut parallel,
         &emitted
     ));
-    let mut distance = SketchConstraintDefinition::DistanceLoci {
+    let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
         parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
@@ -1089,7 +1089,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut distance,
         &emitted
     ));
-    let mut native = SketchConstraintDefinition::Native {
+    let mut native = SketchConstraintDefinitionInput::Native {
         native_kind: "creo:test".to_string(),
         entities: vec![first.clone(), second],
         parameter: None,
@@ -1104,14 +1104,14 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native,
-        SketchConstraintDefinition::Native { entities, .. }
+        SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == vec![first]
     ));
 
     let parameter =
         ParameterId::mint("synthetic:test:id#distance".to_string()).expect("identity grammar");
     let parameters = BTreeSet::from([parameter.clone()]);
-    let mut radius = SketchConstraintDefinition::Radius {
+    let mut radius = SketchConstraintDefinitionInput::Radius {
         entity: SketchEntityId::mint("synthetic:test:id#first".to_string()).unwrap(),
         parameter: parameter.clone(),
     };
@@ -1119,7 +1119,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut radius,
         &parameters
     ));
-    let mut missing_distance = SketchConstraintDefinition::Distance {
+    let mut missing_distance = SketchConstraintDefinitionInput::Distance {
         entities: Vec::new(),
         parameter: ParameterId::mint("synthetic:test:id#missing".to_string())
             .expect("identity grammar"),
@@ -1128,7 +1128,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut missing_distance,
         &parameters
     ));
-    let mut native_parameter = SketchConstraintDefinition::Native {
+    let mut native_parameter = SketchConstraintDefinitionInput::Native {
         native_kind: "creo:test".to_string(),
         entities: Vec::new(),
         parameter: Some(
@@ -1145,7 +1145,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native_parameter,
-        SketchConstraintDefinition::Native {
+        SketchConstraintDefinitionInput::Native {
             parameter: None,
             ..
         }

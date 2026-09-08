@@ -48,7 +48,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second]).unwrap();
         assert!(matches!(
             definition,
-            SketchConstraintDefinition::Symmetric {
+            SketchConstraintDefinitionInput::Symmetric {
                 first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
                 second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
                 axis: ref axis_id,
@@ -122,7 +122,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
 
     assert!(matches!(
         exact_counted_dimension_relation(&[&first, &axis, &second]),
-        Some(SketchConstraintDefinition::Symmetric {
+        Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
             axis: ref axis_id,
@@ -178,7 +178,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
 
     assert!(matches!(
         exact_counted_dimension_relation(&[&first, &axis, &second]),
-        Some(SketchConstraintDefinition::Symmetric {
+        Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
             axis: ref axis_id,
@@ -225,7 +225,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &arc]),
-        Some(SketchConstraintDefinition::Concentric { first, second })
+        Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == arc.id().clone()
     ));
 
@@ -239,7 +239,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &coradial]),
-        Some(SketchConstraintDefinition::Coradial { first, second })
+        Some(SketchConstraintDefinitionInput::Coradial { first, second })
             if first == circle.id().clone() && second == coradial.id().clone()
     ));
 
@@ -256,7 +256,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     );
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &ellipse]),
-        Some(SketchConstraintDefinition::Concentric { first, second })
+        Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == ellipse.id().clone()
     ));
 
@@ -307,7 +307,7 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     );
     assert_eq!(
         crate::design::dimensions::exact_coincident_loci(&[&line, &point]),
-        Some(SketchConstraintDefinition::CoincidentLoci {
+        Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(line.id().clone()),
                 cadmpeg_ir::sketches::SketchLocus::Entity(point.id().clone()),
@@ -345,7 +345,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     let third = entity("generated:test:point#2");
     assert_eq!(
         exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
-        Some(SketchConstraintDefinition::Polygon {
+        Some(SketchConstraintDefinitionInput::Polygon {
             polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
                 first.id().clone(),
                 second.id().clone(),
@@ -464,7 +464,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     ]);
 
     let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
-    let SketchConstraintDefinition::Offset {
+    let SketchConstraintDefinitionInput::Offset {
         pairs,
         distance,
         parameter,
@@ -618,7 +618,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
     .expect("single-curve annotation offset");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::Offset {
+        SketchConstraintDefinitionInput::Offset {
             pairs,
             distance: Length(distance),
             parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
@@ -678,7 +678,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
     .expect("explicit two-curve annotation offset");
     assert!(matches!(
         explicit_definition,
-        SketchConstraintDefinition::Offset {
+        SketchConstraintDefinitionInput::Offset {
             pairs,
             parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
                 id: actual_parameter,
@@ -1058,8 +1058,8 @@ fn counted_angular_group_projects_unique_point_selected_line() {
 
     assert_eq!(constraints.len(), 1);
     assert!(matches!(
-        &constraints[0].definition,
-        SketchConstraintDefinition::Angle {
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter: actual_parameter,
@@ -1104,7 +1104,7 @@ fn parallel_group_binds_one_common_axis_angle() {
             &parameter,
             &parameter_id,
         ),
-        Some(SketchConstraintDefinition::AngleToAxis {
+        Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity,
             axis: SketchAxis::Horizontal,
             parameter,

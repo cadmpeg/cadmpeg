@@ -5,7 +5,7 @@
 use super::*;
 use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
-    SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry,
+    SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
     SketchGeometryDefinition, SketchLocus, SpatialSketchConstraintDefinition as SpatialConstraint,
     SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
@@ -18,7 +18,6 @@ const EPS_EQUAL_DISTANCE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_COORDINATE_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_DISTANCE_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_POLAR_ANGLE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
-const EPS_POLAR_ZERO: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const SPATIAL_LINE_DEGENERACY_EPSILON: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
@@ -1205,59 +1204,29 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.sketch_constraints {
-        if constraint
-            .label_distance
-            .iter()
-            .chain(&constraint.label_position)
-            .any(|value| !value.is_finite())
-        {
-            finding(
-                findings,
-                Check::Bounds,
-                constraint.id.as_str(),
-                "sketch constraint label placement is not finite",
-            );
-        }
-        let valid = match &constraint.definition {
-            Constraint::Coincident { entities } => entities.len() >= 2,
-            Constraint::SplineGroup { entities } => entities.len() >= 2,
-            Constraint::RectangularPattern { .. } => true,
-            Constraint::CircularPattern { .. } => true,
+        let valid = match constraint.definition.kind() {
             Constraint::TextFrame { text, frame } => {
                 matches!(
                     geometry.get(text).map(|geometry| geometry.definition()),
                     Some(SketchGeometryDefinition::Text { .. })
-                ) && !frame.is_empty()
-                    && frame.iter().all(|entity| {
-                        entity != text
-                            && geometry.get(entity).is_some_and(|geometry| {
-                                !matches!(
-                                    geometry.definition(),
-                                    SketchGeometryDefinition::Text { .. }
-                                )
-                            })
+                ) && frame.iter().all(|entity| {
+                    geometry.get(entity).is_some_and(|geometry| {
+                        !matches!(geometry.definition(), SketchGeometryDefinition::Text { .. })
                     })
+                })
             }
-            Constraint::TextPath {
-                text,
-                path,
-                glyph_transforms,
-            } => {
+            Constraint::TextPath { text, path, .. } => {
                 matches!(
                     geometry.get(text).map(|geometry| geometry.definition()),
                     Some(SketchGeometryDefinition::Text { .. })
-                ) && text != path
-                    && geometry.get(path).is_some_and(|geometry| {
-                        !matches!(
-                            geometry.definition(),
-                            SketchGeometryDefinition::Point { .. }
-                                | SketchGeometryDefinition::Text { .. }
-                        )
-                    })
-                    && !glyph_transforms.is_empty()
+                ) && geometry.get(path).is_some_and(|geometry| {
+                    !matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                            | SketchGeometryDefinition::Text { .. }
+                    )
+                })
             }
-            Constraint::CoincidentLoci { loci } => loci.len() >= 2,
-            Constraint::Distance { entities, .. } => !entities.is_empty(),
             Constraint::EqualDistance { first, second } => {
                 let measured_distance = |pair: &SketchDistancePair| {
                     let first = sketch_locus_point(&pair.first, &geometry)?;
@@ -1303,48 +1272,44 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .linear
                             .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.0)))
                 });
-                distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
+                distance_matches && parameter_matches
             }
             Constraint::PointCoordinateValues { point, values } => {
-                let coordinate_matches = sketch_locus_point(point, &geometry).is_none_or(|point| {
+                sketch_locus_point(point, &geometry).is_none_or(|point| {
                     [point.u, point.v]
                         .into_iter()
                         .zip(values)
                         .all(|(measured, expected)| {
-                            expected.0.is_finite()
-                                && (measured - expected.0).abs()
-                                    <= ir.tolerances.linear.max(
-                                        EPS_COORDINATE_VALUE
-                                            * (1.0 + measured.abs().max(expected.0.abs())),
-                                    )
+                            (measured - expected.0).abs()
+                                <= ir.tolerances.linear.max(
+                                    EPS_COORDINATE_VALUE
+                                        * (1.0 + measured.abs().max(expected.0.abs())),
+                                )
                         })
-                });
-                values.iter().all(|value| value.0.is_finite()) && coordinate_matches
+                })
             }
             Constraint::MidpointCoordinate {
                 first,
                 second,
                 axis,
                 value,
-            } => {
-                let coordinate_matches = sketch_locus_point(first, &geometry)
-                    .zip(sketch_locus_point(second, &geometry))
-                    .is_none_or(|(first, second)| {
-                        let measured = match axis {
-                            crate::sketches::SketchCoordinateAxis::U => {
-                                f64::midpoint(first.u, second.u)
-                            }
-                            crate::sketches::SketchCoordinateAxis::V => {
-                                f64::midpoint(first.v, second.v)
-                            }
-                        };
-                        (measured - value.0).abs()
-                            <= ir.tolerances.linear.max(
-                                EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())),
-                            )
-                    });
-                value.0.is_finite() && coordinate_matches
-            }
+            } => sketch_locus_point(first, &geometry)
+                .zip(sketch_locus_point(second, &geometry))
+                .is_none_or(|(first, second)| {
+                    let measured = match axis {
+                        crate::sketches::SketchCoordinateAxis::U => {
+                            f64::midpoint(first.u, second.u)
+                        }
+                        crate::sketches::SketchCoordinateAxis::V => {
+                            f64::midpoint(first.v, second.v)
+                        }
+                    };
+                    (measured - value.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())))
+                }),
             Constraint::PolarDistance {
                 first,
                 second,
@@ -1362,20 +1327,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .linear
                             .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.0)))
                 });
-                let angle_matches = match (distance.0 <= EPS_POLAR_ZERO, angle.as_ref()) {
-                    (true, None) => true,
-                    (false, Some(angle)) => {
-                        angle.0.is_finite()
-                            && measured_points.as_ref().is_none_or(|(first, second)| {
-                                let measured = (second.v - first.v).atan2(second.u - first.u);
-                                let difference =
-                                    (angle.0 - measured).rem_euclid(std::f64::consts::TAU);
-                                difference.min(std::f64::consts::TAU - difference)
-                                    <= EPS_POLAR_ANGLE
-                            })
-                    }
-                    _ => false,
-                };
+                let angle_matches = angle.as_ref().is_none_or(|angle| {
+                    measured_points.as_ref().is_none_or(|(first, second)| {
+                        let measured = (second.v - first.v).atan2(second.u - first.u);
+                        let difference = (angle.0 - measured).rem_euclid(std::f64::consts::TAU);
+                        difference.min(std::f64::consts::TAU - difference) <= EPS_POLAR_ANGLE
+                    })
+                });
                 let parameter_matches = distance_parameter.as_ref().is_none_or(|parameter| {
                     let Some(Some(crate::features::ParameterValue::Length(value))) =
                         parameter_values.get(parameter)
@@ -1389,35 +1347,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .linear
                             .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.0)))
                 });
-                distance.0.is_finite()
-                    && distance.0 >= 0.0
-                    && distance_matches
-                    && angle_matches
-                    && parameter_matches
-            }
-            Constraint::AngleDifference { value, .. } => {
-                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
-            }
-            Constraint::ScalarEquality { first, second } => first != second,
-            Constraint::RepeatedDistance { measurements, .. } => {
-                let mut entities = HashSet::new();
-                !measurements.is_empty()
-                    && measurements.iter().all(|measurement| {
-                        use crate::sketches::SketchDistanceMeasurement as Measurement;
-                        let (first, second) = match measurement {
-                            Measurement::Distance { first, second }
-                            | Measurement::Horizontal { first, second }
-                            | Measurement::Vertical { first, second } => (first, second),
-                        };
-                        let first = locus_entity(first);
-                        let second = locus_entity(second);
-                        first != second
-                            && entities.insert(first.clone())
-                            && entities.insert(second.clone())
-                    })
+                distance_matches && angle_matches && parameter_matches
             }
             Constraint::RepeatedLength { entities, .. } => {
-                let distinct = entities.iter().collect::<HashSet<_>>();
                 let lengths = entities
                     .iter()
                     .filter_map(|entity| {
@@ -1429,9 +1361,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         }
                     })
                     .collect::<Vec<_>>();
-                entities.len() >= 2
-                    && distinct.len() == entities.len()
-                    && lengths.len() == entities.len()
+                lengths.len() == entities.len()
                     && lengths[1..].iter().all(|length| {
                         (length - lengths[0]).abs()
                             <= ir.tolerances.linear.max(
@@ -1445,7 +1375,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 second,
                 parameter,
             } => {
-                let distinct = first.iter().chain(second).collect::<HashSet<_>>();
                 let first_geometry = first
                     .iter()
                     .filter_map(|entity| geometry.get(entity).copied())
@@ -1486,11 +1415,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                     * (1.0 + measured.abs().max(expected.abs())),
                             )
                     });
-                !first.is_empty()
-                    && !second.is_empty()
-                    && (first.len() > 1 || second.len() > 1)
-                    && distinct.len() == first.len() + second.len()
-                    && first_geometry.len() == first.len()
+                first_geometry.len() == first.len()
                     && second_geometry.len() == second.len()
                     && first_collinear
                     && second_collinear
@@ -1498,7 +1423,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             Constraint::RepeatedRadius { entities, .. }
             | Constraint::RepeatedDiameter { entities, .. } => {
-                let distinct = entities.iter().collect::<HashSet<_>>();
                 let radii = entities
                     .iter()
                     .filter_map(|entity| {
@@ -1511,51 +1435,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         }
                     })
                     .collect::<Vec<_>>();
-                entities.len() >= 2
-                    && distinct.len() == entities.len()
-                    && radii.len() == entities.len()
+                radii.len() == entities.len()
                     && radii[1..].iter().all(|radius| {
                         (radius - radii[0]).abs()
                             <= ir.tolerances.linear.max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + radius.abs().max(radii[0].abs())),
                             )
-                    })
-            }
-            Constraint::Offset {
-                pairs,
-                distance,
-                parameter: _,
-            } => {
-                let mut sources = HashSet::new();
-                let mut results = HashSet::new();
-                !pairs.is_empty()
-                    && pairs.iter().all(|pair| {
-                        pair.source != pair.result
-                            && sources.insert(&pair.source)
-                            && results.insert(&pair.result)
-                    })
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
-            }
-            Constraint::ProjectedCopy { source, result } => source != result,
-            Constraint::Group { elements } | Constraint::Text { elements, .. } => {
-                !elements.is_empty()
-            }
-            Constraint::Native {
-                native_kind,
-                entities,
-                operands,
-                ..
-            } => {
-                !native_kind.is_empty()
-                    && (!entities.is_empty() || !operands.is_empty())
-                    && operands.iter().all(|operand| {
-                        !operand.native_kind.as_str().is_empty()
-                            && operand
-                                .field
-                                .as_ref()
-                                .is_none_or(|field| !field.name.as_str().is_empty())
                     })
             }
             _ => true,
@@ -1568,7 +1454,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "invalid sketch constraint arity",
             );
         }
-        if let Constraint::PointOnObject { point: _, entity } = &constraint.definition {
+        if let Constraint::PointOnObject { point: _, entity } = constraint.definition.kind() {
             if geometry.get(entity).is_some_and(|geometry| {
                 matches!(
                     geometry.definition(),
@@ -1583,7 +1469,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        for locus in constraint_loci(&constraint.definition) {
+        for locus in constraint_loci(constraint.definition.kind()) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;
             };
@@ -1614,7 +1500,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let Constraint::Offset {
             pairs, distance, ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         {
             for pair in pairs {
                 let valid = entity_geometry
@@ -1638,7 +1524,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
         }
-        if let Constraint::ProjectedCopy { source, result } = &constraint.definition {
+        if let Constraint::ProjectedCopy { source, result } = constraint.definition.kind() {
             let valid = entity_geometry
                 .get(source)
                 .zip(entity_geometry.get(result))

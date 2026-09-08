@@ -85,7 +85,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             0.5,
             radius_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Radius { entity: ref actual, parameter: ref p })
+        Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
@@ -95,7 +95,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             0.5,
             radius_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Radius { entity: ref actual, .. })
+        Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
     let diameter_parameter =
@@ -108,7 +108,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             1.0,
             diameter_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Diameter { entity: ref actual, parameter: ref p })
+        Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
     assert!(radial_dimension_definition(
@@ -135,7 +135,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &diameter_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Diameter {
+        Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
         }) if actual == entity.id()
@@ -166,7 +166,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &diameter_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedDiameter {
+        Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
@@ -190,7 +190,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &radius_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedRadius {
+        Some(SketchConstraintDefinitionInput::RepeatedRadius {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
@@ -259,7 +259,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
             parameter: ref actual_parameter,
@@ -273,7 +273,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedLength {
+        Some(SketchConstraintDefinitionInput::RepeatedLength {
             entities,
             parameter,
         }) if entities == vec![first.id().clone(), second.id().clone()]
@@ -317,7 +317,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
             &parameter,
             &parameter_id,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter,
@@ -428,7 +428,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             &parameter,
             &parameter_id,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter,
@@ -473,7 +473,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::VerticalDistance {
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             parameter,
@@ -538,7 +538,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             0.5,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id().clone()
+        Some(SketchConstraintDefinitionInput::Radius { entity, .. }) if entity == measured.id().clone()
     ));
     let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
@@ -549,7 +549,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             1.0,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::RepeatedDiameter { entities, parameter: actual })
+        Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
             if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
     ));
     assert!(matches!(
@@ -560,7 +560,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             1.0,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id().clone()
+        Some(SketchConstraintDefinitionInput::Diameter { entity, .. }) if entity == measured.id().clone()
     ));
 }
 

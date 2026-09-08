@@ -15,7 +15,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_rejects_retained_sketch_constraint_edits() {
-    use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+    };
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -31,7 +33,10 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .push(SketchConstraint {
             id: SketchConstraintId::mint("synthetic:test:constraint#horizontal").unwrap(),
             sketch,
-            definition: SketchConstraintDefinition::Horizontal { entity },
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::Horizontal { entity },
+            )
+            .unwrap(),
             name: None,
             driving: None,
             active: None,

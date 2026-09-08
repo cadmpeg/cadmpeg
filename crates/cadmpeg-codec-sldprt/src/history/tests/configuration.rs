@@ -230,7 +230,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         FeatureDefinition,
     };
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+        Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition, SketchId, SpatialSketch, SpatialSketchId,
     };
 
@@ -410,8 +410,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     assert!(ir.model.sketch_constraints.iter().any(|constraint| {
         constraint.native_ref.as_deref() == Some("relation-marker")
             && matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Horizontal { ref entity }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Horizontal { ref entity }
                     if entity.as_str() == "configuration-line"
             )
     }));

@@ -21,7 +21,7 @@ use crate::records::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::{HashMap, HashSet};
@@ -172,7 +172,7 @@ pub(super) fn linked_single_entities(
 
 pub(super) fn relation_constraint_is_inactive(
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> bool {
     let Some(parameter) = parameter else {
@@ -180,7 +180,7 @@ pub(super) fn relation_constraint_is_inactive(
     };
     let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
     match definition {
-        SketchConstraintDefinition::DistanceLoci { first, second, .. } => {
+        SketchConstraintDefinitionInput::DistanceLoci { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -203,7 +203,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             measured.is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
         }
-        SketchConstraintDefinition::HorizontalDistance { first, second, .. } => {
+        SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -217,7 +217,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             !same_relation_dimension_length((second.u - first.u).abs(), expected.0)
         }
-        SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+        SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -231,7 +231,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             !same_relation_dimension_length((second.v - first.v).abs(), expected.0)
         }
-        SketchConstraintDefinition::Distance { entities, .. } => {
+        SketchConstraintDefinitionInput::Distance { entities, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -252,7 +252,7 @@ pub(super) fn relation_constraint_is_inactive(
             )
             .is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
         }
-        SketchConstraintDefinition::Angle { first, second, .. } => {
+        SketchConstraintDefinitionInput::Angle { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
                 parameter.value.as_ref()
             else {
@@ -270,8 +270,8 @@ pub(super) fn relation_constraint_is_inactive(
             )
             .is_some_and(|measured| !same_dimension_angle(measured, expected.0))
         }
-        SketchConstraintDefinition::Radius { entity: id, .. }
-        | SketchConstraintDefinition::Diameter { entity: id, .. } => {
+        SketchConstraintDefinitionInput::Radius { entity: id, .. }
+        | SketchConstraintDefinitionInput::Diameter { entity: id, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -285,15 +285,16 @@ pub(super) fn relation_constraint_is_inactive(
                 | SketchGeometryDefinition::Arc { radius, .. } => radius.0,
                 _ => return true,
             };
-            let measured = if matches!(definition, SketchConstraintDefinition::Diameter { .. }) {
+            let measured = if matches!(definition, SketchConstraintDefinitionInput::Diameter { .. })
+            {
                 radius * 2.0
             } else {
                 radius
             };
             !same_dimension_length(measured, expected.0)
         }
-        SketchConstraintDefinition::RepeatedRadius { entities, .. }
-        | SketchConstraintDefinition::RepeatedDiameter { entities, .. } => {
+        SketchConstraintDefinitionInput::RepeatedRadius { entities, .. }
+        | SketchConstraintDefinitionInput::RepeatedDiameter { entities, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
@@ -301,7 +302,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             let diameter = matches!(
                 definition,
-                SketchConstraintDefinition::RepeatedDiameter { .. }
+                SketchConstraintDefinitionInput::RepeatedDiameter { .. }
             );
             let Some(radii) = entities
                 .iter()
@@ -334,7 +335,7 @@ pub(super) fn typed_relation_definition(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     typed_relation_definition_with_profile_axis(
         relation,
         parameter,
@@ -354,7 +355,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
@@ -742,13 +743,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         .all(|operand| operand.kind == FeatureInputOperandKind::Native(0xbc7c));
                     if projected_distance_operands && horizontal != vertical {
                         return Some(if horizontal {
-                            SketchConstraintDefinition::HorizontalDistance {
+                            SketchConstraintDefinitionInput::HorizontalDistance {
                                 first,
                                 second,
                                 parameter: parameter_id,
                             }
                         } else {
-                            SketchConstraintDefinition::VerticalDistance {
+                            SketchConstraintDefinitionInput::VerticalDistance {
                                 first,
                                 second,
                                 parameter: parameter_id,
@@ -756,7 +757,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         });
                     }
                     if authoritative {
-                        return Some(SketchConstraintDefinition::DistanceLoci {
+                        return Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
                             second,
                             parameter: parameter_id,
@@ -771,7 +772,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     )?;
                 }
             }
-            Some(SketchConstraintDefinition::DistanceLoci {
+            Some(SketchConstraintDefinitionInput::DistanceLoci {
                 first,
                 second,
                 parameter: parameter_id,
@@ -850,13 +851,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 }
             }
             Some(if horizontal {
-                SketchConstraintDefinition::HorizontalDistance {
+                SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
                     second,
                     parameter: parameter_id,
                 }
             } else {
-                SketchConstraintDefinition::VerticalDistance {
+                SketchConstraintDefinitionInput::VerticalDistance {
                     first,
                     second,
                     parameter: parameter_id,
@@ -912,7 +913,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     )?;
                 }
             }
-            Some(SketchConstraintDefinition::DistanceLoci {
+            Some(SketchConstraintDefinitionInput::DistanceLoci {
                 first: point,
                 second: SketchLocus::Entity(line),
                 parameter: parameter_id,
@@ -1043,7 +1044,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     )?;
                 }
             }
-            Some(SketchConstraintDefinition::Distance {
+            Some(SketchConstraintDefinitionInput::Distance {
                 entities: vec![first, second],
                 parameter: parameter_id,
             })
@@ -1111,7 +1112,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     )?;
                 }
             }
-            Some(SketchConstraintDefinition::Angle {
+            Some(SketchConstraintDefinitionInput::Angle {
                 first,
                 second,
                 parameter: parameter_id,
@@ -1123,13 +1124,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             {
                 return Some(match parameter.display {
                     Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
-                        SketchConstraintDefinition::RepeatedRadius {
+                        SketchConstraintDefinitionInput::RepeatedRadius {
                             entities,
                             parameter: parameter_id,
                         }
                     }
                     Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
-                        SketchConstraintDefinition::RepeatedDiameter {
+                        SketchConstraintDefinitionInput::RepeatedDiameter {
                             entities,
                             parameter: parameter_id,
                         }
@@ -1195,13 +1196,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             }
             match parameter.display {
                 Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
-                    Some(SketchConstraintDefinition::Radius {
+                    Some(SketchConstraintDefinitionInput::Radius {
                         entity,
                         parameter: parameter_id,
                     })
                 }
                 Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
-                    Some(SketchConstraintDefinition::Diameter {
+                    Some(SketchConstraintDefinitionInput::Diameter {
                         entity,
                         parameter: parameter_id,
                     })

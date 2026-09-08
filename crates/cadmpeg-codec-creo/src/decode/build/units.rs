@@ -154,7 +154,12 @@ pub(super) fn normalize_model_lengths(
         scale_spatial_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
     }
     for constraint in &mut ir.model.sketch_constraints {
-        scale_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
+        constraint
+            .definition
+            .edit(|kind| {
+                scale_sketch_constraint_definition(kind, length_scale_mm);
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for constraint in &mut ir.model.spatial_sketch_constraints {
         scale_spatial_sketch_constraint_definition(&mut constraint.definition, length_scale_mm);
@@ -1571,25 +1576,25 @@ fn scale_spatial_sketch_geometry(
 }
 
 fn scale_sketch_constraint_definition(
-    definition: &mut cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &mut cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
     scale: f64,
 ) {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     match definition {
-        SketchConstraintDefinition::PointCoordinateValues { values, .. } => {
+        SketchConstraintDefinitionInput::PointCoordinateValues { values, .. } => {
             for value in values {
                 scale_length(value, scale);
             }
         }
-        SketchConstraintDefinition::MidpointCoordinate { value, .. }
-        | SketchConstraintDefinition::DistanceLociValue {
+        SketchConstraintDefinitionInput::MidpointCoordinate { value, .. }
+        | SketchConstraintDefinitionInput::DistanceLociValue {
             distance: value, ..
         }
-        | SketchConstraintDefinition::PolarDistance {
+        | SketchConstraintDefinitionInput::PolarDistance {
             distance: value, ..
         }
-        | SketchConstraintDefinition::Offset {
+        | SketchConstraintDefinitionInput::Offset {
             distance: value, ..
         } => scale_length(value, scale),
         _ => {}

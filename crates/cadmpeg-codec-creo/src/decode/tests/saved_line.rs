@@ -33,7 +33,8 @@ use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -343,13 +344,15 @@ fn saved_line_joins_through_order_table() {
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
     assert!(matches!(
-        &constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
+        constraints[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
             ).unwrap()]
     ));
-    let SketchConstraintDefinition::Native { operands, .. } = &constraints[0].0.definition else {
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        constraints[0].0.definition.kind()
+    else {
         unreachable!();
     };
     assert!(operands.iter().any(|operand| {
@@ -376,8 +379,8 @@ fn saved_line_joins_through_order_table() {
         &equation_only_incidence,
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &equation_only_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        equation_only_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -399,8 +402,8 @@ fn saved_line_joins_through_order_table() {
         &missing_equation,
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &missing_equation_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        missing_equation_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -428,8 +431,8 @@ fn saved_line_joins_through_order_table() {
         &duplicate_equation,
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &duplicate_equation_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        duplicate_equation_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -453,8 +456,8 @@ fn saved_line_joins_through_order_table() {
     );
     assert!(
         matches!(
-            &dimension_constraints[0].0.definition,
-            SketchConstraintDefinition::Distance { entities, .. }
+            dimension_constraints[0].0.definition.kind(),
+            SketchConstraintDefinitionInput::Distance { entities, .. }
                 if entities == &[
                     SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).unwrap(),
                     SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).unwrap(),
@@ -469,8 +472,8 @@ fn saved_line_joins_through_order_table() {
         &native_join,
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &native_join_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        native_join_constraints[0].0.definition.kind()
     else {
         panic!("untyped relation must remain native");
     };
@@ -507,8 +510,8 @@ fn saved_line_joins_through_order_table() {
         &native_join,
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &ambiguous_join_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        ambiguous_join_constraints[0].0.definition.kind()
     else {
         panic!("untyped relation must remain native");
     };
@@ -636,8 +639,9 @@ fn saved_line_joins_through_order_table() {
             Some(&solver_geometry),
         )[0]
         .0
-        .definition,
-        SketchConstraintDefinition::Horizontal { .. }
+        .definition
+        .kind(),
+        SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     let unary = &mut solver_families
         .relations
@@ -656,8 +660,9 @@ fn saved_line_joins_through_order_table() {
             Some(&solver_geometry),
         )[0]
         .0
-        .definition,
-        SketchConstraintDefinition::Vertical { .. }
+        .definition
+        .kind(),
+        SketchConstraintDefinitionInput::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
     *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
@@ -736,8 +741,8 @@ fn saved_line_joins_through_order_table() {
     .is_some());
     assert!(
         matches!(
-            solver_constraints[0].0.definition,
-            SketchConstraintDefinition::CoincidentLoci { .. }
+            solver_constraints[0].0.definition.kind(),
+            SketchConstraintDefinitionInput::CoincidentLoci { .. }
         ),
         "{:?}",
         solver_constraints[0].0.definition
@@ -940,8 +945,8 @@ fn saved_line_joins_through_order_table() {
         &SketchId::mint("creo:model:sketch#5".to_string()).unwrap(),
     );
     assert!(matches!(
-        &constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
+        constraints[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
             ).unwrap()]

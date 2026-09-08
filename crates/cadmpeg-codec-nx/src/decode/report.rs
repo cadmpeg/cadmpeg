@@ -783,8 +783,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
             )
         })
         .count();

@@ -40,7 +40,7 @@ use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
+    Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchEntityUse,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::BodyKind;
@@ -1710,7 +1710,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
 #[test]
 fn typed_center_locus_requires_a_circular_geometry_family() {
     let entity = SketchEntityId::mint("creo:test:entity#1").unwrap();
-    let definition = SketchConstraintDefinition::CoincidentLoci {
+    let definition = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Center(entity.clone())],
     };
     let unresolved = BTreeMap::from([(

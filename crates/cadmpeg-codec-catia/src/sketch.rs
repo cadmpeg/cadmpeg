@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchNativeOperand,
 };
 
@@ -406,10 +406,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                 incidence.reference_offset.to_string(),
             );
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: candidate.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: candidate.target_class,
                 native_state: None,
                 native_flags: None,
@@ -430,6 +428,13 @@ pub(crate) fn transfer_native_sketch_constraints(
                     native_ref: Some(candidate.target_entity_record.clone()),
                 }],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: candidate.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -650,10 +655,8 @@ pub(crate) fn transfer_constraint_ranges(
         }) {
             continue;
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: binding.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: range.constraint.value.clone(),
                 native_state: None,
                 native_flags: None,
@@ -662,6 +665,13 @@ pub(crate) fn transfer_constraint_ranges(
                 parameter: None,
                 operands: vec![binding.operand],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: binding.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -1512,14 +1522,14 @@ mod tests {
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#constraint-field")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native sketch constraint");
         };
@@ -1668,14 +1678,14 @@ mod tests {
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#range")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native constraint");
         };
@@ -1731,10 +1741,10 @@ mod tests {
 
         assert!(ir.model.parameters.is_empty());
 
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             parameter: constraint_parameter,
             ..
-        } = &ir.model.sketch_constraints[0].definition
+        } = ir.model.sketch_constraints[0].definition.kind()
         else {
             panic!("expected native constraint");
         };
@@ -1758,7 +1768,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert_eq!(entities, &vec![entity_id]);
@@ -1781,7 +1792,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());
@@ -1803,7 +1815,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());

@@ -1111,23 +1111,26 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
 fn design_projection_gaps_count_each_retained_selection_family() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(),
         sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "dimension".into(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: None,
-            operands: Vec::new(),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "dimension".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: Vec::new(),
+                parameter: None,
+                operands: Vec::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,

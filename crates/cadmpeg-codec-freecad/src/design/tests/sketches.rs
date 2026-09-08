@@ -468,8 +468,8 @@ fn distinguishes_missing_malformed_and_explicit_constraint_types() {
                 &DecodeOptions::default(),
             )
             .expect("constraint type admission");
-        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
-            &result.ir().model.sketch_constraints[0].definition
+        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
+            result.ir().model.sketch_constraints[0].definition.kind()
         else {
             panic!("invalid or future family selected a neutral constraint");
         };
@@ -490,8 +490,8 @@ fn distinguishes_missing_malformed_and_explicit_constraint_types() {
         )
         .expect("explicit disabled constraint");
     assert!(matches!(
-        result.ir().model.sketch_constraints[0].definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Disabled
+        result.ir().model.sketch_constraints[0].definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled
     ));
     assert_valid_document(result.ir());
 }
@@ -737,26 +737,36 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .expect("constraint index")
     };
     assert!(matches!(
-        constraint(1).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Symmetric { .. }
+        constraint(1).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Symmetric { .. }
     ));
     let point_on_object = constraint(3);
     assert_eq!(point_on_object.name.as_deref(), Some("OnAxis"));
     assert_eq!(point_on_object.metadata.as_deref(), Some("reviewed"));
     assert_eq!(point_on_object.orientation, Some(4));
-    assert_eq!(point_on_object.label_distance, Some(2.5));
-    assert_eq!(point_on_object.label_position, Some(0.25));
+    assert_eq!(
+        point_on_object
+            .label_distance
+            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+        Some(2.5)
+    );
+    assert_eq!(
+        point_on_object
+            .label_position
+            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+        Some(0.25)
+    );
     assert_eq!(point_on_object.driving, Some(false));
     assert_eq!(point_on_object.virtual_space, Some(true));
     assert_eq!(point_on_object.visible, Some(false));
     assert_eq!(point_on_object.active, Some(true));
     assert!(matches!(
-        constraint(4).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw { .. }
+        constraint(4).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::SnellsLaw { .. }
     ));
     assert!(matches!(
-        constraint(5).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Weight { .. }
+        constraint(5).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Weight { .. }
     ));
     assert!(matches!(
         result
@@ -781,20 +791,20 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1.0e-12
     ));
     assert!(matches!(
-        constraint(6).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::InternalAlignment {
+        constraint(6).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::InternalAlignment {
             alignment: cadmpeg_ir::sketches::SketchInternalAlignment::BsplineControlPoint(2),
             ..
         }
     ));
     assert!(matches!(
-        constraint(7).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Group { ref elements }
+        constraint(7).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Group { ref elements }
             if elements.len() == 3
     ));
     assert!(matches!(
-        constraint(8).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Text {
+        constraint(8).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Text {
             ref text,
             font: Some(ref font),
             is_text_height: false,
@@ -802,35 +812,35 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if text == "R42" && font == "Mono"
     ));
     assert!(matches!(
-        constraint(9).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Disabled
+        constraint(9).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled
     ));
     assert!(matches!(
-        constraint(10).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
+        constraint(10).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::PointOnObject { .. }
     ));
     assert!(matches!(
-        constraint(11).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
+        constraint(11).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci { .. }
     ));
     assert!(matches!(
-        constraint(12).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
+        constraint(12).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::PointOnObject { .. }
     ));
     assert!(matches!(
-        constraint(13).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+        constraint(13).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
     ));
     assert!(matches!(
-        constraint(14).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+        constraint(14).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::AngleToAxis {
             axis: cadmpeg_ir::sketches::SketchAxis::Horizontal,
             ..
         }
     ));
     assert!(matches!(
-        constraint(15).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::VerticalDistance {
+        constraint(15).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::VerticalDistance {
             ref first,
             ref second,
             ..
@@ -853,15 +863,15 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     assert_eq!(repeated_parameters[0].name, "Constraint14");
     assert_eq!(repeated_parameters[1].name, "Constraint15");
     assert!(matches!(
-        constraint(16).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+        constraint(16).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::AngleToAxis {
             axis: cadmpeg_ir::sketches::SketchAxis::Vertical,
             ..
         }
     ));
     assert!(matches!(
-        constraint(17).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance {
+        constraint(17).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance {
             ref first,
             ref second,
             ..
@@ -912,12 +922,12 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if object.ends_with("Source") && subelements == &["Edge2"]
     ));
     assert!(matches!(
-        constraint(2).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
+        constraint(2).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci { .. }
     ));
     assert!(matches!(
-        constraint(3).definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject {
+        constraint(3).definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::PointOnObject {
             point: cadmpeg_ir::sketches::SketchLocus::Start(_),
             ..
         }
@@ -947,8 +957,8 @@ fn neutralizes_line_midpoint_coincidence() {
         .expect("midpoint constraint");
 
     assert!(matches!(
-        result.ir().model.sketch_constraints[0].definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint { .. }
+        result.ir().model.sketch_constraints[0].definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
     ));
     assert_valid_document(result.ir());
 }

@@ -32,7 +32,7 @@ pub fn project_sketch_constraints(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        NativeOperandField, SketchConstraint, SketchConstraintDefinition as Definition,
+        NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput as Definition,
         SketchNativeOperand,
     };
 
@@ -233,7 +233,8 @@ pub fn project_sketch_constraints(
         Some(SketchConstraint {
             id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
             sketch,
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .ok()?,
             name: None,
             driving: None,
             active: None,
@@ -270,9 +271,9 @@ pub(crate) fn exact_rectangular_pattern(
     scope: &str,
     parameters: &[DesignParameter],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use crate::records::SketchPatternDefinition;
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if relation.unknown_constraint_bits() != 0
         || relation.constraint_kinds().len() != 1
@@ -460,10 +461,10 @@ pub(crate) fn exact_text_relation(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
     use cadmpeg_ir::transform::Transform;
 
@@ -571,11 +572,11 @@ pub(crate) fn exact_circular_pattern(
     parameters: &[DesignParameter],
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance,
-        SketchConstraintDefinition as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
     if relation.unknown_constraint_bits() != 0
@@ -947,7 +948,7 @@ mod tests {
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
         SketchId,
     };
     #[test]
@@ -1115,7 +1116,7 @@ mod tests {
         let relation =
             rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
         let parameters = rectangular_parameters(3, 1.5);
-        let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
+        let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
             exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
         else {
             panic!("rectangular pattern did not resolve");
@@ -1139,7 +1140,7 @@ mod tests {
         let relation =
             rectangular_point_relation(3, 3.0, RectangularPatternDistanceForm::SeedToFinalSpan);
         let parameters = rectangular_parameters(3, 3.0);
-        let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
+        let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
             exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
         else {
             panic!("total-span rectangular pattern did not resolve");
@@ -1201,7 +1202,7 @@ mod tests {
         ] {
             let relation = rectangular_point_relation(2, 1.5, distance_form);
             let parameters = rectangular_parameters(2, 1.5);
-            let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
+            let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
                 exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second])
             else {
                 panic!("two-instance rectangular pattern did not resolve");
@@ -1296,13 +1297,15 @@ mod tests {
         };
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
-        let Some(SketchConstraintDefinition::CircularPattern { pattern }) = exact_circular_pattern(
-            &relation(std::f64::consts::PI),
-            "native",
-            &[],
-            &members,
-            &returned,
-        ) else {
+        let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
+            exact_circular_pattern(
+                &relation(std::f64::consts::PI),
+                "native",
+                &[],
+                &members,
+                &returned,
+            )
+        else {
             panic!("partial circular pattern did not resolve");
         };
         assert_eq!(pattern.center(), center.id());
@@ -1332,7 +1335,7 @@ mod tests {
                 &full_members,
                 &full_returned,
             ),
-            Some(SketchConstraintDefinition::CircularPattern { ref pattern })
+            Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
                 if scalar_close(pattern.instances()[1].angle.0, std::f64::consts::TAU / 3.0)
         ));
     }
@@ -1409,7 +1412,7 @@ mod tests {
         };
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
-        let Some(SketchConstraintDefinition::CircularPattern { pattern }) =
+        let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
             exact_circular_pattern(&relation, "native", &[], &members, &returned)
         else {
             panic!("role-agnostic circular pattern did not resolve");
@@ -1423,7 +1426,7 @@ mod tests {
         use cadmpeg_ir::features::Length;
         use cadmpeg_ir::math::Point2;
         use cadmpeg_ir::sketches::{
-            SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+            SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
             SketchGeometryDefinition, SketchId,
         };
 
@@ -1495,7 +1498,7 @@ mod tests {
             exact_text_relation(&relation, "scope", &projected).expect("typed text path");
         assert!(matches!(
             definition,
-            SketchConstraintDefinition::TextPath {
+            SketchConstraintDefinitionInput::TextPath {
                 text: ref text_id,
                 path: ref path_id,
                 ref glyph_transforms,
