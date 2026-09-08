@@ -7169,19 +7169,19 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
             members.extend(
                 crate::om::operation_body_members(record.body_view())
                     .into_iter()
-                    .map(|member| FeatureOperationBodyMember {
+                    .flat_map(|group| group.members.into_iter().enumerate().map(move |(ordinal, member)| FeatureOperationBodyMember {
                         id: format!(
                             "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{}",
-                            member.body_reference_ordinal, member.ordinal
+                            group.body_reference_ordinal, ordinal as u32
                         ),
                         operation_label: format!(
                             "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                         ),
-                        body_reference_ordinal: member.body_reference_ordinal,
-                        body_object_index: member.body_object_index,
-                        ordinal: member.ordinal,
-                        member: LocatedCompactIndex { atom: member.member.atom, offset: entry_offset + member.member.offset as u64 },
-                    }),
+                        body_reference_ordinal: group.body_reference_ordinal,
+                        body_object_index: group.body_object_index,
+                        ordinal: ordinal as u32,
+                        member: LocatedCompactIndex { atom: member.atom, offset: entry_offset + member.offset as u64 },
+                    })),
             );
         },
     );
