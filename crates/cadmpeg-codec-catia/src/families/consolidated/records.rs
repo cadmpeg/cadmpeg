@@ -1742,7 +1742,7 @@ fn object_stream_vertex_row_ranges_from_records(
 ) -> Vec<Range<usize>> {
     let mut ranges = records
         .iter()
-        .filter_map(|record| record.range())
+        .filter_map(crate::wire::records::ConsolidatedRecord::range)
         .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {
