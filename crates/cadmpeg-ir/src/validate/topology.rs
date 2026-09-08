@@ -6408,7 +6408,15 @@ fn check_feature_sketch_references(
                         "native sketch profile selections are empty or repeated",
                     );
                 }
-                _ => {}
+                ProfileRef::Native(_)
+                | ProfileRef::Unresolved(_)
+                | ProfileRef::Feature(_)
+                | ProfileRef::Generated { .. }
+                | ProfileRef::Sketch(_)
+                | ProfileRef::SketchSelection { .. }
+                | ProfileRef::SpatialSketchSelection { .. }
+                | ProfileRef::HistoricalFaces { .. }
+                | ProfileRef::Faces(_) => {}
             }
         }
         for path in paths {
