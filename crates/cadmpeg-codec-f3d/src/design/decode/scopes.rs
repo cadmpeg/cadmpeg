@@ -4612,16 +4612,16 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *selection_record_index,
                 scope.record_index,
             ) {
-                axis_candidates.push((
-                    crate::records::feature::DesignCircularPatternAxis::Inline {
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis: crate::records::feature::DesignCircularPatternAxis::Inline {
                         origin,
                         origin_offset: (start + 25) as u64,
                         direction,
                         direction_offset: (start + 49) as u64,
                     },
-                    *record_index,
-                    *selection_record_index,
-                ));
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                });
             }
         }
     }
@@ -4635,12 +4635,19 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *record_index,
                 scope,
             ) {
-                axis_candidates.push((axis, *record_index, selection_record_index));
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index,
+                });
             }
         }
     }
-    let (axis, record_index, selection_record_index) =
-        select_circular_pattern_axis(&axis_candidates)?;
+    let CircularPatternAxisCandidate {
+        axis,
+        axis_record_index,
+        selection_record_index,
+    } = select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
         if native_stream(&owner.id) != native_stream(&scope.id)
             || owner.scope_record_index != scope.record_index
@@ -4710,13 +4717,17 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         axis: axis.clone(),
-        axis_record_index: *record_index,
+        axis_record_index: *axis_record_index,
         selection_record_index: *selection_record_index,
     })
 }
 
-pub(crate) type CircularPatternAxisCandidate =
-    (crate::records::feature::DesignCircularPatternAxis, u32, u32);
+/// Circular pattern axis with its carrier and selection record indices.
+pub(crate) struct CircularPatternAxisCandidate {
+    pub(crate) axis: crate::records::feature::DesignCircularPatternAxis,
+    pub(crate) axis_record_index: u32,
+    pub(crate) selection_record_index: u32,
+}
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
 pub(crate) fn select_circular_pattern_axis(
@@ -4724,9 +4735,9 @@ pub(crate) fn select_circular_pattern_axis(
 ) -> Option<&CircularPatternAxisCandidate> {
     let inline = candidates
         .iter()
-        .filter(|(axis, _, _)| {
+        .filter(|candidate| {
             matches!(
-                axis,
+                candidate.axis,
                 crate::records::feature::DesignCircularPatternAxis::Inline { .. }
             )
         })
