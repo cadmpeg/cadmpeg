@@ -929,7 +929,7 @@ Co 1001000 +2 0 *
         gui_providers[0]
             .object
             .as_ref()
-            .map(|object| object.as_str()),
+            .map(cadmpeg_ir::products::NonEmptyString::as_str),
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);

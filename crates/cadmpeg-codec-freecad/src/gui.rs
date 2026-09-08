@@ -3485,7 +3485,11 @@ fn transfer_shape_appearances(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
-        let Some(object_id) = provider.object.as_ref().map(|object| object.as_str()) else {
+        let Some(object_id) = provider
+            .object
+            .as_ref()
+            .map(cadmpeg_ir::products::NonEmptyString::as_str)
+        else {
             continue;
         };
         let Some(property) = graph.properties.iter().find(|property| {
