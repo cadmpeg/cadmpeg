@@ -105,7 +105,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

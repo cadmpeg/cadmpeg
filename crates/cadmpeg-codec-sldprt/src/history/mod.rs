@@ -484,7 +484,10 @@ mod literal_tests {
             );
         }
         assert_eq!(
-            apply_parameter_function("int", &ParameterValue::Real(-3.75)),
+            apply_parameter_function(
+                "int",
+                &ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(-3.75).unwrap())
+            ),
             Some(ParameterValue::Integer(-3))
         );
     }
@@ -501,11 +504,15 @@ mod literal_tests {
                 &ParameterValue::Integer(-1),
                 &ParameterValue::Integer(-((1_i64 << 53) + 1)),
             ),
-            Some(ParameterValue::Real(-1.0))
+            Some(ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(-1.0).unwrap()
+            ))
         );
         assert_eq!(
             exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-3),),
-            Some(ParameterValue::Real(0.125))
+            Some(ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(0.125).unwrap()
+            ))
         );
     }
 
@@ -548,7 +555,8 @@ mod literal_tests {
     #[test]
     fn mixed_numeric_comparisons_preserve_integer_identity() {
         let integer = ParameterValue::Integer((1_i64 << 53) + 1);
-        let rounded_real = ParameterValue::Real(2_f64.powi(53));
+        let rounded_real =
+            ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(2_f64.powi(53)).unwrap());
         assert_eq!(
             compare_parameter_values(&integer, &rounded_real, "="),
             Some(false)
@@ -565,7 +573,7 @@ mod literal_tests {
         assert_eq!(
             compare_parameter_values(
                 &ParameterValue::Integer(-3),
-                &ParameterValue::Real(-3.5),
+                &ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(-3.5).unwrap()),
                 ">",
             ),
             Some(true)
@@ -573,7 +581,9 @@ mod literal_tests {
         assert_eq!(
             compare_parameter_values(
                 &ParameterValue::Integer(i64::MAX),
-                &ParameterValue::Real(-(i64::MIN as f64)),
+                &ParameterValue::Real(
+                    cadmpeg_ir::features::FiniteReal::new(-(i64::MIN as f64)).unwrap()
+                ),
                 "<",
             ),
             Some(true)

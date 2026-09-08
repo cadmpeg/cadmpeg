@@ -80,7 +80,7 @@ fn parameter_native_ref_must_resolve() {
         expression: "1mm".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: Some(crate::features::ParameterPmi {
             subtype: crate::features::PmiDimensionSubtype::Linear,

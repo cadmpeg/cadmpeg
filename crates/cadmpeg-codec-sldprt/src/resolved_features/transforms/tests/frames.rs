@@ -173,7 +173,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -334,7 +334,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("existing-driver".into()),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
     };
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
@@ -592,7 +592,9 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
     assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
 
-    parameter.value = Some(ParameterValue::Real(0.012));
+    parameter.value = Some(ParameterValue::Real(
+        cadmpeg_ir::features::FiniteReal::new(0.012).unwrap(),
+    ));
     parameter.expression = "0.012".into();
     parameter.display = None;
     parameter.native_ref = Some("driver".into());
@@ -844,7 +846,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("circle-scalar".into()),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
     };
 
     project_dimensioned_sketch_geometry(
@@ -1203,7 +1205,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         expression: "10".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(10.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("parameter-scalar".into()),

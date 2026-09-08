@@ -388,8 +388,10 @@ fn native_dimension_subtypes_are_reported() {
         name: "D1".into(),
         expression: "1".into(),
         display: None,
-        value: Some(ParameterValue::Real(1.0)),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+        )),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: Some(ParameterPmi {
             subtype: PmiDimensionSubtype::Native("Ordinate".into()),

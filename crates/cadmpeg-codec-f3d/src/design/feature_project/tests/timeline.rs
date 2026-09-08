@@ -891,5 +891,5 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("successor Depth parameter");
-    assert_eq!(depth.dependencies, [width.id.clone()]);
+    assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
 }

@@ -286,7 +286,9 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                 (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
                     Some(value.get())
                 }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => Some(*value),
+                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => {
+                    Some(value.get())
+                }
                 (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
                     Some(*value as f64)
                 }
@@ -310,7 +312,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             emitted.insert(index);
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
-            if expected[index].as_ref() != Some(&parameter.dependencies)
+            if expected[index].as_deref() != Some(parameter.dependencies.as_slice())
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {

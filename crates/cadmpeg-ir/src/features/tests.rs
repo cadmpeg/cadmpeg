@@ -48,7 +48,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         expression: "10 mm".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -94,7 +94,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 
     ir.model.configurations[0].parameter_values = BTreeMap::from([(
         ParameterId::mint("synthetic:test:parameter#missing-value").expect("identity grammar"),
-        ParameterValue::Real(1.0),
+        ParameterValue::Real(crate::features::FiniteReal::new(1.0).unwrap()),
     )]);
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
@@ -139,12 +139,6 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.configurations[0].parameter_values.clear();
 
-    ir.model.parameters[0].value = Some(ParameterValue::Real(f64::NAN));
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(parameter_id.0.as_str())
-            && finding.message == "parameter value is invalid"
-    }));
     ir.model.parameters[0].value = None;
 
     let first_feature =
@@ -2790,3 +2784,5 @@ mod edge_treatments;
 mod patterns;
 
 mod selections;
+
+mod parameters;

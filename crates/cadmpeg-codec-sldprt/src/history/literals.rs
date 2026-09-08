@@ -193,7 +193,7 @@ pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .trim()
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite())
+        .and_then(cadmpeg_ir::features::FiniteReal::new)
         .map(ParameterValue::Real)
 }
 
@@ -316,7 +316,7 @@ pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
             let value = value.get();
             format_angle_rad(value)
         }
-        ParameterValue::Real(value) => format_f64_literal(*value),
+        ParameterValue::Real(value) => format_f64_literal(value.get()),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),

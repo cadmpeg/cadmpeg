@@ -418,7 +418,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "1".into(),
         display: None,
         value: Some(ParameterValue::Integer(1)),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -431,7 +431,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "native text".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -503,7 +503,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -575,14 +575,14 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     let independent = ParameterId::mint("independent").expect("identity grammar");
     let overridden = ParameterId::mint("overridden").expect("identity grammar");
     let dependent = ParameterId::mint("dependent").expect("identity grammar");
-    let parameter = |id: ParameterId, value, dependencies| DesignParameter {
+    let parameter = |id: ParameterId, value, dependencies: Vec<ParameterId>| DesignParameter {
         id,
         owner: None,
         ordinal: 0,
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(value),
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,

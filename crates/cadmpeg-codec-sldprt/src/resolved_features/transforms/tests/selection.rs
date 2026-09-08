@@ -853,7 +853,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         expression: format!("<MOD-DIAM>{diameter}"),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

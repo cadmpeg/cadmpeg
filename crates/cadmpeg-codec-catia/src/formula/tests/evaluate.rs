@@ -29,7 +29,10 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("validated formula parameters")
     };
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -82,7 +85,10 @@ fn decode_converts_degree_literals_to_radians() {
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("degree formula parameters")
     };
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
@@ -111,7 +117,10 @@ fn decode_evaluates_the_dimensionless_pi_constant_in_an_angle_expression() {
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("PI formula parameters")
     };
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
@@ -141,7 +150,9 @@ fn decode_evaluates_dimensionless_trigonometric_arguments_as_radians() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(0.0).unwrap()
+        ))
     );
 }
 
@@ -170,10 +181,15 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("trigonometric formula parameters")
     };
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+        ))
     );
 }
 
@@ -200,10 +216,15 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
     let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("logarithmic formula parameters")
     };
-    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.dependencies.as_slice(),
+        [first.id.clone(), second.id.clone()]
+    );
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(output_value))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(output_value).unwrap()
+        ))
     );
 }
 
@@ -228,7 +249,9 @@ fn decode_distinguishes_common_and_natural_logarithms() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(3.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(3.0).unwrap()
+        ))
     );
 }
 
@@ -309,7 +332,9 @@ fn decode_evaluates_exponential_and_hyperbolic_functions() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(2.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap()
+        ))
     );
 }
 
@@ -334,7 +359,9 @@ fn decode_evaluates_scalar_rounding_functions() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(8.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(8.0).unwrap()
+        ))
     );
 }
 
@@ -411,7 +438,9 @@ fn decode_evaluates_variadic_extrema_and_integer_part_remainder() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(9.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(9.0).unwrap()
+        ))
     );
 }
 
@@ -436,7 +465,9 @@ fn decode_evaluates_remainder_of_a_negative_real_dividend_integer_part() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(-1.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(-1.0).unwrap()
+        ))
     );
 }
 
@@ -462,7 +493,10 @@ fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
     let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("square-root formula parameters")
     };
-    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.dependencies.as_slice(),
+        [first.id.clone(), second.id.clone()]
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -492,7 +526,9 @@ fn decode_evaluates_right_associative_exponentiation_above_unary_signs() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(-512.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(-512.0).unwrap()
+        ))
     );
 }
 
@@ -515,7 +551,10 @@ fn decode_evaluates_an_integral_power_of_a_dimensioned_value() {
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("dimensioned exponent formula parameters")
     };
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -574,7 +613,10 @@ fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
     let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("absolute and tangent formula parameters")
     };
-    assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
+    assert_eq!(
+        output.dependencies.as_slice(),
+        [first.id.clone(), second.id.clone()]
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(

@@ -118,7 +118,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("keywords-dimension".into()),

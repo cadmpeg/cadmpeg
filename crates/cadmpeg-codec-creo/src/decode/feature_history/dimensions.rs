@@ -294,7 +294,9 @@ pub(in super::super) fn transfer_feature_dimensions(
                 crate::feature::DimensionUnit::Millimeters => {
                     Length::new(value).map(ParameterValue::Length)
                 }
-                crate::feature::DimensionUnit::SchemaDefined => Some(ParameterValue::Real(value)),
+                crate::feature::DimensionUnit::SchemaDefined => {
+                    cadmpeg_ir::features::FiniteReal::new(value).map(ParameterValue::Real)
+                }
             });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
@@ -304,7 +306,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             expression,
             display: feature_dimension_display(dimension.dimension_type),
             value,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties,
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),

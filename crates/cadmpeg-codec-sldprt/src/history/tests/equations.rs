@@ -9,6 +9,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
+
 #[test]
 fn decode_projects_every_dimension_as_a_neutral_parameter() {
     use cadmpeg_ir::features::{Angle, DimensionDisplay, Length, ParameterValue};
@@ -111,7 +113,12 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .and_then(|parameter| parameter.display),
         Some(DimensionDisplay::Radius)
     );
-    assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
+    assert_eq!(
+        value("Ratio"),
+        Some(&ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.25).unwrap()
+        ))
+    );
     assert!(parameters
         .iter()
         .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id)));
@@ -247,7 +254,8 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
             .iter()
             .find(|parameter| parameter.name == "Driven")
             .unwrap()
-            .dependencies,
+            .dependencies
+            .as_slice(),
         expected_dependencies
     );
 
@@ -334,7 +342,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     );
     assert_eq!(values["Power"], Some(ParameterValue::Integer(512)));
     assert!(
-        matches!(values["Sine"], Some(ParameterValue::Real(value)) if (value - 0.5).abs() < 1.0e-12)
+        matches!(values["Sine"], Some(ParameterValue::Real(value)) if (value.get() - 0.5).abs() < EPS_PARAMETER_VALUE)
     );
     assert!(matches!(
         values["Inverse sine"],
@@ -345,13 +353,20 @@ fn decode_evaluates_parameter_dependency_expressions() {
         values["Absolute"],
         Some(ParameterValue::Length(Length::new(2.0).unwrap()))
     );
-    assert_eq!(values["Root"], Some(ParameterValue::Real(3.0)));
+    assert_eq!(
+        values["Root"],
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(3.0).unwrap()
+        ))
+    );
     assert_eq!(values["Sign negative"], Some(ParameterValue::Integer(-1)));
     assert_eq!(values["Sign zero"], Some(ParameterValue::Integer(0)));
     assert_eq!(values["Sign positive"], Some(ParameterValue::Integer(1)));
     assert_eq!(
         values["Pi"],
-        Some(ParameterValue::Real(std::f64::consts::PI))
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(std::f64::consts::PI).unwrap()
+        ))
     );
     assert_eq!(
         values["Conditional"],
@@ -506,7 +521,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("depth parameter");
-    assert_eq!(depth.dependencies, vec![width.id.clone()]);
+    assert_eq!(depth.dependencies.as_slice(), vec![width.id.clone()]);
     assert_eq!(
         depth.value,
         Some(ParameterValue::Length(Length::new(8.0).unwrap()))

@@ -1717,7 +1717,9 @@ fn semantic_writer_types_resolved_relation_scalar() {
             .find(|parameter| parameter.name == "D1")
             .expect("projected D1 parameter");
         parameter.expression = "0.5".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(0.5));
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(0.5).unwrap(),
+        ));
     }
 
     let mut encoded = Vec::new();

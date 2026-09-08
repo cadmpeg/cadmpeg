@@ -453,7 +453,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         expression: String::new(),
         display,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

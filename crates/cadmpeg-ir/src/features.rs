@@ -1226,8 +1226,12 @@ pub struct DesignParameter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ParameterValue>,
     /// Parameters referenced by `expression`, in source expression order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<ParameterId>,
+    #[serde(
+        default,
+        skip_serializing_if = "DistinctMembers::is_empty",
+        deserialize_with = "deserialize_dependencies"
+    )]
+    pub dependencies: DistinctMembers<ParameterId>,
     /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
@@ -1302,13 +1306,29 @@ pub enum ParameterValue {
     /// Angle in canonical radians.
     Angle(Angle),
     /// Dimensionless real scalar.
-    Real(f64),
+    Real(#[serde(deserialize_with = "deserialize_parameter_real")] FiniteReal),
     /// Integer scalar.
     Integer(i64),
     /// Boolean scalar.
     Boolean(bool),
     /// Literal text value.
     String(String),
+}
+
+fn deserialize_parameter_real<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<FiniteReal, D::Error> {
+    FiniteReal::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("value: {error}")))
+}
+
+fn deserialize_dependencies<'de, D, T>(deserializer: D) -> Result<DistinctMembers<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Eq + std::hash::Hash,
+{
+    DistinctMembers::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("dependencies: {error}")))
 }
 
 macro_rules! checked_feature_scalar {
@@ -5648,6 +5668,16 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
+    /// Removes all members.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Retains members that satisfy the predicate without changing their order.
+    pub fn retain(&mut self, predicate: impl FnMut(&T) -> bool) {
+        self.0.retain(predicate);
+    }
+
     /// Whether the sequence contains no members.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -5656,6 +5686,16 @@ impl<T> DistinctMembers<T> {
     /// The members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl<T: PartialEq> FromIterator<T> for DistinctMembers<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut members = Self::default();
+        for member in iter {
+            members.insert(member);
+        }
+        members
     }
 }
 

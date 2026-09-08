@@ -520,7 +520,9 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("width cell");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+        ))
     );
     assert_eq!(
         width.properties.get("address").map(String::as_str),
@@ -540,7 +542,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
-    assert_eq!(length.dependencies, vec![width.id.clone()]);
+    assert_eq!(length.dependencies.as_slice(), vec![width.id.clone()]);
     let width_position = result
         .ir()
         .model

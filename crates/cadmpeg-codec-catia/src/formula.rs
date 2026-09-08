@@ -271,7 +271,7 @@ pub(crate) fn transfer_parameters(
                                         TypedParameterEvaluation::Unset => None,
                                         TypedParameterEvaluation::Value(value) => Some(value),
                                     },
-                                    dependencies,
+                                    dependencies: dependencies.into_iter().collect(),
                                     properties: parameter_properties(
                                         parameter_type.as_str(),
                                         Some(output_value.binding.value.as_str()),
@@ -629,7 +629,7 @@ fn definition_chain_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties,
             pmi: None,
             native_ref: Some(entity.id.clone()),
@@ -727,7 +727,7 @@ fn collect_legacy_parameters(
                         expression,
                         display: None,
                         value,
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         properties: parameter_properties(parameter_type.as_str(), None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -782,7 +782,7 @@ fn collect_legacy_parameters(
                         expression: parameter_expression(&value),
                         display: None,
                         value: Some(value),
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         properties: parameter_properties("String", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -837,7 +837,7 @@ fn collect_legacy_parameters(
                         expression: parameter_expression(&value),
                         display: None,
                         value: Some(value),
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         properties: parameter_properties("Integer", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
@@ -895,7 +895,7 @@ fn collect_legacy_parameters(
                 }
             }
             candidate.parameter.expression = evaluation.expression.to_string();
-            candidate.parameter.dependencies = evaluation.dependencies;
+            candidate.parameter.dependencies = evaluation.dependencies.into_iter().collect();
             candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
             transfer.formulas += 1;
         }
@@ -1147,7 +1147,7 @@ fn typed_entity_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: parameter_properties(
                 parameter_type.as_str(),
                 Some(parameter.binding.value.as_str()),
@@ -1323,7 +1323,7 @@ fn relation_program_output_candidate(
                 TypedParameterEvaluation::Unset => None,
                 TypedParameterEvaluation::Value(value) => Some(value),
             },
-            dependencies: dependencies.clone(),
+            dependencies: dependencies.iter().cloned().collect(),
             properties: parameter_properties(
                 parameter_type.as_str(),
                 Some(output_value.binding.value.as_str()),
@@ -1420,7 +1420,7 @@ fn parameter_expression(value: &ParameterValue) -> String {
             let value = value.get();
             format!("{value} rad")
         }
-        ParameterValue::Real(value) => value.to_string(),
+        ParameterValue::Real(value) => value.get().to_string(),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => string_literal_expression(value).unwrap_or_default(),
@@ -1727,10 +1727,10 @@ impl EvaluatedFormulaValue {
                 ))
             }
             ParameterValue::Real(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                *value,
+                value.get(),
                 FormulaDimension::SCALAR,
-                finite_integrality(*value),
-                Some(*value),
+                finite_integrality(value.get()),
+                Some(value.get()),
             )),
             ParameterValue::Integer(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
                 *value as f64,
@@ -3269,7 +3269,7 @@ fn typed_parameter_evaluation(
     let value = match source_type {
         "LENGTH" => ParameterValue::Length(Length::new(value)?),
         "ANGLE" => ParameterValue::Angle(Angle::new(value)?),
-        "Real" | "R" => ParameterValue::Real(value),
+        "Real" | "R" => ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(value)?),
         "Integer" | "I"
             if value.fract() == 0.0 && value >= i64::MIN as f64 && value < -(i64::MIN as f64) =>
         {
@@ -3314,7 +3314,7 @@ mod parser_tests {
                 expression: String::new(),
                 display: None,
                 value: None,
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some("native-parameter".to_string()),

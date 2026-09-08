@@ -1172,23 +1172,25 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                     .and_then(Length::new)
                     .map(ParameterValue::Length)
             }
-            (ParameterValue::Length(_), ParameterValue::Real(real)) if real.is_finite() => {
-                Length::new(*real).map(ParameterValue::Length)
+            (ParameterValue::Length(_), ParameterValue::Real(real)) => {
+                Length::new(real.get()).map(ParameterValue::Length)
             }
             (ParameterValue::Angle(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer)
                     .and_then(Angle::new)
                     .map(ParameterValue::Angle)
             }
-            (ParameterValue::Angle(_), ParameterValue::Real(real)) if real.is_finite() => {
-                Angle::new(*real).map(ParameterValue::Angle)
+            (ParameterValue::Angle(_), ParameterValue::Real(real)) => {
+                Angle::new(real.get()).map(ParameterValue::Angle)
             }
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
-                exact_integer_f64(*integer).map(ParameterValue::Real)
+                exact_integer_f64(*integer)
+                    .and_then(cadmpeg_ir::features::FiniteReal::new)
+                    .map(ParameterValue::Real)
             }
             (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
-                let integer = *real as i64;
-                (integer as f64 == *real).then_some(ParameterValue::Integer(integer))
+                let integer = real.get() as i64;
+                (integer as f64 == real.get()).then_some(ParameterValue::Integer(integer))
             }
             // Configuration lanes can provisionally classify an untyped scalar
             // as a length. The canonical integer wins only when the values agree.

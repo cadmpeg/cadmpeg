@@ -466,9 +466,9 @@ pub(crate) fn transfer_curve_expression_features(
                 expression: assignment.expression.clone(),
                 display: None,
                 value: assignment.value.as_ref().and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => {
-                        Some(ParameterValue::Real(*value))
-                    }
+                    crate::curve::CurveExpressionValue::Number(value) => Some(
+                        ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(*value)?),
+                    ),
                     crate::curve::CurveExpressionValue::Length(value) => Some(
                         ParameterValue::Length(cadmpeg_ir::features::Length::new(*value)?),
                     ),
@@ -482,7 +482,7 @@ pub(crate) fn transfer_curve_expression_features(
                         Some(ParameterValue::String(value.clone()))
                     }
                 }),
-                dependencies,
+                dependencies: dependencies.into_iter().collect(),
                 properties,
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),

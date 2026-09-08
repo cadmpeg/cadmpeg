@@ -307,7 +307,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         expression: id.into(),
         display: None,
         value,
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -372,7 +372,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         expression: id.into(),
         display: None,
         value,
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -395,18 +395,40 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         vec![parameter("p1", None, Vec::new())],
         vec![parameter(
             "p1",
-            Some(ParameterValue::Real(1.0)),
+            Some(ParameterValue::Real(
+                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+            )),
             vec![ParameterId::mint("missing").expect("identity grammar")],
         )],
         vec![
-            parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
-            parameter("p1", Some(ParameterValue::Real(2.0)), Vec::new()),
+            parameter(
+                "p1",
+                Some(ParameterValue::Real(
+                    cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                )),
+                Vec::new(),
+            ),
+            parameter(
+                "p1",
+                Some(ParameterValue::Real(
+                    cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+                )),
+                Vec::new(),
+            ),
         ],
         vec![
-            parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
+            parameter(
+                "p1",
+                Some(ParameterValue::Real(
+                    cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                )),
+                Vec::new(),
+            ),
             parameter(
                 "p2",
-                Some(ParameterValue::Real(2.0)),
+                Some(ParameterValue::Real(
+                    cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+                )),
                 vec![ParameterId::mint("p1").expect("identity grammar")],
             ),
         ],

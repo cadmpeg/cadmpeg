@@ -8966,7 +8966,7 @@ pub(crate) fn attach_expression_parameters(
                 expression: expression.expression.clone(),
                 display: None,
                 value,
-                dependencies,
+                dependencies: dependencies.into_iter().collect(),
                 properties,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),

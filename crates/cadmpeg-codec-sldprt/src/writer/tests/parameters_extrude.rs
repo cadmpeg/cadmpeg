@@ -24,7 +24,7 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.parameters.len(), 4);
     assert_eq!(
-        decoded.ir().model.parameters[3].dependencies,
+        decoded.ir().model.parameters[3].dependencies.as_slice(),
         vec![
             decoded.ir().model.parameters[1].id.clone(),
             decoded.ir().model.parameters[2].id.clone(),
@@ -52,7 +52,7 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         "\"Wall Gauge\" + \"Datum \"\"A\"\"\" + D1@Renamed + \"Wall Gauge\""
     );
     assert_eq!(
-        decoded.ir().model.parameters[3].dependencies,
+        decoded.ir().model.parameters[3].dependencies.as_slice(),
         vec![
             decoded.ir().model.parameters[1].id.clone(),
             decoded.ir().model.parameters[2].id.clone(),
@@ -178,7 +178,10 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
             .iter_mut()
             .find(|parameter| parameter.name == "Result")
             .unwrap();
-        assert_eq!(result.dependencies, vec![sketch1_parameter.clone()]);
+        assert_eq!(
+            result.dependencies.as_slice(),
+            vec![sketch1_parameter.clone()]
+        );
     }
 
     decoded
@@ -359,7 +362,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .find(|parameter| parameter.name == "Result")
         .unwrap();
     assert_eq!(result.expression, "D1@Profile * 2");
-    assert_eq!(result.dependencies, vec![gauge.id.clone()]);
+    assert_eq!(result.dependencies.as_slice(), vec![gauge.id.clone()]);
 }
 
 #[test]

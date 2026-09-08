@@ -6,6 +6,8 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
+
 #[test]
 fn transfers_application_saved_rotated_conics_and_profile_chain() {
     let bytes = include_bytes!(concat!(
@@ -777,7 +779,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1.0e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         result
@@ -788,7 +790,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1.0e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         constraint(6).definition,

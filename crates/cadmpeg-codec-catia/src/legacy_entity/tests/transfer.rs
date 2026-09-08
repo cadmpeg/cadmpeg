@@ -969,7 +969,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(parameter.expression, "true ? 5 ; 1 / 0");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+        ))
     );
     assert_eq!(
         conditional

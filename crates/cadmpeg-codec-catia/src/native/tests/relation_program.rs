@@ -502,7 +502,10 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.native_ref, Some(output_entity.id));
 
     let mut ambiguous_native = native;

@@ -4332,7 +4332,7 @@ mod tests {
 
         assert_eq!(ir.model.parameters[2].value, None);
         assert_eq!(
-            ir.model.parameters[2].dependencies,
+            ir.model.parameters[2].dependencies.as_slice(),
             vec![ir.model.parameters[1].id.clone()]
         );
     }
@@ -4415,11 +4415,11 @@ mod tests {
         );
 
         assert_eq!(
-            ir.model.parameters[2].dependencies,
+            ir.model.parameters[2].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert_eq!(
-            ir.model.parameters[3].dependencies,
+            ir.model.parameters[3].dependencies.as_slice(),
             [ir.model.parameters[1].id.clone()]
         );
         assert_eq!(
@@ -4504,12 +4504,12 @@ mod tests {
         );
         assert_eq!(ir.model.parameters[1].owner, ir.model.parameters[0].owner);
         assert_eq!(
-            ir.model.parameters[1].dependencies,
+            ir.model.parameters[1].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert_eq!(ir.model.parameters[3].owner, ir.model.parameters[2].owner);
         assert_eq!(
-            ir.model.parameters[3].dependencies,
+            ir.model.parameters[3].dependencies.as_slice(),
             [ir.model.parameters[2].id.clone()]
         );
         assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
@@ -4648,7 +4648,7 @@ mod tests {
             ["p4", "p5", "p2", "p3"]
         );
         assert_eq!(
-            ir.model.parameters[1].dependencies,
+            ir.model.parameters[1].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert!(ir.model.parameters[2].dependencies.is_empty());
