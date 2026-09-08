@@ -369,7 +369,9 @@ pub fn project_spatial_sketch_design(
     Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+    };
 
     let placements_by_suffix = placements
         .iter()
@@ -508,16 +510,20 @@ pub fn project_spatial_sketch_design(
                 .copied()
                 .flatten()
             {
-                SpatialSketchGeometry::Line {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                     start: transform_point(placement, &start),
                     end: transform_point(placement, &end),
-                }
+                })
+                .ok()?
             } else {
                 match curve.geometry.as_ref()? {
-                    SketchCurveGeometry::Line { start, end, .. } => SpatialSketchGeometry::Line {
-                        start: transform_point(placement, start),
-                        end: transform_point(placement, end),
-                    },
+                    SketchCurveGeometry::Line { start, end, .. } => {
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                            start: transform_point(placement, start),
+                            end: transform_point(placement, end),
+                        })
+                        .ok()?
+                    }
                     SketchCurveGeometry::Arc {
                         center,
                         normal,
@@ -533,21 +539,25 @@ pub fn project_spatial_sketch_design(
                             >= std::f64::consts::TAU
                                 - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
                         {
-                            SpatialSketchGeometry::Circle {
-                                center,
-                                normal,
-                                reference_direction,
-                                radius: Length(*radius),
-                            }
+                            SpatialSketchGeometry::try_from(
+                                SpatialSketchGeometryDefinition::Circle {
+                                    center,
+                                    normal,
+                                    reference_direction,
+                                    radius: Length(*radius),
+                                },
+                            )
+                            .ok()?
                         } else {
-                            SpatialSketchGeometry::Arc {
+                            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Arc {
                                 center,
                                 normal,
                                 reference_direction,
                                 radius: Length(*radius),
                                 start_angle: Angle(*start_angle),
                                 end_angle: Angle(*end_angle),
-                            }
+                            })
+                            .ok()?
                         }
                     }
                     SketchCurveGeometry::Nurbs {
@@ -555,7 +565,7 @@ pub fn project_spatial_sketch_design(
                         knots,
                         poles,
                         ..
-                    } => SpatialSketchGeometry::Nurbs {
+                    } => SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
                         curve: cadmpeg_ir::geometry::NurbsCurve::new(
                             *degree,
                             knots.clone(),
@@ -573,7 +583,8 @@ pub fn project_spatial_sketch_design(
                         .ok()?
                         .try_into()
                         .ok()?,
-                    },
+                    })
+                    .ok()?,
                     _ => return None,
                 }
             };
@@ -604,12 +615,13 @@ pub fn project_spatial_sketch_design(
                     |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
                 )?,
                 sketch,
-                SpatialSketchGeometry::Point {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                     position: transform_point(
                         placement,
                         &Point3::new(point.coordinates.u, point.coordinates.v, depth),
                     ),
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(point.id.clone())),
         )
@@ -623,7 +635,7 @@ pub fn project_spatial_sketch_design(
             SpatialSketchEntity::new(
                 neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id)?,
                 sketch,
-                SpatialSketchGeometry::NurbsSurface {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
                     surface: cadmpeg_ir::geometry::BsplineSurface::new(
                         surface.u_degree,
                         surface.v_degree,
@@ -640,7 +652,8 @@ pub fn project_spatial_sketch_design(
                             .collect(),
                     )
                     .ok()?,
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(surface.id.clone())),
         )
@@ -685,7 +698,7 @@ pub fn project_spatial_sketch_constraints(
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraint, SpatialSketchConstraintDefinition as Definition,
-        SpatialSketchGeometry,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
     let spatial_sketches = entities
@@ -762,17 +775,18 @@ pub fn project_spatial_sketch_constraints(
                     let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
-                    let point_on_surface = match (&first.geometry, &second.geometry) {
-                        (
-                            SpatialSketchGeometry::Point { .. },
-                            SpatialSketchGeometry::NurbsSurface { .. },
-                        ) => Some((first, second)),
-                        (
-                            SpatialSketchGeometry::NurbsSurface { .. },
-                            SpatialSketchGeometry::Point { .. },
-                        ) => Some((second, first)),
-                        _ => None,
-                    };
+                    let point_on_surface =
+                        match (first.geometry.definition(), second.geometry.definition()) {
+                            (
+                                SpatialSketchGeometryDefinition::Point { .. },
+                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                            ) => Some((first, second)),
+                            (
+                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                                SpatialSketchGeometryDefinition::Point { .. },
+                            ) => Some((second, first)),
+                            _ => None,
+                        };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
                             point: point.id().clone(),
@@ -780,13 +794,13 @@ pub fn project_spatial_sketch_constraints(
                         }
                     } else {
                         let (
-                            SpatialSketchGeometry::Point {
+                            SpatialSketchGeometryDefinition::Point {
                                 position: first_position,
                             },
-                            SpatialSketchGeometry::Point {
+                            SpatialSketchGeometryDefinition::Point {
                                 position: second_position,
                             },
-                        ) = (&first.geometry, &second.geometry)
+                        ) = (first.geometry.definition(), second.geometry.definition())
                         else {
                             return None;
                         };
@@ -823,11 +837,11 @@ pub fn project_spatial_sketch_constraints(
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
                         matches!(
-                            geometry,
-                            SpatialSketchGeometry::Line { .. }
-                                | SpatialSketchGeometry::Circle { .. }
-                                | SpatialSketchGeometry::Arc { .. }
-                                | SpatialSketchGeometry::Nurbs { .. }
+                            (geometry).definition(),
+                            SpatialSketchGeometryDefinition::Line { .. }
+                                | SpatialSketchGeometryDefinition::Circle { .. }
+                                | SpatialSketchGeometryDefinition::Arc { .. }
+                                | SpatialSketchGeometryDefinition::Nurbs { .. }
                         )
                     };
                     if !curve(&first.geometry) || !curve(&second.geometry) {
@@ -843,14 +857,14 @@ pub fn project_spatial_sketch_constraints(
                         return None;
                     };
                     let (point, line, position, start, end) =
-                        match (&first.geometry, &second.geometry) {
+                        match (first.geometry.definition(), second.geometry.definition()) {
                             (
-                                SpatialSketchGeometry::Point { position },
-                                SpatialSketchGeometry::Line { start, end },
+                                SpatialSketchGeometryDefinition::Point { position },
+                                SpatialSketchGeometryDefinition::Line { start, end },
                             ) => (first, second, position, start, end),
                             (
-                                SpatialSketchGeometry::Line { start, end },
-                                SpatialSketchGeometry::Point { position },
+                                SpatialSketchGeometryDefinition::Line { start, end },
+                                SpatialSketchGeometryDefinition::Point { position },
                             ) => (second, first, position, start, end),
                             _ => return None,
                         };
@@ -878,7 +892,9 @@ pub fn project_spatial_sketch_constraints(
                     let [entity] = semantic_entities.as_slice() else {
                         return None;
                     };
-                    let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                    let SpatialSketchGeometryDefinition::Line { start, end } =
+                        *entity.geometry.definition()
+                    else {
                         return None;
                     };
                     let direction = match relation.constraint_kinds()[0] {

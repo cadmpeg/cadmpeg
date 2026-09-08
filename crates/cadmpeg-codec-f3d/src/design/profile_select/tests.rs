@@ -25,7 +25,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SpatialSketch, SpatialSketchEntity,
-    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+    SpatialSketchProfile,
 };
 
 fn group() -> DesignConstructionOperandGroup {
@@ -189,7 +190,8 @@ fn spatial_line(
     SpatialSketchEntity::new(
         neutral_spatial_sketch_curve_id(sketch, primary_id, 0).unwrap(),
         sketch.clone(),
-        SpatialSketchGeometry::Line { start, end },
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+            .unwrap(),
     )
 }
 
@@ -542,14 +544,15 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     entities.push(SpatialSketchEntity::new(
         arc_id.clone(),
         sketch_id.clone(),
-        SpatialSketchGeometry::Arc {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Arc {
             center: Point3::new(10.0, 10.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: Length(1.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     ));
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -600,12 +603,13 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         SpatialSketchEntity::new(
             entity_id(primary),
             sketch_id.clone(),
-            SpatialSketchGeometry::Circle {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
                 center: Point3::new(0.0, 0.0, 0.0),
                 normal,
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
     };
     let spatial_entities = [
@@ -719,11 +723,15 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     );
 
     let mut noncoincident_entities = spatial_entities.to_vec();
-    let SpatialSketchGeometry::Circle { center, .. } = &mut noncoincident_entities[2].geometry
-    else {
-        unreachable!()
-    };
-    center.x = 0.1;
+    noncoincident_entities[2]
+        .geometry
+        .edit(|definition| {
+            let SpatialSketchGeometryDefinition::Circle { center, .. } = definition else {
+                unreachable!()
+            };
+            center.x = 0.1;
+        })
+        .unwrap();
     let noncoincident_resolution = SketchProfileResolution {
         spatial_sketch_entities: &noncoincident_entities,
         ..resolution
@@ -831,10 +839,11 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                 )
                 .unwrap(),
                 spatial_sketch.clone(),
-                SpatialSketchGeometry::Line {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                     start: Point3::new(0.0, 0.0, 0.0),
                     end: Point3::new(1.0, 0.0, 0.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(curve.id.clone()))
         })

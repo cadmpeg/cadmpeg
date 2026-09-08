@@ -2775,7 +2775,7 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2793,7 +2793,9 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
         .iter()
         .filter(|entity| &entity.sketch == sketch)
         .filter(|entity| {
-            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+            let SpatialSketchGeometryDefinition::Line { start, end } =
+                *entity.geometry.definition()
+            else {
                 return false;
             };
             let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
@@ -2825,7 +2827,7 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension") || !design_dimension_unit(parameter)
@@ -2840,7 +2842,10 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
-                && matches!(entity.geometry, SpatialSketchGeometry::Line { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let mut matched = None;
@@ -2938,7 +2943,7 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -2956,7 +2961,10 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
         .iter()
         .filter(|entity| {
             &entity.sketch == sketch
-                && matches!(entity.geometry, SpatialSketchGeometry::Line { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Line { .. }
+                )
         })
         .collect::<Vec<_>>();
     let collinear = |first: &cadmpeg_ir::sketches::SpatialSketchEntity,
@@ -3044,7 +3052,7 @@ fn spatial_reflection_symmetry(
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometryDefinition,
     };
 
     if !native_kind.starts_with("Linear Dimension") || native_state != Some(0) {
@@ -3083,9 +3091,9 @@ fn spatial_reflection_symmetry(
     let mut points = Vec::with_capacity(2);
     let mut axis = None;
     for entity in entities {
-        match entity.geometry {
-            SpatialSketchGeometry::Point { position } => points.push((entity, position)),
-            SpatialSketchGeometry::Line { start, end } if axis.is_none() => {
+        match *entity.geometry.definition() {
+            SpatialSketchGeometryDefinition::Point { position } => points.push((entity, position)),
+            SpatialSketchGeometryDefinition::Line { start, end } if axis.is_none() => {
                 axis = Some((entity, start, end));
             }
             _ => return None,
@@ -3253,13 +3261,13 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
 }
 
 fn spatial_curve(geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
     matches!(
-        geometry,
-        SpatialSketchGeometry::Line { .. }
-            | SpatialSketchGeometry::Circle { .. }
-            | SpatialSketchGeometry::Arc { .. }
-            | SpatialSketchGeometry::Nurbs { .. }
+        (geometry).definition(),
+        SpatialSketchGeometryDefinition::Line { .. }
+            | SpatialSketchGeometryDefinition::Circle { .. }
+            | SpatialSketchGeometryDefinition::Arc { .. }
+            | SpatialSketchGeometryDefinition::Nurbs { .. }
     )
 }
 
@@ -3268,12 +3276,12 @@ pub(crate) fn spatial_point_distance_matches(
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     expected: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let (
-        SpatialSketchGeometry::Point { position: first },
-        SpatialSketchGeometry::Point { position: second },
-    ) = (first, second)
+        SpatialSketchGeometryDefinition::Point { position: first },
+        SpatialSketchGeometryDefinition::Point { position: second },
+    ) = (first.definition(), second.definition())
     else {
         return false;
     };
@@ -3305,18 +3313,18 @@ fn spatial_parallel_line_distance(
     first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let (
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return None;
     };
@@ -3342,19 +3350,19 @@ fn spatial_parallel_line_span_distance(
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let distance = spatial_parallel_line_distance(first, second)?;
     let (
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: first_start,
             end: first_end,
         },
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometryDefinition::Line {
             start: second_start,
             end: second_end,
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         unreachable!("parallel line distance requires line geometry")
     };

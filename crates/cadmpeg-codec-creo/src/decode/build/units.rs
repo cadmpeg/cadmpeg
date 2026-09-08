@@ -17,6 +17,7 @@ use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
+    SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::transform::{Transform, Transform2};
 
@@ -1529,18 +1530,19 @@ fn scale_spatial_sketch_geometry(
     geometry: &mut SpatialSketchGeometry,
     scale: f64,
 ) -> Result<(), CodecError> {
-    match geometry {
-        SpatialSketchGeometry::Point { position } => scale_point3(position, scale),
-        SpatialSketchGeometry::Line { start, end } => {
+    let mut definition = geometry.definition().clone();
+    match &mut definition {
+        SpatialSketchGeometryDefinition::Point { position } => scale_point3(position, scale),
+        SpatialSketchGeometryDefinition::Line { start, end } => {
             scale_point3(start, scale);
             scale_point3(end, scale);
         }
-        SpatialSketchGeometry::Circle { center, radius, .. }
-        | SpatialSketchGeometry::Arc { center, radius, .. } => {
+        SpatialSketchGeometryDefinition::Circle { center, radius, .. }
+        | SpatialSketchGeometryDefinition::Arc { center, radius, .. } => {
             scale_point3(center, scale);
             radius.0 *= scale;
         }
-        SpatialSketchGeometry::Nurbs { curve } => {
+        SpatialSketchGeometryDefinition::Nurbs { curve } => {
             curve
                 .edit_control_points(|points| {
                     for point in points {
@@ -1553,13 +1555,14 @@ fn scale_spatial_sketch_geometry(
                     ))
                 })?;
         }
-        SpatialSketchGeometry::NurbsSurface { surface } => {
+        SpatialSketchGeometryDefinition::NurbsSurface { surface } => {
             for point in surface.control_points_mut() {
                 scale_point3(point, scale);
             }
         }
-        SpatialSketchGeometry::Native { .. } => {}
+        SpatialSketchGeometryDefinition::Native { .. } => {}
     }
+    *geometry = definition.try_into().map_err(CodecError::malformed)?;
     Ok(())
 }
 

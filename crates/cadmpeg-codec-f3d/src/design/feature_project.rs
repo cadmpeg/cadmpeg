@@ -8337,11 +8337,11 @@ pub(crate) fn project_extrude(
 pub(crate) fn spatial_sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SpatialSketchEntity,
 ) -> Option<[Point3; 2]> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
-    match &entity.geometry {
-        SpatialSketchGeometry::Line { start, end } => Some([*start, *end]),
-        SpatialSketchGeometry::Arc {
+    match entity.geometry.definition() {
+        SpatialSketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
             reference_direction,
@@ -8358,7 +8358,7 @@ pub(crate) fn spatial_sketch_entity_endpoints(
             };
             Some([at(start_angle.0), at(end_angle.0)])
         }
-        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.control_points().len()];
             Some([
@@ -8388,7 +8388,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
     tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchProfile> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometryDefinition, SpatialSketchProfile,
     };
 
     if !tolerance.is_finite() || tolerance <= 0.0 {
@@ -8397,8 +8397,8 @@ pub(crate) fn closed_spatial_sketch_profiles(
     let mut profiles = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match &entity.geometry {
-            SpatialSketchGeometry::Circle {
+        .filter_map(|entity| match entity.geometry.definition() {
+            SpatialSketchGeometryDefinition::Circle {
                 center,
                 normal,
                 reference_direction,

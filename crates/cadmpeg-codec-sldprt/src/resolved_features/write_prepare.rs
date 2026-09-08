@@ -21,7 +21,7 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
-    SpatialSketchGeometry, SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 
 #[cfg(test)]
@@ -156,10 +156,16 @@ fn patch_spatial_sketches(
         let point_entities = entities
             .iter()
             .copied()
-            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Point { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Point { .. }
+                )
+            })
             .collect::<Vec<_>>();
         for entity in &point_entities {
-            let SpatialSketchGeometry::Point { position } = entity.geometry else {
+            let SpatialSketchGeometryDefinition::Point { position } = *entity.geometry.definition()
+            else {
                 unreachable!("spatial point filter establishes the geometry family");
             };
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
@@ -206,7 +212,12 @@ fn patch_spatial_sketches(
         let line_entities = entities
             .iter()
             .copied()
-            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Line { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Line { .. }
+                )
+            })
             .collect::<Vec<_>>();
         if entities.len() != line_entities.len() + point_entities.len() {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -266,7 +277,9 @@ fn patch_spatial_sketches(
         };
         let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
         for (entity, offsets) in native_line_entities.iter().zip(offsets.chunks_exact(2)) {
-            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+            let SpatialSketchGeometryDefinition::Line { start, end } =
+                *entity.geometry.definition()
+            else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch {} supports retained line geometry only",
                     sketch.id.as_str()
@@ -1323,11 +1336,11 @@ fn source_less_lanes(
             )));
         }
         for entity in entities {
-            match entity.geometry {
-                SpatialSketchGeometry::Point { position } => {
+            match *entity.geometry.definition() {
+                SpatialSketchGeometryDefinition::Point { position } => {
                     append_spatial_point_marker(&mut payload, position, object_id)?;
                 }
-                SpatialSketchGeometry::Line { start, end } => {
+                SpatialSketchGeometryDefinition::Line { start, end } => {
                     if start == end {
                         return Err(cadmpeg_core::CodecError::malformed(format_args!(
                             "source-less SLDPRT spatial sketch {} has a zero-length line",

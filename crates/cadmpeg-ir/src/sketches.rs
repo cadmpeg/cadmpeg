@@ -1035,11 +1035,109 @@ impl SpatialSketchNurbsCurve {
     }
 }
 
-/// Solved model-space spatial-sketch geometry.
+const EPS_SPATIAL_LINE_LENGTH: f64 = 1.0e-12;
+const EPS_SPATIAL_CIRCLE_FRAME: f64 = 1.0e-9;
+
+/// Spatial-sketch geometry with checked analytic numeric fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchGeometryDefinition")]
+pub struct SpatialSketchGeometry(SpatialSketchGeometryDefinition);
+
+impl SpatialSketchGeometry {
+    /// Borrow the admitted spatial geometry definition.
+    #[must_use]
+    pub fn definition(&self) -> &SpatialSketchGeometryDefinition {
+        &self.0
+    }
+
+    /// Replace the spatial definition only after numeric admission succeeds.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut SpatialSketchGeometryDefinition),
+    ) -> Result<(), &'static str> {
+        let mut definition = self.0.clone();
+        edit(&mut definition);
+        *self = definition.try_into()?;
+        Ok(())
+    }
+}
+
+impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
+    type Error = &'static str;
+
+    fn try_from(definition: SpatialSketchGeometryDefinition) -> Result<Self, Self::Error> {
+        let finite_point =
+            |point: &Point3| point.x.is_finite() && point.y.is_finite() && point.z.is_finite();
+        match &definition {
+            SpatialSketchGeometryDefinition::Point { position } if !finite_point(position) => {
+                return Err("spatial sketch point position must be finite");
+            }
+            SpatialSketchGeometryDefinition::Line { start, end } => {
+                let distance = (end.x - start.x)
+                    .hypot(end.y - start.y)
+                    .hypot(end.z - start.z);
+                if !finite_point(start) || !finite_point(end) || distance <= EPS_SPATIAL_LINE_LENGTH
+                {
+                    return Err("spatial sketch line endpoints must be finite and separated");
+                }
+            }
+            SpatialSketchGeometryDefinition::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius,
+            }
+            | SpatialSketchGeometryDefinition::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                ..
+            } => {
+                if !finite_point(center) || !radius.0.is_finite() || radius.0 <= 0.0 {
+                    return Err("spatial circular geometry requires finite center and positive finite radius");
+                }
+                let normal_length = normal.norm();
+                let reference_length = reference_direction.norm();
+                let orthogonal = (normal.x * reference_direction.x
+                    + normal.y * reference_direction.y
+                    + normal.z * reference_direction.z)
+                    .abs()
+                    <= EPS_SPATIAL_CIRCLE_FRAME;
+                if !normal_length.is_finite()
+                    || !reference_length.is_finite()
+                    || (normal_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
+                    || (reference_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
+                    || !orthogonal
+                {
+                    return Err("spatial circular normal and reference_direction must be unit and orthogonal");
+                }
+                if let SpatialSketchGeometryDefinition::Arc {
+                    start_angle,
+                    end_angle,
+                    ..
+                } = &definition
+                {
+                    if !start_angle.0.is_finite()
+                        || !end_angle.0.is_finite()
+                        || start_angle == end_angle
+                    {
+                        return Err("spatial sketch arc angles must be finite and distinct");
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(Self(definition))
+    }
+}
+
+/// Definition admitted by model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SpatialSketchGeometry {
+pub enum SpatialSketchGeometryDefinition {
     /// Model-space point.
     Point {
         /// Point position in model coordinates.

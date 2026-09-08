@@ -39,7 +39,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchNativeOperand, SpatialSketch,
     SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
-    SpatialSketchEntityId, SpatialSketchGeometry,
+    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -100,14 +100,11 @@ fn ensure_spatial_relation_point(
             entity.sketch == *sketch && entity.native_ref.as_deref() == Some(marker.id.as_str())
         })
         .collect::<Vec<_>>();
-    if matches.len() > 1
-        || matches.iter().any(|entity| {
-            !matches!(
-                entity.geometry,
-                SpatialSketchGeometry::Point { position: candidate } if candidate == position
-            )
-        })
-    {
+    if matches.len() > 1 || matches.iter().any(|entity| {
+        !matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position: candidate } if candidate == position
+        )
+    }) {
         return None;
     }
     if let [entity] = matches.as_slice() {
@@ -123,7 +120,8 @@ fn ensure_spatial_relation_point(
         SpatialSketchEntity::new(
             id.clone(),
             sketch.clone(),
-            SpatialSketchGeometry::Point { position },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position })
+                .ok()?,
         )
         .with_construction(true)
         .with_native_ref(Some(marker.id.clone())),
@@ -209,7 +207,10 @@ fn spatial_relation_point_line_entities(
         .iter()
         .find(|entity| {
             entity.sketch == *sketch
-                && matches!(entity.geometry, SpatialSketchGeometry::Line { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Line { .. }
+                )
                 && (entity.endpoint_refs == endpoint_refs
                     || entity.endpoint_refs == reverse_endpoint_refs)
         })
@@ -222,10 +223,11 @@ fn spatial_relation_point_line_entities(
             SpatialSketchEntity::new(
                 id.clone(),
                 sketch.clone(),
-                SpatialSketchGeometry::Line {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                     start: *start,
                     end: *end,
-                },
+                })
+                .ok()?,
             )
             .with_construction(true)
             .with_geometry_ref(Some(format!("{}:relation-line", relation.id)))
@@ -3342,7 +3344,7 @@ mod relation_geometry_tests {
             Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
         };
         use cadmpeg_ir::sketches::{
-            SpatialSketch, SpatialSketchConstraintDefinition, SpatialSketchGeometry,
+            SpatialSketch, SpatialSketchConstraintDefinition, SpatialSketchGeometryDefinition,
             SpatialSketchId,
         };
         use std::collections::BTreeMap;
@@ -3530,15 +3532,16 @@ mod relation_geometry_tests {
             .iter()
             .find(|entity| entity.id().clone() == *point)
             .unwrap();
-        assert!(matches!(
-            point_entity.geometry,
-            SpatialSketchGeometry::Point { position } if position == source_position
+        assert!(matches!(*point_entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position } if position == source_position
         ));
         let line_entity = entities
             .iter()
             .find(|entity| entity.id().clone() == *line)
             .unwrap();
-        let SpatialSketchGeometry::Line { start, end } = line_entity.geometry else {
+        let SpatialSketchGeometryDefinition::Line { start, end } =
+            *line_entity.geometry.definition()
+        else {
             panic!("point-line witness is a line");
         };
         assert_eq!(line_entity.endpoint_refs.len(), 2);

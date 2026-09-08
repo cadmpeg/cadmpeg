@@ -944,9 +944,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 ))
                 .unwrap(),
                 spatial_sketch.id.clone(),
-                cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
-                    position: Point3::new(0.0, point.coordinates.v, 0.0),
-                },
+                cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+                    cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
+                        position: Point3::new(0.0, point.coordinates.v, 0.0),
+                    },
+                )
+                .unwrap(),
             )
             .with_native_ref(Some(point.id.clone()))
         })
@@ -1020,10 +1023,13 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         cadmpeg_ir::sketches::SpatialSketchEntityId::mint("synthetic:test:id#spatial-axis")
             .unwrap(),
         spatial_sketch.id.clone(),
-        cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
-            start: Point3::new(-1.0, 1.0, 0.0),
-            end: Point3::new(1.0, 1.0, 0.0),
-        },
+        cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+            cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(-1.0, 1.0, 0.0),
+                end: Point3::new(1.0, 1.0, 0.0),
+            },
+        )
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some(axis_record.id.clone()));

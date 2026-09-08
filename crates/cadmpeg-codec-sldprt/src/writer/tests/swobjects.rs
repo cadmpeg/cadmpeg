@@ -665,7 +665,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-        SpatialSketchId,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -696,14 +696,18 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .push(SpatialSketchEntity::new(
             SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#a-point").unwrap(),
             sketch_id.clone(),
-            SpatialSketchGeometry::Point { position: point },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: point,
+            })
+            .unwrap(),
         ));
     ir.model
         .spatial_sketch_entities
         .push(SpatialSketchEntity::new(
             entity_id,
             sketch_id.clone(),
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         ));
     ir.model
         .spatial_sketch_entities
@@ -711,10 +715,11 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
             SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#second-line")
                 .unwrap(),
             sketch_id.clone(),
-            SpatialSketchGeometry::Line {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
-            },
+            })
+            .unwrap(),
         ));
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
@@ -745,27 +750,30 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
 
     assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
     assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);
-    assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
-            if (position.x - point.x).abs() < 1.0e-12
-                && (position.y - point.y).abs() < 1.0e-12
-                && (position.z - point.z).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[1].geometry,
-        SpatialSketchGeometry::Line {
-            start: regenerated_start,
-            end: regenerated_end,
-        } if regenerated_start == start && regenerated_end == end
-    ));
-    assert!(matches!(
-        regenerated.ir().model.spatial_sketch_entities[2].geometry,
-        SpatialSketchGeometry::Line {
-            start: regenerated_start,
-            end: regenerated_end,
-        } if regenerated_start == second_start && regenerated_end == second_end
-    ));
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position }
+                if (position.x - point.x).abs() < 1.0e-12
+                    && (position.y - point.y).abs() < 1.0e-12
+                    && (position.z - point.z).abs() < 1.0e-12
+        )
+    );
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[1].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line {
+                start: regenerated_start,
+                end: regenerated_end,
+            } if regenerated_start == start && regenerated_end == end
+        )
+    );
+    assert!(
+        matches!(*regenerated.ir().model.spatial_sketch_entities[2].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line {
+                start: regenerated_start,
+                end: regenerated_end,
+            } if regenerated_start == second_start && regenerated_end == second_end
+        )
+    );
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
@@ -774,13 +782,17 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     let edited_start = Point3::new(13.0, 14.0, 15.0);
     let edited_end = Point3::new(-16.0, 17.0, 18.0);
     let edited_point = Point3::new(19.0, -20.0, 21.5);
-    regenerated.ir_mut().model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Point {
-        position: edited_point,
-    };
-    regenerated.ir_mut().model.spatial_sketch_entities[2].geometry = SpatialSketchGeometry::Line {
-        start: edited_start,
-        end: edited_end,
-    };
+    regenerated.ir_mut().model.spatial_sketch_entities[0].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: edited_point,
+        })
+        .unwrap();
+    regenerated.ir_mut().model.spatial_sketch_entities[2].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+            start: edited_start,
+            end: edited_end,
+        })
+        .unwrap();
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(
         regenerated.ir(),
@@ -792,18 +804,20 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
     assert_eq!(rewritten.ir().model.spatial_sketch_entities.len(), 3);
-    assert!(matches!(
-        rewritten.ir().model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
-            if (position.x - edited_point.x).abs() < 1.0e-12
-                && (position.y - edited_point.y).abs() < 1.0e-12
-                && (position.z - edited_point.z).abs() < 1.0e-12
-    ));
-    assert!(matches!(
-        rewritten.ir().model.spatial_sketch_entities[2].geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == edited_start && end == edited_end
-    ));
+    assert!(
+        matches!(*rewritten.ir().model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Point { position }
+                if (position.x - edited_point.x).abs() < 1.0e-12
+                    && (position.y - edited_point.y).abs() < 1.0e-12
+                    && (position.z - edited_point.z).abs() < 1.0e-12
+        )
+    );
+    assert!(
+        matches!(*rewritten.ir().model.spatial_sketch_entities[2].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == edited_start && end == edited_end
+        )
+    );
 }
 
 #[test]

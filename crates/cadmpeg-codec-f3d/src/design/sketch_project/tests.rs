@@ -739,7 +739,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
 #[test]
 fn nonplanar_sketch_curves_project_in_model_space() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
@@ -1020,24 +1020,27 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     );
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(13.0, 21.0, 32.0)
-                && end == Point3::new(16.0, 24.0, 35.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(14.0, 22.0, 33.0)
-                && end == Point3::new(17.0, 25.0, 36.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(10.0, 21.0, 32.0)
-                && end == Point3::new(10.0, 24.0, 32.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(13.0, 21.0, 32.0)
+                    && end == Point3::new(16.0, 24.0, 35.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(14.0, 22.0, 33.0)
+                    && end == Point3::new(17.0, 25.0, 36.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(10.0, 21.0, 32.0)
+                    && end == Point3::new(10.0, 24.0, 32.0)
+        )));
     let constraints = project_spatial_sketch_constraints(
         &[placement],
         &relations,
@@ -1091,15 +1094,16 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             ..
         })
     ));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Circle {
-            center,
-            normal,
-            reference_direction,
-            radius: Length(2.0),
-        } if center == Point3::new(13.0, 21.0, 32.0)
-            && normal == Vector3::new(0.0, 1.0, 0.0)
-            && reference_direction == Vector3::new(0.0, 0.0, 1.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius: Length(2.0),
+            } if center == Point3::new(13.0, 21.0, 32.0)
+                && normal == Vector3::new(0.0, 1.0, 0.0)
+                && reference_direction == Vector3::new(0.0, 0.0, 1.0)
+        )));
 }

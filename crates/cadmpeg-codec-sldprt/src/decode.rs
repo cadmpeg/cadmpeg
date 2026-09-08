@@ -321,7 +321,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
         PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
     };
-    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = ir
         .native
@@ -921,7 +921,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         + ir.model
             .spatial_sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Native { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Native { .. }
+                )
+            })
             .count();
     if native_sketch_geometry > 0 {
         report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(

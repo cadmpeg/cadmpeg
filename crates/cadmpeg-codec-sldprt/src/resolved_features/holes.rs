@@ -23,7 +23,7 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
-    SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use std::collections::{HashMap, HashSet};
@@ -1709,8 +1709,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 (entity.sketch == *sketch_id
                     && entity.native_ref.as_deref() == Some(marker.id.as_str()))
                 .then_some(&entity.geometry)
-                .and_then(|geometry| match geometry {
-                    SpatialSketchGeometry::Point { position } => Some(*position),
+                .and_then(|geometry| match geometry.definition() {
+                    SpatialSketchGeometryDefinition::Point { position } => Some(*position),
                     _ => None,
                 })
             });
@@ -1764,8 +1764,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
             let points = spatial_entities
                 .iter()
                 .filter(|entity| entity.sketch == *sketch_id)
-                .filter_map(|entity| match entity.geometry {
-                    SpatialSketchGeometry::Point { position } => Some(position),
+                .filter_map(|entity| match *entity.geometry.definition() {
+                    SpatialSketchGeometryDefinition::Point { position } => Some(position),
                     _ => None,
                 })
                 .collect::<Vec<_>>();

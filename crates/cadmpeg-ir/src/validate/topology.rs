@@ -6150,8 +6150,8 @@ fn check_feature_sketch_references(
                         entity.id() == point
                             && entity.sketch == *sketch
                             && matches!(
-                                &entity.geometry,
-                                crate::sketches::SpatialSketchGeometry::Point { .. }
+                                (&entity.geometry).definition(),
+                                crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
                             )
                     })
             }

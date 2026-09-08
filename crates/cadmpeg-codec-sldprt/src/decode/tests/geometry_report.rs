@@ -17,7 +17,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
-    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -37,9 +37,10 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
         SpatialSketchEntity::new(
             SpatialSketchEntityId::mint("synthetic:test:id#spatial-entity").unwrap(),
             SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
-            SpatialSketchGeometry::Native {
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Native {
                 native_kind: "ReferenceCurve".into(),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("native:spatial".into())),
     );
