@@ -339,12 +339,9 @@ pub(crate) fn decode(
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded.channels.push(channel(
-                CHANNEL_SURFACE_PARAMETERS,
-                16,
-                vertex_count,
-                bytes.into_owned(),
-            ));
+            decoded
+                .channels
+                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
         }
     }
     let post_2006_fields =
@@ -754,15 +751,15 @@ fn read_raw_channels(
     }
     let uv = read_counted_raw(reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
-        channels.push(channel(CHANNEL_UV, 8, vertices, bytes));
+        channels.push(channel(CHANNEL_UV, 8, bytes)?);
     }
     let curvature = read_counted_raw(reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
-        channels.push(channel(CHANNEL_CURVATURE, 16, vertices, bytes));
+        channels.push(channel(CHANNEL_CURVATURE, 16, bytes)?);
     }
     let colors = read_counted_raw(reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
-        channels.push(channel(CHANNEL_COLOR, 4, vertices, bytes));
+        channels.push(channel(CHANNEL_COLOR, 4, bytes)?);
     }
     if points.len() != vertices {
         return Err(error(reader.position(), "mesh vertex channel is required"));
@@ -816,7 +813,7 @@ fn read_compressed_channels(
                 };
                 decoded
                     .channels
-                    .push(channel(kind, item_size, vertices, bytes.into_owned()));
+                    .push(channel(kind, item_size, bytes.into_owned())?);
             }
         }
     }
@@ -1451,7 +1448,7 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
     })
 }
 
-fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
+fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
         cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
         item_size,
@@ -1459,7 +1456,7 @@ fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> Tessellati
         0,
         data,
     )
-    .unwrap_or_else(|_| panic!("channel payload length {count} * {item_size} is inconsistent"))
+    .map_err(|error| GeometryError::malformed(0, format!("invalid mesh channel: {error}")))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
