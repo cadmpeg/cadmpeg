@@ -8301,11 +8301,14 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|offset| offset.checked_add(4))
                     .is_some_and(|end| end <= relation.raw_bytes.len())
             });
-        let valid = sketch_owner_ids.contains_key(&(native_stream, relation.owner_reference))
-            && sketch_owner_ids
-                .get(&(native_stream, relation.owner_reference))
-                .copied()
-                == relation.owner_entity_id.as_deref()
+        let owner_matches = matches!(
+            (
+                sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
+                relation.owner_entity_id.as_deref(),
+            ),
+            (Some(expected), Some(actual)) if *expected == actual
+        );
+        let valid = owner_matches
             && relation.raw_bytes.len() >= 24
             && relation.auxiliary_references.located_rows().is_some()
             && offsets_fit;
