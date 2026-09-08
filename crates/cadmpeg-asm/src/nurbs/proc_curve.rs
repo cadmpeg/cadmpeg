@@ -426,10 +426,14 @@ pub struct EmbeddedSpring {
 
 /// Embedded support context and recursive formulas of a `law_int_cur`.
 pub struct EmbeddedLawCurve {
-    /// Shared embedded support context.
-    pub context: EmbeddedIntersection,
-    /// Version-stamped serializer form; `None` for the legacy layout.
-    pub version: Option<EmbeddedLawVersion>,
+    /// The ordered support slots.
+    pub surfaces: [SupportSlot; 2],
+    /// The ordered parameter curves.
+    pub pcurves: [Option<PcurveNurbs>; 2],
+    /// The three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// The source parameter range and serializer layout.
+    pub layout: EmbeddedLawCurveLayout,
     /// The extension enum serialized before the primary formula.
     pub extension: i64,
     /// The law formula that drives the curve.
@@ -438,15 +442,19 @@ pub struct EmbeddedLawCurve {
     pub additional: Vec<EmbeddedLawFormula>,
 }
 
-/// Version stamp, trailing enum, and unbounded parameter interval of the
-/// stamped `law_int_cur` serializer form.
-pub struct EmbeddedLawVersion {
-    /// The serializer version stamp.
-    pub stamp: i64,
-    /// The enum serialized after the version stamp.
-    pub post_enum: i64,
-    /// Optional parameter bounds; `None` marks an unbounded end.
-    pub parameter_range: [Option<f64>; 2],
+/// The legacy and version-stamped law curve layouts.
+pub enum EmbeddedLawCurveLayout {
+    /// The explicit legacy parameter interval.
+    Legacy([f64; 2]),
+    /// The version fields and optional source bounds.
+    Version {
+        /// The serializer version stamp.
+        stamp: i64,
+        /// The enum after the stamp.
+        post_enum: i64,
+        /// The optional parameter bounds.
+        parameter_range: [Option<f64>; 2],
+    },
 }
 
 /// Mode-discriminated payload of a `defm_int_cur` construction.
@@ -793,7 +801,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
         }
         ProceduralCurveConstruction::Projection(context) => context.pcurves.get(slot).cloned(),
         ProceduralCurveConstruction::Law(context) => {
-            selected_support_pcurve(&context.context.surfaces, &context.context.pcurves, slot)
+            selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
         }
         ProceduralCurveConstruction::Exact
         | ProceduralCurveConstruction::Helix(_)
@@ -1081,7 +1089,7 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
         // record from the cache marker rather than mid-prefix.
         cur.set_pos(stamp_start);
     }
-    let (solved, solved_end) = curve_block(toks, cur.pos())?;
+    let (_, solved_end) = curve_block(toks, cur.pos())?;
     cur.set_pos(solved_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
@@ -1101,27 +1109,17 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
             normalize_support_pcurve(chart, pcurve)?;
         }
     }
-    let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
-        let bounds = [
-            law_version_bound(&mut cur)?.value(),
-            law_version_bound(&mut cur)?.value(),
-        ];
-        let domain = nurbs_curve_parameter_domain(&solved).unwrap_or([0.0, 0.0]);
-        let parameter_range = [
-            bounds[0].unwrap_or(domain[0]),
-            bounds[1].unwrap_or(domain[1]),
-        ];
-        (
-            parameter_range,
-            Some(EmbeddedLawVersion {
-                stamp,
-                post_enum,
-                parameter_range: bounds,
-            }),
-        )
+    let layout = if let Some((stamp, post_enum)) = stamp {
+        EmbeddedLawCurveLayout::Version {
+            stamp,
+            post_enum,
+            parameter_range: [
+                law_version_bound(&mut cur)?.value(),
+                law_version_bound(&mut cur)?.value(),
+            ],
+        }
     } else {
-        let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
-        (parameter_range, None)
+        EmbeddedLawCurveLayout::Legacy([cur.take_range_value()?, cur.take_range_value()?])
     };
     let discontinuities = [
         cur.take_float_array()?,
@@ -1138,14 +1136,10 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
         .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawCurve {
-        context: EmbeddedIntersection {
-            surfaces: surfaces
-                .map(|surface| surface.map_or(SupportSlot::Absent, SupportSlot::Surface)),
-            pcurves,
-            parameter_range,
-            discontinuities,
-        },
-        version,
+        surfaces: surfaces.map(|surface| surface.map_or(SupportSlot::Absent, SupportSlot::Surface)),
+        pcurves,
+        discontinuities,
+        layout,
         extension,
         primary,
         additional,

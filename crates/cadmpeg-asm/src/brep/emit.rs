@@ -10,9 +10,10 @@ use super::records::{
 use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::nurbs::proc_curve::{
-    EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedProjection, EmbeddedSilhouette,
-    EmbeddedSpring, EmbeddedSpringLayout, EmbeddedSpringPcurve, EmbeddedSpringSupport,
-    EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout, ProceduralCurveConstruction,
+    EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedLawCurveLayout, EmbeddedProjection,
+    EmbeddedSilhouette, EmbeddedSpring, EmbeddedSpringLayout, EmbeddedSpringPcurve,
+    EmbeddedSpringSupport, EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout,
+    ProceduralCurveConstruction,
 };
 use crate::nurbs::proc_surface::{
     ClassicLoftProfileData, DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft,
@@ -2857,7 +2858,7 @@ fn emit_carrier_curve(
                     emit_projection_curve(out, i, embedded, format)
                 }
                 ProceduralCurveConstruction::Law(embedded) => {
-                    emit_law_curve(out, i, embedded, format)
+                    emit_law_curve(out, i, embedded, format, solved_domain)?
                 }
                 ProceduralCurveConstruction::Compound(
                     crate::nurbs::proc_curve::CompoundDefinition {
@@ -3279,7 +3280,8 @@ fn emit_law_curve(
     i: i64,
     embedded: EmbeddedLawCurve,
     format: IdFormat<'_>,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    solved_domain: Option<[f64; 2]>,
+) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
     fn map_law_curve(
         out: &mut AsmBrep,
         owner: i64,
@@ -3359,8 +3361,26 @@ fn emit_law_curve(
             }
         }
     }
+    let (parameter_range, version) = match embedded.layout {
+        EmbeddedLawCurveLayout::Legacy(range) => (range, None),
+        EmbeddedLawCurveLayout::Version {
+            stamp,
+            post_enum,
+            parameter_range,
+        } => {
+            let domain = solved_domain?;
+            (
+                std::array::from_fn(|index| parameter_range[index].unwrap_or(domain[index])),
+                Some(cadmpeg_ir::geometry::LawCurveVersionForm {
+                    stamp,
+                    post_enum,
+                    parameter_range,
+                }),
+            )
+        }
+    };
     let mut next_side = 0;
-    let surfaces: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
+    let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
         let side = next_side;
         next_side += 1;
         let geometry = geometry.into_surface()?;
@@ -3373,7 +3393,7 @@ fn emit_law_curve(
         });
         Some(id)
     });
-    let pcurves = embedded.context.pcurves.map(|pcurve| {
+    let pcurves = embedded.pcurves.map(|pcurve| {
         pcurve
             .map(|nurbs| cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs }))
     });
@@ -3382,22 +3402,16 @@ fn emit_law_curve(
             map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
         })
     };
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext {
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
                 pcurve: pcurves[side].clone(),
             }),
-            parameter_range: embedded.context.parameter_range,
-            discontinuities: embedded.context.discontinuities,
+            parameter_range,
+            discontinuities: embedded.discontinuities,
         },
-        version: embedded
-            .version
-            .map(|version| cadmpeg_ir::geometry::LawCurveVersionForm {
-                stamp: version.stamp,
-                post_enum: version.post_enum,
-                parameter_range: version.parameter_range,
-            }),
+        version,
         extension: embedded.extension,
         primary: map_formula("primary", embedded.primary),
         additional: embedded
@@ -3406,7 +3420,7 @@ fn emit_law_curve(
             .enumerate()
             .map(|(index, formula)| map_formula(&format!("additional:{index}"), formula))
             .collect(),
-    }
+    })
 }
 
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
