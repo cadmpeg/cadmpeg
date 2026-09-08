@@ -2074,9 +2074,14 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
-            for vertex in &mut subd.vertices {
-                vertex.point = transform.apply_point(vertex.point);
-            }
+            subd.cage
+                .edit_vertices(|vertices| {
+                    for vertex in vertices {
+                        vertex.point = transform.apply_point(vertex.point);
+                    }
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())?;
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
         }

@@ -322,49 +322,49 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
     ir.model.subds.push(SubdSurface {
         id: SubdId::mint("synthetic:v2:subd#directed").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
-        symmetries: Vec::new(),
-        vertices: vec![
-            SubdVertex {
-                point: Point3::new(0.0, 0.0, 0.0),
-                tag: SubdVertexTag::Crease,
-                secondary_grips: None,
-            },
-            SubdVertex {
-                point: Point3::new(1.0, 0.0, 0.0),
-                tag: SubdVertexTag::Smooth,
-                secondary_grips: None,
-            },
-            SubdVertex {
-                point: Point3::new(0.0, 1.0, 0.0),
-                tag: SubdVertexTag::Corner,
-                secondary_grips: None,
-            },
-        ],
-        edges: vec![
-            SubdEdge {
-                vertices: [0, 1],
-                sharpness: [0.25, 0.75],
-                tag: SubdEdgeTag::Crease,
-                knot_interval: None,
-                sector_coefficients: [0.125, 0.875],
-            },
-            SubdEdge {
-                vertices: [1, 2],
-                sharpness: [0.0, 0.5],
-                tag: SubdEdgeTag::SmoothX,
-                knot_interval: None,
-                sector_coefficients: [0.25, 0.75],
-            },
-            SubdEdge {
-                vertices: [2, 0],
-                sharpness: [1.0, 0.0],
-                tag: SubdEdgeTag::Smooth,
-                knot_interval: None,
-                sector_coefficients: [0.5, 0.5],
-            },
-        ],
-        faces: vec![SubdFace {
-            edges: vec![
+        source_object: None,
+        cage: crate::subd::SubdCage::new(
+            vec![
+                SubdVertex {
+                    point: Point3::new(0.0, 0.0, 0.0),
+                    tag: SubdVertexTag::Crease,
+                    secondary_grips: None,
+                },
+                SubdVertex {
+                    point: Point3::new(1.0, 0.0, 0.0),
+                    tag: SubdVertexTag::Smooth,
+                    secondary_grips: None,
+                },
+                SubdVertex {
+                    point: Point3::new(0.0, 1.0, 0.0),
+                    tag: SubdVertexTag::Corner,
+                    secondary_grips: None,
+                },
+            ],
+            vec![
+                SubdEdge {
+                    vertices: [0, 1],
+                    sharpness: [0.25, 0.75],
+                    tag: SubdEdgeTag::Crease,
+                    knot_interval: None,
+                    sector_coefficients: [0.125, 0.875],
+                },
+                SubdEdge {
+                    vertices: [1, 2],
+                    sharpness: [0.0, 0.5],
+                    tag: SubdEdgeTag::SmoothX,
+                    knot_interval: None,
+                    sector_coefficients: [0.25, 0.75],
+                },
+                SubdEdge {
+                    vertices: [2, 0],
+                    sharpness: [1.0, 0.0],
+                    tag: SubdEdgeTag::Smooth,
+                    knot_interval: None,
+                    sector_coefficients: [0.5, 0.5],
+                },
+            ],
+            vec![SubdFace::new(vec![
                 SubdEdgeUse {
                     edge: 0,
                     reversed: false,
@@ -377,9 +377,11 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
                     edge: 2,
                     reversed: false,
                 },
-            ],
-        }],
-        source_object: None,
+            ])
+            .expect("valid example cage")],
+            Vec::new(),
+        )
+        .expect("valid example cage"),
     });
     ir.finalize();
     Ok(ir)
