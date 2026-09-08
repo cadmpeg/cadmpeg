@@ -512,6 +512,14 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
                 return Err("rendering style extension fields must be present together".into());
             }
         };
+        if extension.is_some() != (wire.segment_version_major >= 17) {
+            return Err("rendering style extension disagrees with segment_version_major".into());
+        }
+        if wire.segment_version_major >= 17 && !wire.comment.is_empty() {
+            return Err(
+                "rendering style comment must be empty for segment_version_major >= 17".into(),
+            );
+        }
         Ok(Self {
             id: wire.id,
             segment_token: wire.segment_token,
@@ -1330,7 +1338,9 @@ pub(crate) struct SegmentBulkIssueRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActiveCarrierRecord, SegmentBulkFrame, SegmentBulkRecord};
+    use super::{
+        ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
+    };
 
     #[test]
     fn bulk_wire_requires_expansion_and_preserves_exclusive_frame_fields() {
@@ -1429,5 +1439,37 @@ mod tests {
         );
         wire["segment_token"] = serde_json::json!("segment");
         assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+    }
+    #[test]
+    fn rendering_style_version_controls_comment_and_extension() {
+        let legacy = serde_json::json!({
+            "id": "style", "segment_token": "segment", "record_ordinal": 0,
+            "segment_version_major": 16, "header_value": 0, "header_id": 0,
+            "state": 0, "flags": 0, "values": [0, 0], "default_state": 0,
+            "value": 0, "name_reference": 0, "name": "", "comment": "comment",
+            "long_name": "", "suffix_len": 0, "suffix_sha256": ""
+        });
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
+        let mut modern = legacy.clone();
+        modern["segment_version_major"] = serde_json::json!(17);
+        modern["comment"] = serde_json::json!("");
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_err());
+        for (field, value) in [
+            ("style_state", serde_json::json!(0)),
+            ("style_label", serde_json::json!("")),
+            ("asset_guid", serde_json::json!("")),
+            ("material_id", serde_json::json!("")),
+            ("asset_library_id", serde_json::json!("")),
+            ("style_values", serde_json::json!([0, 0])),
+            ("guid", serde_json::json!("")),
+        ] {
+            modern[field] = value;
+        }
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_ok());
+        let mut invalid = modern.clone();
+        invalid["comment"] = serde_json::json!("comment");
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(invalid).is_err());
+        modern["segment_version_major"] = serde_json::json!(16);
+        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern).is_err());
     }
 }
