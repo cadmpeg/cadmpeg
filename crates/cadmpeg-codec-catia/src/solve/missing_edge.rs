@@ -514,7 +514,7 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let cycles = trims
         .iter()
-        .map(|trim| boundary_cycles(&trim.packet.triangles()))
+        .map(|trim| boundary_cycles(trim.packet.triangles()))
         .collect::<Option<Vec<_>>>()?;
     let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
     Some(StandardMeshAnalysis {

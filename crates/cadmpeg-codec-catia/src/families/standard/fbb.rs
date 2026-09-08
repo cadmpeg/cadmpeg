@@ -585,7 +585,7 @@ pub(crate) fn parse_fbb_edge_tables_width(
 pub(crate) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
     let cycles = trims
         .iter()
-        .map(|trim| boundary_cycles(&trim.packet.triangles()))
+        .map(|trim| boundary_cycles(trim.packet.triangles()))
         .collect::<Option<Vec<_>>>()?;
     for row in rows {
         let complete_matches = cycles
