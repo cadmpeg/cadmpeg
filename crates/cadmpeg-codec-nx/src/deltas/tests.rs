@@ -711,6 +711,7 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
 #[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
+        .into_events()
         .records
         .remove(0);
     let mut expected = crate::test_support::record(29, 40);
@@ -1368,7 +1369,7 @@ fn deltas_walks_complete_type_70_records() {
 #[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
-    let record = crate::deltas::walk(&stream).records.remove(0);
+    let record = crate::deltas::walk(&stream).into_events().records.remove(0);
     assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
         crate::topology::offset_surfaces(&record.canonical_bytes)[0]
@@ -1834,3 +1835,13 @@ fn merged_result_preserves_tombstone_accounting() {
     }
 }
 mod reference_and_tombstone_packets;
+
+#[test]
+fn census_counts_overlapping_tombstone_and_terminal_trailer_once() {
+    let stream = [0, 29, 0, 11, 0, 1, 0, 1];
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.covered_spans(), vec![(0, stream.len())]);
+}

@@ -1328,7 +1328,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         );
         attributes.insert(
             format!("deltas.{index}.bytes_decoded"),
-            census.bytes_decoded.to_string(),
+            census.bytes_decoded().to_string(),
         );
         if !census.body_revisions.is_empty() {
             attributes.insert(

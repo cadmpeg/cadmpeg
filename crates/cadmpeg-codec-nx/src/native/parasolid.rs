@@ -133,7 +133,7 @@ pub(crate) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::walk(&stream.inflated).records {
+        for record in crate::deltas::walk(&stream.inflated).into_events().records {
             let crate::deltas::record_family::RecordFamily::Group {
                 node_id,
                 selector,
@@ -289,7 +289,7 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
         Record(crate::deltas::Record),
         Tombstone(u32),
     }
-    let census = crate::deltas::walk(bytes);
+    let census = crate::deltas::walk(bytes).into_events();
     let mut events = census
         .records
         .into_iter()
@@ -976,6 +976,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 stream.inflated.len(),
             );
         }
+        let census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
             events.transmit_headers.push(ParasolidDeltasTransmitHeader {
