@@ -328,7 +328,7 @@ mod tests {
         offset: usize,
     ) -> crate::legacy::IntegerRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Integer,
+            kind: crate::legacy::ValueKind::INTEGER,
             name: name.to_string(),
             attribute_id: 0,
             scope_offset: 0,
@@ -341,7 +341,7 @@ mod tests {
 
     fn real(parent: &str, value: f64, offset: usize) -> crate::legacy::RealRecord {
         ValueRecord {
-            kind: crate::legacy::ValueKind::Real,
+            kind: crate::legacy::ValueKind::REAL,
             name: "value".to_string(),
             attribute_id: 0,
             scope_offset: 0,
