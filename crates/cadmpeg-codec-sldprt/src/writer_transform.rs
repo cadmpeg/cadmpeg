@@ -259,9 +259,9 @@ fn transform_surface(
             })?,
         SurfaceGeometry::Polygonal(surface) => surface
             .edit_vertices(|points| {
-                points
-                    .iter_mut()
-                    .for_each(|point| *point = transform.apply_point(*point))
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
@@ -318,9 +318,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             })?,
         CurveGeometry::Polyline(polyline) => polyline
             .edit_points(|points| {
-                points
-                    .iter_mut()
-                    .for_each(|point| *point = transform.apply_point(*point))
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
         CurveGeometry::Parabola(parabola_curve) => {
