@@ -1015,9 +1015,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 8,
                                 1,
-                                NonZeroUsize::new(2).unwrap(),
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
@@ -1098,9 +1098,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 8,
                                 1,
-                                NonZeroUsize::new(2).unwrap(),
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
@@ -1114,9 +1114,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 9,
                                 1,
-                                NonZeroUsize::new(2).unwrap(),
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![4, 5],
                             support_record_ordinals: vec![5, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
@@ -1130,9 +1130,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 10,
                                 1,
-                                NonZeroUsize::new(1).unwrap(),
+                                NonZeroUsize::new(1).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![3],
                             support_record_ordinals: vec![99],
                             loop_class: ZeroEntityLoopClass::Bound50,
@@ -1264,9 +1264,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 8,
                                 1,
-                                NonZeroUsize::new(2).unwrap(),
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
@@ -1372,9 +1372,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 8,
                                 1,
-                                NonZeroUsize::new(2).unwrap(),
+                                NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![1, 2],
                             support_record_ordinals: vec![4, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
@@ -1467,9 +1467,9 @@ mod tests {
                             members: ZeroEntityLoopMembers::try_new(
                                 8,
                                 1,
-                                NonZeroUsize::new(1).unwrap(),
+                                NonZeroUsize::new(1).expect("nonzero loop member count"),
                             )
-                            .unwrap(),
+                            .expect("admitted loop member run"),
                             typed_references: vec![1],
                             support_record_ordinals: vec![4],
                             loop_class: ZeroEntityLoopClass::Outer41,
