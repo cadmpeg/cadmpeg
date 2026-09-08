@@ -2021,8 +2021,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(construction) => {
                 let instances_link = construction.instances.as_ref().is_none_or(|instances| {
                     let active = [
-                        (construction.u_count, construction.u_extent),
-                        (construction.v_count, construction.v_extent),
+                        (construction.u_count(), construction.u_extent()),
+                        (construction.v_count(), construction.v_extent()),
                     ]
                     .into_iter()
                     .filter(|(count, _)| *count > 1)
@@ -2100,14 +2100,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
                         && component_link
                 });
-                construction.u_count > 0
-                    && construction.v_count > 0
-                    && (construction.u_count > 1 || construction.v_count > 1)
-                    && construction.u_extent.is_finite()
-                    && construction.v_extent.is_finite()
-                    && (construction.u_count == 1) == (construction.u_extent == 0.0)
-                    && (construction.v_count == 1) == (construction.v_extent == 0.0)
-                    && instances_link
+                instances_link
                     && native
                         .design_parameter_owners
                         .iter()
@@ -2132,10 +2125,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .zip(construction.value_offsets)
                         .zip([
-                            f64::from(construction.u_count),
-                            f64::from(construction.v_count),
-                            construction.u_extent,
-                            construction.v_extent,
+                            f64::from(construction.u_count()),
+                            f64::from(construction.v_count()),
+                            construction.u_extent(),
+                            construction.v_extent(),
                         ])
                         .enumerate()
                         .all(|(ordinal, ((record_index, value_offset), value))| {

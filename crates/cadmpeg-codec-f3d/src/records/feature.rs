@@ -1615,7 +1615,30 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
 
 /// Ordered scalar lanes carried by a rectangular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignRectangularPatternConstructionWire",
+    into = "DesignRectangularPatternConstructionWire"
+)]
 pub struct DesignRectangularPatternConstruction {
+    /// Positive U-direction instance count, including the seed.
+    u_count: NonZeroU32,
+    /// Positive V-direction instance count, including the seed.
+    v_count: NonZeroU32,
+    /// Signed U-direction seed-to-final-instance span in source centimetres.
+    u_extent: f64,
+    /// Signed V-direction seed-to-final-instance span in source centimetres.
+    v_extent: f64,
+    /// Parameter-owner records for U count, V count, U extent, and V extent.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+    /// Exact serialized instance sequence when one pattern direction is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct DesignRectangularPatternConstructionWire {
     /// Positive U-direction instance count, including the seed.
     pub u_count: u32,
     /// Positive V-direction instance count, including the seed.
@@ -1631,6 +1654,59 @@ pub struct DesignRectangularPatternConstruction {
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
+    type Error = &'static str;
+    fn try_from(wire: DesignRectangularPatternConstructionWire) -> Result<Self, Self::Error> {
+        let u_count = NonZeroU32::new(wire.u_count).ok_or("u_count must be nonzero")?;
+        let v_count = NonZeroU32::new(wire.v_count).ok_or("v_count must be nonzero")?;
+        if u_count.get() == 1 && v_count.get() == 1 {
+            return Err("u_count and v_count must not both be one");
+        }
+        if !wire.u_extent.is_finite() || (u_count.get() == 1) != (wire.u_extent == 0.0) {
+            return Err("u_extent must be finite and zero exactly when u_count is one");
+        }
+        if !wire.v_extent.is_finite() || (v_count.get() == 1) != (wire.v_extent == 0.0) {
+            return Err("v_extent must be finite and zero exactly when v_count is one");
+        }
+        Ok(Self {
+            u_count,
+            v_count,
+            u_extent: wire.u_extent,
+            v_extent: wire.v_extent,
+            owner_record_indices: wire.owner_record_indices,
+            value_offsets: wire.value_offsets,
+            instances: wire.instances,
+        })
+    }
+}
+impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternConstructionWire {
+    fn from(value: DesignRectangularPatternConstruction) -> Self {
+        Self {
+            u_count: value.u_count.get(),
+            v_count: value.v_count.get(),
+            u_extent: value.u_extent,
+            v_extent: value.v_extent,
+            owner_record_indices: value.owner_record_indices,
+            value_offsets: value.value_offsets,
+            instances: value.instances,
+        }
+    }
+}
+impl DesignRectangularPatternConstruction {
+    pub(crate) fn u_count(&self) -> u32 {
+        self.u_count.get()
+    }
+    pub(crate) fn v_count(&self) -> u32 {
+        self.v_count.get()
+    }
+    pub(crate) fn u_extent(&self) -> f64 {
+        self.u_extent
+    }
+    pub(crate) fn v_extent(&self) -> f64 {
+        self.v_extent
+    }
 }
 
 /// Serialized placements of one linearized rectangular-pattern instance run.

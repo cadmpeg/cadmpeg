@@ -1657,3 +1657,41 @@ fn bend_radius_requires_a_positive_finite_value() {
         }
     }
 }
+
+#[test]
+fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
+    for (u_count, v_count, u_extent, v_extent) in [
+        (0, 2, 0.0, 1.0),
+        (2, 0, 1.0, 0.0),
+        (1, 1, 0.0, 0.0),
+        (1, 2, 1.0, 1.0),
+        (2, 1, 0.0, 0.0),
+        (2, 1, 1.0, 1.0),
+        (1, 2, 0.0, 0.0),
+    ] {
+        let wire = serde_json::json!({
+            "u_count": u_count, "v_count": v_count,
+            "u_extent": u_extent, "v_extent": v_extent,
+            "owner_record_indices": [1, 2, 3, 4],
+            "value_offsets": [10, 20, 30, 40]
+        });
+        assert!(
+            serde_json::from_value::<super::DesignRectangularPatternConstruction>(wire).is_err()
+        );
+    }
+}
+
+#[test]
+fn rectangular_pattern_sidecar_preserves_signed_spans() {
+    for (u_count, v_count, u_extent, v_extent) in [(3, 1, -10.0, 0.0), (2, 2, 1.0, -1.0)] {
+        let wire = serde_json::json!({
+            "u_count": u_count, "v_count": v_count,
+            "u_extent": u_extent, "v_extent": v_extent,
+            "owner_record_indices": [1, 2, 3, 4],
+            "value_offsets": [10, 20, 30, 40]
+        });
+        let record: super::DesignRectangularPatternConstruction =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+}

@@ -66,15 +66,20 @@ fn rectangular_scope() -> DesignParameterScope {
     if let crate::records::feature::DesignScopePayload::RPattern(slot)
     | crate::records::feature::DesignScopePayload::RectangularPattern(slot) = &mut scope.payload
     {
-        *slot = Some(DesignRectangularPatternConstruction {
-            u_count: 3,
-            v_count: 1,
-            u_extent: 10.0,
-            v_extent: 0.0,
-            owner_record_indices: [11, 12, 13, 14],
-            value_offsets: [101, 102, 103, 104],
-            instances: None,
-        });
+        *slot = Some(
+            DesignRectangularPatternConstruction::try_from(
+                crate::records::feature::DesignRectangularPatternConstructionWire {
+                    u_count: 3,
+                    v_count: 1,
+                    u_extent: 10.0,
+                    v_extent: 0.0,
+                    owner_record_indices: [11, 12, 13, 14],
+                    value_offsets: [101, 102, 103, 104],
+                    instances: None,
+                },
+            )
+            .unwrap(),
+        );
     }
     scope
 }
