@@ -11,6 +11,7 @@ use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
@@ -4090,8 +4091,8 @@ fn compact_position_relations(
             let [first, second] = relation.operands.as_slice() else {
                 return None;
             };
-            if first.kind != FeatureInputOperandKind::Native(0x8152)
-                || second.kind != FeatureInputOperandKind::Native(0x8152)
+            if first.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
+                || second.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
             {
                 return None;
             }

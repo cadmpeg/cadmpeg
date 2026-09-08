@@ -2,6 +2,7 @@
 
 use super::super::CLASS_MARKER;
 use super::object_names;
+use crate::records::operand_tag::NativeOperandTag;
 
 #[test]
 fn object_names_follow_the_lane_name_class_token() {
@@ -44,8 +45,10 @@ fn operand_kind_names_preserve_wire_spelling() {
     for (kind, expected) in [
         (FeatureInputOperandKind::D6, "d6"),
         (FeatureInputOperandKind::E1, "e1"),
-        (FeatureInputOperandKind::Native(0x80d5), "d580"),
-        (FeatureInputOperandKind::Native(0), "0000"),
+        (
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+            "d580",
+        ),
     ] {
         assert_eq!(super::operand_kind_name(kind).as_str(), expected);
     }

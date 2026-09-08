@@ -1848,7 +1848,7 @@ pub(super) fn inferred_point_coordinates_by_index(
                 matches!(
                     operand.kind,
                     FeatureInputOperandKind::Native(tag)
-                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag)
+                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
                 )
             })
     }) {

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod debug;
+pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
 pub(crate) mod sketch_code;
 
@@ -769,7 +770,7 @@ pub enum FeatureInputOperandKind {
     /// `e1 80` reference cell.
     E1,
     /// Other two-byte reference-cell tag, stored as a little-endian u16.
-    Native(u16),
+    Native(operand_tag::NativeOperandTag),
 }
 
 /// Function of a named scalar in its dimension record.
@@ -1482,6 +1483,19 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_operand_wire_rejects_reserved_tags() {
+        for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
+            assert!(serde_json::from_value::<super::FeatureInputOperandKind>(
+                serde_json::json!({"native": tag})
+            )
+            .is_err());
+        }
+        let wire = serde_json::json!({"native": 0x812a});
+        let kind: super::FeatureInputOperandKind = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+    }
+
     #[test]
     fn surface_selection_kind_preserves_the_endpoint_wire() {
         #[derive(serde::Serialize, serde::Deserialize)]
