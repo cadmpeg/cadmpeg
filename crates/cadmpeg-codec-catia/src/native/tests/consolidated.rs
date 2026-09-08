@@ -1916,3 +1916,16 @@ fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
     };
     assert_eq!(run.support_bindings, [None, None]);
 }
+
+#[test]
+fn cone_face_followed_by_spanning_parameter_point_terminates() {
+    let bytes = b2_cone_face_parameter_point_stream();
+    let split = b2_cone_face_stream().len() + 6;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [[0..split, split..bytes.len()]],
+    );
+    let faces = crate::native::consolidated_cone_faces(&bytes, &records, &[]);
+    assert_eq!(faces.len(), 1);
+    assert!(faces[0].parameter_points.is_empty());
+}
