@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn compiled_descriptors_have_unique_ids_and_consistent_capabilities() {
         let mut ids = BTreeSet::new();
-        for descriptor in FORMAT_DESCRIPTORS.iter() {
+        for descriptor in FORMAT_DESCRIPTORS {
             assert!(
                 ids.insert(descriptor.id()),
                 "duplicate {} descriptor",
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn every_registry_word_resolves_through_its_descriptor() {
-        for descriptor in FORMAT_DESCRIPTORS.iter() {
+        for descriptor in FORMAT_DESCRIPTORS {
             let expected = descriptor.forced_input();
             for name in crate::registry::format_words(descriptor.id().as_str()) {
                 assert_eq!(forced_input(name), Some(expected), "{name}");
