@@ -414,7 +414,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             1.0e-6,
         ),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. })
-            if entity.as_str() == "generated:entity#796"
+            if entity.as_str() == "generated:test:entity#796"
     ));
     assert!(matches!(
         crate::design::dimensions::presentation_dimension_definition(
@@ -1243,7 +1243,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
         SketchEntityId, SketchLocus,
     };
 
-    let entity = |name: &str| SketchEntityId::mint(format!("generated:{name}")).unwrap();
+    let entity = |name: &str| SketchEntityId::mint(format!("generated:test:entity#{name}")).unwrap();
     let parameter =
         ParameterId::mint("synthetic:test:id#generated:distance").expect("identity grammar");
     let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {

@@ -449,9 +449,9 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             .unwrap(),
         )
     };
-    let lower = point("synthetic:test:id#lower", -53.0, -20.875);
-    let lower_duplicate = point("synthetic:test:id#lower-duplicate", -53.0, -20.875 + 5.0e-7);
-    let upper = point("synthetic:test:id#upper", -53.0, -7.875);
+    let lower = point("lower", -53.0, -20.875);
+    let lower_duplicate = point("lower-duplicate", -53.0, -20.875 + 5.0e-7);
+    let upper = point("upper", -53.0, -7.875);
     let parameter = parse_design_parameter(&parameter_record(
         Some(1),
         "13 mm",
@@ -480,7 +480,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
         }) if first == lower.id().clone() && second == upper.id().clone() && parameter == parameter_id
     ));
 
-    let another_upper = point("synthetic:test:id#another-upper", -40.0, -7.875);
+    let another_upper = point("another-upper", -40.0, -7.875);
     assert!(unique_point_class_dimension_definition(
         &[lower, upper, another_upper],
         &sketch,
@@ -515,8 +515,8 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             .unwrap(),
         )
     };
-    let center = point("synthetic:test:id#center", 2.0, 3.0);
-    let annotation = point("synthetic:test:id#annotation", 7.0, 3.0);
+    let center = point("center", 2.0, 3.0);
+    let annotation = point("annotation", 7.0, 3.0);
     let measured = circle("synthetic:test:id#measured", 2.0, 3.0, 5.0);
     let other_center = circle("synthetic:test:id#other-center", 20.0, 30.0, 5.0);
     let other_radius = circle("synthetic:test:id#other-radius", 2.0, 3.0, 7.0);

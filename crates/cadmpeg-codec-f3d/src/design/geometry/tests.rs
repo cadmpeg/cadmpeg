@@ -97,7 +97,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         .map(|use_| use_.entity.as_str())
         .collect::<Vec<_>>();
     boundary_entities.sort_unstable();
-    assert_eq!(boundary_entities, ["bottom", "left", "right", "top"]);
+    assert_eq!(boundary_entities, ["synthetic:test:id#bottom", "synthetic:test:id#left", "synthetic:test:id#right", "synthetic:test:id#top"]);
 }
 
 #[test]
@@ -975,10 +975,10 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
             .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed))
             .collect::<Vec<_>>(),
         [
-            ("line-a", false),
-            ("line-b", true),
-            ("line-c", false),
-            ("line-d", false),
+            ("synthetic:test:id#line-a", false),
+            ("synthetic:test:id#line-b", true),
+            ("synthetic:test:id#line-c", false),
+            ("synthetic:test:id#line-d", false),
         ]
     );
 }
@@ -1012,7 +1012,7 @@ fn branched_line_graph_projects_each_bounded_face() {
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
         .iter()
-        .any(|entity_use| entity_use.entity.as_str() == "divider")));
+        .any(|entity_use| entity_use.entity.as_str() == "synthetic:test:id#divider")));
 }
 
 #[test]
@@ -1049,14 +1049,14 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
                 .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed)))
             .collect::<Vec<_>>(),
         [
-            ("outer-left", false),
-            ("outer-bottom", false),
-            ("outer-right", false),
-            ("outer-top", false),
-            ("inner-top", false),
-            ("inner-right", false),
-            ("inner-bottom", false),
-            ("inner-left", false),
+            ("synthetic:test:id#outer-left", false),
+            ("synthetic:test:id#outer-bottom", false),
+            ("synthetic:test:id#outer-right", false),
+            ("synthetic:test:id#outer-top", false),
+            ("synthetic:test:id#inner-top", false),
+            ("synthetic:test:id#inner-right", false),
+            ("synthetic:test:id#inner-bottom", false),
+            ("synthetic:test:id#inner-left", false),
         ]
     );
 }
