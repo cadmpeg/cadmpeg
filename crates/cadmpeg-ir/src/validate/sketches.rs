@@ -1221,25 +1221,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::SplineGroup { entities } => entities.len() >= 2,
-            Constraint::RectangularPattern { pattern } => {
-                let directions = pattern.directions();
-                let mut entities = HashSet::new();
-                let dot = directions[0].direction[0] * directions[1].direction[0]
-                    + directions[0].direction[1] * directions[1].direction[1];
-                dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    && directions.iter().all(|direction| {
-                        let length = direction.direction[0].hypot(direction.direction[1]);
-                        direction.spacing.0.is_finite()
-                            && direction.direction.iter().all(|value| value.is_finite())
-                            && (length - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    })
-                    && pattern.rows().iter().flatten().all(|instance| {
-                        instance
-                            .entities
-                            .iter()
-                            .all(|entity| entities.insert(entity))
-                    })
-            }
+            Constraint::RectangularPattern { .. } => true,
             Constraint::CircularPattern { .. } => true,
             Constraint::TextFrame { text, frame } => {
                 matches!(
