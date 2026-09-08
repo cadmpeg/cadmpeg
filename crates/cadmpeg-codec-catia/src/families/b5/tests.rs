@@ -21,8 +21,8 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
-    assert_eq!(graph.vertex_points.len(), 3);
-    assert_eq!(graph.edge_vertices.len(), 3);
+    assert_eq!(graph.vertices.raw_points().len(), 3);
+    assert_eq!(graph.vertices.edges().len(), 3);
 }
 
 #[test]
@@ -246,8 +246,16 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         graph.pcurves[&200].lifted_endpoints,
         Some([[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]])
     );
-    assert_eq!(graph.edge_vertices[&300], [0, 1]);
-    assert_eq!(graph.edge_vertices[&0x01_0100], [2, 3]);
+    assert_eq!(
+        graph.vertices.edges()[&300]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len())),
+        [0, 1]
+    );
+    assert_eq!(
+        graph.vertices.edges()[&0x01_0100]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len())),
+        [2, 3]
+    );
     let revolution_endpoints = graph.pcurves[&210]
         .lifted_endpoints
         .expect("revolution lift");

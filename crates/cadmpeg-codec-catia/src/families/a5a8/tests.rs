@@ -1280,7 +1280,8 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
     assert_eq!(graph.edges.len(), 3);
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.object_id)
             .collect::<Vec<_>>(),
@@ -1288,7 +1289,8 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
     );
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.point)
             .collect::<Vec<_>>(),
