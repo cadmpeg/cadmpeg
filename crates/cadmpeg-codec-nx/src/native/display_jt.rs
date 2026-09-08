@@ -277,17 +277,57 @@ pub struct DisplayJtSegment {
 
 /// Validated compressed-data envelope following a JT segment header.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtCompressionWire",
+    into = "DisplayJtCompressionWire"
+)]
 pub struct DisplayJtCompression {
-    /// Serialized compression flag.
-    pub flag: u32,
-    /// Declared byte length of the algorithm byte and compressed member.
-    pub compressed_data_byte_len: u32,
-    /// Serialized compression algorithm identifier.
-    pub algorithm: u8,
-    /// Physical zlib-member byte length.
-    pub compressed_byte_len: u32,
+    compressed_byte_len: u32,
     /// SHA-256 of the completely inflated payload.
     pub inflated_sha256: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtCompressionWire {
+    flag: u32,
+    compressed_data_byte_len: u32,
+    algorithm: u8,
+    compressed_byte_len: u32,
+    inflated_sha256: String,
+}
+
+impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
+    type Error = &'static str;
+
+    fn try_from(wire: DisplayJtCompressionWire) -> Result<Self, Self::Error> {
+        if wire.flag != 2 {
+            return Err("DisplayJtCompression.flag must be 2");
+        }
+        if wire.algorithm != 2 {
+            return Err("DisplayJtCompression.algorithm must be 2");
+        }
+        if wire.compressed_byte_len.checked_add(1) != Some(wire.compressed_data_byte_len) {
+            return Err(
+                "DisplayJtCompression.compressed_data_byte_len disagrees with compressed_byte_len",
+            );
+        }
+        Ok(Self {
+            compressed_byte_len: wire.compressed_byte_len,
+            inflated_sha256: wire.inflated_sha256,
+        })
+    }
+}
+
+impl From<DisplayJtCompression> for DisplayJtCompressionWire {
+    fn from(value: DisplayJtCompression) -> Self {
+        Self {
+            flag: 2,
+            compressed_data_byte_len: value.compressed_byte_len + 1,
+            algorithm: 2,
+            compressed_byte_len: value.compressed_byte_len,
+            inflated_sha256: value.inflated_sha256,
+        }
+    }
 }
 
 /// One length-bounded object element in a JT shape-LOD segment.
@@ -1800,26 +1840,23 @@ pub fn display_jt_segments(
                 let Some(&algorithm) = payload.get(8) else {
                     return Vec::new();
                 };
-                if algorithm != 2 {
-                    return Vec::new();
-                }
                 let compressed = &payload[9..];
-                if compressed_data_byte_len as usize != compressed.len() + 1 {
-                    return Vec::new();
-                }
                 let Some(inflated) = inflate_display_jt(budget, compressed) else {
                     return Vec::new();
                 };
                 let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
                     return Vec::new();
                 };
-                Some(DisplayJtCompression {
+                let Ok(compression) = DisplayJtCompression::try_from(DisplayJtCompressionWire {
                     flag: 2,
                     compressed_data_byte_len,
                     algorithm,
                     compressed_byte_len,
                     inflated_sha256: sha256_hex(&inflated),
-                })
+                }) else {
+                    return Vec::new();
+                };
+                Some(compression)
             } else {
                 None
             };
@@ -4098,6 +4135,26 @@ pub(crate) fn display_jt_tessellations(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn compression_wire_checks_constants_and_length_without_changing_evidence() {
+        let valid = serde_json::json!({
+            "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
+            "compressed_byte_len": 3, "inflated_sha256": "hash"
+        });
+        let value: super::DisplayJtCompression = serde_json::from_value(valid.clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), valid);
+        for (field, invalid) in [
+            ("flag", 0),
+            ("algorithm", 1),
+            ("compressed_data_byte_len", 3),
+            ("compressed_byte_len", u32::MAX),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DisplayJtCompression>(wire).is_err());
+        }
+    }
+
+    #[test]
     fn index_wire_preserves_count_and_rejects_invalid_rows() {
         let wire = r#"{"id":"index","version":9,"declared_count":1,"rows":[{"id":"row","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
         let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
@@ -4244,7 +4301,7 @@ mod tests {
             .as_ref()
             .expect("required invariant");
         assert_eq!(
-            compression.compressed_data_byte_len,
+            super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
             compressed.len() as u32 + 1
         );
         assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
