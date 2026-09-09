@@ -301,31 +301,33 @@ pub(crate) fn source_less_body_key(
         .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
 }
 
+enum ColorOwner {
+    Body,
+    Face,
+}
+
 fn color_attribute_ref(
     model: &cadmpeg_ir::document::Model,
-    color: Option<Color>,
     ordinal: usize,
-    body: bool,
+    owner: ColorOwner,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if color.is_none() {
-        return Ok(-1);
-    }
-    let preceding = if body {
-        model.bodies[..ordinal]
+    let preceding = match owner {
+        ColorOwner::Body => model.bodies[..ordinal]
             .iter()
             .filter(|body| body.color.is_some())
-            .count()
-    } else {
-        model
-            .bodies
-            .iter()
-            .filter(|body| body.color.is_some())
-            .count()
-            + model.faces[..ordinal]
+            .count(),
+        ColorOwner::Face => {
+            model
+                .bodies
                 .iter()
-                .filter(|face| face.color.is_some())
+                .filter(|body| body.color.is_some())
                 .count()
+                + model.faces[..ordinal]
+                    .iter()
+                    .filter(|face| face.color.is_some())
+                    .count()
+        }
     };
     native_record_index(attribute_start, preceding)
 }
@@ -482,9 +484,8 @@ pub(crate) fn owner_color_or_body_tag_ref(
     if body.color.is_some() {
         return color_attribute_ref(
             &target.model,
-            body.color,
             body_ordinal,
-            true,
+            ColorOwner::Body,
             attribute_start,
         );
     }
@@ -561,9 +562,8 @@ pub(crate) fn owner_color_or_face_tag_ref(
     if face.color.is_some() {
         return color_attribute_ref(
             &target.model,
-            face.color,
             face_ordinal,
-            false,
+            ColorOwner::Face,
             attribute_start,
         );
     }
@@ -702,13 +702,16 @@ fn attribute_before_timestamp(
             if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
                 return Ok(reference);
             }
-            color_attribute_ref(
-                &target.model,
-                body.color,
-                owner_ordinal,
-                true,
-                attribute_start,
-            )
+            if body.color.is_none() {
+                Ok(-1)
+            } else {
+                color_attribute_ref(
+                    &target.model,
+                    owner_ordinal,
+                    ColorOwner::Body,
+                    attribute_start,
+                )
+            }
         }
         AttributeTarget::Face(id) => {
             let face = target
@@ -725,13 +728,16 @@ fn attribute_before_timestamp(
             if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
                 return Ok(reference);
             }
-            color_attribute_ref(
-                &target.model,
-                face.color,
-                owner_ordinal,
-                false,
-                attribute_start,
-            )
+            if face.color.is_none() {
+                Ok(-1)
+            } else {
+                color_attribute_ref(
+                    &target.model,
+                    owner_ordinal,
+                    ColorOwner::Face,
+                    attribute_start,
+                )
+            }
         }
         AttributeTarget::Edge(id) => {
             let edge = target
@@ -1006,13 +1012,16 @@ pub(crate) fn encode_source_less_attributes(
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
         };
-        let previous = color_attribute_ref(
-            &target.model,
-            body.color,
-            body_ordinal,
-            true,
-            attribute_start,
-        )?;
+        let previous = if body.color.is_none() {
+            -1
+        } else {
+            color_attribute_ref(
+                &target.model,
+                body_ordinal,
+                ColorOwner::Body,
+                attribute_start,
+            )?
+        };
         native_name_attribute(
             records,
             body.name.as_deref().expect("filtered named body"),
@@ -1035,13 +1044,16 @@ pub(crate) fn encode_source_less_attributes(
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
         };
-        let previous = color_attribute_ref(
-            &target.model,
-            face.color,
-            face_ordinal,
-            false,
-            attribute_start,
-        )?;
+        let previous = if face.color.is_none() {
+            -1
+        } else {
+            color_attribute_ref(
+                &target.model,
+                face_ordinal,
+                ColorOwner::Face,
+                attribute_start,
+            )?
+        };
         native_name_attribute(
             records,
             face.name.as_deref().expect("filtered named face"),
@@ -1066,12 +1078,13 @@ pub(crate) fn encode_source_less_attributes(
         let previous =
             if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
                 reference
+            } else if body.color.is_none() {
+                -1
             } else {
                 color_attribute_ref(
                     &target.model,
-                    body.color,
                     body_ordinal,
-                    true,
+                    ColorOwner::Body,
                     attribute_start,
                 )?
             };
@@ -1100,12 +1113,13 @@ pub(crate) fn encode_source_less_attributes(
         let previous =
             if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
                 reference
+            } else if face.color.is_none() {
+                -1
             } else {
                 color_attribute_ref(
                     &target.model,
-                    face.color,
                     face_ordinal,
-                    false,
+                    ColorOwner::Face,
                     attribute_start,
                 )?
             };
