@@ -136,3 +136,37 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
         assert!(serde_json::from_value::<ProceduralSurface>(invalid).is_err());
     }
 }
+
+#[test]
+fn rejected_surface_definition_changes_preserve_serialized_owner() {
+    let mut surface = ProceduralSurface::try_new(
+        id(),
+        subset([[0.0, 1.0], [0.0, 1.0]]).unwrap(),
+        Some(0.5),
+        None,
+    )
+    .unwrap();
+    let before = serde_json::to_vec(&surface).unwrap();
+    for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
+        assert!(surface
+            .try_replace_definition(subset([[2.0, 3.0], [4.0, 5.0]]).unwrap(), Some(tolerance),)
+            .is_err());
+        assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
+    }
+    let incompatible = ProceduralSurfaceDefinition::Law(
+        crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
+            LawSurfaceConstruction {
+                parameter_ranges: None,
+                primary: LawFormula::Null,
+                additional: Vec::new(),
+                tail: LawSurfaceTail::Historical,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+        ))
+        .unwrap(),
+    );
+    assert!(surface
+        .edit_definition(|definition| *definition = incompatible)
+        .is_err());
+    assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
+}
