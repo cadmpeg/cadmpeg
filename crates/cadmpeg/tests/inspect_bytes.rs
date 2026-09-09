@@ -825,6 +825,27 @@ fn extract_names_candidates_when_the_member_is_missing() {
 }
 
 #[test]
+fn extract_refuses_input_alias_even_with_force() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let original = fs::read(&archive).unwrap();
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+            "--force",
+            "-o",
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("refusing to overwrite input"));
+    assert_eq!(fs::read(&archive).unwrap(), original);
+}
+
+#[test]
 fn extract_refuses_to_overwrite_without_force() {
     let dir = tempdir().unwrap();
     let archive = extract_fixture(dir.path());
