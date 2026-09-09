@@ -49,9 +49,8 @@ pub(super) fn normalize_model_lengths(
     }
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
-            .edit_definition(|definition| {
-                scale_procedural_surface_definition(definition, length_scale_mm);
-            })
+            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -59,9 +58,7 @@ pub(super) fn normalize_model_lengths(
     }
     for procedural in &mut ir.model.procedural_curves {
         procedural
-            .edit_definition(|definition| {
-                scale_procedural_curve_definition(definition, length_scale_mm)
-            })
+            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
             .map_err(cadmpeg_core::CodecError::malformed)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
@@ -1538,45 +1535,48 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
     Ok(())
 }
 
-fn scale_procedural_surface_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
-    scale: f64,
-) {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+trait ScaleProceduralLengths {
+    fn scale_lengths(&mut self, scale: f64) -> Result<(), &'static str>;
+}
 
-    match definition {
-        ProceduralSurfaceDefinition::Extrusion {
-            direction,
-            native_position,
-            ..
-        } => {
-            scale_vector3(direction, scale);
-            if let Some(position) = native_position {
-                scale_point3(position, scale);
+impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+    fn scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
+        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+        match self {
+            ProceduralSurfaceDefinition::Extrusion {
+                direction,
+                native_position,
+                ..
+            } => {
+                scale_vector3(direction, scale);
+                if let Some(position) = native_position {
+                    scale_point3(position, scale);
+                }
             }
+            ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
+                scale_vector3(direction, scale);
+            }
+            ProceduralSurfaceDefinition::Revolution { axis_origin, .. }
+            | ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
+                scale_point3(axis_origin, scale);
+            }
+            ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
+                scale_vector3(basepoint, scale);
+            }
+            _ => {}
         }
-        ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
-            scale_vector3(direction, scale);
-        }
-        ProceduralSurfaceDefinition::Revolution { axis_origin, .. }
-        | ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
-            scale_point3(axis_origin, scale);
-        }
-        ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
-            scale_vector3(basepoint, scale);
-        }
-        _ => {}
+        Ok(())
     }
 }
 
-fn scale_procedural_curve_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
-    scale: f64,
-) -> Result<(), &'static str> {
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
-        helix.try_scale_lengths(scale)?;
+impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    fn scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
+        if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = self {
+            helix.try_scale_lengths(scale)?;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Option<f64> {

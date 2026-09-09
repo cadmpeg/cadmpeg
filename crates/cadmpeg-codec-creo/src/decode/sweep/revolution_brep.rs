@@ -103,10 +103,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(surface_geometries) = surface_geometries else {
             continue;
         };
-        let boundaries_are_complete = profile.iter().enumerate().all(|(index, segment)| {
-            let next = (index + 1) % profile.len();
-            (vertex_curves[index].is_some() || vertex_curves[next].is_some())
-                && [
+        let boundaries = profile
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                let next = (index + 1) % profile.len();
+                if vertex_curves[index].is_none() && vertex_curves[next].is_none() {
+                    return None;
+                }
+                [
                     (
                         segment.start(),
                         vertex_curves[index].is_some(),
@@ -119,22 +124,23 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ),
                 ]
                 .into_iter()
-                .all(|(section_point, present, boundary)| {
-                    !present
-                        || revolution_profile_boundary_pcurve(
-                            transform,
-                            segment,
-                            &surface_geometries[index],
-                            &axis,
-                            section_point,
-                            boundary,
-                        )
-                        .is_some()
+                .filter(|(_, present, _)| *present)
+                .map(|(section_point, _, boundary)| {
+                    PrevalidatedRevolutionBoundary::new(
+                        transform,
+                        segment,
+                        &surface_geometries[index],
+                        &axis,
+                        section_point,
+                        boundary,
+                    )
                 })
-        });
-        if !boundaries_are_complete {
+                .collect::<Option<Vec<_>>>()
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(boundaries) = boundaries else {
             continue;
-        }
+        };
         let face_senses = profile
             .iter()
             .zip(&surface_geometries)
@@ -202,14 +208,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             edges[index] = Some(edge_id);
         }
         let mut faces = Vec::new();
-        for (index, ((entity, surface_geometry), face_sense)) in profile
-            .iter()
-            .zip(surface_geometries)
+        for (index, ((surface_geometry, face_sense), boundaries)) in surface_geometries
+            .into_iter()
             .zip(face_senses)
+            .zip(boundaries)
             .enumerate()
         {
-            let start = entity.start();
-            let end = entity.end();
             let next = (index + 1) % count;
             let surface_id =
                 SurfaceId::mint(format!("{prefix}:surface:{index}")).expect("identity grammar");
@@ -220,10 +224,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 source_object: None,
             });
             let mut loops = Vec::new();
-            for (boundary, vertex_index, section_point, sense) in [
-                (RevolutionBoundary::Start, index, start, Sense::Reversed),
-                (RevolutionBoundary::End, next, end, Sense::Forward),
-            ] {
+            for PrevalidatedRevolutionBoundary {
+                boundary,
+                geometry: pcurve_geometry,
+            } in boundaries
+            {
+                let (vertex_index, sense) = match boundary {
+                    RevolutionBoundary::Start => (index, Sense::Reversed),
+                    RevolutionBoundary::End => (next, Sense::Forward),
+                };
                 let Some(edge_id) = edges[vertex_index].clone() else {
                     continue;
                 };
@@ -237,15 +246,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     RevolutionBoundary::End => next,
                 };
                 let radial_boundary = boundary.opposite().key();
-                let pcurve_geometry = revolution_profile_boundary_pcurve(
-                    transform,
-                    &profile[index],
-                    &surface_geometry,
-                    &axis,
-                    section_point,
-                    boundary,
-                )
-                .expect("revolution boundary was prevalidated");
                 let pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
@@ -323,4 +323,87 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         transferred += 1;
     }
     Ok(transferred)
+}
+
+struct PrevalidatedRevolutionBoundary {
+    boundary: RevolutionBoundary,
+    geometry: cadmpeg_ir::geometry::PcurveGeometry,
+}
+
+impl PrevalidatedRevolutionBoundary {
+    fn new(
+        transform: &crate::placement::FeatureSectionTransform,
+        segment: &super::profiles::ProfileEntity,
+        surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+        axis: &cadmpeg_ir::features::RevolutionAxis,
+        section_point: [f64; 2],
+        boundary: RevolutionBoundary,
+    ) -> Option<Self> {
+        Some(Self {
+            boundary,
+            geometry: revolution_profile_boundary_pcurve(
+                transform,
+                segment,
+                surface,
+                axis,
+                section_point,
+                boundary,
+            )?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::geometry::{PlaneSurface, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point2, Vector3};
+
+    #[test]
+    fn unvalidated_axis_boundary_is_rejected() {
+        let transform = crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(1),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("orthonormal section fixture");
+        let segment = super::super::profiles::ProfileEntity::new(
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            )
+            .expect("line sketch fixture"),
+            false,
+        )
+        .expect("connected profile fixture");
+        let surface = SurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane carrier fixture"),
+        );
+        let axis = cadmpeg_ir::features::RevolutionAxis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite axis origin fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("nonzero axis direction fixture"),
+            reference: None,
+        };
+        assert!(PrevalidatedRevolutionBoundary::new(
+            &transform,
+            &segment,
+            &surface,
+            &axis,
+            segment.start(),
+            RevolutionBoundary::Start,
+        )
+        .is_none());
+    }
 }

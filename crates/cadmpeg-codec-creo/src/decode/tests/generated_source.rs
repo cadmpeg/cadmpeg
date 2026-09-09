@@ -1441,9 +1441,9 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 
-    assert_eq!(coverage.unique_rows, 3);
-    assert_eq!(coverage.transferred_rows, 2);
-    assert_eq!(coverage.ambiguous_rows, 2);
+    assert_eq!(coverage.unique_rows(), 3);
+    assert_eq!(coverage.transferred_rows(), 2);
+    assert_eq!(coverage.ambiguous_rows(), 2);
     assert_eq!(coverage.family(crate::surface::SurfaceKind::Plane), (1, 1));
     assert_eq!(
         coverage.family(crate::surface::SurfaceKind::Cylinder),
@@ -1501,11 +1501,11 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
 
     let coverage = curve_transfer_coverage(&rows, &curves);
 
-    assert_eq!(coverage.unique_rows, 2);
-    assert_eq!(coverage.transferred_rows, 1);
-    assert_eq!(coverage.ambiguous_rows, 2);
-    assert_eq!(coverage.by_type[&0x05], (1, 1));
-    assert_eq!(coverage.by_type[&0x13], (1, 0));
+    assert_eq!(coverage.unique_rows(), 2);
+    assert_eq!(coverage.transferred_rows(), 1);
+    assert_eq!(coverage.ambiguous_rows(), 2);
+    assert_eq!(coverage.by_type()[&0x05], (1, 1));
+    assert_eq!(coverage.by_type()[&0x13], (1, 0));
 }
 
 #[test]

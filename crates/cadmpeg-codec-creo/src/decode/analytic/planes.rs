@@ -215,20 +215,27 @@ pub fn solve_carriers_with_diagnostics(
                     } else {
                         candidates.extend(reduced);
                     }
-                } else if planes.len() == 2
-                    && tori.is_empty()
-                    && cylinders.len() + cones.len() + spheres.len() == 1
-                {
-                    let quadric = cylinders
-                        .first()
-                        .copied()
-                        .map(CarrierEquation::Cylinder)
-                        .or_else(|| cones.first().copied().map(CarrierEquation::Cone))
-                        .or_else(|| spheres.first().copied().map(CarrierEquation::Sphere))
-                        .expect("one quadric carrier");
-                    candidates.extend(intersect_two_planes_with_quadric(
-                        planes[0], planes[1], quadric,
-                    ));
+                } else if let ([first, second], []) = (planes.as_slice(), tori.as_slice()) {
+                    let intersections =
+                        match (cylinders.as_slice(), cones.as_slice(), spheres.as_slice()) {
+                            ([cylinder], [], []) => intersect_two_planes_with_quadric(
+                                *first,
+                                *second,
+                                CarrierEquation::Cylinder(*cylinder),
+                            ),
+                            ([], [cone], []) => intersect_two_planes_with_quadric(
+                                *first,
+                                *second,
+                                CarrierEquation::Cone(*cone),
+                            ),
+                            ([], [], [sphere]) => intersect_two_planes_with_quadric(
+                                *first,
+                                *second,
+                                CarrierEquation::Sphere(*sphere),
+                            ),
+                            _ => Vec::new(),
+                        };
+                    candidates.extend(intersections);
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
                         candidates.extend(intersect_two_planes_with_torus(*first, *second, *torus));
