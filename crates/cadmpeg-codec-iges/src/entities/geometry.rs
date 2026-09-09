@@ -944,6 +944,7 @@ impl WireProjectionOutcome {
 
 #[derive(Default)]
 pub(crate) struct Projection {
+    pub(crate) placement_rejections: BTreeMap<u32, super::structure::PlacementRejection>,
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
     /// neutral entity. The generic retention pass suppresses its loss for
@@ -2177,15 +2178,15 @@ pub(crate) fn project_geometry(
     super::csg::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
-    super::structure::project(
+    let (structure_projection, placement_rejections) = super::structure::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    )
-    .merge_into(&mut decoded, &mut losses);
+    );
+    structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
     super::presentation::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
@@ -2224,6 +2225,7 @@ pub(crate) fn project_geometry(
         !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
     });
     Ok(Projection {
+        placement_rejections,
         decoded,
         consumed,
         losses,
