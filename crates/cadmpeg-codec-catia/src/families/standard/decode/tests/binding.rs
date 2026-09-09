@@ -1045,18 +1045,20 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
     assert!(matches!(ir
-    .model
-    .curves
-    .iter()
-    .find(|candidate| candidate.id == curve), Some(Curve {
-        geometry: CurveGeometry::Circle(circle_curve),
-        ..
-    }) if {
-        let (_, axis, ref_direction, radius) = circle_curve.parts();
-        *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-            && *radius == 2.0
-    }));
+        .model
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == curve), Some(Curve {
+            geometry: CurveGeometry::Circle(circle_curve),
+            ..
+        }) if {
+            let axis = circle_curve.axis();
+    let ref_direction = circle_curve.ref_direction();
+    let radius = &circle_curve.radius();
+            *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        }));
 }
 
 #[test]
@@ -1409,7 +1411,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus chart line");
     };
-    let (origin, direction) = line_pcurve.parts();
+    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(
         *direction,
@@ -1460,7 +1463,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus meridian chart line");
     };
-    let (origin, direction) = line_pcurve.parts();
+    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
     let long_sweep = std::f64::consts::FRAC_PI_2 - std::f64::consts::TAU;
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
@@ -1522,7 +1526,8 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected line pcurve");
     };
-    let (origin, direction) = line_pcurve.parts();
+    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - latitude).abs() < 1.0e-12);
     assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);

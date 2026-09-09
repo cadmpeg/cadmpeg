@@ -343,15 +343,15 @@ pub(crate) fn append_e5_planes(
         .filter_map(|surface| {
             let (axis,) = match surface.geometry {
                 SurfaceGeometry::Cylinder(cylinder_surface) => {
-                    let (_, &axis, _, _) = cylinder_surface.parts();
+                    let axis = *cylinder_surface.axis();
                     (axis,)
                 }
                 SurfaceGeometry::Cone(cone_surface) => {
-                    let (_, &axis, _, _, _, _) = cone_surface.parts();
+                    let axis = *cone_surface.axis();
                     (axis,)
                 }
                 SurfaceGeometry::Torus(torus_surface) => {
-                    let (_, &axis, _, _, _) = torus_surface.parts();
+                    let axis = *torus_surface.axis();
                     (axis,)
                 }
                 _ => {
@@ -2249,7 +2249,9 @@ pub(crate) fn e5_boundary_curve(
         crate::families::e5::graph::E5Pcurve::Circle { center, radius, .. },
     ) = (surface, native_pcurve)
     {
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
         let center = (*origin)
             .translated(*u_axis, center[0] * uv_scale[0])
@@ -2282,7 +2284,9 @@ pub(crate) fn e5_boundary_curve(
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2326,7 +2330,9 @@ pub(crate) fn e5_boundary_curve(
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2367,7 +2373,8 @@ pub(crate) fn e5_boundary_curve(
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
-    let (origin, direction) = line_pcurve.parts();
+    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
     if !finite_point2(*origin) || !finite_point2(*direction) {
         return None;
     }
@@ -2599,8 +2606,12 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     else {
         return false;
     };
-    let (left_center, left_axis, _, left_radius) = circle_curve.parts();
-    let (right_center, right_axis, _, right_radius) = circle_curve_2.parts();
+    let left_center = circle_curve.center();
+    let left_axis = circle_curve.axis();
+    let left_radius = &circle_curve.radius();
+    let right_center = circle_curve_2.center();
+    let right_axis = circle_curve_2.axis();
+    let right_radius = &circle_curve_2.radius();
     if (*left_center).distance(*right_center) > E5_ENDPOINT_MATCH_TOLERANCE
         || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
         || (*left_axis).dot(*right_axis) < 1.0 - E5_CARRIER_AXIS_COSINE_TOLERANCE
@@ -2633,15 +2644,22 @@ fn e5_circle_carriers_have_same_ordered_sweep(
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
     match (left, right) {
         (CurveGeometry::Line(line_curve), CurveGeometry::Line(line_curve_2)) => {
-            let (left_origin, left_direction) = line_curve.parts();
-            let (right_origin, right_direction) = line_curve_2.parts();
+            let left_origin = line_curve.origin();
+            let left_direction = line_curve.direction();
+            let right_origin = line_curve_2.origin();
+            let right_direction = line_curve_2.direction();
             (*left_origin).distance(*right_origin) <= 2e-3
                 && (*left_direction).dot(*right_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
         }
         (CurveGeometry::Circle(circle_curve), CurveGeometry::Circle(circle_curve_2)) => {
-            let (left_center, left_axis, left_ref_direction, left_radius) = circle_curve.parts();
-            let (right_center, right_axis, right_ref_direction, right_radius) =
-                circle_curve_2.parts();
+            let left_center = circle_curve.center();
+            let left_axis = circle_curve.axis();
+            let left_ref_direction = circle_curve.ref_direction();
+            let left_radius = &circle_curve.radius();
+            let right_center = circle_curve_2.center();
+            let right_axis = circle_curve_2.axis();
+            let right_ref_direction = circle_curve_2.ref_direction();
+            let right_radius = &circle_curve_2.radius();
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
                 && (*left_axis).dot(*right_axis) >= 1.0 - EPS_E5_DECODE_GEOMETRY
@@ -2658,11 +2676,16 @@ pub(crate) fn e5_constant_v_circle(
 ) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let radius = &cylinder_surface.radius();
             Some(((*origin).translated(*axis, v), *radius, *axis))
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, _, radius, _, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             Some((
                 (*origin).translated(*axis, v),
                 (radius + v * half_angle.tan()).abs(),
@@ -2670,7 +2693,9 @@ pub(crate) fn e5_constant_v_circle(
             ))
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, _, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let radius = &sphere_surface.radius();
             Some((
                 (*center).translated(*axis, radius * v.sin()),
                 radius * v.cos().abs(),
@@ -2678,7 +2703,10 @@ pub(crate) fn e5_constant_v_circle(
             ))
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, _, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             Some((
                 (*center).translated(*axis, minor_radius * v.sin()),
                 (major_radius + minor_radius * v.cos()).abs(),
@@ -2695,13 +2723,20 @@ pub(crate) fn e5_constant_u_circle(
 ) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((*center, *radius, (*axis).cross(radial)))
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((
@@ -3136,7 +3171,7 @@ mod route_tests {
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
             panic!("expected reflected line pcurve");
         };
-        let (_, direction) = line_pcurve.parts();
+        let direction = line_pcurve.direction();
         assert_eq!(*direction, Point2::new(-1.0, 0.0));
         let (curve, _) = e5_boundary_curve(
             &surface.geometry,
@@ -3160,7 +3195,7 @@ mod route_tests {
         .expect("reflected plane boundary");
         assert!(matches!(curve, CurveGeometry::Line(line_curve)
         if {
-            let (_, direction) = line_curve.parts();
+            let direction = line_curve.direction();
             *direction == Vector3::new(-1.0, 0.0, 0.0)
         }));
     }
@@ -3772,10 +3807,11 @@ mod route_tests {
         )
         .expect("cylinder boundary circle");
         assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, _, _, radius) = circle_curve.parts();
-            *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
-        }));
+                if {
+                    let center = circle_curve.center();
+        let radius = &circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
+                }));
         assert!(
             (range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs()
                 < EPS_E5_DECODE_EXACT_GEOMETRY
@@ -3817,7 +3853,7 @@ mod route_tests {
         )
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *&circle_curve.radius() == 2.0 })
         );
     }
 
@@ -3860,7 +3896,7 @@ mod route_tests {
         )
         .expect("cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *&circle_curve.radius() == 2.0 })
         );
 
         let plane = SurfaceGeometry::Plane(
@@ -4001,7 +4037,7 @@ mod route_tests {
         assert_eq!(range, [0.0, tiny]);
         assert!(matches!(curve, CurveGeometry::Line(line_curve)
         if {
-            let (_, direction) = line_curve.parts();
+            let direction = line_curve.direction();
             *direction == Vector3::new(1.0, 0.0, 0.0)
         }));
     }
@@ -4037,13 +4073,16 @@ mod route_tests {
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            *center == Point3::new(5.0, 7.0, 3.0)
-                && *axis == Vector3::new(0.0, 0.0, 1.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 2.0
-        }));
+                if {
+                    let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = &circle_curve.radius();
+                    *center == Point3::new(5.0, 7.0, 3.0)
+                        && *axis == Vector3::new(0.0, 0.0, 1.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 2.0
+                }));
 
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4056,13 +4095,16 @@ mod route_tests {
         .expect("reflected plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            *center == Point3::new(-3.0, -3.0, 3.0)
-                && *axis == Vector3::new(0.0, 0.0, 1.0)
-                && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
-                && *radius == 2.0
-        }));
+                if {
+                    let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = &circle_curve.radius();
+                    *center == Point3::new(-3.0, -3.0, 3.0)
+                        && *axis == Vector3::new(0.0, 0.0, 1.0)
+                        && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+                        && *radius == 2.0
+                }));
     }
 
     #[test]

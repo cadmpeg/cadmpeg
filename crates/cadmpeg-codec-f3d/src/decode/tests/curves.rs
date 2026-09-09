@@ -117,7 +117,13 @@ fn decode_retains_generated_helix_construction() {
     let ProceduralCurveDefinition::Helix(helix_payload) = procedural.definition() else {
         panic!("expected helix construction")
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = &helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, Point3::new(10.0, 20.0, 30.0));
@@ -915,7 +921,8 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     else {
         panic!("expected compound construction")
     };
-    let (parameters, components) = compound.parts();
+    let parameters = compound.parameters();
+    let components = compound.components();
 
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
     assert_eq!(
@@ -948,7 +955,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             let ProceduralCurveDefinition::Compound(compound) = definition else {
                 unreachable!()
             };
-            let mut components = compound.parts().1.to_vec();
+            let mut components = compound.components().to_vec();
             for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
                 component.parameter = parameter;
             }
@@ -1004,7 +1011,8 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     else {
         panic!("expected round-trip compound construction")
     };
-    let (parameters, components) = compound.parts();
+    let parameters = compound.parameters();
+    let components = compound.components();
 
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
     assert_eq!(
@@ -1364,15 +1372,16 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             .clone()
     });
     assert!(matches!(supports[0], SurfaceGeometry::Cone(cone_surface)
-    if {
-        let (_, axis, _, _, _, half_angle) = cone_surface.parts();
-        (*cone_surface.parts().3 == 10.0)
-            && (*cone_surface.parts().4 == 0.4)
-            && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
-                && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
-    }));
+        if {
+            let axis = cone_surface.axis();
+    let half_angle = &cone_surface.half_angle();
+            (*&cone_surface.radius() == 10.0)
+                && (*&cone_surface.ratio() == 0.4)
+                && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                    && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
+        }));
     assert!(
-        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { *torus_surface.parts().4 == -7.5 })
+        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { *&torus_surface.minor_radius() == -7.5 })
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1440,7 +1449,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     assert!(
         matches!(expected_geometries[0], SurfaceGeometry::Cone(cone_surface)
         if {
-            let (_, _, _, _, _, half_angle) = cone_surface.parts();
+            let half_angle = &cone_surface.half_angle();
             (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
         })
     );
@@ -1725,7 +1734,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *&sphere_surface.radius() == -12.5 })
     );
 
     let mut edited = result.ir().clone();
@@ -1786,7 +1795,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *sphere_surface.parts().3 == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *&sphere_surface.radius() == -12.5 })
     );
 }
 

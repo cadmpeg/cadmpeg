@@ -1156,7 +1156,13 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     else {
         panic!("placed helix");
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = &helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, -2.0));
@@ -1183,7 +1189,11 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     else {
         panic!("placed helix");
     };
-    let (_, center, major, minor, pitch, _, axis) = helix_payload.parts();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let axis = helix_payload.axis();
 
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(0.0, 5.0, 0.0));

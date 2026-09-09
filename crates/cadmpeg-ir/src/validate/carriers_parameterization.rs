@@ -635,7 +635,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Compound(compound) => {
-                let (_, components) = compound.parts();
+                let components = compound.components();
 
                 curves.extend(
                     components
@@ -654,7 +654,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 construction: intersection,
                 ..
             } => {
-                let (supports, _, _) = intersection.parts();
+                let supports = intersection.supports();
 
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }

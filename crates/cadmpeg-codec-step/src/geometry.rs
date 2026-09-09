@@ -173,7 +173,8 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
 pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             let point = point2(e, *origin);
             let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
             let direction = direction2(e, *direction);
@@ -181,12 +182,17 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             e.emit("LINE", &format!("'',{point},{vector}"))
         }
         PcurveGeometry::Circle(circle_pcurve) => {
-            let (center, x_axis, _, radius) = circle_pcurve.parts();
+            let center = circle_pcurve.center();
+            let x_axis = circle_pcurve.x_axis();
+            let radius = &circle_pcurve.radius();
             let placement = axis2_placement_2d(e, *center, *x_axis);
             e.emit("CIRCLE", &format!("'',{placement},{}", real(*radius)))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
-            let (center, x_axis, _, major_radius, minor_radius) = ellipse_pcurve.parts();
+            let center = ellipse_pcurve.center();
+            let x_axis = ellipse_pcurve.x_axis();
+            let major_radius = &ellipse_pcurve.major_radius();
+            let minor_radius = &ellipse_pcurve.minor_radius();
             let placement = axis2_placement_2d(e, *center, *x_axis);
             e.emit(
                 "ELLIPSE",
@@ -198,7 +204,9 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             )
         }
         PcurveGeometry::Parabola(parabola_pcurve) => {
-            let (vertex, x_axis, _, focal_distance) = parabola_pcurve.parts();
+            let vertex = parabola_pcurve.vertex();
+            let x_axis = parabola_pcurve.x_axis();
+            let focal_distance = &parabola_pcurve.focal_distance();
             let placement = axis2_placement_2d(e, *vertex, *x_axis);
             e.emit(
                 "PARABOLA",
@@ -206,7 +214,10 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             )
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
-            let (center, x_axis, _, major_radius, minor_radius) = hyperbola_pcurve.parts();
+            let center = hyperbola_pcurve.center();
+            let x_axis = hyperbola_pcurve.x_axis();
+            let major_radius = &hyperbola_pcurve.major_radius();
+            let minor_radius = &hyperbola_pcurve.minor_radius();
             let placement = axis2_placement_2d(e, *center, *x_axis);
             e.emit(
                 "HYPERBOLA",
@@ -259,7 +270,9 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, same_sense, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let same_sense = &trimmed_pcurve.same_sense();
+            let basis = trimmed_pcurve.basis();
             let basis = pcurve(e, basis)?;
             let sense = if *same_sense { ".T." } else { ".F." };
             e.emit(
@@ -272,7 +285,8 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             )
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (distance, basis) = offset_pcurve.parts();
+            let distance = &offset_pcurve.distance();
+            let basis = offset_pcurve.basis();
             let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
@@ -354,17 +368,26 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
             ..
         } => return surface(e, geometry),
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let pl = placement(e, *origin, *normal, *u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = &cylinder_surface.radius();
             let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(*radius)))
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, radius, _, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = &cone_surface.radius();
+            let half_angle = &cone_surface.half_angle();
             let pl = placement(e, *origin, *axis, *ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
@@ -372,7 +395,10 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
             )
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
@@ -380,7 +406,11 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
             )
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
                 "TOROIDAL_SURFACE",
@@ -413,7 +443,8 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             ..
         } => return curve(e, geometry),
         CurveGeometry::Line(line_curve) => {
-            let (origin, d) = line_curve.parts();
+            let origin = line_curve.origin();
+            let d = line_curve.direction();
             let p = point(e, *origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
             let dir = direction(e, *d);
@@ -421,12 +452,19 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = &circle_curve.radius();
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", real(*radius)))
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             let pl = placement(e, *center, *axis, *major_direction);
             e.emit(
                 "ELLIPSE",
@@ -434,13 +472,19 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             )
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = &parabola_curve.focal_distance();
             let pl = placement(e, *vertex, *axis, *major_direction);
             e.emit("PARABOLA", &format!("'',{pl},{}", real(*focal_distance)))
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = &hyperbola_curve.major_radius();
+            let minor_radius = &hyperbola_curve.minor_radius();
             let pl = placement(e, *center, *axis, *major_direction);
             e.emit(
                 "HYPERBOLA",
@@ -448,7 +492,7 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             )
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (collapsed,) = degenerate_curve.parts();
+            let collapsed = degenerate_curve.point();
             let point = point(e, *collapsed);
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }

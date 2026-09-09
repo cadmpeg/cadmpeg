@@ -45,7 +45,8 @@ fn placed_offset_source(
     let orientation = transform_orientation(transform)?;
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     transform.apply_point(*origin),
@@ -55,7 +56,10 @@ fn placed_offset_source(
             ))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = &circle_curve.radius();
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     transform.apply_point(*center),
@@ -420,11 +424,12 @@ pub(super) fn project(
                 let geometry = match &offset_source_geometry {
                     CurveGeometry::Line(line_curve)
                         if {
-                            let (_, direction) = line_curve.parts();
+                            let direction = line_curve.direction();
                             normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
                         } =>
                     {
-                        let (origin, direction) = line_curve.parts();
+                        let origin = line_curve.origin();
+                        let direction = line_curve.direction();
                         let Some(payload) = admit(
                             cadmpeg_ir::geometry::LineCurve::try_new(
                                 origin.translated(normal.cross(*direction), distance),
@@ -439,11 +444,14 @@ pub(super) fn project(
                     }
                     CurveGeometry::Circle(circle_curve)
                         if {
-                            let (_, axis, _, _) = circle_curve.parts();
+                            let axis = circle_curve.axis();
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
-                        let (center, axis, ref_direction, radius) = circle_curve.parts();
+                        let center = circle_curve.center();
+                        let axis = circle_curve.axis();
+                        let ref_direction = circle_curve.ref_direction();
+                        let radius = &circle_curve.radius();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
@@ -536,7 +544,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let (_, direction) = line_curve.parts();
+                let direction = line_curve.direction();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
@@ -656,7 +664,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let (_, direction) = line_curve.parts();
+                let direction = line_curve.direction();
                 if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,

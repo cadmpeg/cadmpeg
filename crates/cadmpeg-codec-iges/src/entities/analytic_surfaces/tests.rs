@@ -37,28 +37,30 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 .unwrap();
             match (entity_type, &surface.geometry) {
                 (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface)) => {
-                    let (origin, _, _) = plane_surface.parts();
+                    let origin = plane_surface.origin();
                     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
                 }
                 (192, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface))
                     if {
-                        let (_, _, _, radius) = cylinder_surface.parts();
+                        let radius = &cylinder_surface.radius();
                         *radius == 2.0
                     } => {}
                 (194, cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface))
                     if {
-                        let (_, _, _, radius, _, half_angle) = cone_surface.parts();
+                        let radius = &cone_surface.radius();
+                        let half_angle = &cone_surface.half_angle();
                         *radius == 2.0
                             && (*half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15
                     } => {}
                 (196, cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface))
                     if {
-                        let (_, _, _, radius) = sphere_surface.parts();
+                        let radius = &sphere_surface.radius();
                         *radius == 2.0
                     } => {}
                 (198, cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
                     if {
-                        let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                        let major_radius = &torus_surface.major_radius();
+                        let minor_radius = &torus_surface.minor_radius();
                         *major_radius == 4.0 && *minor_radius == 1.0
                     } => {}
                 _ => panic!(

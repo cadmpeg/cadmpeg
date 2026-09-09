@@ -719,7 +719,10 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
+    let radius = &cylinder_surface.radius();
     let mut origin = *origin;
     origin.y = 1.0;
     *cylinder_surface =
@@ -754,7 +757,9 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let SurfaceGeometry::Plane(plane_surface) = &mut ir.model.surfaces[3].geometry else {
         unreachable!()
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let mut origin = *origin;
     origin.x += 1.0;
     *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
@@ -1439,7 +1444,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let mut translated = ir.clone();
     for carrier in &mut translated.model.surfaces {
         if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
@@ -1464,7 +1471,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let CurveGeometry::Line(line_curve) = &mut geometry else {
         panic!("line spine cache");
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     let mut origin = *origin;
     origin.x += 1.0e12;
     origin.y += 1.0e12;

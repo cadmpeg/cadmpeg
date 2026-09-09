@@ -3053,13 +3053,16 @@ pub(crate) fn analytic_surface_offset(
     match (support, offset) {
         (SurfaceGeometry::Plane(plane_surface), SurfaceGeometry::Plane(plane_surface_2))
             if {
-                let (_, support_normal, support_u) = plane_surface.parts();
-                let (_, offset_normal, offset_u) = plane_surface_2.parts();
+                let support_normal = plane_surface.normal();
+                let support_u = plane_surface.u_axis();
+                let offset_normal = plane_surface_2.normal();
+                let offset_u = plane_surface_2.u_axis();
                 support_normal == offset_normal && support_u == offset_u
             } =>
         {
-            let (support_origin, support_normal, _) = plane_surface.parts();
-            let (offset_origin, _, _) = plane_surface_2.parts();
+            let support_origin = plane_surface.origin();
+            let support_normal = plane_surface.normal();
+            let offset_origin = plane_surface_2.origin();
             let delta = Vector3::new(
                 offset_origin.x - support_origin.x,
                 offset_origin.y - support_origin.y,
@@ -3089,23 +3092,31 @@ pub(crate) fn analytic_surface_offset(
             SurfaceGeometry::Cylinder(cylinder_surface),
             SurfaceGeometry::Cylinder(cylinder_surface_2),
         ) if {
-            let (support_origin, support_axis, support_ref, _) = cylinder_surface.parts();
-            let (offset_origin, offset_axis, offset_ref, _) = cylinder_surface_2.parts();
+            let support_origin = cylinder_surface.origin();
+            let support_axis = cylinder_surface.axis();
+            let support_ref = cylinder_surface.ref_direction();
+            let offset_origin = cylinder_surface_2.origin();
+            let offset_axis = cylinder_surface_2.axis();
+            let offset_ref = cylinder_surface_2.ref_direction();
             support_origin == offset_origin
                 && support_axis == offset_axis
                 && support_ref == offset_ref
         } =>
         {
-            let (_, _, _, support_radius) = cylinder_surface.parts();
-            let (_, _, _, offset_radius) = cylinder_surface_2.parts();
+            let support_radius = &cylinder_surface.radius();
+            let offset_radius = &cylinder_surface_2.radius();
             Some(offset_radius - support_radius)
         }
         (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2))
             if {
-                let (_, support_axis, support_ref, _, support_ratio, support_angle) =
-                    cone_surface.parts();
-                let (_, offset_axis, offset_ref, _, offset_ratio, offset_angle) =
-                    cone_surface_2.parts();
+                let support_axis = cone_surface.axis();
+                let support_ref = cone_surface.ref_direction();
+                let support_ratio = &cone_surface.ratio();
+                let support_angle = &cone_surface.half_angle();
+                let offset_axis = cone_surface_2.axis();
+                let offset_ref = cone_surface_2.ref_direction();
+                let offset_ratio = &cone_surface_2.ratio();
+                let offset_angle = &cone_surface_2.half_angle();
                 support_axis == offset_axis
                     && support_ref == offset_ref
                     && support_ratio.to_bits() == 1.0_f64.to_bits()
@@ -3113,9 +3124,12 @@ pub(crate) fn analytic_surface_offset(
                     && support_angle.to_bits() == offset_angle.to_bits()
             } =>
         {
-            let (support_origin, support_axis, _, support_radius, _, support_angle) =
-                cone_surface.parts();
-            let (offset_origin, _, _, offset_radius, _, _) = cone_surface_2.parts();
+            let support_origin = cone_surface.origin();
+            let support_axis = cone_surface.axis();
+            let support_radius = &cone_surface.radius();
+            let support_angle = &cone_surface.half_angle();
+            let offset_origin = cone_surface_2.origin();
+            let offset_radius = &cone_surface_2.radius();
             let delta = Vector3::new(
                 offset_origin.x - support_origin.x,
                 offset_origin.y - support_origin.y,
@@ -3154,26 +3168,36 @@ pub(crate) fn analytic_surface_offset(
         }
         (SurfaceGeometry::Sphere(sphere_surface), SurfaceGeometry::Sphere(sphere_surface_2))
             if {
-                let (support_center, support_axis, support_ref, support_radius) =
-                    sphere_surface.parts();
-                let (offset_center, offset_axis, offset_ref, offset_radius) =
-                    sphere_surface_2.parts();
+                let support_center = sphere_surface.center();
+                let support_axis = sphere_surface.axis();
+                let support_ref = sphere_surface.ref_direction();
+                let support_radius = &sphere_surface.radius();
+                let offset_center = sphere_surface_2.center();
+                let offset_axis = sphere_surface_2.axis();
+                let offset_ref = sphere_surface_2.ref_direction();
+                let offset_radius = &sphere_surface_2.radius();
                 support_center == offset_center
                     && support_axis == offset_axis
                     && support_ref == offset_ref
                     && support_radius.signum().to_bits() == offset_radius.signum().to_bits()
             } =>
         {
-            let (_, _, _, support_radius) = sphere_surface.parts();
-            let (_, _, _, offset_radius) = sphere_surface_2.parts();
+            let support_radius = &sphere_surface.radius();
+            let offset_radius = &sphere_surface_2.radius();
             Some((offset_radius - support_radius) * support_radius.signum())
         }
         (SurfaceGeometry::Torus(torus_surface), SurfaceGeometry::Torus(torus_surface_2))
             if {
-                let (support_center, support_axis, support_ref, support_major, support_minor) =
-                    torus_surface.parts();
-                let (offset_center, offset_axis, offset_ref, offset_major, offset_minor) =
-                    torus_surface_2.parts();
+                let support_center = torus_surface.center();
+                let support_axis = torus_surface.axis();
+                let support_ref = torus_surface.ref_direction();
+                let support_major = &torus_surface.major_radius();
+                let support_minor = &torus_surface.minor_radius();
+                let offset_center = torus_surface_2.center();
+                let offset_axis = torus_surface_2.axis();
+                let offset_ref = torus_surface_2.ref_direction();
+                let offset_major = &torus_surface_2.major_radius();
+                let offset_minor = &torus_surface_2.minor_radius();
                 support_center == offset_center
                     && support_axis == offset_axis
                     && support_ref == offset_ref
@@ -3183,8 +3207,8 @@ pub(crate) fn analytic_surface_offset(
                     && *offset_major > offset_minor.abs()
             } =>
         {
-            let (_, _, _, _, support_minor) = torus_surface.parts();
-            let (_, _, _, _, offset_minor) = torus_surface_2.parts();
+            let support_minor = &torus_surface.minor_radius();
+            let offset_minor = &torus_surface_2.minor_radius();
             Some((offset_minor - support_minor) * support_minor.signum())
         }
         _ => None,
@@ -3475,7 +3499,8 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
     let carrier = index.curves(curve.as_str())?;
     match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(
                 (point.x - origin.x) * direction.x
                     + (point.y - origin.y) * direction.y
@@ -3509,11 +3534,15 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
 ) -> Option<f64> {
     let (center, axis, reference) = match geometry {
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, _) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
             (*center, *axis, *ref_direction)
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, _, _) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
             (*center, *axis, *major_direction)
         }
         _ => return None,
@@ -3532,7 +3561,8 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
     let CurveGeometry::Ellipse(ellipse_curve) = geometry else {
         unreachable!("periodic analytic curve is a circle or ellipse");
     };
-    let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+    let major_radius = &ellipse_curve.major_radius();
+    let minor_radius = &ellipse_curve.minor_radius();
     let x = dot_vector(delta, reference);
     let y = dot_vector(delta, transverse);
     let difference = minor_radius * minor_radius - major_radius * major_radius;

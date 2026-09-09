@@ -88,7 +88,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     else {
         panic!("typed tolerant intersection");
     };
-    let (supports, _, _) = intersection.parts();
+    let supports = intersection.supports();
 
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());

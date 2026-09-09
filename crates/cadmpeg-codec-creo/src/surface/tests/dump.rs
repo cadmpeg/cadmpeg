@@ -42,7 +42,11 @@ fn decode_transfers_positional_line_extrusion_plane() {
         match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
             cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
                 matches!(
-                    plane_surface.parts(),
+                    (
+                        plane_surface.origin(),
+                        plane_surface.normal(),
+                        plane_surface.u_axis(),
+                    ),
                     (
                         cadmpeg_ir::math::Point3 {
                             x: 0.0,
@@ -135,7 +139,11 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
             cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
                 matches!(
-                    plane_surface.parts(),
+                    (
+                        plane_surface.origin(),
+                        plane_surface.normal(),
+                        plane_surface.u_axis(),
+                    ),
                     (
                         cadmpeg_ir::math::Point3 {
                             x: 2.0,
@@ -378,21 +386,24 @@ fn decode_places_complete_positional_torus() {
         .expect("positional torus surface");
     assert!(
         matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface)
-        if {
-            let (center, axis, ref_direction, major_radius, minor_radius) =
-                torus_surface.parts();
-            (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
-                && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
-                && center.z.abs() < EPS_ANALYTIC_FRAME
-                && axis.x.abs() < EPS_ANALYTIC_FRAME
-                && axis.y.abs() < EPS_ANALYTIC_FRAME
-                && (axis.z - 1.0).abs() < EPS_ANALYTIC_FRAME
-                && (ref_direction.x + 0.999_899_554_583_406_1).abs() < EPS_ANALYTIC_FRAME
-                && (ref_direction.y - 0.014_173_240_416_574_131).abs() < EPS_ANALYTIC_FRAME
-                && ref_direction.z.abs() < EPS_ANALYTIC_FRAME
-                && (major_radius - 4.45).abs() < EPS_ANALYTIC_FRAME
-                && (minor_radius - 0.5).abs() < EPS_ANALYTIC_FRAME
-        })
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.axis();
+        let ref_direction = torus_surface.ref_direction();
+        let major_radius = &torus_surface.major_radius();
+        let minor_radius = &torus_surface.minor_radius();
+                    (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
+                        && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
+                        && center.z.abs() < EPS_ANALYTIC_FRAME
+                        && axis.x.abs() < EPS_ANALYTIC_FRAME
+                        && axis.y.abs() < EPS_ANALYTIC_FRAME
+                        && (axis.z - 1.0).abs() < EPS_ANALYTIC_FRAME
+                        && (ref_direction.x + 0.999_899_554_583_406_1).abs() < EPS_ANALYTIC_FRAME
+                        && (ref_direction.y - 0.014_173_240_416_574_131).abs() < EPS_ANALYTIC_FRAME
+                        && ref_direction.z.abs() < EPS_ANALYTIC_FRAME
+                        && (major_radius - 4.45).abs() < EPS_ANALYTIC_FRAME
+                        && (minor_radius - 0.5).abs() < EPS_ANALYTIC_FRAME
+                })
     );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert!(
@@ -486,15 +497,18 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
             .expect("paired sphere surface");
         assert!(
             matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface)
-            if {
-                let (center, axis, ref_direction, radius) = sphere_surface.parts();
-                center.x == 0.0
-                    && center.y == 0.0
-                    && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME
-                    && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                    && *radius == 2.65
-            })
+                        if {
+                            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = &sphere_surface.radius();
+                            center.x == 0.0
+                                && center.y == 0.0
+                                && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME
+                                && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                                && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                                && *radius == 2.65
+                        })
         );
     }
     assert_eq!(
@@ -1294,7 +1308,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
             if {
                 matches!(
-                    cylinder_surface.parts(),
+                    (
+                        cylinder_surface.origin(),
+                        cylinder_surface.axis(),
+                        cylinder_surface.ref_direction(),
+                        &cylinder_surface.radius(),
+                    ),
                     (
                         cadmpeg_ir::math::Point3 {
                             x: 2.0,
@@ -1305,11 +1324,16 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && *cylinder_surface.parts().3 == 1.0
+                ) && *&cylinder_surface.radius() == 1.0
             } =>
         {
             matches!(
-                cylinder_surface.parts(),
+                (
+                    cylinder_surface.origin(),
+                    cylinder_surface.axis(),
+                    cylinder_surface.ref_direction(),
+                    &cylinder_surface.radius(),
+                ),
                 (
                     cadmpeg_ir::math::Point3 {
                         x: 2.0,
@@ -1335,7 +1359,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
             if {
                 matches!(
-                    circle_curve.parts(),
+                    (
+                        circle_curve.center(),
+                        circle_curve.axis(),
+                        circle_curve.ref_direction(),
+                        &circle_curve.radius(),
+                    ),
                     (
                         cadmpeg_ir::math::Point3 {
                             x: 2.0,
@@ -1350,11 +1379,16 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && *circle_curve.parts().3 == 1.0
+                ) && *&circle_curve.radius() == 1.0
             } =>
         {
             matches!(
-                circle_curve.parts(),
+                (
+                    circle_curve.center(),
+                    circle_curve.axis(),
+                    circle_curve.ref_direction(),
+                    &circle_curve.radius(),
+                ),
                 (
                     cadmpeg_ir::math::Point3 {
                         x: 2.0,
@@ -1391,7 +1425,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     assert!(match neutral_circle.geometry {
         cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) => {
             matches!(
-                circle_curve.parts(),
+                (
+                    circle_curve.center(),
+                    circle_curve.axis(),
+                    circle_curve.ref_direction(),
+                    &circle_curve.radius(),
+                ),
                 (
                     _,
                     _,
@@ -1451,7 +1490,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
                 if {
                     matches!(
-                        circle_curve.parts(),
+                        (
+                            circle_curve.center(),
+                            circle_curve.axis(),
+                            circle_curve.ref_direction(),
+                            &circle_curve.radius(),
+                        ),
                         (
                             _,
                             cadmpeg_ir::math::Vector3 {
@@ -1462,11 +1506,16 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                             _,
                             _,
                         )
-                    ) && *circle_curve.parts().3 == 1.0
+                    ) && *&circle_curve.radius() == 1.0
                 } =>
             {
                 matches!(
-                    circle_curve.parts(),
+                    (
+                        circle_curve.center(),
+                        circle_curve.axis(),
+                        circle_curve.ref_direction(),
+                        &circle_curve.radius(),
+                    ),
                     (
                         _,
                         cadmpeg_ir::math::Vector3 {

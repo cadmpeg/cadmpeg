@@ -2669,8 +2669,11 @@ impl<'a> Builder<'a> {
                 let SurfaceGeometry::Torus(torus_surface) = solved else {
                     return None;
                 };
-                let (center, axis, ref_direction, major_radius, minor_radius) =
-                    torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
+                let ref_direction = torus_surface.ref_direction();
+                let major_radius = &torus_surface.major_radius();
+                let minor_radius = &torus_surface.minor_radius();
                 let placement =
                     geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
                 Some(self.emitter.emit(
@@ -3733,11 +3736,12 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|surface| match &surface.geometry {
                 SurfaceGeometry::Sphere(sphere_surface) => {
-                    let (_, _, _, radius) = sphere_surface.parts();
+                    let radius = &sphere_surface.radius();
                     *radius < 0.0
                 }
                 SurfaceGeometry::Torus(torus_surface) => {
-                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                    let major_radius = &torus_surface.major_radius();
+                    let minor_radius = &torus_surface.minor_radius();
                     *major_radius < 0.0
                         || *minor_radius < 0.0
                         || (minor_radius.abs() > major_radius.abs()
@@ -3773,7 +3777,7 @@ impl<'a> Builder<'a> {
             .filter(|surface| {
                 matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let (_, _, _, _, &ratio, _) = cone_surface.parts();
+                    let ratio = cone_surface.ratio();
                     ratio != 1.0
                 })
             })

@@ -1838,7 +1838,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     .iter()
                     .filter_map(|surface| match &surface.geometry {
                         SurfaceGeometry::Cylinder(cylinder_surface) => {
-                            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+                            let origin = *cylinder_surface.origin();
+                            let axis = *cylinder_surface.axis();
+                            let candidate = cylinder_surface.radius();
                             ((candidate - radius).abs() <= radius_tolerance
                                 && point_axis_distance_squared(point, origin, axis)
                                     <= axis_tolerance_squared)
@@ -2071,7 +2073,9 @@ pub(crate) fn project_generated_hole_axes(
                     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
                         continue;
                     };
-                    let (&origin, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    let origin = *cylinder_surface.origin();
+                    let axis = *cylinder_surface.axis();
+                    let candidate_radius = cylinder_surface.radius();
                     if (candidate_radius - radius).abs() > radius_tolerance {
                         continue;
                     }
@@ -2415,13 +2419,16 @@ fn drilled_hole_topology_candidates(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let (_, _, _, &candidate_radius, &ratio, &half_angle) = cone_surface.parts();
+                    let candidate_radius = cone_surface.radius();
+                    let ratio = cone_surface.ratio();
+                    let half_angle = cone_surface.half_angle();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
                         && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY
                 } =>
             {
-                let (&origin, &axis, _, _, _, _) = cone_surface.parts();
+                let origin = *cone_surface.origin();
+                let axis = *cone_surface.axis();
                 hole_axis_key(&HolePlacement::Axis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
                     axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
@@ -2805,7 +2812,9 @@ fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         return None;
     };
-    let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+    let origin = *cylinder_surface.origin();
+    let axis = *cylinder_surface.axis();
+    let radius = cylinder_surface.radius();
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     let along = delta.dot(axis);
     let radial = Vector3::new(
@@ -3154,7 +3163,9 @@ fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point
             else {
                 return None;
             };
-            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+            let origin = *cylinder_surface.origin();
+            let axis = *cylinder_surface.axis();
+            let candidate = cylinder_surface.radius();
             ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
         })
         .collect::<Vec<_>>();
@@ -3235,7 +3246,9 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
         let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             return None;
         };
-        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+        let origin = *cylinder_surface.origin();
+        let axis = *cylinder_surface.axis();
+        let candidate = cylinder_surface.radius();
         ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
     }))
 }
@@ -3322,7 +3335,9 @@ fn cylindrical_bore_face_spans(
             let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
                 return None;
             };
-            let (&origin, &axis, _, &radius) = cylinder_surface.parts();
+            let origin = *cylinder_surface.origin();
+            let axis = *cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
             let mut stations = face
                 .loops
                 .iter()
@@ -3557,7 +3572,8 @@ pub(crate) fn project_bore_backed_position_sketches(
             .filter_map(|surface| match surface.geometry {
                 SurfaceGeometry::Plane(plane_surface)
                     if {
-                        let (&origin, &normal, _) = plane_surface.parts();
+                        let origin = *plane_surface.origin();
+                        let normal = *plane_surface.normal();
                         normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                             && axes.iter().all(|(point, _)| {
                                 Vector3::new(
@@ -3571,7 +3587,9 @@ pub(crate) fn project_bore_backed_position_sketches(
                             })
                     } =>
                 {
-                    let (&origin, &normal, &u_axis) = plane_surface.parts();
+                    let origin = *plane_surface.origin();
+                    let normal = *plane_surface.normal();
+                    let u_axis = *plane_surface.u_axis();
                     Some((origin, normal, u_axis))
                 }
                 _ => None,
@@ -3767,7 +3785,9 @@ fn match_marker_loci_to_bore_axes(
         let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             continue;
         };
-        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+        let origin = *cylinder_surface.origin();
+        let axis = *cylinder_surface.axis();
+        let candidate = cylinder_surface.radius();
         if (candidate - radius).abs() > radius_tolerance {
             continue;
         }
@@ -4321,12 +4341,13 @@ fn constrained_bore_axes(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if {
-                    let (_, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    let axis = *cylinder_surface.axis();
+                    let candidate_radius = cylinder_surface.radius();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                 } =>
             {
-                let (&candidate, _, _, _) = cylinder_surface.parts();
+                let candidate = *cylinder_surface.origin();
                 let delta = Vector3::new(
                     candidate.x - origin.x,
                     candidate.y - origin.y,

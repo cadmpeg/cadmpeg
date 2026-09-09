@@ -1186,7 +1186,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::Compound(compound) => {
-                let (_, components) = compound.parts();
+                let components = compound.components();
 
                 for component in components {
                     if ids.curves(component.component.as_str()).is_none() {
@@ -1217,7 +1217,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 construction: intersection,
                 ..
             } => {
-                let (supports, _, _) = intersection.parts();
+                let supports = intersection.supports();
 
                 for surface in supports {
                     if ids.surfaces(surface.as_str()).is_none() {

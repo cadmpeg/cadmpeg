@@ -64,7 +64,8 @@ fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Opti
 fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match curve {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(Point3::new(
                 origin.x + parameter * direction.x * LEN_TO_MM,
                 origin.y + parameter * direction.y * LEN_TO_MM,
@@ -72,7 +73,10 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             ))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = &circle_curve.radius();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x
@@ -84,7 +88,11 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             ))
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             Some(Point3::new(
                 center.x

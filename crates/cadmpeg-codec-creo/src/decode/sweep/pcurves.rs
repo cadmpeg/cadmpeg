@@ -85,7 +85,9 @@ pub(in super::super) fn revolution_boundary_pcurve(
     };
     match surface {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let normal = vector(*normal);
             let u_axis = vector(*u_axis);
             let v_axis = cross(normal, u_axis);
@@ -109,7 +111,9 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(circular_pcurve(center, radius, start, start + direction)?)
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
             let carrier_axis = vector(*axis);
             let relative = point_from(*origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -122,7 +126,9 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, ref_direction, _, _, _) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
             let carrier_axis = vector(*axis);
             let relative = point_from(*origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -135,7 +141,9 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, _) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
             let carrier_axis = vector(*axis);
             let relative = point_from(*center);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -147,7 +155,11 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = &torus_surface.major_radius();
+            let minor_radius = &torus_surface.minor_radius();
             let carrier_axis = vector(*axis);
             let reference = vector(*ref_direction);
             let relative = point_from(*center);

@@ -245,22 +245,25 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     )
     .expect("torus meridian");
     assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
-    if {
-        let (origin, direction) = line_pcurve.parts();
-        (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
-            && direction.u == 1.0
-            && direction.v == 0.0
-    }));
+        if {
+            let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
+            (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
+                && direction.u == 1.0
+                && direction.v == 0.0
+        }));
     assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
-    if {
-        let (origin, direction) = line_pcurve.parts();
-        origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
-    }));
+        if {
+            let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
+            origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
+        }));
     assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
-    if {
-        let (origin, direction) = line_pcurve.parts();
-        (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
-    }));
+        if {
+            let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
+            (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
+        }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
         for (curve, surface, pcurve) in [
             (&cone_ellipse, &cone, &cone_pcurve),
@@ -369,7 +372,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     else {
         panic!("closed intersection parameterization");
     };
-    let (supports, _, _) = intersection.parts();
+    let supports = intersection.supports();
 
     assert_eq!(parameterization.parameter_range(), range);
     assert_eq!(ir.model.edges[0].param_range(), Some(range));
@@ -513,17 +516,18 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     });
 
     assert!(matches!(exact_boundary_pcurve(
-        &ir,
-        &curve,
-        &surface,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
-        [0.0, 1.0],
-        EPS_BOUNDARY_FIT,
-    ), Some(PcurveGeometry::Line(line_pcurve))
-            if {
-                let (origin, direction) = line_pcurve.parts();
-                origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
-            }));
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            [0.0, 1.0],
+            EPS_BOUNDARY_FIT,
+        ), Some(PcurveGeometry::Line(line_pcurve))
+                if {
+                    let origin = line_pcurve.origin();
+    let direction = line_pcurve.direction();
+                    origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+                }));
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
@@ -1336,10 +1340,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     };
     assert!(parameterization.pcurves.iter().all(
         |pcurve| matches!(pcurve, PcurveGeometry::Line(line_pcurve)
-        if {
-            let (origin, direction) = line_pcurve.parts();
-            origin.u == 0.0 && direction.u == 1.0
-        })
+                if {
+                    let origin = line_pcurve.origin();
+        let direction = line_pcurve.direction();
+                    origin.u == 0.0 && direction.u == 1.0
+                })
     ));
     assert_eq!(ir.model.edges[0].start, vertices[0]);
     assert_eq!(ir.model.edges[0].end, vertices[1]);
@@ -1372,7 +1377,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             else {
                 unreachable!();
             };
-            let (supports, _, tolerance) = intersection.parts();
+            let supports = intersection.supports();
+            let tolerance = &intersection.tolerance();
             *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
                 endpoints,
@@ -1419,7 +1425,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     assert!(parameterization.pcurves.iter().all(
         |pcurve| matches!(pcurve, PcurveGeometry::Ellipse(ellipse_pcurve)
         if {
-            let (_, _, y_axis, _, _) = ellipse_pcurve.parts();
+            let y_axis = ellipse_pcurve.y_axis();
             y_axis.v == 1.0
         })
     ));
@@ -1434,7 +1440,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             else {
                 unreachable!();
             };
-            let (supports, endpoints, _) = intersection.parts();
+            let supports = intersection.supports();
+            let endpoints = intersection.endpoints();
             *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
                 *endpoints,

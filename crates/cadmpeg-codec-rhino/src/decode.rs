@@ -5358,7 +5358,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Line(line_curve) => {
-            let (&origin, &direction) = line_curve.parts();
+            let origin = *line_curve.origin();
+            let direction = *line_curve.direction();
             let transformed_origin = transform.apply_point(origin);
             let endpoint = transform.apply_point(Point3::new(
                 origin.x + direction.x,
@@ -5380,7 +5381,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             )?)
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (&point,) = degenerate_curve.parts();
+            let point = *degenerate_curve.point();
             CurveGeometry::Degenerate(cadmpeg_ir::geometry::DegenerateCurve::try_new(
                 transform.apply_point(point),
             )?)
@@ -5416,7 +5417,9 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             SurfaceGeometry::Nurbs(nurbs)
         }
         SurfaceGeometry::Plane(plane_surface) => {
-            let (&source_origin, &normal, &u_axis) = plane_surface.parts();
+            let source_origin = *plane_surface.origin();
+            let normal = *plane_surface.normal();
+            let u_axis = *plane_surface.u_axis();
             let origin = transform.apply_point(source_origin);
             let normal = transform
                 .apply_normal(normal)

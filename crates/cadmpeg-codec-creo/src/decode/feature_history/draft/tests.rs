@@ -51,7 +51,9 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
 
     match &mut ir.model.surfaces[0].geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.y = 2.0;
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)

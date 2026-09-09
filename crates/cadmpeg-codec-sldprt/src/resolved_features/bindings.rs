@@ -691,7 +691,8 @@ pub(crate) fn bind_pattern_inputs(
 fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             Some((*origin, normal.unit()?))
         }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {

@@ -3012,7 +3012,8 @@ pub(crate) fn validate_curve_edits(
         edited.insert(id.to_owned());
         let valid = match after {
             CurveGeometry::Line(line_curve) if { matches!(before, CurveGeometry::Line(_)) } => {
-                let (origin, direction) = line_curve.parts();
+                let origin = line_curve.origin();
+                let direction = line_curve.direction();
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
@@ -3020,7 +3021,10 @@ pub(crate) fn validate_curve_edits(
             CurveGeometry::Circle(circle_curve)
                 if { matches!(before, CurveGeometry::Circle(_)) } =>
             {
-                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let ref_direction = circle_curve.ref_direction();
+                let radius = &circle_curve.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -3029,8 +3033,11 @@ pub(crate) fn validate_curve_edits(
             CurveGeometry::Ellipse(ellipse_curve)
                 if { matches!(before, CurveGeometry::Ellipse(_)) } =>
             {
-                let (center, axis, major_direction, major_radius, minor_radius) =
-                    ellipse_curve.parts();
+                let center = ellipse_curve.center();
+                let axis = ellipse_curve.axis();
+                let major_direction = ellipse_curve.major_direction();
+                let major_radius = &ellipse_curve.major_radius();
+                let minor_radius = &ellipse_curve.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *major_direction)
                     && major_radius.is_finite()
@@ -3042,7 +3049,7 @@ pub(crate) fn validate_curve_edits(
             CurveGeometry::Degenerate(degenerate_curve)
                 if { matches!(before, CurveGeometry::Degenerate(_)) } =>
             {
-                let (point,) = degenerate_curve.parts();
+                let point = degenerate_curve.point();
                 finite_point(*point)
             }
             CurveGeometry::Nurbs(after) => {
@@ -3228,13 +3235,18 @@ pub(crate) fn validate_surface_edits(
             SurfaceGeometry::Plane(plane_surface)
                 if { matches!(before, SurfaceGeometry::Plane(_)) } =>
             {
-                let (origin, normal, u_axis) = plane_surface.parts();
+                let origin = plane_surface.origin();
+                let normal = plane_surface.normal();
+                let u_axis = plane_surface.u_axis();
                 finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
             }
             SurfaceGeometry::Sphere(sphere_surface)
                 if { matches!(before, SurfaceGeometry::Sphere(_)) } =>
             {
-                let (center, axis, ref_direction, radius) = sphere_surface.parts();
+                let center = sphere_surface.center();
+                let axis = sphere_surface.axis();
+                let ref_direction = sphere_surface.ref_direction();
+                let radius = &sphere_surface.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -3243,8 +3255,11 @@ pub(crate) fn validate_surface_edits(
             SurfaceGeometry::Torus(torus_surface)
                 if { matches!(before, SurfaceGeometry::Torus(_)) } =>
             {
-                let (center, axis, ref_direction, major_radius, minor_radius) =
-                    torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
+                let ref_direction = torus_surface.ref_direction();
+                let major_radius = &torus_surface.major_radius();
+                let minor_radius = &torus_surface.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
@@ -3255,7 +3270,10 @@ pub(crate) fn validate_surface_edits(
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if { matches!(before, SurfaceGeometry::Cylinder(_)) } =>
             {
-                let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.axis();
+                let ref_direction = cylinder_surface.ref_direction();
+                let radius = &cylinder_surface.radius();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -3264,7 +3282,12 @@ pub(crate) fn validate_surface_edits(
             SurfaceGeometry::Cone(cone_surface)
                 if { matches!(before, SurfaceGeometry::Cone(_)) } =>
             {
-                let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+                let origin = cone_surface.origin();
+                let axis = cone_surface.axis();
+                let ref_direction = cone_surface.ref_direction();
+                let radius = &cone_surface.radius();
+                let ratio = &cone_surface.ratio();
+                let half_angle = &cone_surface.half_angle();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -3719,11 +3742,13 @@ pub(crate) fn validate_procedural_curve_edits(
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
             ) if before_compound
-                .parts()
-                .1
+                .components()
                 .iter()
                 .map(|item| &item.component)
-                .eq(after_compound.parts().1.iter().map(|item| &item.component))
+                .eq(after_compound
+                    .components()
+                    .iter()
+                    .map(|item| &item.component))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

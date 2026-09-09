@@ -189,7 +189,8 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     let CurveGeometry::Line(line_curve) = result.ir().model.curves[0].geometry else {
         panic!("line");
     };
-    let (&origin, &direction) = line_curve.parts();
+    let origin = *line_curve.origin();
+    let direction = *line_curve.direction();
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -205,12 +206,14 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
 
     assert!(
         matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Plane(plane_surface)
-        if {
-            let (origin, normal, u_axis) = plane_surface.parts();
-            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *normal == Vector3::new(0.0, 1.0, 0.0)
-                && *u_axis == Vector3::new(1.0, 0.0, 0.0)
-        })
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *normal == Vector3::new(0.0, 1.0, 0.0)
+                        && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+                })
     );
     assert_eq!(
         result.ir().model.faces[0].surface,
@@ -345,13 +348,16 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
 
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 25.0
-        })
+                if {
+                    let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = &circle_curve.radius();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 25.0
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -366,15 +372,18 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
 
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
-        if {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                ellipse_curve.parts();
-            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *major_radius == 30.0
-                && *minor_radius == 12.0
-        })
+                if {
+                    let center = ellipse_curve.center();
+        let axis = ellipse_curve.axis();
+        let major_direction = ellipse_curve.major_direction();
+        let major_radius = &ellipse_curve.major_radius();
+        let minor_radius = &ellipse_curve.minor_radius();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *major_radius == 30.0
+                        && *minor_radius == 12.0
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -389,13 +398,16 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 25.0
-        })
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
+        let radius = &cylinder_surface.radius();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 25.0
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -410,16 +422,20 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
-        if {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) =
-                cone_surface.parts();
-            *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 25.0
-                && *ratio == 1.0
-                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
-        })
+                if {
+                    let origin = cone_surface.origin();
+        let axis = cone_surface.axis();
+        let ref_direction = cone_surface.ref_direction();
+        let radius = &cone_surface.radius();
+        let ratio = &cone_surface.ratio();
+        let half_angle = &cone_surface.half_angle();
+                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 25.0
+                        && *ratio == 1.0
+                        && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -434,13 +450,16 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
-        if {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
-            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *radius == 25.0
-        })
+                if {
+                    let center = sphere_surface.center();
+        let axis = sphere_surface.axis();
+        let ref_direction = sphere_surface.ref_direction();
+        let radius = &sphere_surface.radius();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *radius == 25.0
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -455,15 +474,18 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
 
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
-        if {
-            let (center, axis, ref_direction, major_radius, minor_radius) =
-                torus_surface.parts();
-            *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *axis == Vector3::new(0.0, 1.0, 0.0)
-                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && *major_radius == 40.0
-                && *minor_radius == 15.0
-        })
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.axis();
+        let ref_direction = torus_surface.ref_direction();
+        let major_radius = &torus_surface.major_radius();
+        let minor_radius = &torus_surface.minor_radius();
+                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && *major_radius == 40.0
+                        && *minor_radius == 15.0
+                })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

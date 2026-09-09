@@ -126,7 +126,9 @@ fn curve_expression_helix_feature_definition(
     let ProceduralCurveDefinition::Helix(helix_payload) = procedural else {
         return None;
     };
-    let (_, center, _, _, pitch, _, axis) = helix_payload.parts();
+    let center = helix_payload.center();
+    let pitch = helix_payload.pitch();
+    let axis = helix_payload.axis();
 
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
     let pitch = cadmpeg_ir::features::NonZeroLength::new(axial_pitch)?;

@@ -813,7 +813,7 @@ fn reconciled_datum_plane_definition(
             };
             match &surface.geometry {
                 SurfaceGeometry::Plane(plane_surface) => {
-                    let (_, _, u_axis) = plane_surface.parts();
+                    let u_axis = plane_surface.u_axis();
                     Some(*u_axis)
                 }
                 _ => None,

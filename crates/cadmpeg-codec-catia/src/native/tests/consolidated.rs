@@ -620,13 +620,15 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("transferred revolution directrix");
     assert!(
         matches!(directrix.geometry, cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, axis, ref_direction, _) = circle_curve.parts();
-            (*circle_curve.parts().3 == 3.0)
-                && (*center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
-                    && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                    && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
-        })
+                if {
+                    let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+                    (*&circle_curve.radius() == 3.0)
+                        && (*center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
+                            && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                            && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+                })
     );
     let revolution = decoded
         .ir()
@@ -644,9 +646,11 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
             && matches!(surface.geometry.solved_cache(), Some(cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
                     if {
-                        let (center, axis, ref_direction, _, _) = torus_surface.parts();
-                        (*torus_surface.parts().3 == 2.0)
-                            && (*torus_surface.parts().4 == 3.0)
+                        let center = torus_surface.center();
+let axis = torus_surface.axis();
+let ref_direction = torus_surface.ref_direction();
+                        (*&torus_surface.major_radius() == 2.0)
+                            && (*&torus_surface.minor_radius() == 3.0)
                             && (*center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
                                 && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
                                 && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))

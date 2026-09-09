@@ -82,7 +82,7 @@ pub fn counterbore_dimensions(
             let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
                 return None;
             };
-            let (_, _, _, radius) = cylinder_surface.parts();
+            let radius = &cylinder_surface.radius();
             Some(*radius)
         })
         .collect::<Vec<_>>();
@@ -852,7 +852,9 @@ pub fn counterbore_source_boundary_circle(
                 let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
                     return None;
                 };
-                let (center, axis, _, candidate) = circle_curve.parts();
+                let center = circle_curve.center();
+                let axis = circle_curve.axis();
+                let candidate = &circle_curve.radius();
                 ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalize([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
@@ -1033,7 +1035,10 @@ pub fn complete_cylinder_source_carrier(
     let SurfaceGeometry::Cylinder(cylinder) = first else {
         return None;
     };
-    let (origin, axis, ref_direction, candidate) = cylinder.parts();
+    let origin = cylinder.origin();
+    let axis = cylinder.axis();
+    let ref_direction = cylinder.ref_direction();
+    let candidate = &cylinder.radius();
     ((*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
         && carriers.iter().all(|candidate| *candidate == first))
     .then_some(HoleCylinder {

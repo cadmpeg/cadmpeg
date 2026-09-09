@@ -430,7 +430,8 @@ pub fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Line(line_curve) => {
-                let (&origin, &direction) = line_curve.parts();
+                let origin = *line_curve.origin();
+                let direction = *line_curve.direction();
                 edited_curves
                     .contains(curve.id.as_str())
                     .then(|| (curve.id.as_str().to_owned(), (origin, direction)))
@@ -444,7 +445,10 @@ pub fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Circle(circle_curve) => {
-                let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+                let center = *circle_curve.center();
+                let axis = *circle_curve.axis();
+                let ref_direction = *circle_curve.ref_direction();
+                let radius = circle_curve.radius();
                 edited_curves.contains(curve.id.as_str()).then(|| {
                     (
                         curve.id.as_str().to_owned(),
@@ -453,8 +457,11 @@ pub fn write_semantic(
                 })
             }
             CurveGeometry::Ellipse(ellipse_curve) => {
-                let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
-                    ellipse_curve.parts();
+                let center = *ellipse_curve.center();
+                let axis = *ellipse_curve.axis();
+                let major_direction = *ellipse_curve.major_direction();
+                let major_radius = ellipse_curve.major_radius();
+                let minor_radius = ellipse_curve.minor_radius();
                 edited_curves.contains(curve.id.as_str()).then(|| {
                     (
                         curve.id.as_str().to_owned(),
@@ -471,7 +478,7 @@ pub fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Degenerate(degenerate_curve) => {
-                let (&point,) = degenerate_curve.parts();
+                let point = *degenerate_curve.point();
                 edited_curves
                     .contains(curve.id.as_str())
                     .then(|| (curve.id.as_str().to_owned(), point))
@@ -485,7 +492,9 @@ pub fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Plane(plane_surface) => {
-                let (&origin, &normal, &u_axis) = plane_surface.parts();
+                let origin = *plane_surface.origin();
+                let normal = *plane_surface.normal();
+                let u_axis = *plane_surface.u_axis();
                 edited_surfaces
                     .contains(surface.id.as_str())
                     .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis)))
@@ -499,7 +508,10 @@ pub fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let (&center, &axis, &ref_direction, &radius) = sphere_surface.parts();
+                let center = *sphere_surface.center();
+                let axis = *sphere_surface.axis();
+                let ref_direction = *sphere_surface.ref_direction();
+                let radius = sphere_surface.radius();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
                         surface.id.as_str().to_owned(),
@@ -516,8 +528,11 @@ pub fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Torus(torus_surface) => {
-                let (&center, &axis, &ref_direction, &major_radius, &minor_radius) =
-                    torus_surface.parts();
+                let center = *torus_surface.center();
+                let axis = *torus_surface.axis();
+                let ref_direction = *torus_surface.ref_direction();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
                         surface.id.as_str().to_owned(),
@@ -534,7 +549,10 @@ pub fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
+                let origin = *cylinder_surface.origin();
+                let axis = *cylinder_surface.axis();
+                let ref_direction = *cylinder_surface.ref_direction();
+                let radius = cylinder_surface.radius();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
                         surface.id.as_str().to_owned(),
@@ -543,8 +561,12 @@ pub fn write_semantic(
                 })
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) =
-                    cone_surface.parts();
+                let origin = *cone_surface.origin();
+                let axis = *cone_surface.axis();
+                let ref_direction = *cone_surface.ref_direction();
+                let radius = cone_surface.radius();
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
                         surface.id.as_str().to_owned(),

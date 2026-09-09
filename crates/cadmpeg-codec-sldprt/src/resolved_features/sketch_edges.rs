@@ -120,7 +120,8 @@ pub(super) fn project_edge(
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle(circle_curve)) => {
-            let (center, _, _, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let radius = &circle_curve.radius();
             let center = project_point(*center, origin, u_axis, v_axis);
             if !circle_contains_point(center, *radius, start, tolerance)
                 || !circle_contains_point(center, *radius, end, tolerance)
@@ -155,7 +156,10 @@ pub(super) fn project_edge(
             }
         }
         Some(CurveGeometry::Ellipse(ellipse_curve)) => {
-            let (center, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             let center = project_point(*center, origin, u_axis, v_axis);
             let major_u = major_direction.dot(u_axis);
             let major_v = major_direction.dot(v_axis);

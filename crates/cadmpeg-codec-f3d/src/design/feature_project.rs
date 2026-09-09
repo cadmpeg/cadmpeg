@@ -6022,19 +6022,23 @@ fn analytic_surface_axis(
 
     let (origin, direction) = match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, _) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
             (*origin, *normal)
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, _, _) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
             (*origin, *axis)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let (origin, axis, _, _, _, _) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
             (*origin, *axis)
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, _, _, _) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
             (*center, *axis)
         }
         _ => return None,

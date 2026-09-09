@@ -1349,15 +1349,18 @@ pub(super) fn common_generated_surface_axis(
         .iter()
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (origin, axis, _, _) = cylinder_surface.parts();
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.axis();
                 Some((*origin, *axis))
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (origin, axis, _, _, _, _) = cone_surface.parts();
+                let origin = cone_surface.origin();
+                let axis = cone_surface.axis();
                 Some((*origin, *axis))
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let (center, axis, _, _, _) = torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
                 Some((*center, *axis))
             }
             SurfaceGeometry::Plane(_) => None,

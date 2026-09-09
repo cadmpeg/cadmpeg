@@ -591,7 +591,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         0.001
     ));
     if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[1].geometry {
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = &circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
         *circle_curve =
@@ -672,7 +675,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         0.001
     ));
     if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[0].geometry {
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = &circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
         *circle_curve =

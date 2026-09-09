@@ -82,7 +82,10 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[2].geometry else {
         unreachable!();
     };
-    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
+    let radius = &cylinder_surface.radius();
     let mut origin = *origin;
     origin.z = 20.0;
     *cylinder_surface =
@@ -203,7 +206,9 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[3].geometry else {
         unreachable!();
     };
-    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 3.0;
     *cylinder_surface =
@@ -311,7 +316,9 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surface.geometry else {
             unreachable!();
         };
-        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 3.0;
         *cylinder_surface =
@@ -446,7 +453,9 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = &mut unmatched_surfaces[5].geometry else {
         unreachable!();
     };
-    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 4.0;
     *cylinder_surface =
@@ -693,7 +702,11 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let SurfaceGeometry::Cone(cone_surface) = &mut wrong_surfaces[1].geometry else {
         unreachable!();
     };
-    let (origin, axis, ref_direction, radius, ratio, _) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let ratio = &cone_surface.ratio();
 
     let half_angle = 0.5;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(

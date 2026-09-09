@@ -1502,11 +1502,11 @@ fn normalize_pcurve_parameter_range(
             ]
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
             *parameter_range
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             return normalize_pcurve_parameter_range(basis, Some(range));
         }
         PcurveGeometry::Transformed { basis, .. } => {
@@ -2090,7 +2090,7 @@ pub(crate) fn normalize_occt_curve_range(
             Some([canonical_start, canonical_start + sweep])
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (_, _, _, focal_distance) = parabola_curve.parts();
+            let focal_distance = &parabola_curve.focal_distance();
             if !focal_distance.is_finite() || *focal_distance <= 0.0 {
                 return range;
             }

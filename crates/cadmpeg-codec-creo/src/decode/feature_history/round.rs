@@ -853,7 +853,7 @@ pub(in super::super) fn round_placed_cylinder_radius(
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (_, _, _, &radius) = cylinder_surface.parts();
+                let radius = cylinder_surface.radius();
                 Some(radius)
             }
             _ => None,
@@ -1001,7 +1001,12 @@ fn chamfer_cone_equation(
     let SurfaceGeometry::Cone(cone_surface) = &surface.geometry else {
         return None;
     };
-    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = &cone_surface.radius();
+    let ratio = &cone_surface.ratio();
+    let half_angle = &cone_surface.half_angle();
     ConeEquation::new(
         [origin.x, origin.y, origin.z],
         [axis.x, axis.y, axis.z],

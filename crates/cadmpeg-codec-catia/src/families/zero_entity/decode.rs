@@ -1231,16 +1231,17 @@ mod tests {
             Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
         assert!(matches!(ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id
-            == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
-            if {
-                let (origin, direction) = line_curve.parts();
-                *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
-            }));
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id
+                    == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
+                .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+                    if {
+                        let origin = line_curve.origin();
+        let direction = line_curve.direction();
+                        *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
+                    }));
         assert_eq!(
             ir.model.edges[2].curve().clone(),
             Some(

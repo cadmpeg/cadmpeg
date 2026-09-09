@@ -269,7 +269,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
     else {
         panic!("expected an exact circular offset carrier");
     };
-    let (_, _, _, &radius) = circle_curve.parts();
+    let radius = circle_curve.radius();
     assert_eq!(radius, 1.5);
     let edge = result
         .ir()
@@ -310,7 +310,10 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     else {
         panic!("expected an exact placed circular offset carrier");
     };
-    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+    let center = *circle_curve.center();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
+    let radius = circle_curve.radius();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -356,7 +359,8 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
     else {
         panic!("expected an exact placed line offset carrier");
     };
-    let (&origin, &direction) = line_curve.parts();
+    let origin = *line_curve.origin();
+    let direction = *line_curve.direction();
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     let end = result
@@ -397,7 +401,10 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
     else {
         panic!("expected an exact reflected circular offset carrier");
     };
-    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+    let center = *circle_curve.center();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
+    let radius = circle_curve.radius();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(-1.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);

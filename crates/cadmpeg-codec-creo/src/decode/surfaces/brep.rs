@@ -818,8 +818,12 @@ fn native_circle_loop_geometry(
     else {
         return None;
     };
-    let (first_center, first_axis, _, first_radius) = circle_curve.parts();
-    let (second_center, second_axis, _, second_radius) = circle_curve_2.parts();
+    let first_center = circle_curve.center();
+    let first_axis = circle_curve.axis();
+    let first_radius = &circle_curve.radius();
+    let second_center = circle_curve_2.center();
+    let second_axis = circle_curve_2.axis();
+    let second_radius = &circle_curve_2.radius();
     if !first_radius.is_finite()
         || *first_radius <= 0.0
         || !scalar_values_agree(*first_radius, *second_radius)
@@ -847,7 +851,8 @@ fn ordered_two_edge_circle_loops<'a>(
     let SurfaceGeometry::Plane(plane_surface) = surface else {
         return None;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let circle_loops = loops
         .iter()
         .map(|lp| native_circle_loop_geometry(lp, model_curves))

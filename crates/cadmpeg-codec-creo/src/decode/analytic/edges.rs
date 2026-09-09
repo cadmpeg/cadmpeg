@@ -45,7 +45,8 @@ pub fn exact_line_edge_parameter_range(
     let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     let direction = [direction.x, direction.y, direction.z];
     let denominator = dot(direction, direction);
     if !denominator.is_finite() || denominator <= 0.0 {
@@ -461,7 +462,10 @@ pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEqua
 pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = &parabola_curve.focal_distance();
             (
                 [vertex.x, vertex.y, vertex.z],
                 [axis.x, axis.y, axis.z],
@@ -472,8 +476,11 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
             )
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = &hyperbola_curve.major_radius();
+            let minor_radius = &hyperbola_curve.minor_radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
@@ -509,7 +516,10 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
 pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = &circle_curve.radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
@@ -518,7 +528,11 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
             )
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = &ellipse_curve.major_radius();
+            let minor_radius = &ellipse_curve.minor_radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],

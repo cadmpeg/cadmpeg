@@ -881,7 +881,8 @@ fn linear_boundary_geometry(
     let SurfaceGeometry::Plane(plane_surface) = support else {
         return None;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
     let model_plane = (*origin, *normal);
     if items.iter().any(|item| {

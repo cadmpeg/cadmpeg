@@ -114,7 +114,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     else {
         panic!("zero-major positional frame must transfer as a sphere");
     };
-    let (_, _, _, radius) = sphere_surface.parts();
+    let radius = &sphere_surface.radius();
     assert_eq!(*radius, 2.0);
 }
 

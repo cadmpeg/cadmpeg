@@ -32,7 +32,9 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
     let SurfaceGeometry::Torus(torus_surface) = surface else {
         panic!("torus geometry");
     };
-    let (_, axis, _, major_radius, minor_radius) = torus_surface.parts();
+    let axis = torus_surface.axis();
+    let major_radius = &torus_surface.major_radius();
+    let minor_radius = &torus_surface.minor_radius();
     assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
     assert_eq!(*major_radius, 20.0);
     assert_eq!(*minor_radius, 5.0);
@@ -64,11 +66,11 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         .expect("large analytic carrier");
         let (radius,) = match surface {
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let (_, _, _, radius) = sphere_surface.parts();
+                let radius = &sphere_surface.radius();
                 (*radius,)
             }
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (_, _, _, radius) = cylinder_surface.parts();
+                let radius = &cylinder_surface.radius();
                 (*radius,)
             }
             _ => {
@@ -91,8 +93,8 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         },
     ), Some(SurfaceGeometry::Torus(torus_surface))
             if {
-                (*torus_surface.parts().3 == 2_000_000.0)
-                    && (*torus_surface.parts().4 == 1_500_000.0)
+                (*&torus_surface.major_radius() == 2_000_000.0)
+                    && (*&torus_surface.minor_radius() == 1_500_000.0)
             }));
 }
 
@@ -115,7 +117,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
         panic!("cylinder geometry");
     };
-    let (_, axis, ref_direction, _) = cylinder_surface.parts();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
     assert!((axis.norm() - 1.0).abs() < 1.0e-12);
     assert!((ref_direction.norm() - 1.0).abs() < 1.0e-12);
     assert!(axis.dot(*ref_direction).abs() < 1.0e-12);
@@ -131,7 +134,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     let SurfaceGeometry::Plane(plane_surface) = plane else {
         panic!("plane geometry");
     };
-    let (_, normal, u_axis) = plane_surface.parts();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     assert!((normal.norm() - 1.0).abs() < 1.0e-12);
     assert!((u_axis.norm() - 1.0).abs() < 1.0e-12);
     assert!(normal.dot(*u_axis).abs() < 1.0e-12);
