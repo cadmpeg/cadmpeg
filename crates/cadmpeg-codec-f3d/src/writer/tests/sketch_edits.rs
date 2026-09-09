@@ -98,39 +98,51 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
             relation.definition.pattern().cloned(),
         )
         .expect("valid relation definition");
-        relation.members = relation
-            .members
-            .iter()
-            .zip(relation.members.iter().rev())
-            .map(|(position, value)| crate::records::SketchRelationMember {
-                reference: value.reference.clone(),
-                offset: position.offset,
-                relation_ordinal: position.relation_ordinal,
+        relation
+            .try_edit(|draft| {
+                draft.members = draft
+                    .members
+                    .iter()
+                    .zip(draft.members.iter().rev())
+                    .map(|(position, value)| crate::records::SketchRelationMember {
+                        reference: value.reference.clone(),
+                        offset: position.offset,
+                        relation_ordinal: position.relation_ordinal,
+                    })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("uniform member resolution")
             })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("uniform member resolution");
-        for reference in relation.auxiliary_references.values_mut() {
-            *reference = reference.saturating_add(1);
-        }
-        relation.return_members = relation
-            .return_members
-            .iter()
-            .zip(relation.return_members.iter().rev())
-            .map(
-                |(position, value)| crate::records::SketchRelationReturnMember {
-                    reference: value.reference.clone(),
-                    offset: position.offset,
-                },
-            )
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("uniform member resolution");
+            .unwrap();
+        relation
+            .try_edit(|draft| {
+                for reference in draft.auxiliary_references.values_mut() {
+                    *reference = reference.saturating_add(1);
+                }
+            })
+            .unwrap();
+        relation
+            .try_edit(|draft| {
+                draft.return_members = draft
+                    .return_members
+                    .iter()
+                    .zip(draft.return_members.iter().rev())
+                    .map(
+                        |(position, value)| crate::records::SketchRelationReturnMember {
+                            reference: value.reference.clone(),
+                            offset: position.offset,
+                        },
+                    )
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("uniform member resolution")
+            })
+            .unwrap();
         (
-            relation.members.clone(),
-            relation.auxiliary_references.clone(),
+            relation.members().clone(),
+            relation.auxiliary_references().clone(),
             relation.owner_reference,
-            relation.return_members.clone(),
+            relation.return_members().clone(),
         )
     });
 
@@ -148,10 +160,10 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         [crate::records::SketchConstraintKind::Horizontal]
     );
     assert_eq!(relation.unknown_constraint_bits(), 0);
-    assert_eq!(relation.members, expected_references.0);
-    assert_eq!(relation.auxiliary_references, expected_references.1);
+    assert_eq!(relation.members(), &expected_references.0);
+    assert_eq!(relation.auxiliary_references(), &expected_references.1);
     assert_eq!(relation.owner_reference, expected_references.2);
-    assert_eq!(relation.return_members, expected_references.3);
+    assert_eq!(relation.return_members(), &expected_references.3);
 }
 
 #[test]

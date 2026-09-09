@@ -2278,8 +2278,6 @@ pub enum DesignAssemblyAlignmentForm {
         frames: [DesignAssemblyOperandFrame; 2],
     },
     Qualified([DesignQualifiedAssemblyOperand; 2]),
-    /// The two locator paths are known, but their connector frames did not decode.
-    UnframedPaths([DesignAssemblyOperandPath; 2]),
 }
 
 impl DesignAssemblyAlignmentForm {
@@ -2342,8 +2340,7 @@ impl DesignAssemblyAlignment {
             } => carriers.frames(solved_frame).ok(),
             DesignAssemblyAlignmentForm::DatumEnvelope { .. }
             | DesignAssemblyAlignmentForm::LimitsOnly { .. }
-            | DesignAssemblyAlignmentForm::SolvedOnly { .. }
-            | DesignAssemblyAlignmentForm::UnframedPaths(_) => None,
+            | DesignAssemblyAlignmentForm::SolvedOnly { .. } => None,
         }
     }
 
@@ -2362,11 +2359,6 @@ impl DesignAssemblyAlignment {
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 Some(operands.each_ref().map(|operand| operand.qualifier.clone()))
             }
-            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(
-                paths
-                    .clone()
-                    .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
-            ),
             _ => None,
         }
     }
@@ -2374,7 +2366,6 @@ impl DesignAssemblyAlignment {
     /// Return both occurrence paths when every operand uses that qualifier form.
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
         match self.form.as_ref()? {
-            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone()),
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 let [Some(first), Some(second)] = operands
                     .each_ref()
@@ -2472,10 +2463,6 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, Some(frames), Some(qualifiers), None, None) => Some(
                 DesignAssemblyAlignmentForm::qualified(frames, qualifiers)
             ),
-            (None, None, None, Some([
-                DesignAssemblyOperandQualifier::OccurrencePath { path: first },
-                DesignAssemblyOperandQualifier::OccurrencePath { path: second },
-            ]), None, None) => Some(DesignAssemblyAlignmentForm::UnframedPaths([first, second])),
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
@@ -2555,14 +2542,6 @@ impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
                 None,
                 None,
                 Some([first_qualifier, second_qualifier]),
-                None,
-                None,
-            ),
-            Some(DesignAssemblyAlignmentForm::UnframedPaths(paths)) => (
-                None,
-                None,
-                None,
-                Some(paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
                 None,
                 None,
             ),
@@ -3325,17 +3304,34 @@ pub struct DesignComponentOccurrence {
     /// Indexed carrier record.
     pub record_index: u32,
     /// Byte offset of the indexed header.
+    byte_offset: u64,
+    /// Referenced component-definition record.
+    pub component_record_index: u64,
+    /// Stable component-definition GUID.
+    pub component_guid: DesignRelaxedGuidText,
+    /// Stable placed-occurrence GUID.
+    pub occurrence_guid: DesignRelaxedGuidText,
+    /// Base occurrence or a placed occurrence with its ordinal and matrix.
+    placement: DesignComponentOccurrencePlacement,
+}
+
+/// Local occurrence payload before checked frame admission.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignComponentOccurrenceDraft {
+    /// Stable native record identity.
+    pub id: String,
+    /// Indexed-record class carrying this occurrence.
+    pub class_tag: DesignClassTag,
+    /// Indexed carrier record.
+    pub record_index: u32,
+    /// Byte offset of the indexed header.
     pub byte_offset: u64,
     /// Referenced component-definition record.
     pub component_record_index: u64,
     /// Stable component-definition GUID.
     pub component_guid: DesignRelaxedGuidText,
-    /// Byte offset of the component GUID payload.
-    pub component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
     pub occurrence_guid: DesignRelaxedGuidText,
-    /// Byte offset of the occurrence GUID payload.
-    pub occurrence_guid_offset: u64,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
     pub placement: DesignComponentOccurrencePlacement,
 }
@@ -3348,11 +3344,53 @@ pub enum DesignComponentOccurrencePlacement {
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
         ordinal: NonZeroU32,
-        transform: Located<SketchPlacementMatrix>,
+        transform: SketchPlacementMatrix,
     },
 }
 
 impl DesignComponentOccurrence {
+    /// Admit a local occurrence with representable GUID and placement offsets.
+    pub fn try_new(draft: DesignComponentOccurrenceDraft) -> Result<Self, String> {
+        let last_offset = match draft.placement {
+            DesignComponentOccurrencePlacement::Base => 124,
+            DesignComponentOccurrencePlacement::Explicit { .. } => 209,
+        };
+        draft
+            .byte_offset
+            .checked_add(last_offset)
+            .ok_or("component occurrence offsets overflow byte_offset")?;
+        Ok(Self {
+            id: draft.id,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            byte_offset: draft.byte_offset,
+            component_record_index: draft.component_record_index,
+            component_guid: draft.component_guid,
+            occurrence_guid: draft.occurrence_guid,
+            placement: draft.placement,
+        })
+    }
+
+    /// Indexed header byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Component GUID byte offset.
+    pub fn component_guid_offset(&self) -> u64 {
+        self.byte_offset + 48
+    }
+
+    /// Occurrence GUID byte offset.
+    pub fn occurrence_guid_offset(&self) -> u64 {
+        self.byte_offset + 124
+    }
+
+    /// Base or explicit local placement.
+    pub fn placement(&self) -> &DesignComponentOccurrencePlacement {
+        &self.placement
+    }
+
     #[must_use]
     pub fn occurrence_ordinal(&self) -> u32 {
         match self.placement {
@@ -3365,7 +3403,10 @@ impl DesignComponentOccurrence {
     pub fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => None,
-            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
+            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
+                value: transform,
+                offset: self.byte_offset + 209,
+            }),
         }
     }
 }
@@ -3403,6 +3444,8 @@ struct DesignComponentOccurrenceWire {
 impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
     fn from(value: DesignComponentOccurrence) -> Self {
         let occurrence_ordinal = value.occurrence_ordinal();
+        let component_guid_offset = value.component_guid_offset();
+        let occurrence_guid_offset = value.occurrence_guid_offset();
         let transform = value.transform();
         Self {
             id: value.id,
@@ -3411,9 +3454,9 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
             component_guid: value.component_guid,
-            component_guid_offset: value.component_guid_offset,
+            component_guid_offset,
             occurrence_guid: value.occurrence_guid,
-            occurrence_guid_offset: value.occurrence_guid_offset,
+            occurrence_guid_offset,
             occurrence_ordinal,
             transform: transform.map(|frame| frame.value),
             transform_offset: transform.map(|frame| frame.offset),
@@ -3429,22 +3472,30 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             (1, None) => DesignComponentOccurrencePlacement::Base,
             (ordinal, Some(transform)) => DesignComponentOccurrencePlacement::Explicit {
                 ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
-                transform,
+                transform: transform.value,
             },
             (_, None) => return Err("occurrence_ordinal must be 1 when transform is absent".into()),
         };
-        Ok(Self {
+        let record = Self::try_new(DesignComponentOccurrenceDraft {
             id: value.id,
             class_tag: value.class_tag.try_into()?,
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
             component_guid: value.component_guid,
-            component_guid_offset: value.component_guid_offset,
             occurrence_guid: value.occurrence_guid,
-            occurrence_guid_offset: value.occurrence_guid_offset,
             placement,
-        })
+        })?;
+        if value.component_guid_offset != record.component_guid_offset() {
+            return Err("component_guid_offset disagrees with byte_offset".into());
+        }
+        if value.occurrence_guid_offset != record.occurrence_guid_offset() {
+            return Err("occurrence_guid_offset disagrees with byte_offset".into());
+        }
+        if value.transform_offset != record.transform().map(|transform| transform.offset) {
+            return Err("transform_offset disagrees with byte_offset".into());
+        }
+        Ok(record)
     }
 }
 
@@ -4655,7 +4706,61 @@ pub struct DesignWorkAxisConstruction {
 
 /// One source-record reference used by a `WorkPoint` construction rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignWorkPointInputDraft",
+    into = "DesignWorkPointInputDraft"
+)]
 pub struct DesignWorkPointInput {
+    /// Referenced Design record index.
+    record_index: u32,
+    /// Byte offset of the serialized reference target.
+    pub reference_offset: u64,
+    /// Exact source carrier selected by this reference, when decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    carrier: Option<Box<DesignWorkPointInputCarrier>>,
+}
+
+impl DesignWorkPointInput {
+    pub(crate) fn try_new(draft: DesignWorkPointInputDraft) -> Result<Self, String> {
+        match draft.carrier.as_deref() {
+            Some(DesignWorkPointInputCarrier::WorkPlane { selection })
+                if draft.record_index.checked_add(3) != Some(selection.identity_record_index()) =>
+            {
+                return Err("carrier.identity_record_index must follow record_index by 3".into())
+            }
+            Some(DesignWorkPointInputCarrier::SketchPoint { selection })
+                if draft.record_index.checked_add(3) != Some(selection.identity_record_index())
+                    || draft.record_index.checked_add(4) != Some(selection.next_record_index()) =>
+            {
+                return Err("carrier identity/next_record_index disagree with input frame".into())
+            }
+            _ => {}
+        }
+        let value = Self {
+            record_index: draft.record_index,
+            reference_offset: draft.reference_offset,
+            carrier: draft.carrier,
+        };
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignWorkPointInputDraft {
+        DesignWorkPointInputDraft {
+            record_index: self.record_index,
+            reference_offset: self.reference_offset,
+            carrier: self.carrier,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.record_index
+    }
+    pub(crate) fn carrier(&self) -> Option<&DesignWorkPointInputCarrier> {
+        self.carrier.as_deref()
+    }
+}
+
+/// Unadmitted `DesignWorkPointInput` fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignWorkPointInputDraft {
     /// Referenced Design record index.
     pub record_index: u32,
     /// Byte offset of the serialized reference target.
@@ -4663,6 +4768,23 @@ pub struct DesignWorkPointInput {
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carrier: Option<Box<DesignWorkPointInputCarrier>>,
+}
+
+impl TryFrom<DesignWorkPointInputDraft> for DesignWorkPointInput {
+    type Error = String;
+    fn try_from(draft: DesignWorkPointInputDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignWorkPointInput> for DesignWorkPointInputDraft {
+    fn from(value: DesignWorkPointInput) -> Self {
+        let value = value.into_draft();
+        Self {
+            record_index: value.record_index,
+            reference_offset: value.reference_offset,
+            carrier: value.carrier,
+        }
+    }
 }
 
 /// Exact source carrier selected by one `WorkPoint` construction input.
@@ -4716,6 +4838,128 @@ impl DesignVertexResolution {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DesignVertexRecipeWire", into = "DesignVertexRecipeWire")]
 pub struct DesignVertexRecipe {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic paired class tag.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the vertex-recipe record header.
+    recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    pub recipe_id: String,
+    /// Complete prefix before the length-prefixed recipe-family name.
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
+    /// Byte offset of the first post-name i32.
+    pub recipe_program_offset: u64,
+    /// Complete post-name i32 program.
+    pub recipe_program: Vec<i32>,
+    /// Historical state and proven stable vertex slot.
+    pub resolution: Option<DesignVertexResolution>,
+    /// Byte offset of the indexed record closing the envelope.
+    next_byte_offset: u64,
+}
+
+impl DesignVertexRecipe {
+    pub(crate) fn try_new(draft: DesignVertexRecipeDraft) -> Result<Self, String> {
+        if !(draft.byte_offset < draft.paired_byte_offset
+            && draft.paired_byte_offset < draft.recipe_record_byte_offset
+            && draft.recipe_record_byte_offset < draft.next_byte_offset)
+        {
+            return Err(
+                "paired_byte_offset/recipe_record_byte_offset/next_byte_offset must increase"
+                    .into(),
+            );
+        }
+        draft
+            .recipe_record_byte_offset
+            .checked_add(11)
+            .ok_or("recipe_prefix_offset overflows")?;
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            5,
+            0,
+        )?;
+        let value = Self {
+            frame,
+            class_tag: draft.class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+            paired_class_tag: draft.paired_class_tag,
+            recipe_record_byte_offset: draft.recipe_record_byte_offset,
+            recipe_id: draft.recipe_id,
+            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_references: draft.recipe_references,
+            recipe_program_offset: draft.recipe_program_offset,
+            recipe_program: draft.recipe_program,
+            resolution: draft.resolution,
+            next_byte_offset: draft.next_byte_offset,
+        };
+        if value.recipe_record_index() != draft.recipe_record_index {
+            return Err("recipe_record_index disagrees with frame layout".into());
+        }
+        if value.recipe_prefix_offset() != draft.recipe_prefix_offset {
+            return Err("recipe_prefix_offset disagrees with frame layout".into());
+        }
+        if value.next_record_index() != draft.next_record_index {
+            return Err("next_record_index disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignVertexRecipeDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let recipe_record_index = self.recipe_record_index();
+        let recipe_prefix_offset = self.recipe_prefix_offset();
+        let next_record_index = self.next_record_index();
+        DesignVertexRecipeDraft {
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag,
+            recipe_record_index,
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: self.recipe_id,
+            recipe_prefix_offset,
+            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_references: self.recipe_references,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: self.recipe_program,
+            resolution: self.resolution,
+            next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn recipe_record_index(&self) -> u32 {
+        self.frame.index(3)
+    }
+    pub(crate) fn recipe_record_byte_offset(&self) -> u64 {
+        self.recipe_record_byte_offset
+    }
+    pub(crate) fn recipe_prefix_offset(&self) -> u64 {
+        self.recipe_record_byte_offset + 11
+    }
+    pub(crate) fn next_record_index(&self) -> u32 {
+        self.frame.index(5)
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.next_byte_offset
+    }
+}
+
+/// Unadmitted `DesignVertexRecipe` fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignVertexRecipeDraft {
     /// Indexed record that owns the vertex-recipe envelope.
     pub record_index: u32,
     /// Byte offset of the owning indexed-record header.
@@ -4793,6 +5037,7 @@ struct DesignVertexRecipeWire {
 
 impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
     fn from(value: DesignVertexRecipe) -> Self {
+        let value = value.into_draft();
         Self {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
@@ -4831,7 +5076,7 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
                 )
             }
         };
-        Ok(Self {
+        Self::try_new(DesignVertexRecipeDraft {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             class_tag: value.class_tag.try_into()?,
@@ -4872,14 +5117,85 @@ pub struct DesignEdgeTreatmentVertexOperand {
 /// Plane through three persistent B-rep vertices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
-    from = "DesignWorkPlaneConstructionWire",
+    try_from = "DesignWorkPlaneConstructionWire",
     into = "DesignWorkPlaneConstructionWire"
 )]
 pub struct DesignWorkPlaneConstruction {
     /// Solved placement-frame record named by the scope.
     pub placement_record_index: u32,
     /// Persistent vertex inputs in source order.
-    pub inputs: Box<[DesignVertexRecipe; 3]>,
+    inputs: Box<[DesignVertexRecipe; 3]>,
+}
+
+impl DesignWorkPlaneConstruction {
+    /// Admit an unresolved triple or three distinct vertices from one history state.
+    pub fn try_new(
+        placement_record_index: u32,
+        inputs: Box<[DesignVertexRecipe; 3]>,
+    ) -> Result<Self, String> {
+        validate_three_point_resolutions(inputs.each_ref().map(|input| input.resolution))?;
+        Ok(Self {
+            placement_record_index,
+            inputs,
+        })
+    }
+
+    /// Persistent vertex recipes in source order.
+    pub fn inputs(&self) -> &[DesignVertexRecipe; 3] {
+        &self.inputs
+    }
+
+    /// Candidate references without mutable access to vertex resolutions.
+    pub(crate) fn recipe_references_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DesignRecipeReference> {
+        self.inputs
+            .iter_mut()
+            .flat_map(|recipe| recipe.recipe_references.iter_mut())
+    }
+
+    /// Remove resolution for the complete vertex triple.
+    pub(crate) fn clear_resolution(&mut self) {
+        for input in self.inputs.iter_mut() {
+            input.resolution = None;
+        }
+    }
+
+    /// Commit three distinct vertices from one state, preserving the old value on failure.
+    pub(crate) fn try_set_resolution(
+        &mut self,
+        resolution: [DesignVertexResolution; 3],
+    ) -> Result<(), String> {
+        validate_three_point_resolutions(resolution.map(Some))?;
+        for (input, resolution) in self.inputs.iter_mut().zip(resolution) {
+            input.resolution = Some(resolution);
+        }
+        Ok(())
+    }
+}
+
+fn validate_three_point_resolutions(
+    resolutions: [Option<DesignVertexResolution>; 3],
+) -> Result<(), String> {
+    match resolutions {
+        [None, None, None] => Ok(()),
+        [Some(first), Some(second), Some(third)] => {
+            if first.state_id != second.state_id || first.state_id != third.state_id {
+                return Err("recipe_state_id must match across all three inputs".into());
+            }
+            if first.vertex_slot() == second.vertex_slot()
+                || first.vertex_slot() == third.vertex_slot()
+                || second.vertex_slot() == third.vertex_slot()
+            {
+                return Err("resolved_vertex_slot must be distinct across all three inputs".into());
+            }
+            Ok(())
+        }
+        _ => Err(
+            "inputs resolution must be absent for all three vertices or present for all three"
+                .into(),
+        ),
+    }
 }
 
 /// Wire form of [`DesignWorkPlaneConstruction`].
@@ -4906,22 +5222,114 @@ impl From<DesignWorkPlaneConstruction> for DesignWorkPlaneConstructionWire {
     }
 }
 
-impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
-    fn from(value: DesignWorkPlaneConstructionWire) -> Self {
+impl TryFrom<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
+    type Error = String;
+    fn try_from(value: DesignWorkPlaneConstructionWire) -> Result<Self, Self::Error> {
         let DesignWorkPlaneConstructionWire::ThreePoint {
             placement_record_index,
             inputs,
         } = value;
-        Self {
-            placement_record_index,
-            inputs,
-        }
+        Self::try_new(placement_record_index, inputs)
     }
 }
 
 /// Exact persistent entity selection naming one `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignWorkPointPlaneSelectionDraft",
+    into = "DesignWorkPointPlaneSelectionDraft"
+)]
 pub struct DesignWorkPointPlaneSelection {
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: DesignRelaxedGuidText,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    identity_record_offset: u64,
+    /// Serialized primary identity immediately preceding the `WorkPlane` scope.
+    pub primary_identity: u64,
+    /// Selected `WorkPlane` scope record index.
+    pub work_plane_scope_record_index: u32,
+    /// Identity of the indexed record closing the selection envelope.
+    next_record_index: u32,
+}
+
+impl DesignWorkPointPlaneSelection {
+    pub(crate) fn try_new(draft: DesignWorkPointPlaneSelectionDraft) -> Result<Self, String> {
+        draft
+            .identity_record_offset
+            .checked_add(29)
+            .ok_or("identity_record_offset overflows")?;
+        if !(draft.asset_id_offset < draft.context_id_offset
+            && draft.context_id_offset < draft.identity_record_offset)
+        {
+            return Err(
+                "asset_id_offset/context_id_offset/identity_record_offset must increase".into(),
+            );
+        }
+        let value = Self {
+            class_tag: draft.class_tag,
+            asset_id: draft.asset_id,
+            asset_id_offset: draft.asset_id_offset,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            identity_record_index: draft.identity_record_index,
+            identity_record_offset: draft.identity_record_offset,
+            primary_identity: draft.primary_identity,
+            work_plane_scope_record_index: draft.work_plane_scope_record_index,
+            next_record_index: draft.next_record_index,
+        };
+        if value.next_byte_offset() != draft.next_byte_offset {
+            return Err("next_byte_offset disagrees with frame layout".into());
+        }
+        if value.primary_identity_offset() != draft.primary_identity_offset {
+            return Err("primary_identity_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignWorkPointPlaneSelectionDraft {
+        let next_byte_offset = self.next_byte_offset();
+        let primary_identity_offset = self.primary_identity_offset();
+        DesignWorkPointPlaneSelectionDraft {
+            class_tag: self.class_tag,
+            asset_id: self.asset_id,
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            identity_record_index: self.identity_record_index,
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            primary_identity_offset,
+            work_plane_scope_record_index: self.work_plane_scope_record_index,
+            next_record_index: self.next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.asset_id_offset
+    }
+    pub(crate) fn identity_record_index(&self) -> u32 {
+        self.identity_record_index
+    }
+    pub(crate) fn primary_identity_offset(&self) -> u64 {
+        self.identity_record_offset + 21
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.identity_record_offset + 29
+    }
+}
+
+/// Unadmitted `DesignWorkPointPlaneSelection` fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
@@ -4948,9 +5356,146 @@ pub struct DesignWorkPointPlaneSelection {
     pub next_byte_offset: u64,
 }
 
+impl TryFrom<DesignWorkPointPlaneSelectionDraft> for DesignWorkPointPlaneSelection {
+    type Error = String;
+    fn try_from(draft: DesignWorkPointPlaneSelectionDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignWorkPointPlaneSelection> for DesignWorkPointPlaneSelectionDraft {
+    fn from(value: DesignWorkPointPlaneSelection) -> Self {
+        let value = value.into_draft();
+        Self {
+            class_tag: value.class_tag,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            context_id: value.context_id,
+            context_id_offset: value.context_id_offset,
+            identity_record_index: value.identity_record_index,
+            identity_record_offset: value.identity_record_offset,
+            primary_identity: value.primary_identity,
+            primary_identity_offset: value.primary_identity_offset,
+            work_plane_scope_record_index: value.work_plane_scope_record_index,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
+}
+
 /// Exact persistent entity selection naming one sketch point.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignWorkPointSketchPointSelectionDraft",
+    into = "DesignWorkPointSketchPointSelectionDraft"
+)]
 pub struct DesignWorkPointSketchPointSelection {
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: DesignRelaxedGuidText,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    identity_record_offset: u64,
+    /// Record identity of the owning Sketch entity.
+    pub sketch_record_index: u32,
+    /// Persistent identity of the selected sketch point.
+    pub point_persistent_id: u64,
+    /// Native id of the decoded sketch-point record selected by this frame.
+    pub point_native_id: String,
+    /// Identity of the indexed record closing the selection envelope.
+    next_record_index: u32,
+}
+
+impl DesignWorkPointSketchPointSelection {
+    pub(crate) fn try_new(draft: DesignWorkPointSketchPointSelectionDraft) -> Result<Self, String> {
+        draft
+            .identity_record_offset
+            .checked_add(crate::layout::work_point_sketch_point_identity::LEN as u64)
+            .ok_or("identity_record_offset overflows")?;
+        if !(draft.asset_id_offset < draft.context_id_offset
+            && draft.context_id_offset < draft.identity_record_offset)
+        {
+            return Err(
+                "asset_id_offset/context_id_offset/identity_record_offset must increase".into(),
+            );
+        }
+        let value = Self {
+            class_tag: draft.class_tag,
+            asset_id: draft.asset_id,
+            asset_id_offset: draft.asset_id_offset,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            identity_record_index: draft.identity_record_index,
+            identity_record_offset: draft.identity_record_offset,
+            sketch_record_index: draft.sketch_record_index,
+            point_persistent_id: draft.point_persistent_id,
+            point_native_id: draft.point_native_id,
+            next_record_index: draft.next_record_index,
+        };
+        if value.next_byte_offset() != draft.next_byte_offset {
+            return Err("next_byte_offset disagrees with frame layout".into());
+        }
+        if value.sketch_record_index_offset() != draft.sketch_record_index_offset {
+            return Err("sketch_record_index_offset disagrees with frame layout".into());
+        }
+        if value.point_persistent_id_offset() != draft.point_persistent_id_offset {
+            return Err("point_persistent_id_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignWorkPointSketchPointSelectionDraft {
+        let next_byte_offset = self.next_byte_offset();
+        let sketch_record_index_offset = self.sketch_record_index_offset();
+        let point_persistent_id_offset = self.point_persistent_id_offset();
+        DesignWorkPointSketchPointSelectionDraft {
+            class_tag: self.class_tag,
+            asset_id: self.asset_id,
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            identity_record_index: self.identity_record_index,
+            identity_record_offset: self.identity_record_offset,
+            sketch_record_index: self.sketch_record_index,
+            sketch_record_index_offset,
+            point_persistent_id: self.point_persistent_id,
+            point_persistent_id_offset,
+            point_native_id: self.point_native_id,
+            next_record_index: self.next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.asset_id_offset
+    }
+    pub(crate) fn identity_record_index(&self) -> u32 {
+        self.identity_record_index
+    }
+    pub(crate) fn sketch_record_index_offset(&self) -> u64 {
+        self.identity_record_offset
+            + crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX as u64
+    }
+    pub(crate) fn point_persistent_id_offset(&self) -> u64 {
+        self.identity_record_offset
+            + crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID as u64
+    }
+    pub(crate) fn next_record_index(&self) -> u32 {
+        self.next_record_index
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.identity_record_offset + crate::layout::work_point_sketch_point_identity::LEN as u64
+    }
+}
+
+/// Unadmitted `DesignWorkPointSketchPointSelection` fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
@@ -4979,6 +5524,34 @@ pub struct DesignWorkPointSketchPointSelection {
     pub next_record_index: u32,
     /// Byte offset of the indexed record closing the selection envelope.
     pub next_byte_offset: u64,
+}
+
+impl TryFrom<DesignWorkPointSketchPointSelectionDraft> for DesignWorkPointSketchPointSelection {
+    type Error = String;
+    fn try_from(draft: DesignWorkPointSketchPointSelectionDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignWorkPointSketchPointSelection> for DesignWorkPointSketchPointSelectionDraft {
+    fn from(value: DesignWorkPointSketchPointSelection) -> Self {
+        let value = value.into_draft();
+        Self {
+            class_tag: value.class_tag,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            context_id: value.context_id,
+            context_id_offset: value.context_id_offset,
+            identity_record_index: value.identity_record_index,
+            identity_record_offset: value.identity_record_offset,
+            sketch_record_index: value.sketch_record_index,
+            sketch_record_index_offset: value.sketch_record_index_offset,
+            point_persistent_id: value.point_persistent_id,
+            point_persistent_id_offset: value.point_persistent_id_offset,
+            point_native_id: value.point_native_id,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
 }
 
 /// Construction rule whose input arity and decoded carrier roles agree.
@@ -5516,12 +6089,16 @@ pub struct DesignNativeFeatureName(std::sync::Arc<str>);
 
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
+     fixed { $($fixed:ident => $fixed_lit:literal : $fixed_payload:ty),+ $(,)? }
+     required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(try_from = "String", into = "String")]
         pub enum DesignFeatureKind {
             $($variant,)+
+            $($fixed,)+
+            $($required,)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
             Native(DesignNativeFeatureName),
@@ -5532,6 +6109,8 @@ macro_rules! design_feature_kinds {
             pub fn as_str(&self) -> &str {
                 match self {
                     $(Self::$variant => $lit,)+
+                    $(Self::$fixed => $fixed_lit,)+
+                    $(Self::$required => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
                 }
@@ -5546,6 +6125,8 @@ macro_rules! design_feature_kinds {
                 match name.as_str() {
                     "" => Err("Design feature kind must not be empty"),
                     $($lit => Ok(Self::$variant),)+
+                    $($fixed_lit => Ok(Self::$fixed),)+
+                    $($required_lit => Ok(Self::$required),)+
                     $($unit_lit => Ok(Self::$unit),)+
                     _ => Ok(Self::Native(DesignNativeFeatureName(name.into()))),
                 }
@@ -5567,25 +6148,47 @@ macro_rules! design_feature_kinds {
         #[derive(Debug, Clone, PartialEq)]
         pub enum DesignScopePayload {
             $($variant($payload),)+
+            $($fixed($fixed_payload),)+
+            $($required($required_payload),)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
             Native(DesignNativeFeatureName),
         }
 
-        impl From<DesignFeatureKind> for DesignScopePayload {
-            fn from(kind: DesignFeatureKind) -> Self {
+        /// Mutable construction fields with a fixed feature family.
+        pub(crate) enum DesignScopePayloadMut<'a> {
+            $($variant(&'a mut $payload),)+
+            Other,
+        }
+
+        impl DesignScopePayload {
+            fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
+                match self {
+                    $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+
+                    _ => DesignScopePayloadMut::Other,
+                }
+            }
+        }
+
+        impl TryFrom<DesignFeatureKind> for DesignScopePayload {
+            type Error = &'static str;
+            fn try_from(kind: DesignFeatureKind) -> Result<Self, Self::Error> {
                 match kind {
-                    $(DesignFeatureKind::$variant => Self::$variant(Default::default()),)+
-                    $(DesignFeatureKind::$unit => Self::$unit,)+
-                    DesignFeatureKind::Native(name) => Self::Native(name),
+                    $(DesignFeatureKind::$variant => Ok(Self::$variant(Default::default())),)+
+                    $(DesignFeatureKind::$fixed => Ok(Self::$fixed(Default::default())),)+
+                    $(DesignFeatureKind::$required => Err(concat!($required_lit, " requires its operation")),)+
+                    $(DesignFeatureKind::$unit => Ok(Self::$unit),)+
+                    DesignFeatureKind::Native(name) => Ok(Self::Native(name)),
                 }
             }
         }
 
         impl DesignScopePayload {
-            fn kind(&self) -> DesignFeatureKind {
+            pub(crate) fn kind(&self) -> DesignFeatureKind {
                 match self {
                     $(Self::$variant(_) => DesignFeatureKind::$variant,)+
+                    $(Self::$fixed(_) => DesignFeatureKind::$fixed,)+
+                    $(Self::$required(_) => DesignFeatureKind::$required,)+
                     $(Self::$unit => DesignFeatureKind::$unit,)+
                     Self::Native(name) => DesignFeatureKind::Native(name.clone()),
                 }
@@ -5594,6 +6197,8 @@ macro_rules! design_feature_kinds {
             fn kind_name(&self) -> &str {
                 match self {
                     $(Self::$variant(_) => $lit,)+
+                    $(Self::$fixed(_) => $fixed_lit,)+
+                    $(Self::$required(_) => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
                 }
@@ -5631,19 +6236,15 @@ design_feature_kinds! {
         Move => "Move": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
-        Revolve => "Revolve": Option<DesignRevolveConstruction>,
         Shell => "Shell": Option<DesignShellOperation>,
         Schale => "Schale": Option<DesignShellOperation>,
         Thicken => "Thicken": Option<DesignThickenOperation>,
         SpirePrimitive => "SpirePrimitive": Option<DesignCoilScope>,
         CoilPrimitive => "CoilPrimitive": Option<DesignCoilScope>,
-        Loft => "Loft": Option<DesignLoftConstruction>,
         Sweep => "Sweep": Option<DesignSweepScope>,
-        Pipe => "Pipe": Option<DesignPipeConstruction>,
         SurfacePatch => "SurfacePatch": Vec<DesignSurfacePatchBoundary>,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
-        SurfaceRuled => "SurfaceRuled": Option<DesignRuledSurfaceOperation>,
         Hole => "Hole": Option<DesignHoleConstruction>,
         Scale => "Scale": Option<DesignScaleOperation>,
         Massstab => "Maßstab": Option<DesignScaleOperation>,
@@ -5658,13 +6259,21 @@ design_feature_kinds! {
         WorkAxis => "WorkAxis": Option<DesignWorkAxisConstruction>,
         WorkPoint => "WorkPoint": Option<DesignWorkPointConstruction>,
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
-        SurfaceStitch => "SurfaceStitch": Option<DesignSurfaceStitchOperation>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
+    }
+    fixed {
+        Revolve => "Revolve": Option<DesignRevolveConstruction>,
+        Loft => "Loft": Option<DesignLoftConstruction>,
+        Pipe => "Pipe": Option<DesignPipeConstruction>,
         SpherePrimitive => "SpherePrimitive": Option<DesignSpherePrimitive>,
         TorusPrimitive => "TorusPrimitive": Option<DesignTorusPrimitive>,
         BoxPrimitive => "BoxPrimitive": Option<DesignBoxPrimitive>,
         CylinderPrimitive => "CylinderPrimitive": Option<DesignCylinderPrimitive>,
+    }
+    required {
+        SurfaceStitch => "SurfaceStitch": DesignSurfaceStitchOperation,
+        SurfaceRuled => "SurfaceRuled": DesignRuledSurfaceOperation,
     }
     names {
         ReplaceFace => "ReplaceFace",
@@ -5706,6 +6315,49 @@ pub struct DesignParameterScope {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    frame_length: u64,
+    /// Byte offset of the kind's UTF-16LE code units.
+    kind_offset: u64,
+    /// One-based ordinal among scopes of the same feature family.
+    pub feature_ordinal: std::num::NonZeroU32,
+    /// Byte offset of `feature_ordinal`.
+    feature_ordinal_offset: u64,
+    /// ASM delta-state identity produced by this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    history_state_id: Option<i64>,
+    /// ASM delta-state identity immediately preceding this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_history_state_id: Option<i64>,
+    /// Byte offset of the encoded preceding-state identity, when present.
+    previous_history_state_id_offset: Option<u64>,
+    /// Byte offset of the ordered reference-table count.
+    reference_count_offset: u64,
+    /// Ordered indexed-record references carried by the scope.
+    reference_members: ReferenceRun<u32>,
+    /// Family-specific construction records.
+    payload: DesignScopePayload,
+    /// Reference members whose records open a construction-operand group the
+    /// group grammar does not close.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unclosed_construction_operand_groups: Vec<u32>,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the paired indexed record header.
+    paired_byte_offset: u64,
+}
+
+/// Unadmitted parameter-scope fields.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignParameterScopeDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
@@ -5720,10 +6372,8 @@ pub struct DesignParameterScope {
     /// Byte offset of `feature_ordinal`.
     pub feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_history_state_id: Option<i64>,
     /// Byte offset of the encoded preceding-state identity, when present.
     pub previous_history_state_id_offset: Option<u64>,
@@ -5735,7 +6385,6 @@ pub struct DesignParameterScope {
     pub payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: DesignClassTag,
@@ -7352,9 +8001,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::SurfaceOffset => {
                 DesignScopePayload::SurfaceOffset(wire.surface_offset_operation.take())
             }
-            DesignFeatureKind::SurfaceRuled => {
-                DesignScopePayload::SurfaceRuled(wire.ruled_surface_operation.take())
-            }
+            DesignFeatureKind::SurfaceRuled => DesignScopePayload::SurfaceRuled(
+                wire.ruled_surface_operation.take().ok_or_else(|| {
+                    DesignParameterScopePayloadError("ruled_surface_operation is required".into())
+                })?,
+            ),
             DesignFeatureKind::SurfaceTrim => DesignScopePayload::SurfaceTrim,
             DesignFeatureKind::BoundaryFill => DesignScopePayload::BoundaryFill,
             DesignFeatureKind::Hole => DesignScopePayload::Hole(wire.hole_construction.take()),
@@ -7399,9 +8050,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::CustomFeature => DesignScopePayload::CustomFeature,
             DesignFeatureKind::Form => DesignScopePayload::Form,
-            DesignFeatureKind::SurfaceStitch => {
-                DesignScopePayload::SurfaceStitch(wire.surface_stitch_operation.take())
-            }
+            DesignFeatureKind::SurfaceStitch => DesignScopePayload::SurfaceStitch(
+                wire.surface_stitch_operation.take().ok_or_else(|| {
+                    DesignParameterScopePayloadError("surface_stitch_operation is required".into())
+                })?,
+            ),
             DesignFeatureKind::BaseFeature => {
                 DesignScopePayload::BaseFeature(wire.base_feature_construction.take())
             }
@@ -7505,7 +8158,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
-        Ok(Self {
+        Self::try_new(DesignParameterScopeDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire
@@ -7666,10 +8319,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value;
             }
-            DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = value,
+            DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
-            DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = value,
+            DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = Some(value),
             DesignScopePayload::SurfacePatch(value) => wire.surface_patch_boundaries = value,
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
@@ -7723,6 +8376,175 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Native(_) => {}
         }
         wire
+    }
+}
+
+impl DesignParameterScope {
+    pub(crate) fn try_new(
+        draft: DesignParameterScopeDraft,
+    ) -> Result<Self, DesignParameterScopePayloadError> {
+        let fail = |field: &str| {
+            DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
+        };
+        let kind = draft.payload.kind_name();
+        if draft.frame_length <= 89
+            || draft.byte_offset.checked_add(draft.frame_length) != Some(draft.paired_byte_offset)
+        {
+            return Err(fail("frame_length/paired_byte_offset"));
+        }
+        if !(draft.byte_offset < draft.kind_offset
+            && draft.kind_offset < draft.feature_ordinal_offset)
+        {
+            return Err(fail("kind_offset/feature_ordinal_offset"));
+        }
+        let tail = draft
+            .paired_byte_offset
+            .checked_sub(draft.feature_ordinal_offset)
+            .and_then(|length| usize::try_from(length).ok())
+            .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        if !crate::design::decode::scopes::parameter_scope_tail_length_is_valid(kind, tail) {
+            return Err(fail("feature_ordinal_offset/kind"));
+        }
+        match draft.previous_history_state_id_offset {
+            None if draft.previous_history_state_id.is_none() => {}
+            Some(offset) => {
+                let relative =
+                    crate::design::decode::scopes::parameter_scope_previous_history_offset(
+                        kind, tail,
+                    )
+                    .ok_or_else(|| fail("previous_history_state_id_offset"))?;
+                if draft.feature_ordinal_offset.checked_add(relative as u64) != Some(offset)
+                    || draft.history_state_id.is_some() != draft.previous_history_state_id.is_some()
+                {
+                    return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));
+                }
+            }
+            None => {
+                return Err(fail(
+                    "previous_history_state_id_offset/previous_history_state_id",
+                ))
+            }
+        }
+        if !(draft.byte_offset < draft.reference_count_offset
+            && draft.reference_count_offset < draft.kind_offset)
+            || draft.reference_members.is_empty()
+        {
+            return Err(fail("reference_count_offset/reference_members"));
+        }
+        let mut expected = draft
+            .reference_count_offset
+            .checked_add(5)
+            .ok_or_else(|| fail("reference_count_offset"))?;
+        for member in draft.reference_members.offsets() {
+            if *member != expected
+                || *member <= draft.reference_count_offset
+                || *member >= draft.kind_offset
+            {
+                return Err(fail("reference_member_offsets"));
+            }
+            expected = expected
+                .checked_add(11)
+                .ok_or_else(|| fail("reference_member_offsets"))?;
+        }
+        if draft.reference_members.offsets().count() != draft.reference_members.len()
+            || draft
+                .reference_members
+                .offsets()
+                .next_back()
+                .and_then(|offset| offset.checked_add(18))
+                != Some(draft.kind_offset)
+        {
+            return Err(fail("reference_member_offsets/kind_offset"));
+        }
+        Ok(Self {
+            id: draft.id,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            kind_offset: draft.kind_offset,
+            feature_ordinal: draft.feature_ordinal,
+            feature_ordinal_offset: draft.feature_ordinal_offset,
+            history_state_id: draft.history_state_id,
+            previous_history_state_id: draft.previous_history_state_id,
+            previous_history_state_id_offset: draft.previous_history_state_id_offset,
+            reference_count_offset: draft.reference_count_offset,
+            reference_members: draft.reference_members,
+            payload: draft.payload,
+            unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
+            paired_class_tag: draft.paired_class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+        })
+    }
+
+    pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
+        DesignParameterScopeDraft {
+            id: self.id,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            kind_offset: self.kind_offset,
+            feature_ordinal: self.feature_ordinal,
+            feature_ordinal_offset: self.feature_ordinal_offset,
+            history_state_id: self.history_state_id,
+            previous_history_state_id: self.previous_history_state_id,
+            previous_history_state_id_offset: self.previous_history_state_id_offset,
+            reference_count_offset: self.reference_count_offset,
+            reference_members: self.reference_members,
+            payload: self.payload,
+            unclosed_construction_operand_groups: self.unclosed_construction_operand_groups,
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+
+    pub(crate) fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut DesignParameterScopeDraft),
+    ) -> Result<(), DesignParameterScopePayloadError> {
+        let mut draft = self.clone().into_draft();
+        edit(&mut draft);
+        *self = Self::try_new(draft)?;
+        Ok(())
+    }
+
+    pub(crate) fn payload_mut(&mut self) -> DesignScopePayloadMut<'_> {
+        self.payload.fields_mut()
+    }
+
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+    pub(crate) fn kind_offset(&self) -> u64 {
+        self.kind_offset
+    }
+    pub(crate) fn feature_ordinal_offset(&self) -> u64 {
+        self.feature_ordinal_offset
+    }
+    pub(crate) fn history_state_id(&self) -> Option<i64> {
+        self.history_state_id
+    }
+    pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
+        self.previous_history_state_id
+    }
+    pub(crate) fn previous_history_state_id_offset(&self) -> Option<u64> {
+        self.previous_history_state_id_offset
+    }
+    pub(crate) fn reference_count_offset(&self) -> u64 {
+        self.reference_count_offset
+    }
+    pub(crate) fn reference_members(&self) -> &ReferenceRun<u32> {
+        &self.reference_members
+    }
+    pub(crate) fn payload(&self) -> &DesignScopePayload {
+        &self.payload
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.paired_byte_offset
     }
 }
 
@@ -7833,7 +8655,7 @@ impl DesignParameterScope {
 
     pub(crate) fn surface_stitch_operation(&self) -> Option<&DesignSurfaceStitchOperation> {
         match &self.payload {
-            DesignScopePayload::SurfaceStitch(value) => value.as_ref(),
+            DesignScopePayload::SurfaceStitch(value) => Some(value),
             _ => None,
         }
     }
@@ -7854,7 +8676,7 @@ impl DesignParameterScope {
 
     pub(crate) fn ruled_surface_operation(&self) -> Option<&DesignRuledSurfaceOperation> {
         match &self.payload {
-            DesignScopePayload::SurfaceRuled(value) => value.as_ref(),
+            DesignScopePayload::SurfaceRuled(value) => Some(value),
             _ => None,
         }
     }
@@ -8287,26 +9109,34 @@ impl DesignParameterScope {
         }));
     }
 
-    pub(crate) fn empty(id: &str, kind: DesignFeatureKind, record_index: u32) -> Self {
-        Self {
+    pub(crate) fn empty<P>(id: &str, payload: P, record_index: u32) -> Self
+    where
+        P: TryInto<DesignScopePayload>,
+        P::Error: std::fmt::Debug,
+    {
+        Self::try_new(DesignParameterScopeDraft {
             id: id.to_string(),
             byte_offset: 0,
             class_tag: DesignClassTag::try_from("256".to_owned()).unwrap(),
             record_index,
-            frame_length: 0,
-            kind_offset: 0,
+            frame_length: 128,
+            kind_offset: 32,
             feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
+            feature_ordinal_offset: 48,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
-            reference_count_offset: 0,
-            reference_members: ReferenceRun::unlocated(Vec::new()),
-            payload: kind.into(),
+            reference_count_offset: 9,
+            reference_members: ReferenceRun::located(vec![Located {
+                value: record_index,
+                offset: 14,
+            }]),
+            payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
-            paired_byte_offset: 0,
-        }
+            paired_byte_offset: 128,
+        })
+        .unwrap()
     }
 }
 
@@ -8330,19 +9160,49 @@ pub enum DesignEdgeFlangeHeightExtent {
     },
 }
 
+/// A group record index with a representable recipe index three records later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct DesignRecipeGroupIndex(u32);
+
+impl DesignRecipeGroupIndex {
+    pub(crate) fn get(self) -> u32 {
+        self.0
+    }
+    pub(crate) fn operand(self) -> u32 {
+        self.0 + 3
+    }
+}
+
+impl TryFrom<u32> for DesignRecipeGroupIndex {
+    type Error = String;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        value
+            .checked_add(3)
+            .ok_or("group_record_index + 3 overflows")?;
+        Ok(Self(value))
+    }
+}
+
+impl From<DesignRecipeGroupIndex> for u32 {
+    fn from(value: DesignRecipeGroupIndex) -> Self {
+        value.get()
+    }
+}
+
 /// One selected flange edge and its aggregate operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 pub struct DesignEdgeFlangeEdge {
     pub wrapper_record_index: u32,
-    pub group_record_index: u32,
+    pub group_record_index: DesignRecipeGroupIndex,
     pub aggregate_operand_record_index: u32,
 }
 
 impl DesignEdgeFlangeEdge {
     pub(crate) fn operand_record_index(&self) -> u32 {
-        self.group_record_index.saturating_add(3)
+        self.group_record_index.operand()
     }
 
     pub(crate) fn from_columns(
@@ -8360,26 +9220,26 @@ impl DesignEdgeFlangeEdge {
         if groups
             .iter()
             .zip(operands)
-            .any(|(group, operand)| *operand != group.saturating_add(3))
+            .any(|(group, operand)| Some(*operand) != group.checked_add(3))
         {
             return Err(
                 "edge_operand_record_indices must equal edge_group_record_indices + 3".into(),
             );
         }
-        Ok(wrappers
+        wrappers
             .into_iter()
             .zip(groups)
             .zip(aggregate_operands)
             .map(
                 |((wrapper_record_index, group_record_index), aggregate_operand_record_index)| {
-                    Self {
+                    Ok(Self {
                         wrapper_record_index,
-                        group_record_index,
+                        group_record_index: group_record_index.try_into()?,
                         aggregate_operand_record_index,
-                    }
+                    })
                 },
             )
-            .collect())
+            .collect()
     }
 }
 
@@ -8488,8 +9348,8 @@ impl DesignEdgeFlangeSelection {
             let first = edges.next();
             edges.next().is_none()
                 && first.is_some_and(|edge| {
-                    edge.aggregate_operand_record_index
-                        != aggregate_group_record_index.saturating_add(3)
+                    Some(edge.aggregate_operand_record_index)
+                        != aggregate_group_record_index.checked_add(3)
                 })
         };
         if mismatched_aggregate {
@@ -8600,7 +9460,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.group_record_index)
+                .map(|edge| edge.group_record_index.get())
                 .collect(),
             edge_operand_record_indices: operation
                 .selection
@@ -8670,9 +9530,9 @@ pub struct DesignHemOperation {
     /// Selection-wrapper record for the hem edge.
     pub edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
-    pub edge_group_record_index: u32,
+    pub edge_group_record_index: DesignRecipeGroupIndex,
     /// Role-`0x43` aggregate operand-group record.
-    pub aggregate_group_record_index: u32,
+    pub aggregate_group_record_index: DesignRecipeGroupIndex,
     /// Parameter-owner layout selected by the owned source kinds.
     pub parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
@@ -8711,10 +9571,10 @@ struct DesignHemOperationWire {
 
 impl DesignHemOperation {
     pub(crate) fn edge_operand_record_index(&self) -> u32 {
-        self.edge_group_record_index.saturating_add(3)
+        self.edge_group_record_index.operand()
     }
     pub(crate) fn aggregate_operand_record_index(&self) -> u32 {
-        self.aggregate_group_record_index.saturating_add(3)
+        self.aggregate_group_record_index.operand()
     }
 }
 
@@ -8734,11 +9594,11 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
         if wire.reference_side_code != 4 {
             return Err("reference_side_code must be 4".into());
         }
-        if wire.edge_operand_record_index != wire.edge_group_record_index.saturating_add(3) {
+        if Some(wire.edge_operand_record_index) != wire.edge_group_record_index.checked_add(3) {
             return Err("edge_operand_record_index must equal edge_group_record_index + 3".into());
         }
-        if wire.aggregate_operand_record_index
-            != wire.aggregate_group_record_index.saturating_add(3)
+        if Some(wire.aggregate_operand_record_index)
+            != wire.aggregate_group_record_index.checked_add(3)
         {
             return Err(
                 "aggregate_operand_record_index must equal aggregate_group_record_index + 3".into(),
@@ -8746,8 +9606,8 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
         }
         Ok(Self {
             edge_wrapper_record_index: wire.edge_wrapper_record_index,
-            edge_group_record_index: wire.edge_group_record_index,
-            aggregate_group_record_index: wire.aggregate_group_record_index,
+            edge_group_record_index: wire.edge_group_record_index.try_into()?,
+            aggregate_group_record_index: wire.aggregate_group_record_index.try_into()?,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
             bend_radius: DesignPositiveScalar::new(wire.bend_radius)
@@ -8761,9 +9621,9 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
     fn from(record: DesignHemOperation) -> Self {
         Self {
             edge_wrapper_record_index: record.edge_wrapper_record_index,
-            edge_group_record_index: record.edge_group_record_index,
+            edge_group_record_index: record.edge_group_record_index.get(),
             edge_operand_record_index: record.edge_operand_record_index(),
-            aggregate_group_record_index: record.aggregate_group_record_index,
+            aggregate_group_record_index: record.aggregate_group_record_index.get(),
             aggregate_operand_record_index: record.aggregate_operand_record_index(),
             parameter_owners: record.parameter_owners,
             settings_record_index: record.settings_record_index,
@@ -9840,6 +10700,21 @@ impl DesignBaseFeatureConstruction {
             .chain(single)
     }
 }
+
+impl DesignWorkPointInput {
+    pub(crate) fn try_set_carrier(
+        &mut self,
+        carrier: Option<Box<DesignWorkPointInputCarrier>>,
+    ) -> Result<(), String> {
+        let mut draft = self.clone().into_draft();
+        draft.carrier = carrier;
+        *self = Self::try_new(draft)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test_support;
 
 #[cfg(test)]
 mod tests;

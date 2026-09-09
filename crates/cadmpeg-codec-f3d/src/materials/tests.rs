@@ -1204,10 +1204,12 @@ fn decode_transfers_generated_protein_appearance() {
         0
     );
     assert!(f3d_native(result.ir()).sketch_relations[1]
-        .auxiliary_references
+        .auxiliary_references()
         .is_empty());
     assert_eq!(
-        f3d_native(result.ir()).sketch_relations[0].raw_bytes.len(),
+        f3d_native(result.ir()).sketch_relations[0]
+            .raw_bytes()
+            .len(),
         101
     );
     assert_eq!(f3d_native(result.ir()).sketch_points.len(), 5);
@@ -1366,7 +1368,9 @@ fn decode_transfers_generated_custom_attribute() {
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
-        f3d_native(result.ir()).persistent_design_links[1].design_id,
+        f3d_native(result.ir()).persistent_design_links[1]
+            .design_id
+            .as_str(),
         "322"
     );
     assert_eq!(

@@ -236,7 +236,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                             operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == group.record_index
                                 && operand.group_member_ordinal == 0
-                                && operand.record_index == group.members()[0].value
+                                && operand.record_index() == group.members()[0].value
                                 && native_stream(&operand.id) == Some(stream)
                         });
                         let operand = matching_operands.next()?;
@@ -493,7 +493,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 spatial_sketch,
                                 scoped_resolution.spatial_entities,
                                 scoped_resolution,
-                                scope.history_state_id,
+                                scope.history_state_id(),
                                 effective_previous_history_state_id,
                             )
                         })
@@ -557,7 +557,7 @@ pub(crate) fn bind_extrude_profile_selections(
                         members,
                         sketch,
                         scoped_resolution,
-                        scope.history_state_id,
+                        scope.history_state_id(),
                         effective_previous_history_state_id,
                     )
                 })
@@ -707,7 +707,7 @@ fn historical_face_profile_selection(
             || group_members
                 .iter()
                 .zip(group.members())
-                .any(|(member, record_index)| member.record_index != record_index.value)
+                .any(|(member, record_index)| member.record_index() != record_index.value)
         {
             return None;
         }
@@ -938,7 +938,7 @@ pub(crate) fn resolved_extrude_profile_selection(
         && selection_members
             .iter()
             .zip(group.members())
-            .all(|(member, record_index)| member.record_index == record_index.value);
+            .all(|(member, record_index)| member.record_index() == record_index.value);
     let resolved_profiles = exact_member_run.then(|| {
         let mut selected = Vec::new();
         for member in &selection_members {
@@ -1186,7 +1186,7 @@ fn resolved_spatial_extrude_profile_selection(
         && group_members
             .iter()
             .zip(group.members())
-            .all(|(member, record_index)| member.record_index == record_index.value);
+            .all(|(member, record_index)| member.record_index() == record_index.value);
     let exact_selection = (|| {
         if !exact_member_run {
             return ExactSelection::Unavailable;
@@ -1909,13 +1909,13 @@ fn resolve_entity_selection_path(
                 && operand.scope_record_index == group.scope_record_index
                 && operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == ordinal
-                && operand.record_index == record_index
+                && operand.record_index() == record_index
         });
         let operand = matches.next()?;
         if matches.next().is_some() {
             return None;
         }
-        let secondary = operand.secondary?;
+        let secondary = operand.secondary()?;
         if let Some(expected) = primary_identity {
             if expected != operand.primary_identity {
                 return None;
@@ -2421,7 +2421,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members()[0].value
+                    && operand.record_index() == group.members()[0].value
             });
         let Some(operand) = operands.next() else {
             continue;

@@ -16,7 +16,8 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         crate::records::feature::DesignFeatureKind::SurfaceExtend,
         12,
     );
-    if let crate::records::feature::DesignScopePayload::SurfaceExtend(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut()
+    {
         *slot = Some(DesignSurfaceExtendOperation {
             distance: 0.04,
             distance_offset: 40,

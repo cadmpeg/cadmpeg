@@ -71,7 +71,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
 
 #[test]
 fn class_413_mirror_scope_decodes_inline_tolerance() {
-    let mut bytes = vec![0; 89];
+    let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
         crate::records::feature::DesignFeatureKind::Mirror,
@@ -79,28 +79,33 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("413".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
-    bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
-    bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
-    bytes[59..63].copy_from_slice(&89_u32.to_le_bytes());
-    bytes[63] = 1;
-    bytes[64..68].copy_from_slice(&12_u32.to_le_bytes());
-    bytes[76] = 1;
-    bytes[77..81].copy_from_slice(&11_u32.to_le_bytes());
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 32;
+            draft.feature_ordinal_offset = 44;
+            draft.previous_history_state_id_offset = Some(32 + 43);
+            draft.frame_length = 32 + 89;
+            draft.paired_byte_offset = 32 + 89;
+        })
+        .unwrap();
+    bytes[32 + 47..32 + 51].copy_from_slice(&89_u32.to_le_bytes());
+    bytes[32 + 51..32 + 59].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[32 + 59..32 + 63].copy_from_slice(&89_u32.to_le_bytes());
+    bytes[32 + 63] = 1;
+    bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[32 + 76] = 1;
+    bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-413 tolerance");
     assert_eq!(value, 0.25);
-    assert_eq!(offset, 51);
+    assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
 
 #[test]
 fn class_369_mirror_scope_decodes_inline_tolerance() {
-    let mut bytes = vec![0; 89];
+    let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
         crate::records::feature::DesignFeatureKind::Mirror,
@@ -108,33 +113,38 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
-    bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
-    bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
-    bytes[59..63].copy_from_slice(&89_u32.to_le_bytes());
-    bytes[63] = 1;
-    bytes[64..68].copy_from_slice(&12_u32.to_le_bytes());
-    bytes[76] = 1;
-    bytes[77..81].copy_from_slice(&11_u32.to_le_bytes());
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 32;
+            draft.feature_ordinal_offset = 44;
+            draft.previous_history_state_id_offset = Some(32 + 43);
+            draft.frame_length = 32 + 89;
+            draft.paired_byte_offset = 32 + 89;
+        })
+        .unwrap();
+    bytes[32 + 47..32 + 51].copy_from_slice(&89_u32.to_le_bytes());
+    bytes[32 + 51..32 + 59].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[32 + 59..32 + 63].copy_from_slice(&89_u32.to_le_bytes());
+    bytes[32 + 63] = 1;
+    bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[32 + 76] = 1;
+    bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-369 tolerance");
     assert_eq!(value, 0.25);
-    assert_eq!(offset, 51);
+    assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 89);
-    assert_eq!(carrier.marker.repeated_offset(), Some(59));
+    assert_eq!(carrier.marker.repeated_offset(), Some(32 + 59));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
-    bytes[59..63].copy_from_slice(&90_u32.to_le_bytes());
+    bytes[32 + 59..32 + 63].copy_from_slice(&90_u32.to_le_bytes());
     assert_eq!(exact_legacy_mirror_scope_tolerance(&bytes, &scope), None);
 }
 
 #[test]
 fn class_391_mirror_scope_decodes_inline_tolerance() {
-    let mut bytes = vec![0; 88];
+    let mut bytes = vec![0; 32 + 88];
     let mut scope = DesignParameterScope::empty(
         "scope",
         crate::records::feature::DesignFeatureKind::Mirror,
@@ -142,33 +152,38 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("391".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(42);
-    scope.frame_length = 88;
-    scope.paired_byte_offset = 88;
-    bytes[46..50].copy_from_slice(&94_u32.to_le_bytes());
-    bytes[50..58].copy_from_slice(&0.25_f64.to_le_bytes());
-    bytes[58..62].copy_from_slice(&94_u32.to_le_bytes());
-    bytes[62] = 1;
-    bytes[63..67].copy_from_slice(&12_u32.to_le_bytes());
-    bytes[75] = 1;
-    bytes[76..80].copy_from_slice(&11_u32.to_le_bytes());
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 32;
+            draft.feature_ordinal_offset = 44;
+            draft.previous_history_state_id_offset = Some(32 + 42);
+            draft.frame_length = 32 + 88;
+            draft.paired_byte_offset = 32 + 88;
+        })
+        .unwrap();
+    bytes[32 + 46..32 + 50].copy_from_slice(&94_u32.to_le_bytes());
+    bytes[32 + 50..32 + 58].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[32 + 58..32 + 62].copy_from_slice(&94_u32.to_le_bytes());
+    bytes[32 + 62] = 1;
+    bytes[32 + 63..32 + 67].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[32 + 75] = 1;
+    bytes[32 + 76..32 + 80].copy_from_slice(&11_u32.to_le_bytes());
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-391 tolerance");
     assert_eq!(value, 0.25);
-    assert_eq!(offset, 50);
+    assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 94);
-    assert_eq!(carrier.marker.repeated_offset(), Some(58));
+    assert_eq!(carrier.marker.repeated_offset(), Some(32 + 58));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
-    bytes[58..62].copy_from_slice(&95_u32.to_le_bytes());
+    bytes[32 + 58..32 + 62].copy_from_slice(&95_u32.to_le_bytes());
     assert_eq!(exact_legacy_mirror_scope_tolerance(&bytes, &scope), None);
 }
 
 #[test]
 fn class_440_mirror_scope_decodes_inline_tolerance() {
-    let mut bytes = vec![0; 89];
+    let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
         crate::records::feature::DesignFeatureKind::Mirror,
@@ -176,21 +191,26 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("440".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
-    bytes[47..51].copy_from_slice(&100_u32.to_le_bytes());
-    bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
-    bytes[59..63].copy_from_slice(&100_u32.to_le_bytes());
-    bytes[63] = 1;
-    bytes[64..68].copy_from_slice(&12_u32.to_le_bytes());
-    bytes[76] = 1;
-    bytes[77..81].copy_from_slice(&11_u32.to_le_bytes());
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 32;
+            draft.feature_ordinal_offset = 44;
+            draft.previous_history_state_id_offset = Some(32 + 43);
+            draft.frame_length = 32 + 89;
+            draft.paired_byte_offset = 32 + 89;
+        })
+        .unwrap();
+    bytes[32 + 47..32 + 51].copy_from_slice(&100_u32.to_le_bytes());
+    bytes[32 + 51..32 + 59].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[32 + 59..32 + 63].copy_from_slice(&100_u32.to_le_bytes());
+    bytes[32 + 63] = 1;
+    bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[32 + 76] = 1;
+    bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-440 tolerance");
     assert_eq!(value, 0.25);
-    assert_eq!(offset, 51);
+    assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 100);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
@@ -198,7 +218,7 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
 
 #[test]
 fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
-    let mut bytes = vec![0; 84];
+    let mut bytes = vec![0; 32 + 84];
     let mut scope = DesignParameterScope::empty(
         "scope",
         crate::records::feature::DesignFeatureKind::Mirror,
@@ -206,20 +226,25 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(42);
-    scope.frame_length = 84;
-    scope.paired_byte_offset = 84;
-    bytes[46..50].copy_from_slice(&61_u32.to_le_bytes());
-    bytes[50..58].copy_from_slice(&0.125_f64.to_le_bytes());
-    bytes[58] = 1;
-    bytes[59..63].copy_from_slice(&12_u32.to_le_bytes());
-    bytes[71] = 1;
-    bytes[72..76].copy_from_slice(&11_u32.to_le_bytes());
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 32;
+            draft.feature_ordinal_offset = 44;
+            draft.previous_history_state_id_offset = Some(32 + 42);
+            draft.frame_length = 32 + 84;
+            draft.paired_byte_offset = 32 + 84;
+        })
+        .unwrap();
+    bytes[32 + 46..32 + 50].copy_from_slice(&61_u32.to_le_bytes());
+    bytes[32 + 50..32 + 58].copy_from_slice(&0.125_f64.to_le_bytes());
+    bytes[32 + 58] = 1;
+    bytes[32 + 59..32 + 63].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[32 + 71] = 1;
+    bytes[32 + 72..32 + 76].copy_from_slice(&11_u32.to_le_bytes());
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-441 tolerance");
     assert_eq!(value, 0.125);
-    assert_eq!(offset, 50);
+    assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 61);
     assert_eq!(carrier.marker.repeated_offset(), None);
     assert_eq!(carrier.first_reference, 12);
@@ -258,8 +283,16 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let records = IndexedRecordOffsets::build(&bytes);
 
     assert_eq!(

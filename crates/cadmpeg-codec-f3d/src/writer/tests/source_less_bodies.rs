@@ -110,7 +110,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
-            design_id: "311".into(),
+            design_id: "311".to_owned().try_into().unwrap(),
 
             design_reference: 7,
             ordinal: 0,
@@ -119,7 +119,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         PersistentDesignLink {
             id: "f3d:generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
-            design_id: "322".into(),
+            design_id: "322".to_owned().try_into().unwrap(),
 
             design_reference: 8,
             ordinal: 1,
@@ -131,7 +131,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#0".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 1,
-            token: "8".into(),
+            token: cadmpeg_ir::NonEmptyString::new("8").unwrap(),
             design_references: vec![301, -314, 411],
             ordinal: 0,
         },
@@ -139,7 +139,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
             selector: 2,
-            token: "-1".into(),
+            token: cadmpeg_ir::NonEmptyString::new("-1").unwrap(),
             design_references: vec![511],
             ordinal: 0,
         },
@@ -147,7 +147,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             id: "f3d:generated:persistent-subentity-tag#2".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 3,
-            token: "42".into(),
+            token: cadmpeg_ir::NonEmptyString::new("42").unwrap(),
             design_references: Vec::new(),
             ordinal: 1,
         },
@@ -272,9 +272,9 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.persistent_design_links.len(), 2);
-    assert_eq!(native.persistent_design_links[0].design_id, "311");
+    assert_eq!(native.persistent_design_links[0].design_id.as_str(), "311");
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
-    assert_eq!(native.persistent_design_links[1].design_id, "322");
+    assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert!(native.persistent_design_links[1].is_current);
     assert_eq!(native.persistent_subentity_tags.len(), 3);
@@ -336,7 +336,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     native.persistent_design_links = vec![PersistentDesignLink {
         id: "f3d:generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
-        design_id: "311".into(),
+        design_id: "311".to_owned().try_into().unwrap(),
 
         design_reference: 7,
         ordinal: 1,

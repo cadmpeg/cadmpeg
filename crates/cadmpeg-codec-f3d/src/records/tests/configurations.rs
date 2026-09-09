@@ -26,7 +26,6 @@ fn configuration_parameter_overrides_require_scalar_values() {
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
         DesignConfiguration::try_new(
-            crate::ids::configuration_entry_id("table.dsgcfg"),
             "table.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["variant".into()],
@@ -50,5 +49,44 @@ fn configuration_parameter_overrides_require_scalar_values() {
         assert!(error
             .to_string()
             .contains("parameter overrides must be JSON scalars"));
+    }
+}
+
+#[test]
+fn configuration_kind_requires_its_exact_entry_extension() {
+    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    for (kind, valid, invalid) in [
+        (
+            DesignConfigurationKind::Table,
+            "folder/table.dsgcfg",
+            "folder/table.dsgcfgrule",
+        ),
+        (
+            DesignConfigurationKind::Rule,
+            "folder/rule.dsgcfgrule",
+            "folder/rule.dsgcfg",
+        ),
+    ] {
+        let admit = |name: &str| {
+            DesignConfiguration::try_new(name.into(), kind, Vec::new(), serde_json::Map::new())
+        };
+        let record = admit(valid).unwrap();
+        let wire = serde_json::to_value(&record).unwrap();
+        assert_eq!(wire["id"], crate::ids::configuration_entry_id(valid));
+        assert_eq!(
+            serde_json::to_value(
+                serde_json::from_value::<DesignConfiguration>(wire.clone()).unwrap()
+            )
+            .unwrap(),
+            wire
+        );
+        for name in [invalid, "entry", "entry.DSGCFG", "entry.dsgcfg/suffix"] {
+            let error = admit(name).unwrap_err().to_string();
+            assert!(error.contains("entry_name"), "{error}");
+            let mut malformed = wire.clone();
+            malformed["entry_name"] = name.into();
+            malformed["id"] = crate::ids::configuration_entry_id(name).into();
+            assert!(serde_json::from_value::<DesignConfiguration>(malformed).is_err());
+        }
     }
 }

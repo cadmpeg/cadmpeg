@@ -73,7 +73,7 @@ pub(crate) fn resolved_surface_patch_edge_group(
             let mut matches = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *member
+                    && operand.record_index() == *member
             });
             let operand = matches.next()?;
             matches.next().is_none().then_some(operand)
@@ -229,7 +229,7 @@ pub(crate) fn resolved_edge_flange_group(
                 .filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                 })
                 .collect::<Vec<_>>();
             let [operand] = matching.as_slice() else {
@@ -356,7 +356,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
             .filter(|operand| {
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == member.value
+                    && operand.record_index() == member.value
             })
             .count();
         let corner = u32::try_from(ordinal).ok().and_then(|ordinal| {
@@ -365,7 +365,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.recipe.record_index == member.value
+                    && operand.recipe.record_index() == member.value
             });
             let corner = matches.next()?;
             matches.next().is_none().then_some(corner)
@@ -507,7 +507,7 @@ fn resolved_edge_group_with_transition_chain(
             && group
                 .members()
                 .iter()
-                .any(|member| member.value == operand.record_index)
+                .any(|member| member.value == operand.record_index())
             && operand.surface_patch_recipe_structure.is_some()
     });
     if has_surface_patch_operand {
@@ -528,7 +528,7 @@ fn resolved_edge_group_with_transition_chain(
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                 });
                 let operand = matches.next()?;
                 matches.next().is_none().then_some(operand)
@@ -597,7 +597,7 @@ fn resolved_edge_group_with_transition_chain(
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
-                    && operand.record_index == *member
+                    && operand.record_index() == *member
             });
             let operand = matches.next()?;
             matches.next().is_none().then_some(operand)
@@ -613,7 +613,7 @@ fn resolved_edge_group_with_transition_chain(
                 .filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                 })
                 .collect::<Vec<_>>();
             matches.len() == 1
@@ -627,7 +627,7 @@ fn resolved_edge_group_with_transition_chain(
                 operands.iter().any(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                         && !operand.recipe_program.is_empty()
                         && operand.recipe_structure.is_none()
                 })
@@ -644,7 +644,7 @@ fn resolved_edge_group_with_transition_chain(
                 operands.iter().any(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                         && operand.recipe_structure.is_some()
                 })
             });
@@ -659,7 +659,7 @@ fn resolved_edge_group_with_transition_chain(
                     .filter(|operand| {
                         native_stream(&operand.id) == stream
                             && operand.scope_record_index == group.scope_record_index
-                            && operand.record_index == *member
+                            && operand.record_index() == *member
                     })
                     .collect::<Vec<_>>();
                 match matches.as_slice() {
@@ -693,7 +693,7 @@ fn resolved_edge_group_with_transition_chain(
         let is_uniform_compact_transition_chain = allow_edge_treatment_transition_chain
             && !edges.is_empty()
             && identity_operands.iter().all(|operand| {
-                if !operand.layout.is_compact() {
+                if !operand.layout().is_compact() {
                     return false;
                 }
                 let mut candidate = operand.transition_edge_candidates.clone();
@@ -712,7 +712,7 @@ fn resolved_edge_group_with_transition_chain(
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                 });
                 let operand = matches.next()?;
                 matches.next().is_none().then_some(operand)
@@ -873,7 +873,7 @@ fn resolved_edge_group_with_transition_chain(
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *member
+                && operand.record_index() == *member
         });
         let Some(operand) = matches.next() else {
             return unmatched_selection(previous_state_id);
@@ -1074,7 +1074,7 @@ pub(crate) fn resolved_hem_edge_group(
         .filter(|operand| {
             native_stream(&operand.id) == native_stream(&group.id)
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *member
+                && operand.record_index() == *member
         })
         .collect::<Vec<_>>();
     let [operand] = matching_operands.as_slice() else {
@@ -1648,7 +1648,7 @@ fn scope_partition_edge_group_candidates(
                 .filter(|operand| {
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index == *member
+                        && operand.record_index() == *member
                 })
                 .collect::<Vec<_>>();
             let [operand] = matches.as_slice() else {
@@ -1656,7 +1656,7 @@ fn scope_partition_edge_group_candidates(
                 break;
             };
             members.push(EdgeGroupMember {
-                identity: operand.record_index,
+                identity: operand.record_index(),
                 resolved_edge: resolved_edge_operand(operand),
                 deleted_boundary_edges: operand.deleted_boundary_edge_slots.clone(),
             });
@@ -2387,7 +2387,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                     edge_operands.iter().any(|operand| {
                         native_stream(&operand.id) == Some(stream)
                             && operand.scope_record_index == scope.record_index
-                            && operand.record_index == *member
+                            && operand.record_index() == *member
                     })
                 })
         })
@@ -2419,13 +2419,13 @@ pub(crate) fn project_fixed_fillet_with_corners(
                             native_stream(&operand.id) == Some(stream)
                                 && operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == group.record_index
-                                && operand.record_index == *member
+                                && operand.record_index() == *member
                         })
                         .collect::<Vec<_>>();
                     let [operand] = matches.as_slice() else {
                         return None;
                     };
-                    operand.layout.is_compact().then_some(*operand)
+                    operand.layout().is_compact().then_some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
             radius_edge_identity_group_candidates(&identities, radius.get())?;
@@ -2459,7 +2459,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 edge_identity_operands,
                 vertex_operands,
                 histories,
-                scope.previous_history_state_id,
+                scope.previous_history_state_id(),
                 &neutral_feature_id(scope),
                 edge_radius,
             );

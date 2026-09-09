@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 
 pub(crate) mod feature;
+mod frame_chain;
 pub(crate) mod topology;
 
 const IDENTITY_MATRIX: [[f64; 4]; 4] = [
@@ -452,6 +453,34 @@ pub struct SketchCurveLink {
     pub closure: i64,
 }
 
+/// Nonempty decimal text identifying a persistent Design entity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignPersistentIdText(String);
+
+impl DesignPersistentIdText {
+    /// Original decimal spelling of the identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DesignPersistentIdText {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("design_id must contain one or more ASCII digits".into());
+        }
+        Ok(Self(value))
+    }
+}
+
+impl From<DesignPersistentIdText> for String {
+    fn from(value: DesignPersistentIdText) -> Self {
+        value.0
+    }
+}
+
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -464,7 +493,7 @@ pub struct PersistentDesignLink {
     /// Solved B-rep entity this persistent Fusion design id is attached to.
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
-    pub design_id: String,
+    pub design_id: DesignPersistentIdText,
     /// Design-stream reference paired with this persistent identifier.
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
@@ -502,7 +531,7 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
         Ok(Self {
             id: wire.id,
             target: wire.target,
-            design_id: wire.design_id,
+            design_id: wire.design_id.try_into()?,
             design_reference: wire.design_reference,
             ordinal: wire.ordinal,
             is_current: wire.is_current,
@@ -515,7 +544,7 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
         Self {
             id: record.id,
             target: record.target,
-            design_id: record.design_id,
+            design_id: record.design_id.into(),
             entity_kind: 3,
             design_reference: record.design_reference,
             ordinal: record.ordinal,
@@ -534,11 +563,19 @@ pub struct PersistentSubentityTag {
     /// Native selector stored before the tag token.
     pub selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
-    pub token: String,
+    #[serde(deserialize_with = "deserialize_persistent_tag_token")]
+    pub token: cadmpeg_ir::NonEmptyString,
     /// Ordered signed Design-stream references carried by this group.
     pub design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.
     pub ordinal: u32,
+}
+
+fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<cadmpeg_ir::NonEmptyString, D::Error> {
+    cadmpeg_ir::NonEmptyString::new(String::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
 
 /// Component-local Design naming space bound to a context UUID.
@@ -1241,11 +1278,6 @@ impl DesignParameterOwner {
                 ParameterFrameOrder::OwnerCompanionParameter => 2,
             }
     }
-    /// The owned ordinal value.
-    #[cfg(test)]
-    pub fn owned_ordinal(&self) -> u32 {
-        self.owned_ordinal
-    }
     /// The companion record index value.
     pub fn companion_record_index(&self) -> u32 {
         self.base_index
@@ -1514,6 +1546,37 @@ pub struct DesignDimensionLocusPair {
     pub id: String,
     /// Companion record containing this frame.
     pub companion_record_index: u32,
+    /// Companion owned by the following governed dimension parameter.
+    pub governing_companion_record_index: u32,
+    byte_offset: u64,
+    /// Per-file primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    frame_length: u64,
+    first: DimensionFirstLocus,
+    second_geometry_record_index: NonZeroU32,
+    roles: [u32; 2],
+    /// Per-file paired class tag.
+    pub paired_class_tag: DesignClassTag,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DimensionFirstLocus {
+    Null,
+    Geometry {
+        opaque_index: u32,
+        record_index: NonZeroU32,
+    },
+}
+
+/// Unchecked dimension locus pair payload and frame offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionLocusPairDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
     /// Companion record owned by the following dimension parameter governed by
     /// this frame.
     pub governing_companion_record_index: u32,
@@ -1535,6 +1598,143 @@ pub struct DesignDimensionLocusPair {
     pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+impl DesignDimensionLocusPair {
+    /// Admit one of the two locus frame layouts with representable offsets.
+    pub fn try_new(draft: DesignDimensionLocusPairDraft) -> Result<Self, String> {
+        let first = match (
+            draft.opaque_index.as_ref(),
+            draft.loci[0].geometry_record_index,
+        ) {
+            (None, None) => DimensionFirstLocus::Null,
+            (Some(opaque), Some(record_index)) => DimensionFirstLocus::Geometry {
+                opaque_index: opaque.value,
+                record_index,
+            },
+            _ => return Err(
+                "opaque_index is present exactly when first_geometry_record_index names geometry"
+                    .into(),
+            ),
+        };
+        let second_geometry_record_index = draft.loci[1]
+            .geometry_record_index
+            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
+        let prefix = match first {
+            DimensionFirstLocus::Null => 25,
+            DimensionFirstLocus::Geometry { .. } => 40,
+        };
+        if draft.frame_length <= prefix + 29 {
+            return Err("frame_length does not contain the complete locus frame".into());
+        }
+        let paired_byte_offset = draft
+            .byte_offset
+            .checked_add(draft.frame_length)
+            .ok_or("paired_byte_offset overflows")?;
+        if draft.paired_byte_offset != paired_byte_offset {
+            return Err("paired_byte_offset disagrees with frame_length".into());
+        }
+        if draft
+            .opaque_index
+            .as_ref()
+            .is_some_and(|opaque| opaque.offset != draft.byte_offset + 35)
+        {
+            return Err("opaque_index_offset disagrees with byte_offset".into());
+        }
+        for (ordinal, locus) in draft.loci.iter().enumerate() {
+            let offset = draft.byte_offset + prefix + ordinal as u64 * 15;
+            let field = if ordinal == 0 { "first" } else { "second" };
+            if locus.geometry_reference_offset != offset {
+                return Err(format!(
+                    "{field}_geometry_reference_offset disagrees with byte_offset"
+                ));
+            }
+            if locus.role_offset != offset + 10 {
+                return Err(format!("{field}_role_offset disagrees with byte_offset"));
+            }
+        }
+        Ok(Self {
+            id: draft.id,
+            companion_record_index: draft.companion_record_index,
+            governing_companion_record_index: draft.governing_companion_record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            first,
+            second_geometry_record_index,
+            roles: [draft.loci[0].role, draft.loci[1].role],
+            paired_class_tag: draft.paired_class_tag,
+        })
+    }
+
+    /// Primary indexed header byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Length from the primary header to the paired header.
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+
+    /// Paired indexed header byte offset.
+    pub fn paired_byte_offset(&self) -> u64 {
+        self.byte_offset + self.frame_length
+    }
+
+    /// Opaque index and its derived offset in the ordinary two-locus form.
+    pub fn opaque_index(&self) -> Option<Located<u32>> {
+        match self.first {
+            DimensionFirstLocus::Null => None,
+            DimensionFirstLocus::Geometry { opaque_index, .. } => Some(Located {
+                value: opaque_index,
+                offset: self.byte_offset + 35,
+            }),
+        }
+    }
+
+    /// Ordered loci and their derived geometry and role offsets.
+    pub fn loci(&self) -> [DesignDimensionAnnotationOperand; 2] {
+        let (first, prefix) = match self.first {
+            DimensionFirstLocus::Null => (None, 25),
+            DimensionFirstLocus::Geometry { record_index, .. } => (Some(record_index), 40),
+        };
+        [
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: first,
+                geometry_reference_offset: self.byte_offset + prefix,
+                role: self.roles[0],
+                role_offset: self.byte_offset + prefix + 10,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: Some(self.second_geometry_record_index),
+                geometry_reference_offset: self.byte_offset + prefix + 15,
+                role: self.roles[1],
+                role_offset: self.byte_offset + prefix + 25,
+            },
+        ]
+    }
+
+    /// Recover the payload with derived frame and locus offsets.
+    pub fn into_draft(self) -> DesignDimensionLocusPairDraft {
+        let opaque_index = self.opaque_index();
+        let loci = self.loci();
+        let paired_byte_offset = self.paired_byte_offset();
+        DesignDimensionLocusPairDraft {
+            id: self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            opaque_index,
+            loci,
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1572,15 +1772,8 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
             _ => return Err("opaque_index and opaque_index_offset must occur together".to_owned()),
         };
         let first = NonZeroU32::new(wire.first_geometry_record_index);
-        if opaque_index.is_some() != first.is_some() {
-            return Err(
-                "opaque_index is present exactly when first_geometry_record_index names geometry"
-                    .to_owned(),
-            );
-        }
-        let second = NonZeroU32::new(wire.second_geometry_record_index)
-            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
-        Ok(Self {
+        let second = NonZeroU32::new(wire.second_geometry_record_index);
+        Self::try_new(DesignDimensionLocusPairDraft {
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
@@ -1597,7 +1790,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
                     role_offset: wire.first_role_offset,
                 },
                 DesignDimensionAnnotationOperand {
-                    geometry_record_index: Some(second),
+                    geometry_record_index: second,
                     geometry_reference_offset: wire.second_geometry_reference_offset,
                     role: wire.second_role,
                     role_offset: wire.second_role_offset,
@@ -1611,6 +1804,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
 
 impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
     fn from(pair: DesignDimensionLocusPair) -> Self {
+        let pair = pair.into_draft();
         let [first, second] = pair.loci;
         Self {
             id: pair.id,
@@ -1718,6 +1912,48 @@ pub struct DesignDimensionAnnotationFrame {
     /// Companion record of the dimension parameter governed by this frame.
     pub governing_companion_record_index: u32,
     /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Byte length from the primary through the paired header boundary.
+    frame_length: u64,
+    /// Ordered nullable locus operands.
+    operands: Vec<DesignDimensionAnnotationLocus>,
+    /// `EntityGenesis` origin bitfield.
+    pub entity_genesis: u64,
+    /// Opaque annotation bytes between the genesis block and governing owner.
+    annotation_bytes: Vec<u8>,
+    /// Indexed parameter-owner record selecting the governed dimension.
+    pub governing_owner_record_index: u32,
+    /// Ordered non-null return geometry records.
+    return_members: Vec<NonZeroU32>,
+    /// Dynamic class tag of the paired indexed record.
+    pub paired_class_tag: DesignClassTag,
+    /// Numeric design-entity suffix of the owning sketch.
+    pub owner_reference: u32,
+}
+
+/// Nullable annotation geometry and its dimension role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionAnnotationLocus {
+    /// Indexed sketch geometry record, absent for the null locus.
+    pub geometry_record_index: Option<NonZeroU32>,
+    /// Source dimension-role code.
+    pub role: u32,
+}
+
+/// Unchecked annotation frame payload and offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionAnnotationFrameDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame, absent before the first companion in a scope.
+    pub companion_record_index: Option<u32>,
+    /// Companion record of the dimension parameter governed by this frame.
+    pub governing_companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
@@ -1747,6 +1983,187 @@ pub struct DesignDimensionAnnotationFrame {
     pub owner_reference: u32,
     /// Byte offset of `owner_reference`.
     pub owner_reference_offset: u64,
+}
+
+impl DesignDimensionAnnotationFrame {
+    /// Admit an annotation frame with representable offsets and matching operand runs.
+    pub fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+        if draft.operands.is_empty() {
+            return Err("operands must not be empty".into());
+        }
+        let operand_bytes = u64::try_from(draft.operands.len())
+            .ok()
+            .and_then(|count| count.checked_mul(15))
+            .ok_or("operands length overflows frame offsets")?;
+        let annotation_byte_offset = draft
+            .byte_offset
+            .checked_add(24)
+            .and_then(|offset| offset.checked_add(operand_bytes))
+            .and_then(|offset| offset.checked_add(57))
+            .ok_or("annotation_byte_offset overflows")?;
+        let governing_owner_reference_offset = u64::try_from(draft.annotation_bytes.len())
+            .ok()
+            .and_then(|len| annotation_byte_offset.checked_add(len))
+            .and_then(|offset| offset.checked_add(1))
+            .ok_or("governing_owner_reference_offset overflows")?;
+        let paired_byte_offset = draft
+            .byte_offset
+            .checked_add(draft.frame_length)
+            .ok_or("paired_byte_offset overflows")?;
+        let owner_reference_offset = paired_byte_offset
+            .checked_add(20)
+            .ok_or("owner_reference_offset overflows")?;
+        if draft.annotation_byte_offset != annotation_byte_offset {
+            return Err("annotation_byte_offset disagrees with frame layout".into());
+        }
+        if draft.governing_owner_reference_offset != governing_owner_reference_offset {
+            return Err("governing_owner_reference_offset disagrees with frame layout".into());
+        }
+        if draft.paired_byte_offset != paired_byte_offset {
+            return Err("paired_byte_offset disagrees with frame layout".into());
+        }
+        if draft.owner_reference_offset != owner_reference_offset {
+            return Err("owner_reference_offset disagrees with frame layout".into());
+        }
+        for (ordinal, operand) in draft.operands.iter().enumerate() {
+            let start = draft.byte_offset + 24 + ordinal as u64 * 15;
+            if operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11 {
+                return Err(
+                    "operands geometry_reference_offset or role_offset disagrees with frame layout"
+                        .into(),
+                );
+            }
+        }
+        for (ordinal, member) in draft.return_members.iter().enumerate() {
+            let expected = u64::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| ordinal.checked_mul(11))
+                .and_then(|delta| governing_owner_reference_offset.checked_add(delta))
+                .and_then(|offset| offset.checked_add(15))
+                .ok_or("return_member_offsets overflow")?;
+            if member.offset != expected {
+                return Err("return_member_offsets disagree with frame layout".into());
+            }
+        }
+        let mut operand_members = draft
+            .operands
+            .iter()
+            .filter_map(|operand| operand.geometry_record_index)
+            .collect::<Vec<_>>();
+        let mut return_members = draft
+            .return_members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>();
+        operand_members.sort_unstable();
+        return_members.sort_unstable();
+        if operand_members != return_members {
+            return Err("return_members disagree with operands geometry indices".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            companion_record_index: draft.companion_record_index,
+            governing_companion_record_index: draft.governing_companion_record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            operands: draft
+                .operands
+                .into_iter()
+                .map(|operand| DesignDimensionAnnotationLocus {
+                    geometry_record_index: operand.geometry_record_index,
+                    role: operand.role,
+                })
+                .collect(),
+            entity_genesis: draft.entity_genesis,
+            annotation_bytes: draft.annotation_bytes,
+            governing_owner_record_index: draft.governing_owner_record_index,
+            return_members: draft
+                .return_members
+                .into_iter()
+                .map(|member| member.value)
+                .collect(),
+            paired_class_tag: draft.paired_class_tag,
+            owner_reference: draft.owner_reference,
+        })
+    }
+
+    /// Retained byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Retained operands.
+    pub fn operands(&self) -> &[DesignDimensionAnnotationLocus] {
+        &self.operands
+    }
+
+    /// Derived annotation byte offset.
+    pub fn annotation_byte_offset(&self) -> u64 {
+        self.byte_offset + 24 + self.operands.len() as u64 * 15 + 57
+    }
+
+    /// Derived governing owner reference offset.
+    pub fn governing_owner_reference_offset(&self) -> u64 {
+        self.annotation_byte_offset() + self.annotation_bytes.len() as u64 + 1
+    }
+
+    /// Derived paired byte offset.
+    pub fn paired_byte_offset(&self) -> u64 {
+        self.byte_offset + self.frame_length
+    }
+
+    /// Derived owner reference offset.
+    pub fn owner_reference_offset(&self) -> u64 {
+        self.paired_byte_offset() + 20
+    }
+
+    /// Recover the payload with its derived offsets.
+    pub fn into_draft(self) -> DesignDimensionAnnotationFrameDraft {
+        let annotation_byte_offset = self.annotation_byte_offset();
+        let governing_owner_reference_offset = self.governing_owner_reference_offset();
+        let paired_byte_offset = self.paired_byte_offset();
+        let owner_reference_offset = self.owner_reference_offset();
+        DesignDimensionAnnotationFrameDraft {
+            id: self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: self
+                .operands
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
+                    geometry_record_index: operand.geometry_record_index,
+                    role: operand.role,
+                    geometry_reference_offset: self.byte_offset + 25 + ordinal as u64 * 15,
+                    role_offset: self.byte_offset + 35 + ordinal as u64 * 15,
+                })
+                .collect(),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: self.annotation_bytes,
+            annotation_byte_offset,
+            governing_owner_record_index: self.governing_owner_record_index,
+            governing_owner_reference_offset,
+            return_members: self
+                .return_members
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, value)| Located {
+                    value,
+                    offset: governing_owner_reference_offset + 15 + ordinal as u64 * 11,
+                })
+                .collect(),
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset,
+            owner_reference: self.owner_reference,
+            owner_reference_offset,
+        }
+    }
 }
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
@@ -1799,7 +2216,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        Ok(Self {
+        Self::try_new(DesignDimensionAnnotationFrameDraft {
             return_members: wire
                 .return_members
                 .into_iter()
@@ -1832,6 +2249,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
 }
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
+        let value = value.into_draft();
         let (return_members, return_member_offsets) = value
             .return_members
             .into_iter()
@@ -2920,7 +3338,6 @@ impl NativeRecordId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
-    id: String,
     entry_name: String,
     kind: DesignConfigurationKind,
     variant_order: Vec<String>,
@@ -2946,19 +3363,21 @@ pub struct DesignConfigurationWire {
 impl DesignConfiguration {
     /// Admit the entry identity, object payload, and authored variant order.
     pub fn try_new(
-        id: String,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
         payload: serde_json::Map<String, serde_json::Value>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        if id != crate::ids::configuration_entry_id(&entry_name) {
+        let extension = match kind {
+            DesignConfigurationKind::Table => ".dsgcfg",
+            DesignConfigurationKind::Rule => ".dsgcfgrule",
+        };
+        if !entry_name.ends_with(extension) {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "configuration.id must identify entry_name"
+                "configuration.entry_name must end with {extension} for {kind:?}"
             )));
         }
         let value = Self {
-            id,
             entry_name,
             kind,
             variant_order,
@@ -2973,8 +3392,8 @@ impl DesignConfiguration {
         Ok(value)
     }
     /// Returns the admitted native identity.
-    pub(crate) fn id(&self) -> &String {
-        &self.id
+    pub(crate) fn id(&self) -> String {
+        crate::ids::configuration_entry_id(&self.entry_name)
     }
     /// Returns the configuration entry name.
     pub(crate) fn entry_name(&self) -> &String {
@@ -2997,23 +3416,20 @@ impl DesignConfiguration {
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     type Error = String;
     fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
+        if wire.id != crate::ids::configuration_entry_id(&wire.entry_name) {
+            return Err("configuration.id must identify entry_name".into());
+        }
         let serde_json::Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        Self::try_new(
-            wire.id,
-            wire.entry_name,
-            wire.kind,
-            wire.variant_order,
-            payload,
-        )
-        .map_err(|error| error.to_string())
+        Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
+            .map_err(|error| error.to_string())
     }
 }
 impl From<DesignConfiguration> for DesignConfigurationWire {
     fn from(value: DesignConfiguration) -> Self {
         Self {
-            id: value.id,
+            id: value.id(),
             entry_name: value.entry_name,
             kind: value.kind,
             variant_order: value.variant_order,
@@ -4852,7 +5268,7 @@ impl DesignMeshScope {
             < crate::layout::paramesh_feature_scope_prefix::LEN as u64 + base_length
         {
             return Err(
-                "scope_record.frame_length must contain the prefix and closing base".into(),
+                "scope_record.frame_length() must contain the prefix and closing base".into(),
             );
         }
         if base_record.record_index() != record.record_index()
@@ -6570,6 +6986,44 @@ pub struct SketchRelation {
     #[serde(default)]
     pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
     /// Nullable or role-specific references stored before the owner reference.
+    auxiliary_references: ReferenceRun<u32, u32>,
+    /// Serialized count of the rectangular class's reference run. Zero selects
+    /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
+    /// for other relation classes and native data that did not retain it.
+    pub rectangular_counted_reference_count: Option<u32>,
+    /// First reference run, interleaved with per-member relation ordinals.
+    /// Its order does not define relation operand order.
+    members: SketchRelationMembers,
+    /// Payload offset of `owner_reference`, relative to the record.
+    owner_reference_offset: u32,
+    /// Constraint mask and the payload it selects.
+    pub definition: SketchRelationDefinition,
+    /// `EntityGenesis` origin bitfield stored by the relation record, when present.
+    pub entity_genesis: Option<u64>,
+    /// Second reference run in semantic member order.
+    return_members: SketchRelationReturnMembers,
+    /// Complete variable-width source record for native replay/write.
+    raw_bytes: Vec<u8>,
+}
+
+/// Unchecked sketch relation payload and byte frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchRelationDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this relation record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the constraint mask relative to the record start.
+    pub state_offset: u32,
+    /// Numeric design-entity suffix of the sketch container that owns this relation.
+    pub owner_reference: u32,
+    /// Full Design entity id resolved from `owner_reference`.
+    pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
+    /// Nullable or role-specific references stored before the owner reference.
     pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
@@ -6591,6 +7045,134 @@ pub struct SketchRelation {
 }
 
 impl SketchRelation {
+    /// Admit a relation whose reference offsets fit its retained bytes.
+    pub fn try_new(draft: SketchRelationDraft) -> Result<Self, SketchRelationPayloadError> {
+        if draft.raw_bytes.len() < 24 {
+            return Err(SketchRelationPayloadError(
+                "sketch relation raw_bytes is shorter than 24 bytes".into(),
+            ));
+        }
+        if draft.auxiliary_references.located_rows().is_none() {
+            return Err(SketchRelationPayloadError(
+                "sketch relation auxiliary_references must be located".into(),
+            ));
+        }
+        for (field, offset) in draft
+            .members
+            .iter()
+            .map(|row| ("member_offsets", row.offset))
+            .chain(
+                draft
+                    .auxiliary_references
+                    .offsets()
+                    .map(|offset| ("auxiliary_reference_offsets", *offset)),
+            )
+            .chain(std::iter::once((
+                "owner_reference_offset",
+                draft.owner_reference_offset,
+            )))
+            .chain(
+                draft
+                    .return_members
+                    .iter()
+                    .map(|row| ("return_member_offsets", row.offset)),
+            )
+        {
+            if usize::try_from(offset)
+                .ok()
+                .and_then(|offset| offset.checked_add(4))
+                .is_none_or(|end| end > draft.raw_bytes.len())
+            {
+                return Err(SketchRelationPayloadError(format!(
+                    "sketch relation {field} exceeds raw_bytes"
+                )));
+            }
+        }
+        Ok(Self {
+            id: draft.id,
+            record_index: draft.record_index,
+            class_tag: draft.class_tag,
+            byte_offset: draft.byte_offset,
+            state_offset: draft.state_offset,
+            owner_reference: draft.owner_reference,
+            owner_entity_id: draft.owner_entity_id,
+            auxiliary_references: draft.auxiliary_references,
+            rectangular_counted_reference_count: draft.rectangular_counted_reference_count,
+            members: draft.members,
+            owner_reference_offset: draft.owner_reference_offset,
+            definition: draft.definition,
+            entity_genesis: draft.entity_genesis,
+            return_members: draft.return_members,
+            raw_bytes: draft.raw_bytes,
+        })
+    }
+
+    /// Return the unchecked payload for a checked edit.
+    pub fn into_draft(self) -> SketchRelationDraft {
+        SketchRelationDraft {
+            id: self.id,
+            record_index: self.record_index,
+            class_tag: self.class_tag,
+            byte_offset: self.byte_offset,
+            state_offset: self.state_offset,
+            owner_reference: self.owner_reference,
+            owner_entity_id: self.owner_entity_id,
+            auxiliary_references: self.auxiliary_references,
+            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
+            members: self.members,
+            owner_reference_offset: self.owner_reference_offset,
+            definition: self.definition,
+            entity_genesis: self.entity_genesis,
+            return_members: self.return_members,
+            raw_bytes: self.raw_bytes,
+        }
+    }
+
+    /// Apply an edit only when the resulting byte frame is valid.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut SketchRelationDraft),
+    ) -> Result<(), SketchRelationPayloadError> {
+        let mut draft = self.clone().into_draft();
+        edit(&mut draft);
+        *self = Self::try_new(draft)?;
+        Ok(())
+    }
+
+    /// Resolve both member runs without changing their byte offsets.
+    pub(crate) fn resolve_members(
+        &mut self,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) {
+        self.members.resolve(&mut resolve);
+        self.return_members.resolve(resolve);
+    }
+
+    /// Retained auxiliary references.
+    pub fn auxiliary_references(&self) -> &ReferenceRun<u32, u32> {
+        &self.auxiliary_references
+    }
+
+    /// Retained members.
+    pub fn members(&self) -> &SketchRelationMembers {
+        &self.members
+    }
+
+    /// Retained return members.
+    pub fn return_members(&self) -> &SketchRelationReturnMembers {
+        &self.return_members
+    }
+
+    /// Retained raw bytes.
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    /// Owner reference offset within the retained bytes.
+    pub fn owner_reference_offset(&self) -> u32 {
+        self.owner_reference_offset
+    }
+
     /// Constraint kinds selected by `state`.
     #[must_use]
     pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
@@ -6811,8 +7393,13 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
+        if wire.auxiliary_references.len() != wire.auxiliary_reference_offsets.len() {
+            return Err(SketchRelationPayloadError(
+                "sketch relation auxiliary_reference_offsets must locate every reference".into(),
+            ));
+        }
         let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
-        Ok(Self {
+        Self::try_new(SketchRelationDraft {
             id: wire.id,
             record_index: wire.record_index,
             class_tag: DesignClassTag::try_from(wire.class_tag)
@@ -6821,12 +7408,13 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_ir::NonEmptyString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::from_columns(
-                wire.auxiliary_references,
-                wire.auxiliary_reference_offsets,
-                "auxiliary_reference",
-            )
-            .map_err(SketchRelationPayloadError)?,
+            auxiliary_references: ReferenceRun::located(
+                wire.auxiliary_references
+                    .into_iter()
+                    .zip(wire.auxiliary_reference_offsets)
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+            ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,
@@ -9595,7 +10183,7 @@ pub struct XrefReference {
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<[[f64; 4]; 4]>,
+    pub transform: Option<DesignAffineTransform>,
 }
 
 #[cfg(test)]

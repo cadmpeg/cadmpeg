@@ -67,22 +67,30 @@ fn parameter_scope_parses_named_variable_tail() {
         crate::records::feature::DesignFeatureKind::Draft
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
-    assert_eq!(scope.history_state_id, Some(7));
-    assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, None);
+    assert_eq!(scope.history_state_id(), Some(7));
+    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id_offset(), None);
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
         [55]
     );
-    assert_eq!(scope.frame_length, paired_at as u64);
+    assert_eq!(scope.frame_length(), paired_at as u64);
 
     let mut owner_scope = scope.clone();
-    owner_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
+    owner_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let owners = vec![
         crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: "f3d:test:owner#327".into(),

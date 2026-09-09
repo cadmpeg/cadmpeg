@@ -817,7 +817,7 @@ fn native_persistent_design_attribute(
     );
     for link in links {
         native_i64(records, kind);
-        native_string(records, &link.design_id)?;
+        native_string(records, link.design_id.as_str())?;
         for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
         }
@@ -847,7 +847,7 @@ fn native_persistent_subentity_attribute(
     );
     for tag in tags {
         native_i64(records, tag.selector);
-        native_string(records, &tag.token)?;
+        native_string(records, tag.token.as_str())?;
         native_i64(records, 0);
         native_i64(
             records,

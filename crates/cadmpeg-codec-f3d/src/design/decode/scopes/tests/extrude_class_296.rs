@@ -61,8 +61,11 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
 
     for (frame_length, reference_count) in [(440, 7), (462, 9), (473, 10)] {
         let scope = parse(&make_bytes(frame_length, reference_count), "296");
-        assert_eq!(scope.frame_length, frame_length as u64);
-        assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+        assert_eq!(scope.frame_length(), frame_length as u64);
+        assert_eq!(
+            scope.reference_count_offset(),
+            layout::REFERENCE_COUNT as u64
+        );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -169,11 +172,14 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
         .expect("class-296 symmetric-distance scope envelope")
     };
     let scope = parse(&bytes);
-    assert_eq!(scope.frame_length, 450);
-    assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+    assert_eq!(scope.frame_length(), 450);
+    assert_eq!(
+        scope.reference_count_offset(),
+        layout::REFERENCE_COUNT as u64
+    );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -300,11 +306,14 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
         .expect("class-296 two-sided-to-faces scope envelope")
     };
     let scope = parse(&bytes);
-    assert_eq!(scope.frame_length, 536);
-    assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+    assert_eq!(scope.frame_length(), 536);
+    assert_eq!(
+        scope.reference_count_offset(),
+        layout::REFERENCE_COUNT as u64
+    );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -476,11 +485,14 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
             header.byte_offset,
         )
         .expect("class-296 legacy one-sided scope");
-        assert_eq!(scope.frame_length, frame_length as u64);
-        assert_eq!(scope.reference_count_offset, reference_count_offset as u64);
+        assert_eq!(scope.frame_length(), frame_length as u64);
+        assert_eq!(
+            scope.reference_count_offset(),
+            reference_count_offset as u64
+        );
         assert_eq!(
             scope
-                .reference_members
+                .reference_members()
                 .values()
                 .copied()
                 .collect::<Vec<_>>(),

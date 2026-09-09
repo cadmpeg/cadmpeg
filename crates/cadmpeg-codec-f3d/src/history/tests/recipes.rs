@@ -72,7 +72,11 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
-    extrude.history_state_id = Some(4);
+    extrude
+        .try_edit(|draft| {
+            draft.history_state_id = Some(4);
+        })
+        .unwrap();
     let reference = |face: i64| DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
@@ -87,30 +91,33 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = DesignVertexRecipe {
+    let recipe = DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
         record_index: 202,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
-        paired_byte_offset: 1,
+        paired_byte_offset: 16,
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 2,
+        recipe_record_index: 205,
+        recipe_record_byte_offset: 32,
         recipe_id: format!("{stream}:construction-recipe#vertex"),
-        recipe_prefix_offset: 3,
+        recipe_prefix_offset: 43,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: vec![reference(10), reference(11), reference(12)],
         recipe_program_offset: 4,
         recipe_program: vec![0],
         resolution: None,
-        next_record_index: 205,
-        next_byte_offset: 5,
-    };
+        next_record_index: 207,
+        next_byte_offset: 200,
+    })
+    .unwrap();
     let mut work_point = crate::records::feature::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         crate::records::feature::DesignFeatureKind::WorkPoint,
         200,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+        work_point.payload_mut()
+    {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
             point_record_byte_offset: 0,
@@ -118,13 +125,16 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             position_offset: 0,
             rule: crate::records::feature::DesignWorkPointRule::try_from(
                 crate::records::feature::DesignWorkPointRuleForm::Vertex {
-                    input: DesignWorkPointInput {
-                        record_index: 202,
-                        reference_offset: 0,
-                        carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                            recipe,
-                        })),
-                    },
+                    input: DesignWorkPointInput::try_new(
+                        crate::records::feature::DesignWorkPointInputDraft {
+                            record_index: 202,
+                            reference_offset: 0,
+                            carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                                recipe,
+                            })),
+                        },
+                    )
+                    .unwrap(),
                 },
             )
             .expect("compatible WorkPoint rule"),
@@ -259,8 +269,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(
@@ -300,8 +309,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(recipe.resolution, None);
@@ -317,7 +325,12 @@ fn feature_input_topology_projects_historical_vertices() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         7,
     );
-    scope.previous_history_state_id = Some(4);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(4);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let feature = Feature {
         id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
             .expect("identity grammar"),
@@ -483,9 +496,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 
     let reference = |faces: &[&str]| crate::records::topology::DesignBodyRecipeReference {
         design_reference: 1,
-        design_reference_offset: 0,
+        design_reference_offset: 25,
         form: 3,
-        form_offset: 0,
+        form_offset: 33,
         candidate_faces: faces
             .iter()
             .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
@@ -493,42 +506,45 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         preceding_candidate_faces: Vec::new(),
         preceding_body_slots: Vec::new(),
     };
-    let mut operand = crate::records::topology::DesignBodyRecipeOperand {
-        id: "operand".into(),
-        scope_record_index: 1,
-        owner: crate::records::topology::DesignOperandOwner::ScopeReference {
-            scope_reference_ordinal: 0,
-        },
-        record_index: 2,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let mut operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "operand".into(),
+            scope_record_index: 1,
+            owner: crate::records::topology::DesignOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 2,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![reference(&[
-            "f3d:brep/current/brep:face#1",
-            "f3d:brep/external/brep:face#1",
-            "f3d:brep/cache/brep:face#1",
-        ])],
-        nested_record_index: 3,
-        nested_record_index_offset: 0,
-        recipe_id: "recipe".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 4,
-        next_byte_offset: 0,
-    };
+            references: vec![reference(&[
+                "f3d:brep/current/brep:face#1",
+                "f3d:brep/external/brep:face#1",
+                "f3d:brep/cache/brep:face#1",
+            ])],
+            nested_record_index: 5,
+            nested_record_index_offset: 38,
+            recipe_id: "recipe".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 6,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap();
     let body = |id: &str, region: &str, visible| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -610,12 +626,20 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         Some(bodies[1].id.clone())
     );
 
-    operand.references[0]
+    operand
+        .reference_bindings_mut()
+        .next()
+        .unwrap()
         .candidate_faces
         .retain(|face| !face.as_str().contains("/cache/"));
-    operand
-        .references
-        .push(reference(&["f3d:brep/cache/brep:face#1"]));
+    let mut draft = operand.into_draft();
+    let mut added = reference(&["f3d:brep/cache/brep:face#1"]);
+    added.design_reference_offset = draft.byte_offset + 25 + draft.references.len() as u64 * 12;
+    added.form_offset = added.design_reference_offset + 8;
+    draft.references.push(added);
+    draft.nested_record_index_offset = draft.byte_offset + 26 + draft.references.len() as u64 * 12;
+    draft.asset_id_offset = draft.nested_record_index_offset + 18;
+    operand = crate::records::topology::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
         super::super::unique_external_body_candidate(
             &operand,
@@ -637,49 +661,56 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         crate::records::feature::DesignFeatureKind::Extrude,
         10,
     );
-    scope.history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+        })
+        .unwrap();
     let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
-    let mut operands = vec![crate::records::topology::DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
-        scope_record_index: 10,
-        owner: crate::records::topology::DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        },
-        record_index: 21,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let mut operands = vec![crate::records::topology::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+            scope_record_index: 10,
+            owner: crate::records::topology::DesignOperandOwner::Group {
+                group_record_index: 20,
+                group_member_ordinal: 0,
+            },
+            record_index: 21,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![crate::records::topology::DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![candidate.clone()],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 24,
-        nested_record_index_offset: 0,
-        recipe_id: "recipe".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 25,
-        next_byte_offset: 0,
-    }];
+            references: vec![crate::records::topology::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: vec![candidate.clone()],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 24,
+            nested_record_index_offset: 38,
+            recipe_id: "recipe".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 25,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap()];
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
@@ -766,10 +797,10 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     );
 
     assert_eq!(
-        operands[0].references[0].preceding_candidate_faces,
+        operands[0].references()[0].preceding_candidate_faces,
         [candidate]
     );
-    assert_eq!(operands[0].references[0].preceding_body_slots, [1]);
+    assert_eq!(operands[0].references()[0].preceding_body_slots, [1]);
     assert_eq!(operands[0].resolved_face_slot, Some(10));
     assert_eq!(operands[0].resolved_body_state_id, Some(1));
     assert_eq!(operands[0].resolved_body_slot, Some(1));
@@ -856,47 +887,50 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         },
     )
     .unwrap();
-    let operand = crate::records::topology::DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
-        scope_record_index: 10,
-        owner: crate::records::topology::DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        },
-        record_index: 21,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+            scope_record_index: 10,
+            owner: crate::records::topology::DesignOperandOwner::Group {
+                group_record_index: 20,
+                group_member_ordinal: 0,
+            },
+            record_index: 21,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![crate::records::topology::DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 22,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 24,
-        next_byte_offset: 0,
-    };
+            references: vec![crate::records::topology::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 24,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 25,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap();
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
@@ -958,7 +992,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let link = crate::records::PersistentDesignLink {
         id: "link".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
-        design_id: "301".into(),
+        design_id: "301".to_owned().try_into().unwrap(),
 
         design_reference: 9,
         ordinal: 0,
@@ -1007,8 +1041,15 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
-    scale_scope.previous_history_state_id = Some(7);
+    scale_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Scale
+                .try_into()
+                .unwrap();
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let mut scale_group = group.clone();
     scale_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
@@ -1044,9 +1085,16 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     ));
 
     let mut move_scope = scope;
-    move_scope.payload = crate::records::feature::DesignFeatureKind::Move.into();
-    move_scope.history_state_id = Some(42);
-    move_scope.previous_history_state_id = Some(41);
+    move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = Some(41);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let move_history = crate::history_records::AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
@@ -1172,7 +1220,11 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         42,
     );
-    scope.history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+        })
+        .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
@@ -1213,7 +1265,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         },
     )
     .unwrap();
-    let operand = DesignFaceOperand {
+    let operand = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
         scope_record_index: 42,
         scope_reference_ordinal: 3,
@@ -1247,7 +1299,8 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1500,
-    };
+    })
+    .unwrap();
     let state = |state_id, transition| AsmDeltaState {
         id: format!("f3d:history:state#{state_id}"),
         parent: "f3d:history".into(),
@@ -1352,8 +1405,13 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         crate::records::feature::DesignFeatureKind::Thread,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
@@ -1406,7 +1464,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let operand = DesignFaceOperand {
+    let operand = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
         scope_record_index: 42,
         scope_reference_ordinal: 1,
@@ -1440,7 +1498,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1_500,
-    };
+    })
+    .unwrap();
 
     let mut transition = AsmHistoricalTransition {
         previous_state_id: Some(1),
@@ -1517,7 +1576,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(operands[0].resolved_face_slots, [7]);
 
     let mut cylinder_scope = scope.clone();
-    if let crate::records::feature::DesignScopePayload::Thread(slot) = &mut cylinder_scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Thread(slot) =
+        cylinder_scope.payload_mut()
+    {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
@@ -1842,9 +1903,14 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         crate::records::feature::DesignFeatureKind::Hole,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 55,
             point_record_byte_offset: 0,

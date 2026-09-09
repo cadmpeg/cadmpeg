@@ -57,8 +57,15 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("347".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 291;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![200, 201, 74]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 291;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![200, 201, 74]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(

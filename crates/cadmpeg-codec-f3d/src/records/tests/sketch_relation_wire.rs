@@ -2,7 +2,7 @@
 
 use crate::records::SketchRelation;
 
-const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[1,2],"resolved_members":[],"member_offsets":[25,40],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[],"return_member_offsets":[60,75],"raw_bytes":""}"#;
+const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[1,2],"resolved_members":[],"member_offsets":[25,40],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[],"return_member_offsets":[60,75],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
 
 #[test]
 fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() {
@@ -21,7 +21,7 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
         assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
     }
     let relation: SketchRelation = serde_json::from_str(base).unwrap();
-    let mut partial_ordinals = relation.members.to_vec();
+    let mut partial_ordinals = relation.members().to_vec();
     partial_ordinals[0].relation_ordinal = None;
     assert!(crate::records::SketchRelationMembers::try_from(partial_ordinals).is_err());
     for field in ["resolved_members", "resolved_return_members"] {
@@ -59,4 +59,49 @@ fn sketch_relation_owner_preserves_absence_and_nonempty_ids_on_wire_round_trip()
             relation
         );
     }
+}
+
+#[test]
+fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits() {
+    let relation: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
+    for field in [
+        "member_offsets",
+        "auxiliary_reference_offsets",
+        "owner_reference_offset",
+        "return_member_offsets",
+    ] {
+        for offset in [77_u32, u32::MAX] {
+            let mut wire = serde_json::to_value(&relation).unwrap();
+            if field == "owner_reference_offset" {
+                wire[field] = serde_json::json!(offset);
+            } else if field == "auxiliary_reference_offsets" {
+                wire["auxiliary_references"] = serde_json::json!([1]);
+                wire[field] = serde_json::json!([offset]);
+            } else {
+                wire[field][0] = serde_json::json!(offset);
+            }
+            assert!(serde_json::from_value::<SketchRelation>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+    }
+    let mut edited = relation.clone();
+    assert!(edited
+        .try_edit(|draft| draft.raw_bytes.truncate(23))
+        .is_err());
+    assert_eq!(edited, relation);
+    assert!(edited
+        .try_edit(
+            |draft| draft.auxiliary_references = crate::records::ReferenceRun::unlocated(vec![1])
+        )
+        .is_err());
+    assert_eq!(edited, relation);
+    edited
+        .try_edit(|draft| draft.owner_reference_offset = 76)
+        .unwrap();
+    assert_eq!(edited.owner_reference_offset(), 76);
+    let mut draft = relation.into_draft();
+    draft.members.0[0].offset = 77;
+    assert!(SketchRelation::try_new(draft).is_err());
 }

@@ -17,8 +17,13 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         crate::records::feature::DesignFeatureKind::Fillet,
         10,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let mut operand: crate::records::topology::DesignEdgeOperand =
         serde_json::from_value(serde_json::json!({
             "id": format!("{stream}:design-edge-operand#20"),
@@ -27,12 +32,12 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "record_index": 20,
             "byte_offset": 0,
             "class_tag": "297",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "259",
             "recipe_record_index": 23,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": format!("{stream}:construction-recipe#23"),
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_program_offset": 0,
@@ -40,7 +45,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "changed_boundary_edge_slots": [],
             "deleted_boundary_edge_slots": [],
             "next_record_index": 24,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("edge operand");
     let state = |state_id, topology, transition| AsmDeltaState {

@@ -40,6 +40,12 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
     for prefix in ["{", "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,"] {
         for identities in ["", ",\"secondary_identity\":249,\"secondary_identity_offset\":217", ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201"] {
             let wire = format!("{prefix}{fields}{identities}{suffix}");
+            let wire = if identities.is_empty() {
+                wire.replace("\"primary_identity_offset\":209", "\"primary_identity_offset\":201")
+                    .replace("\"next_byte_offset\":225", "\"next_byte_offset\":209")
+            } else {
+                wire
+            };
             let encoded = if prefix == "{" {
                 let value: crate::records::feature::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
                 serde_json::to_string(&value).expect("hole selection wire")
@@ -237,16 +243,16 @@ fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
 
 #[test]
 fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
-    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[],"entity_genesis":0,"annotation_bytes":[],"annotation_byte_offset":150,"governing_owner_record_index":4,"governing_owner_reference_offset":170,"return_members":[10,11],"return_member_offsets":[185,196],"paired_class_tag":"259","paired_byte_offset":210,"owner_reference":5,"owner_reference_offset":230}"#;
+    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[{"geometry_record_index":10,"geometry_reference_offset":125,"role":1,"role_offset":135},{"geometry_record_index":11,"geometry_reference_offset":140,"role":2,"role_offset":150}],"entity_genesis":0,"annotation_bytes":[],"annotation_byte_offset":211,"governing_owner_record_index":4,"governing_owner_reference_offset":212,"return_members":[10,11],"return_member_offsets":[227,238],"paired_class_tag":"259","paired_byte_offset":220,"owner_reference":5,"owner_reference_offset":240}"#;
     let frame: crate::records::DesignDimensionAnnotationFrame =
         serde_json::from_str(wire).expect("annotation return members");
     assert_eq!(
         serde_json::to_string(&frame).expect("annotation wire"),
         wire
     );
-    for offsets in ["[]", "[185]", "[185,196,207]"] {
+    for offsets in ["[]", "[227]", "[227,238,249]"] {
         let invalid = wire.replace(
-            "\"return_member_offsets\":[185,196]",
+            "\"return_member_offsets\":[227,238]",
             &format!("\"return_member_offsets\":{offsets}"),
         );
         let error =
@@ -374,10 +380,9 @@ fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
 
 #[test]
 fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
-    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
+    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
     for (values, offsets) in [
         (vec![], vec![]),
-        (vec![2], vec![]),
         (vec![2], vec![0]),
         (vec![2, 3], vec![0, 10]),
     ] {
@@ -399,7 +404,7 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         let relation: crate::records::SketchRelation = serde_json::from_str(&expected).unwrap();
         assert_eq!(
             relation
-                .auxiliary_references
+                .auxiliary_references()
                 .values()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -407,7 +412,7 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         );
         assert_eq!(
             relation
-                .auxiliary_references
+                .auxiliary_references()
                 .offsets()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -416,6 +421,7 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
         assert_eq!(serde_json::to_string(&relation).unwrap(), expected);
     }
     for (values, offsets) in [
+        (vec![2], vec![]),
         (vec![], vec![10]),
         (vec![2], vec![10, 20]),
         (vec![2, 3], vec![10]),
@@ -1110,7 +1116,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
     for state in [0, 1, 0x11, 0x4000, 0x8000_0000, 0x20_0000_0000, 0x1000_0001] {
         assert_eq!(Definition::new(state, None).unwrap().state(), state);
     }
-    let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
+    let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
     let relation: crate::records::SketchRelation = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
@@ -1682,6 +1688,20 @@ fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_ind
         ("", 40, false),
         (r#","opaque_index":4"#, 40, false),
     ] {
+        let loci = if first == 0 {
+            loci.replace(
+                "\"first_geometry_reference_offset\":50",
+                "\"first_geometry_reference_offset\":35",
+            )
+            .replace("\"first_role_offset\":60", "\"first_role_offset\":45")
+            .replace(
+                "\"second_geometry_reference_offset\":65",
+                "\"second_geometry_reference_offset\":50",
+            )
+            .replace("\"second_role_offset\":75", "\"second_role_offset\":60")
+        } else {
+            loci.to_owned()
+        };
         let wire = format!(r#"{{{shared}{opaque},"first_geometry_record_index":{first},{loci}"#);
         let parsed = serde_json::from_str::<crate::records::DesignDimensionLocusPair>(&wire);
         if valid {
@@ -1697,7 +1717,7 @@ fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_ind
 
 #[test]
 fn null_locus_arena_preserves_base_wire_fields_and_order() {
-    let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":50,"null_role":0,"null_role_offset":60,"geometry_record_index":41,"geometry_reference_offset":65,"geometry_role":1,"geometry_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}"#;
+    let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":35,"null_role":0,"null_role_offset":45,"geometry_record_index":41,"geometry_reference_offset":50,"geometry_role":1,"geometry_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#;
     let wire = format!(r#"{{"design_dimension_null_locus_pairs":[{entry}]}}"#);
     let native: crate::native::F3dNative = serde_json::from_str(&wire).unwrap();
     let encoded = serde_json::to_string(&native).unwrap();
@@ -1981,3 +2001,9 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
 mod act_entities;
 
 mod native_ids;
+
+mod annotation_frames;
+
+mod persistent_text;
+
+mod locus_frames;

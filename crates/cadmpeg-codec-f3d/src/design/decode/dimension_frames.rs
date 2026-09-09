@@ -466,7 +466,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
-        tag.token == reference.token
+        tag.token.as_str() == reference.token
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {
@@ -675,10 +675,10 @@ pub fn decode_dimension_locus_pairs(
         else {
             continue;
         };
-        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset);
+        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset());
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset,
+            pair.paired_byte_offset(),
             owners,
             parameters.values().copied(),
         ) else {
@@ -732,7 +732,7 @@ pub(crate) fn find_dimension_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -790,7 +790,7 @@ pub(crate) fn parse_dimension_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    Some(DesignDimensionLocusPair {
+    DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
@@ -819,6 +819,7 @@ pub(crate) fn parse_dimension_locus_pair(
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
+    .ok()
 }
 
 /// Decode dimension frames whose ordered operand run contains a null record
@@ -928,10 +929,10 @@ pub fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset);
+        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset());
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset,
+            pair.paired_byte_offset(),
             owners,
             parameters.values().copied(),
         ) else {
@@ -953,7 +954,7 @@ pub(crate) fn find_dimension_null_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -966,8 +967,8 @@ pub(crate) fn find_dimension_null_locus_pair(
         }
         position = at.saturating_add(1);
     }
-    candidates.sort_by_key(|pair| pair.byte_offset);
-    candidates.dedup_by_key(|pair| pair.byte_offset);
+    candidates.sort_by_key(crate::records::DesignDimensionLocusPair::byte_offset);
+    candidates.dedup_by_key(|pair| pair.byte_offset());
     let [pair] = candidates.as_slice() else {
         return None;
     };
@@ -1008,7 +1009,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    Some(DesignDimensionLocusPair {
+    DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
@@ -1034,6 +1035,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
+    .ok()
 }
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
@@ -1154,7 +1156,7 @@ pub fn decode_dimension_annotation_frames(
                         .and_then(|companion| usize::try_from(companion.byte_offset).ok())
                 })
                 .min()?;
-            let start = usize::try_from(scope.byte_offset).ok()?;
+            let start = usize::try_from(scope.byte_offset()).ok()?;
             (start < end).then_some((start, end, None))
         }));
         for (start, end, containing_companion_record_index) in intervals {
@@ -1172,16 +1174,16 @@ pub fn decode_dimension_annotation_frames(
                     &geometry_indices,
                     &sketch_entities,
                 )
-                .filter(|frame| frame.paired_byte_offset < end as u64)
+                .filter(|frame| frame.paired_byte_offset() < end as u64)
                 {
                     frame.id = ids::native_design_dimension_annotation_frame_id(
                         &entry.name,
-                        frame.byte_offset,
+                        frame.byte_offset(),
                     );
-                    position = usize::try_from(frame.paired_byte_offset)
+                    position = usize::try_from(frame.paired_byte_offset())
                         .unwrap_or(at)
                         .saturating_add(1);
-                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset)) {
+                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset())) {
                         out.push(frame);
                     }
                 } else {
@@ -1344,7 +1346,7 @@ pub(crate) fn parse_dimension_annotation_frame(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    Some(DesignDimensionAnnotationFrame {
+    DesignDimensionAnnotationFrame::try_new(crate::records::DesignDimensionAnnotationFrameDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: *governing_companion_record_index,
@@ -1364,6 +1366,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         owner_reference,
         owner_reference_offset: (paired_byte_offset + 20) as u64,
     })
+    .ok()
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension
@@ -1759,7 +1762,7 @@ pub(crate) fn companion_owned_interval<'a>(
             native_stream(&scope.id) == Some(native_scope)
                 && Some(scope.record_index) != owning_scope_record_index
         })
-        .flat_map(|scope| scope.reference_members.values().copied())
+        .flat_map(|scope| scope.reference_members().values().copied())
         .collect::<HashSet<_>>();
     let start = usize::try_from(companion.byte_offset)
         .ok()?
@@ -1785,9 +1788,9 @@ pub(crate) fn companion_owned_interval<'a>(
                 .iter()
                 .filter(|scope| {
                     native_stream(&scope.id) == Some(native_scope)
-                        && scope.byte_offset > companion.byte_offset
+                        && scope.byte_offset() > companion.byte_offset
                 })
-                .filter_map(|scope| usize::try_from(scope.byte_offset).ok()),
+                .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
         )
         .chain(
             headers

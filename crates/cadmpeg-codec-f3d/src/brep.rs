@@ -433,28 +433,10 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
     let groups = rest
         .chunks_exact(group_width)
         .filter_map(|values| match values {
-            [
-                AttributeValue::Integer(entity_kind),
-                AttributeValue::String(design_id),
-                AttributeValue::Integer(design_reference),
-                AttributeValue::Integer(0),
-            ] if matches!(version, GenericTagVersion::V2)
-                && !design_id.is_empty()
-                && design_id.bytes().all(|byte| byte.is_ascii_digit()) =>
-            {
-                Some((*entity_kind, design_id.clone(), *design_reference))
-            }
-            [
-                AttributeValue::Integer(entity_kind),
-                AttributeValue::String(design_id),
-                AttributeValue::Integer(design_reference),
-                AttributeValue::Integer(0),
-                AttributeValue::Integer(0),
-            ] if matches!(version, GenericTagVersion::V3)
-                && !design_id.is_empty()
-                && design_id.bytes().all(|byte| byte.is_ascii_digit()) =>
-            {
-                Some((*entity_kind, design_id.clone(), *design_reference))
+            [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
+            | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
+                let design_id = crate::records::DesignPersistentIdText::try_from(design_id.clone()).ok()?;
+                Some((*entity_kind, design_id, *design_reference))
             }
             _ => None,
         })
@@ -512,7 +494,10 @@ pub(crate) fn persistent_subentity_tags(
         else {
             return Vec::new();
         };
-        if token.is_empty() || *reference_count < 0 {
+        let Some(token) = cadmpeg_ir::NonEmptyString::new(token.clone()) else {
+            return Vec::new();
+        };
+        if *reference_count < 0 {
             return Vec::new();
         }
         let Ok(reference_count) = usize::try_from(*reference_count) else {
@@ -548,7 +533,7 @@ pub(crate) fn persistent_subentity_tags(
             ),
             target: attribute.target.clone(),
             selector: *selector,
-            token: token.clone(),
+            token,
             design_references,
             ordinal: ordinal as u32,
         });
@@ -733,7 +718,7 @@ mod tests {
         );
         let links = persistent_design_links(&attribute);
         assert_eq!(links.len(), 1);
-        assert_eq!(links[0].design_id, "301");
+        assert_eq!(links[0].design_id.as_str(), "301");
         assert_eq!(links[0].design_reference, 1);
     }
 
@@ -940,7 +925,7 @@ mod tests {
                 PersistentDesignLink {
                     id: "design-retained".into(),
                     target: target(1),
-                    design_id: "301".into(),
+                    design_id: "301".to_owned().try_into().unwrap(),
 
                     design_reference: 1,
                     ordinal: 0,
@@ -949,7 +934,7 @@ mod tests {
                 PersistentDesignLink {
                     id: "design-dropped".into(),
                     target: target(3),
-                    design_id: "303".into(),
+                    design_id: "303".to_owned().try_into().unwrap(),
 
                     design_reference: 3,
                     ordinal: 0,
@@ -961,7 +946,7 @@ mod tests {
                     id: "tag-retained".into(),
                     target: target(1),
                     selector: 1,
-                    token: "97".into(),
+                    token: cadmpeg_ir::NonEmptyString::new("97").unwrap(),
                     design_references: vec![1],
                     ordinal: 0,
                 },
@@ -969,7 +954,7 @@ mod tests {
                     id: "tag-dropped".into(),
                     target: target(3),
                     selector: 1,
-                    token: "97".into(),
+                    token: cadmpeg_ir::NonEmptyString::new("97").unwrap(),
                     design_references: vec![3],
                     ordinal: 0,
                 },

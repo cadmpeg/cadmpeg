@@ -23,7 +23,7 @@ pub(crate) fn exact_solid_primitive(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
@@ -73,7 +73,7 @@ pub(crate) fn exact_solid_primitive(
     };
     match scope.kind_name() {
         "SpherePrimitive"
-            if scope.frame_length == 462
+            if scope.frame_length() == 462
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -96,7 +96,7 @@ pub(crate) fn exact_solid_primitive(
             ))
         }
         "TorusPrimitive"
-            if scope.frame_length == 486
+            if scope.frame_length() == 486
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -129,7 +129,7 @@ pub(crate) fn exact_solid_primitive(
             ))
         }
         "BoxPrimitive" => {
-            if scope.frame_length < 78 || scope.reference_members.len() < 5 {
+            if scope.frame_length() < 78 || scope.reference_members().len() < 5 {
                 return None;
             }
             let owners = exact_owned_primitive_parameters(scope, parameter_owners, 5)?;
@@ -162,7 +162,7 @@ pub(crate) fn exact_solid_primitive(
                 ))
         }
         "CylinderPrimitive" => {
-            if scope.frame_length < 78 || scope.reference_members.len() < 2 {
+            if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
                 return None;
             }
             let owners = exact_owned_primitive_parameters(scope, parameter_owners, 2)?;
@@ -212,7 +212,7 @@ fn exact_shifted_cylinder_primitive_prologue(
     let compact = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-        scope.frame_length,
+        scope.frame_length(),
     ) {
         ("297" | "375", "258", 352) => true,
         ("297" | "375", "258", 502) | ("414", "272", 502) => false,
@@ -254,8 +254,8 @@ fn exact_shifted_cylinder_primitive_prologue(
         )
     };
     let reference_count = if compact { 5 } else { 7 };
-    if scope.reference_members.len() != reference_count
-        || scope.paired_byte_offset != u64::try_from(start.checked_add(frame_length)?).ok()?
+    if scope.reference_members().len() != reference_count
+        || scope.paired_byte_offset() != u64::try_from(start.checked_add(frame_length)?).ok()?
         || bytes.get(start + zero_run_10..start + form_marker)? != [0; 10]
         || bytes.get(start + form_marker) != Some(&1)
         || bytes.get(start + reference_gap) != Some(&0)
@@ -268,7 +268,10 @@ fn exact_shifted_cylinder_primitive_prologue(
     if bytes.get(start + first_reference) != Some(&1)
         || bytes.get(start + first_reference + 1) != Some(&1)
         || View::u32_le_at(bytes, start + first_reference + 2)?
-            != *scope.reference_members.values().nth(reference_count - 1)?
+            != *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 1)?
         || bytes.get(start + first_reference + 6..start + first_reference + 11)? != [0; 5]
     {
         return None;
@@ -276,15 +279,24 @@ fn exact_shifted_cylinder_primitive_prologue(
     for (relative_offset, expected_record_index) in [
         (
             second_reference,
-            *scope.reference_members.values().nth(reference_count - 2)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 2)?,
         ),
         (
             third_reference,
-            *scope.reference_members.values().nth(reference_count - 3)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 3)?,
         ),
         (
             fourth_reference,
-            *scope.reference_members.values().nth(reference_count - 4)?,
+            *scope
+                .reference_members()
+                .values()
+                .nth(reference_count - 4)?,
         ),
     ] {
         if marked_record_reference(bytes, start.checked_add(relative_offset)?)
@@ -299,7 +311,7 @@ fn exact_shifted_cylinder_primitive_prologue(
         kind_offset,
         feature_ordinal_offset,
         previous_history_state_id_offset,
-    ) = match scope.frame_length {
+    ) = match scope.frame_length() {
         352 => (
             shifted_cylinder_352::REFERENCE_COUNT,
             shifted_cylinder_352::KIND,
@@ -314,15 +326,15 @@ fn exact_shifted_cylinder_primitive_prologue(
         ),
         _ => return None,
     };
-    if scope.reference_count_offset != absolute(reference_count_offset)?
-        || scope.kind_offset != absolute(kind_offset)?
-        || scope.feature_ordinal_offset != absolute(feature_ordinal_offset)?
-        || scope.previous_history_state_id_offset
+    if scope.reference_count_offset() != absolute(reference_count_offset)?
+        || scope.kind_offset() != absolute(kind_offset)?
+        || scope.feature_ordinal_offset() != absolute(feature_ordinal_offset)?
+        || scope.previous_history_state_id_offset()
             != Some(absolute(previous_history_state_id_offset)?)
     {
         return None;
     }
-    let transform = match scope.frame_length {
+    let transform = match scope.frame_length() {
         352 => {
             if bytes.get(start + shifted_cylinder_352::COMPACT_TAIL_MARKER) != Some(&1)
                 || View::u32_le_at(bytes, start + shifted_cylinder_352::COMPACT_TAIL_COUNT)? != 1
@@ -369,7 +381,7 @@ fn exact_shifted_cylinder_primitive_prologue(
                 || View::u32_le_at(
                     bytes,
                     start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 5,
-                )? != *scope.reference_members.values().next()?
+                )? != *scope.reference_members().values().next()?
                 || bytes.get(
                     start + shifted_cylinder_502::CONSTRUCTION_REFERENCE + 9
                         ..start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
@@ -445,7 +457,7 @@ fn exact_owned_primitive_parameters<'a>(
             owner.scope_record_index() == scope.record_index
                 && native_stream(owner.id()) == Some(stream)
                 && scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .any(|value| value == &owner.record_index())
                 && owner.evaluated_value().is_finite()

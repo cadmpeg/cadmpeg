@@ -145,68 +145,86 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         ))
         .expect("generated feature parameter is canonical")
     };
-    let mut scope = DesignParameterScope {
-        id: "f3d:Design/BulkStream.dat:scope#12".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 210,
-        payload: DesignScopePayload::Extrude(Some(crate::records::feature::DesignExtrudeScope {
-            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-                reference: None,
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-                direction_face_extend_values: [1, 2],
-                side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [177, 190],
-                first_side_target_ordinal: None,
-                extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [132, 136],
-                direction_reversed: false,
-                direction_reversed_offset: 140,
-                solid_operation: true,
-                solid_operation_offset: 141,
-                start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 142,
-            }),
-            extrude_profile: Some(DesignSketchProfileOperand {
-                scope_reference_ordinal: 0,
-                record_index: 100,
-                byte_offset: 300,
-                class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                    "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
-                )
-                .unwrap(),
-                asset_id_offset: 330,
-                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
-                    .expect("valid entity identity"),
-                entity_reference_offset: 420,
-                region_selection: None,
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
-                    .unwrap(),
-                paired_byte_offset: 520,
-            }),
-            ..crate::records::feature::DesignExtrudeScope::default()
-        })),
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let mut scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 210,
+            payload: DesignScopePayload::Extrude(Some(
+                crate::records::feature::DesignExtrudeScope {
+                    extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                        reference: None,
+                        operation: DesignExtrudeOperation::NewBody,
+                        operation_offset: 128,
+                        direction_face_extend_values: [1, 2],
+                        side_extent_discriminators: [1, 0],
+                        side_extent_discriminator_offsets: [177, 190],
+                        first_side_target_ordinal: None,
+                        extent: DesignExtrudeExtent::OneSidedDistance,
+                        direction_face_extend_offsets: [132, 136],
+                        direction_reversed: false,
+                        direction_reversed_offset: 140,
+                        solid_operation: true,
+                        solid_operation_offset: 141,
+                        start: DesignExtrudeStart::ProfilePlane,
+                        start_offset: 142,
+                    }),
+                    extrude_profile: Some(
+                        DesignSketchProfileOperand::try_new(
+                            crate::records::topology::DesignSketchProfileOperandDraft {
+                                scope_reference_ordinal: 0,
+                                record_index: 100,
+                                byte_offset: 300,
+                                class_tag: crate::records::DesignClassTag::try_from(
+                                    "308".to_owned(),
+                                )
+                                .unwrap(),
+                                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                                    "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
+                                )
+                                .unwrap(),
+                                asset_id_offset: 330,
+                                entity_id: crate::records::DesignEntityId::try_from(
+                                    "0_172".to_owned(),
+                                )
+                                .expect("valid entity identity"),
+                                entity_reference_offset: 420,
+                                region_selection: None,
+                                paired_class_tag: crate::records::DesignClassTag::try_from(
+                                    "259".to_owned(),
+                                )
+                                .unwrap(),
+                                paired_byte_offset: 520,
+                            },
+                        )
+                        .unwrap(),
+                    ),
+                    ..crate::records::feature::DesignExtrudeScope::default()
+                },
+            )),
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![100],
-            vec![185],
-            "reference_members",
-        )
-        .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    };
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100],
+                vec![185],
+                "reference_members",
+            )
+            .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
             600,
@@ -285,9 +303,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -522,7 +540,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.record_index = placement
         .scope_record_index
         .expect("test placement carries a scope record index");
-    sketch_scope.payload = crate::records::feature::DesignFeatureKind::Sketch.into();
+    sketch_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Sketch
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
     let scopes = vec![sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
@@ -700,7 +724,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     .extrude_profile()
                     .as_ref()
                     .expect("test profile operand")
-                    .byte_offset
+                    .byte_offset()
             )]
     ));
 
@@ -763,9 +787,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue = reference_aware_prologue;
     }
@@ -804,50 +828,52 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             offset: unrelated_target_group.members()[0].offset,
         }])
         .unwrap();
-    let mut target_shape_operand = DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
-        scope_record_index: scope.record_index,
-        owner: DesignOperandOwner::Group {
-            group_record_index: target_shape_group.record_index,
-            group_member_ordinal: 0,
-        },
-        record_index: 201,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let mut target_shape_operand =
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
+            scope_record_index: scope.record_index,
+            owner: DesignOperandOwner::Group {
+                group_record_index: target_shape_group.record_index,
+                group_member_ordinal: 0,
+            },
+            record_index: 201,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![
-                FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
-                FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
-            ],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 204,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#205".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 205,
-        next_byte_offset: 0,
-    };
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: vec![
+                    FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
+                    FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
+                ],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 204,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#205".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 205,
+            next_byte_offset: 256,
+        })
+        .unwrap();
     let unresolved_target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
@@ -943,7 +969,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         group_record_index: multi_target_group.record_index,
         group_member_ordinal: 1,
     };
-    second_target_operand.record_index = 202;
+    let mut draft = second_target_operand.into_draft();
+    draft.record_index = 202;
+    draft.nested_record_index = u64::from(draft.record_index + 3);
+    draft.next_record_index = draft.record_index + 4;
+    second_target_operand =
+        crate::records::topology::DesignBodyRecipeOperand::try_new(draft).unwrap();
     second_target_operand.resolved_body_slot = Some(4);
     second_target_operand.resolved_body_face_slots = vec![30, 31];
     let operands = [target_shape_operand.clone(), second_target_operand.clone()];
@@ -969,9 +1000,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let sketch_profile = scope.extrude_profile().cloned();
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile = None;
     }
@@ -1012,9 +1043,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         &[],
     )
     .is_none());
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile = sketch_profile;
     }
@@ -1052,9 +1083,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )),
             taper_angle: None,
         });
-        if let crate::records::feature::DesignScopePayload::Extrude(slot)
-        | crate::records::feature::DesignScopePayload::Extrusion(slot)
-        | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .fixed_extrude_parameters = value;
@@ -1112,9 +1143,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_direction_reversed(&mut scope, false);
     {
         let value = None;
-        if let crate::records::feature::DesignScopePayload::Extrude(slot)
-        | crate::records::feature::DesignScopePayload::Extrusion(slot)
-        | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .fixed_extrude_parameters = value;
@@ -1123,10 +1154,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut native_profile_scope = scope.clone();
     {
         let value = None;
-        if let crate::records::feature::DesignScopePayload::Extrude(slot)
-        | crate::records::feature::DesignScopePayload::Extrusion(slot)
-        | crate::records::feature::DesignScopePayload::Extrusao(slot) =
-            &mut native_profile_scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+            native_profile_scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = value;
         }
@@ -1338,7 +1369,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         crate::records::DesignClassTag::try_from("330".to_owned()).unwrap();
     omitted_zero_offset_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    omitted_zero_offset_scope.frame_length = 476;
+    omitted_zero_offset_scope
+        .try_edit(|draft| {
+            draft.frame_length = 476;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let omitted_zero_offset = project_extrude(
         &omitted_zero_offset_scope,
         &[(0, &taper)],

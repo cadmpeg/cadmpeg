@@ -94,12 +94,12 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
             "record_index": 40,
             "byte_offset": 0,
             "class_tag": "276",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "262",
             "recipe_record_index": 43,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "face",
@@ -112,7 +112,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
                 "f3d:brep:entity#11"
             ],
             "next_record_index": 44,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("face-recipe operand");
     let topology = AsmHistoricalTopology {

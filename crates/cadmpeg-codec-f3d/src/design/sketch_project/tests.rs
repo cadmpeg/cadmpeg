@@ -181,7 +181,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         },
         raw_bytes: Vec::new(),
     };
-    let relation = SketchRelation {
+    let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
         id: "f3d:BulkStream.dat:relation#30".into(),
         record_index: 30,
         class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
@@ -189,7 +189,12 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("Sketch_42").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20]),
+        auxiliary_references: crate::records::ReferenceRun::located(
+            vec![20]
+                .into_iter()
+                .map(|value| crate::records::Located { value, offset: 0 })
+                .collect(),
+        ),
         rectangular_counted_reference_count: None,
         members: (vec![
             SketchRelationMember::from_index(20),
@@ -215,8 +220,9 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         ])
         .try_into()
         .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
-    };
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap();
 
     let (sketches, entities) = project_sketch_design(
         &[placement],
@@ -497,46 +503,54 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         &nurbs.geometry
     ));
 
-    let relation = |record_index, member| SketchRelation {
-        id: format!("f3d:native:relation#{record_index}"),
-        record_index,
-        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
-        byte_offset: 600,
-        state_offset: 70,
-        owner_reference: 172,
-        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_172").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: (vec![member]
-            .into_iter()
-            .map(SketchRelationMember::from_index)
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution"),
-        owner_reference_offset: 55,
-        definition: crate::records::SketchRelationDefinition::new(0x40, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: (vec![member]
-            .into_iter()
-            .map(SketchRelationReturnMember::from_index)
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
+    let relation = |record_index, member| {
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
+            id: format!("f3d:native:relation#{record_index}"),
+            record_index,
+            class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
+            byte_offset: 600,
+            state_offset: 70,
+            owner_reference: 172,
+            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_172").unwrap()),
+            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![member]
+                .into_iter()
+                .map(SketchRelationMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
+            owner_reference_offset: 55,
+            definition: crate::records::SketchRelationDefinition::new(0x40, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: (vec![member]
+                .into_iter()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
     };
     let mut curve_point_coincidence = relation(702, 217);
-    let mut members = curve_point_coincidence.members.to_vec();
+    let mut members = curve_point_coincidence.members().to_vec();
     members.push(SketchRelationMember {
         reference: crate::records::SketchRelationReference::Index(175),
         offset: 40,
         relation_ordinal: None,
     });
-    curve_point_coincidence.members = members.try_into().expect("uniform member resolution");
-    let mut returned = curve_point_coincidence.return_members.to_vec();
+    curve_point_coincidence
+        .try_edit(|draft| draft.members = members.try_into().expect("uniform member resolution"))
+        .unwrap();
+    let mut returned = curve_point_coincidence.return_members().to_vec();
     returned.push(SketchRelationReturnMember::from_index(175));
-    curve_point_coincidence.return_members =
-        returned.try_into().expect("uniform member resolution");
+    curve_point_coincidence
+        .try_edit(|draft| {
+            draft.return_members = returned.try_into().expect("uniform member resolution");
+        })
+        .unwrap();
     curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(
         1,
         curve_point_coincidence.definition.pattern().cloned(),
@@ -561,42 +575,62 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut spline_group = relation(705, 218);
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
-    spline_group.members = ([(218, 25), (217, 40)]
-        .into_iter()
-        .map(
-            |(record_index, offset)| crate::records::SketchRelationMember {
-                reference: crate::records::SketchRelationReference::Index(record_index),
-                offset,
-                relation_ordinal: Some(0),
-            },
-        )
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
-    spline_group.return_members = ([(217, 80), (218, 95)]
-        .into_iter()
-        .map(
-            |(record_index, offset)| crate::records::SketchRelationReturnMember {
-                reference: crate::records::SketchRelationReference::Index(record_index),
-                offset,
-            },
-        )
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
+    spline_group
+        .try_edit(|draft| {
+            draft.members = ([(218, 25), (217, 40)]
+                .into_iter()
+                .map(
+                    |(record_index, offset)| crate::records::SketchRelationMember {
+                        reference: crate::records::SketchRelationReference::Index(record_index),
+                        offset,
+                        relation_ordinal: Some(0),
+                    },
+                )
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
+    spline_group
+        .try_edit(|draft| {
+            draft.return_members = ([(217, 80), (218, 95)]
+                .into_iter()
+                .map(
+                    |(record_index, offset)| crate::records::SketchRelationReturnMember {
+                        reference: crate::records::SketchRelationReference::Index(record_index),
+                        offset,
+                    },
+                )
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
     spline_group.definition = crate::records::SketchRelationDefinition::new(
         0x8000_0000,
         spline_group.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     let mut horizontal_point = relation(701, 175);
-    horizontal_point.auxiliary_references = crate::records::ReferenceRun::unlocated(vec![999]);
-    horizontal_point.return_members = (vec![
-        SketchRelationReturnMember::from_index(175),
-        SketchRelationReturnMember::from_index(175),
-    ])
-    .try_into()
-    .expect("uniform member resolution");
+    horizontal_point
+        .try_edit(|draft| {
+            draft.auxiliary_references =
+                crate::records::ReferenceRun::located(vec![crate::records::Located {
+                    value: 999,
+                    offset: 0,
+                }]);
+        })
+        .unwrap();
+    horizontal_point
+        .try_edit(|draft| {
+            draft.return_members = (vec![
+                SketchRelationReturnMember::from_index(175),
+                SketchRelationReturnMember::from_index(175),
+            ])
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
     horizontal_point.definition = crate::records::SketchRelationDefinition::new(
         0x1_0000_0040,
         horizontal_point.definition.pattern().cloned(),
@@ -859,7 +893,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             ]),
         },
     ));
-    let relation = SketchRelation {
+    let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
         id: "f3d:Design/BulkStream.dat:relation#105".into(),
         record_index: 105,
         class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
@@ -867,7 +901,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("Sketch_42").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
+        auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.
         members: (vec![
@@ -886,8 +920,9 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         ])
         .try_into()
         .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
-    };
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap();
     let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
@@ -917,18 +952,26 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         midpoint_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
-    midpoint_relation.members = (vec![106, 101]
-        .into_iter()
-        .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
-    midpoint_relation.return_members = (vec![101, 106]
-        .into_iter()
-        .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
+    midpoint_relation
+        .try_edit(|draft| {
+            draft.members = (vec![106, 101]
+                .into_iter()
+                .map(SketchRelationMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
+    midpoint_relation
+        .try_edit(|draft| {
+            draft.return_members = (vec![101, 106]
+                .into_iter()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
     let mut coincident_point = point.clone();
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
@@ -947,18 +990,26 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         coincident_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
-    coincident_relation.members = (vec![106, 107]
-        .into_iter()
-        .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
-    coincident_relation.return_members = (vec![106, 107]
-        .into_iter()
-        .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
+    coincident_relation
+        .try_edit(|draft| {
+            draft.members = (vec![106, 107]
+                .into_iter()
+                .map(SketchRelationMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
+    coincident_relation
+        .try_edit(|draft| {
+            draft.return_members = (vec![106, 107]
+                .into_iter()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
     let mut horizontal_relation = relation.clone();
     horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
     horizontal_relation.record_index = 108;
@@ -967,12 +1018,20 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         horizontal_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
-    horizontal_relation.members = (vec![SketchRelationMember::from_index(108)])
-        .try_into()
-        .expect("uniform member resolution");
-    horizontal_relation.return_members = (vec![SketchRelationReturnMember::from_index(108)])
-        .try_into()
-        .expect("uniform member resolution");
+    horizontal_relation
+        .try_edit(|draft| {
+            draft.members = (vec![SketchRelationMember::from_index(108)])
+                .try_into()
+                .expect("uniform member resolution");
+        })
+        .unwrap();
+    horizontal_relation
+        .try_edit(|draft| {
+            draft.return_members = (vec![SketchRelationReturnMember::from_index(108)])
+                .try_into()
+                .expect("uniform member resolution");
+        })
+        .unwrap();
     let surface = SketchSurface {
         id: "f3d:Design/BulkStream.dat:surface#109".into(),
         record_index: 109,
@@ -998,18 +1057,26 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         point_on_surface_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
-    point_on_surface_relation.members = (vec![106, 109]
-        .into_iter()
-        .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
-    point_on_surface_relation.return_members = (vec![106, 109]
-        .into_iter()
-        .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>())
-    .try_into()
-    .expect("uniform member resolution");
+    point_on_surface_relation
+        .try_edit(|draft| {
+            draft.members = (vec![106, 109]
+                .into_iter()
+                .map(SketchRelationMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
+    point_on_surface_relation
+        .try_edit(|draft| {
+            draft.return_members = (vec![106, 109]
+                .into_iter()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution");
+        })
+        .unwrap();
 
     let points = [point, coincident_point];
     let relations = [

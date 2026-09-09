@@ -2745,7 +2745,7 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(&mut self.report, &table);
                         report_xref_placement_overrides(&mut self.report, &table);
-                        self.ir.model.occurrences = crate::xref::project_occurrences(&table);
+                        self.ir.model.occurrences = crate::xref::project_occurrences(&table)?;
                         crate::xref::bind_component_insert_features(
                             &mut self.ir.model.features,
                             &self.native.design_parameter_scopes,
@@ -2773,7 +2773,7 @@ impl<'a> F3dDecodeSession<'a> {
                 if let Ok(Some(table)) = &xref_table {
                     report_xref_placement_failures(&mut self.report, table);
                     report_xref_placement_overrides(&mut self.report, table);
-                    self.ir.model.occurrences = crate::xref::project_occurrences(table);
+                    self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
                         &self.native.design_parameter_scopes,
@@ -4228,10 +4228,10 @@ fn extend_related_design_records(
             native
                 .design_record_headers
                 .push(crate::records::DesignRecordHeader {
-                    id: format!("{stream}:design-record-header#{}", scope.byte_offset),
+                    id: format!("{stream}:design-record-header#{}", scope.byte_offset()),
                     record_index: scope.record_index,
                     class_tag: scope.class_tag.clone(),
-                    byte_offset: scope.byte_offset,
+                    byte_offset: scope.byte_offset(),
                 });
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
@@ -4258,7 +4258,7 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             scope
-                .reference_members
+                .reference_members()
                 .values()
                 .map(move |record_index| (stream.clone(), *record_index))
         })
@@ -4475,10 +4475,10 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             identity
-                .wrappers
+                .wrappers()
                 .iter()
                 .map(|wrapper| wrapper.record_index)
-                .chain(std::iter::once(identity.following_record_index))
+                .chain(std::iter::once(identity.following_record_index()))
                 .map(move |record_index| (stream.clone(), record_index))
         })
         .chain(

@@ -311,18 +311,21 @@ mod tests {
         const SOURCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         const COPY: &str = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";
         let occurrence = |record_index: u32, component_record_index: u64, occurrence_guid: &str| {
-            DesignComponentOccurrence {
-                id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-                record_index,
-                byte_offset: u64::from(record_index),
-                component_record_index,
-                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-                component_guid_offset: 48,
-                occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
-                occurrence_guid_offset: 124,
-                placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
-            }
+            DesignComponentOccurrence::try_new(
+                crate::records::feature::DesignComponentOccurrenceDraft {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"
+                    ),
+                    class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                    record_index,
+                    byte_offset: u64::from(record_index),
+                    component_record_index,
+                    component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                    occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
+                    placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+                },
+            )
+            .unwrap()
         };
         let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
         let mut scope = DesignParameterScope::empty(
@@ -330,7 +333,8 @@ mod tests {
             crate::records::feature::DesignFeatureKind::CopyPaste,
             10,
         );
-        if let crate::records::feature::DesignScopePayload::CopyPaste(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut()
+        {
             *slot = Some(DesignCopyPasteComponentOperation {
                 relation_record_index: 20,
                 source_occurrence_record_index: 100,
@@ -366,8 +370,8 @@ mod tests {
             crate::records::feature::DesignFeatureKind::DerivedInstance,
             385,
         );
-        if let crate::records::feature::DesignScopePayload::DerivedInstance(slot) =
-            &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::DerivedInstance(slot) =
+            scope.payload_mut()
         {
             *slot = Some(DesignDerivedInstanceConstruction {
                 reference_record_index: 305,
@@ -379,24 +383,22 @@ mod tests {
                 transform_offset: 473,
             });
         }
-        let native_occurrence = DesignComponentOccurrence {
-            id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
-            class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
-            record_index: 382,
-            byte_offset: 0,
-            component_record_index: 305,
-            component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-            component_guid_offset: 0,
-            occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-            occurrence_guid_offset: 0,
-            placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
-                ordinal: std::num::NonZeroU32::MIN,
-                transform: crate::records::Located {
-                    value: identity_matrix().try_into().unwrap(),
-                    offset: 209,
+        let native_occurrence = DesignComponentOccurrence::try_new(
+            crate::records::feature::DesignComponentOccurrenceDraft {
+                id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
+                class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
+                record_index: 382,
+                byte_offset: 0,
+                component_record_index: 305,
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
+                placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+                    ordinal: std::num::NonZeroU32::MIN,
+                    transform: identity_matrix().try_into().unwrap(),
                 },
             },
-        };
+        )
+        .unwrap();
         let (definitions, occurrences) =
             super::project_local_components(&[scope.clone()], &[native_occurrence]).unwrap();
         assert_eq!(definitions.len(), 1);

@@ -9,8 +9,12 @@ fn pair(null_first: bool) -> DesignDimensionLocusPair {
     } else {
         (r#","opaque_index":4,"opaque_index_offset":45"#, 40)
     };
+    let first_offset = if null_first { 35 } else { 50 };
+    let first_role_offset = first_offset + 10;
+    let second_offset = first_offset + 15;
+    let second_role_offset = second_offset + 10;
     let wire = format!(
-        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_geometry_reference_offset":50,"first_role":0,"first_role_offset":60,"second_geometry_record_index":41,"second_geometry_reference_offset":65,"second_role":1,"second_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}}"#
+        r#"{{{shared}{opaque},"first_geometry_record_index":{first},"first_geometry_reference_offset":{first_offset},"first_role":0,"first_role_offset":{first_role_offset},"second_geometry_record_index":41,"second_geometry_reference_offset":{second_offset},"second_role":1,"second_role_offset":{second_role_offset},"paired_class_tag":"273","paired_byte_offset":90}}"#
     );
     serde_json::from_str(&wire).unwrap()
 }
@@ -28,13 +32,6 @@ fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
         .set_arena("design_dimension_locus_pairs", &[null_pair])
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
-
-    let mut missing_opaque = pair(false);
-    missing_opaque.opaque_index = None;
-    assert!(DesignDimensionLocusPairs::try_from(vec![missing_opaque]).is_err());
-    let mut missing_second = pair(false);
-    missing_second.loci[1].geometry_record_index = None;
-    assert!(DesignDimensionLocusPairs::try_from(vec![missing_second]).is_err());
 }
 
 #[test]
@@ -49,13 +46,6 @@ fn null_arena_rejects_nonnull_form_at_construction_and_deserialization() {
         .set_arena("design_dimension_null_locus_pairs", &[nonnull_pair])
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
-
-    let mut stray_opaque = pair(true);
-    stray_opaque.opaque_index = pair(false).opaque_index;
-    assert!(DesignDimensionNullLocusPairs::try_from(vec![stray_opaque]).is_err());
-    let mut missing_second = pair(true);
-    missing_second.loci[1].geometry_record_index = None;
-    assert!(DesignDimensionNullLocusPairs::try_from(vec![missing_second]).is_err());
 }
 
 #[test]
