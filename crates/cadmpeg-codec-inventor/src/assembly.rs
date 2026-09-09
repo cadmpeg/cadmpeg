@@ -135,7 +135,10 @@ pub(crate) fn project_occurrences(
                 source.occurrence_id
             ))
             .expect("identity grammar"),
-            prototype: external_prototype(reference),
+            prototype: PrototypeReference::External {
+                document: reference.document(),
+                object: None,
+            },
             parent: OccurrenceParent::Root,
             ordinal: source.ordinal,
             transform,
@@ -151,13 +154,6 @@ pub(crate) fn project_occurrences(
     AssemblyProjection {
         occurrences,
         unresolved_placements,
-    }
-}
-
-fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
-    PrototypeReference::External {
-        document: reference.document(),
-        object: None,
     }
 }
 
