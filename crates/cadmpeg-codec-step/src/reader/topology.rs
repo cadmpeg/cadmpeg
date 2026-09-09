@@ -1224,7 +1224,11 @@ fn build_geometric_set(
 ) -> Option<Built> {
     let set_ids = representation_items(representation)?;
     let mut typed = HashSet::from([id]);
-    let mut surfaces = Vec::new();
+    let body = BodyId::from(ids::data("body", id));
+    let region = RegionId::from(ids::data("region", id));
+    let shell_id = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
+    let mut shell: Option<Shell> = None;
+    let mut faces = Vec::new();
     for set_id in set_ids {
         let Some(set) = exchange.records.get(&set_id) else {
             warnings.push(format!(
@@ -1248,30 +1252,33 @@ fn build_geometric_set(
         for surface_step in items {
             let surface = SurfaceId::from(ids::data("surface", surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
-                surfaces.push((surface_step, surface));
+                let face = Face {
+                    id: FaceId::from(ids::data(
+                        "face",
+                        format!("{surface_step}-geometric-set-{id}"),
+                    )),
+                    shell: shell_id.clone(),
+                    surface,
+                    sense: Sense::Forward,
+                    loops: Vec::new().into(),
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                };
+                match &mut shell {
+                    Some(shell) => shell.add_face(face.id.clone()),
+                    None => {
+                        shell = Some(Shell::with_face(
+                            shell_id.clone(),
+                            region.clone(),
+                            face.id.clone(),
+                        ));
+                    }
+                }
+                faces.push(face);
             }
         }
     }
-    let body = BodyId::from(ids::data("body", id));
-    let region = RegionId::from(ids::data("region", id));
-    let shell = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
-    let faces = surfaces
-        .into_iter()
-        .map(|(surface_step, surface)| Face {
-            id: FaceId::from(ids::data(
-                "face",
-                format!("{surface_step}-geometric-set-{id}"),
-            )),
-            shell: shell.clone(),
-            surface,
-            sense: Sense::Forward,
-            loops: Vec::new().into(),
-            name: None,
-            color: None,
-            tolerance: None,
-        })
-        .collect::<Vec<_>>();
-    let face_ids = faces.iter().map(|face| face.id.clone()).collect();
     staged_topology(
         typed,
         Vec::new(),
@@ -1280,23 +1287,11 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![match Shell::new(
-            shell.clone(),
-            region.clone(),
-            face_ids,
-            Vec::new(),
-            Vec::new(),
-        ) {
-            Ok(shell) => shell,
-            Err(error) => {
-                warnings.push(format!("geometric set #{id}: {error}"));
-                return None;
-            }
-        }],
+        vec![shell?],
         Region {
             id: region.clone(),
             body: body.clone(),
-            shells: vec![shell],
+            shells: vec![shell_id],
         },
         Body {
             id: body,
