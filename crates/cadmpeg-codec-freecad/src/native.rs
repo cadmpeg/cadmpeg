@@ -86,6 +86,81 @@ mod tests {
     }
 
     #[test]
+    fn string_tables_admit_numeric_positions_from_canonical_native_order() {
+        let records = (0..12)
+            .map(|index| {
+                super::StringTableRecord::try_new(
+                    native_id("string-table", index.to_string()),
+                    index,
+                    None,
+                    false,
+                    0,
+                    None,
+                    Vec::new(),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace.set_arena("string_tables", &records).unwrap();
+        assert_eq!(
+            namespace.arenas()["string_tables"][2].id(),
+            "fcstd:native:string-table#10"
+        );
+        let tables: super::StringTables = namespace.arena_as_collection("string_tables").unwrap();
+        assert_eq!(
+            tables
+                .as_slice()
+                .iter()
+                .map(|table| table.index)
+                .collect::<Vec<_>>(),
+            (0..12).collect::<Vec<_>>()
+        );
+        let mut rewritten = cadmpeg_ir::native::NativeNamespace::default();
+        rewritten
+            .set_arena("string_tables", tables.as_slice())
+            .unwrap();
+        assert_eq!(rewritten, namespace);
+        let wire = serde_json::to_value(&tables).unwrap();
+        assert!(wire.is_array());
+        assert_eq!(
+            serde_json::from_value::<super::StringTables>(wire).unwrap(),
+            tables
+        );
+    }
+
+    #[test]
+    fn string_tables_reject_duplicate_and_missing_numeric_positions() {
+        for indices in [vec![1], vec![0, 0], vec![0, 2]] {
+            let records = indices
+                .into_iter()
+                .map(|index| {
+                    super::StringTableRecord::try_new(
+                        native_id("string-table", index.to_string()),
+                        index,
+                        None,
+                        false,
+                        0,
+                        None,
+                        Vec::new(),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>();
+            assert!(super::StringTables::try_from(records.clone()).is_err());
+            let wire = serde_json::to_value(&records).unwrap();
+            assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
+            let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+            namespace.set_arena("string_tables", &records).unwrap();
+            assert!(namespace
+                .arena_as_collection::<super::StringTableRecord, super::StringTables>(
+                    "string_tables"
+                )
+                .is_err());
+        }
+    }
+
+    #[test]
     fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
         for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
             let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
@@ -2443,6 +2518,34 @@ pub struct ByteCoverageRecord {
     pub named_opaque_entries: Vec<String>,
     /// Whether both physical and logical partitions close exactly.
     pub exact: bool,
+}
+
+/// Persistent string tables in contiguous numeric HasherIndex order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<StringTableRecord>")]
+pub(crate) struct StringTables(Vec<StringTableRecord>);
+
+impl StringTables {
+    pub(crate) fn as_slice(&self) -> &[StringTableRecord] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<StringTableRecord>> for StringTables {
+    type Error = cadmpeg_ir::native::NativeConvertError;
+
+    fn try_from(mut records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
+        records.sort_by_key(|record| record.index);
+        for (position, record) in records.iter().enumerate() {
+            if record.index != position {
+                return Err(Self::Error::InvalidCollection(format!(
+                    "string_tables[{position}].index must equal {position}, got {}",
+                    record.index
+                )));
+            }
+        }
+        Ok(Self(records))
+    }
 }
 
 /// One document-wide persistent string table.
