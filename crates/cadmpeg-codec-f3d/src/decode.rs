@@ -2003,8 +2003,10 @@ fn try_decode_text_model(
             BrepFacts {
                 name: name.clone(),
                 uncompressed_len: bytes.len() as u64,
-                kernel: Some(crate::container::KernelFraming::Asm(header)),
-                solved_record_limit: None,
+                kernel: Some(crate::container::KernelFraming::Asm {
+                    header,
+                    solved_record_limit: None,
+                }),
                 sha256: sha256_hex(bytes),
             },
             decoded,
@@ -4724,14 +4726,14 @@ fn try_decode_brep(
     scan: &ContainerScan,
     brep_entry: &BrepFacts,
 ) -> Result<Option<Brep>, CodecError> {
-    let Some(width) = brep_entry
-        .kernel
-        .as_ref()
-        .and_then(crate::container::KernelFraming::asm_header)
-        .map(|header| header.width)
+    let Some(crate::container::KernelFraming::Asm {
+        header,
+        solved_record_limit,
+    }) = &brep_entry.kernel
     else {
         return Ok(None);
     };
+    let width = header.width;
 
     let bytes = scan.entry_bytes(&brep_entry.name)?;
     let Some(start) = asm_header::record_stream_start(bytes) else {
@@ -4740,7 +4742,7 @@ fn try_decode_brep(
     // A stream without a delta-state boundary is history-less: its final
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
-    let framed = match brep_entry.solved_record_limit {
+    let framed = match *solved_record_limit {
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
     };
@@ -4816,7 +4818,11 @@ fn source_attributes_and_tolerances(
         "active_brep_sha256".to_string(),
         primary_model_brep.sha256.clone(),
     );
-    if let Some(off) = primary_model_brep.solved_record_limit {
+    if let Some(off) = primary_model_brep
+        .kernel
+        .as_ref()
+        .and_then(crate::container::KernelFraming::solved_record_limit)
+    {
         attributes.insert("solved_record_len".to_string(), off.to_string());
     }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
@@ -4965,7 +4971,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     if let Some(brep) = container::select_fallback_brep(scan) {
         attributes.insert("active_brep".to_string(), brep.name.clone());
         attributes.insert("active_brep_sha256".to_string(), brep.sha256.clone());
-        if let Some(off) = brep.solved_record_limit {
+        if let Some(off) = brep
+            .kernel
+            .as_ref()
+            .and_then(crate::container::KernelFraming::solved_record_limit)
+        {
             attributes.insert("solved_record_len".to_string(), off.to_string());
         }
         if let Some(h) = brep
