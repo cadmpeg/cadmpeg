@@ -132,8 +132,12 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::DesignFeatureKind::Revolve,
         100,
     );
-    scope.history_state_id = Some(9);
-    scope.previous_history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(9);
+            draft.previous_history_state_id = Some(2);
+        })
+        .unwrap();
     let next_scope = crate::records::feature::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         crate::records::feature::DesignFeatureKind::Sketch,
@@ -257,7 +261,11 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::feature::DesignFeatureKind::Fillet,
         0,
     );
-    omitted_predecessor.history_state_id = Some(10);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(10);
+        })
+        .unwrap();
     assert_eq!(
         effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
         Some(6)
@@ -268,14 +276,21 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::feature::DesignFeatureKind::BaseFlange,
         1,
     );
-    root.history_state_id = Some(4);
+    root.try_edit(|draft| {
+        draft.history_state_id = Some(4);
+    })
+    .unwrap();
     let mut successor = crate::records::feature::DesignParameterScope::empty(
         "f3d:native:scope#2",
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         2,
     );
-    successor.history_state_id = Some(10);
-    successor.previous_history_state_id = Some(6);
+    successor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(10);
+            draft.previous_history_state_id = Some(6);
+        })
+        .unwrap();
     let scopes = vec![root, successor];
     let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);

@@ -900,7 +900,7 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
             .iter()
             .filter(|scope| {
                 native_stream(&scope.id) == Some(stream)
-                    && scope.byte_offset >= u64::try_from(end).unwrap_or(u64::MAX)
+                    && scope.byte_offset() >= u64::try_from(end).unwrap_or(u64::MAX)
                     && scope.sketch_entity().is_some()
             })
             .filter_map(|scope| {

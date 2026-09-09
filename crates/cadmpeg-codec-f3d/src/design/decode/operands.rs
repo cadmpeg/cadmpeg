@@ -140,7 +140,7 @@ pub fn decode_edge_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
             }
@@ -212,7 +212,7 @@ pub fn decode_edge_treatment_vertex_operands(
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (scope_reference_ordinal, record_index) in
-            scope.reference_members.values().copied().enumerate()
+            scope.reference_members().values().copied().enumerate()
         {
             let matches = groups
                 .iter()
@@ -469,7 +469,7 @@ pub fn bind_work_plane_constructions(
             .entry(stream.clone())
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let Some([placement_record_index, first, second, third, extra_offset]) =
-            scope.reference_members.values_array()
+            scope.reference_members().values_array()
         else {
             continue;
         };
@@ -816,10 +816,10 @@ pub fn decode_face_operands(
                         return None;
                     }
                     scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .position(|candidate| candidate == record_index)
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal + 1))
+                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| headers.get(&(stream, *record_index)))
                         .map(|header| header.byte_offset)
                 });
@@ -841,7 +841,7 @@ pub fn decode_face_operands(
         let is_legacy_as_built_421 = scope.kind()
             == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
-                scope.frame_length,
+                scope.frame_length(),
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             )
@@ -874,7 +874,7 @@ pub fn decode_face_operands(
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let ordinals = if scope.kind() == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
-                scope.frame_length,
+                scope.frame_length(),
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             )
@@ -882,10 +882,11 @@ pub fn decode_face_operands(
         {
             [1_usize, 3].into_iter().collect::<Vec<_>>()
         } else {
-            (0..scope.reference_members.len()).collect::<Vec<_>>()
+            (0..scope.reference_members().len()).collect::<Vec<_>>()
         };
         for ordinal in ordinals {
-            let Some(record_index) = scope.reference_members.values().nth(ordinal).copied() else {
+            let Some(record_index) = scope.reference_members().values().nth(ordinal).copied()
+            else {
                 continue;
             };
             if !seen.insert((stream, scope.record_index, record_index)) {
@@ -899,14 +900,14 @@ pub fn decode_face_operands(
             let next_byte_offset = if scope.kind()
                 == crate::records::feature::DesignFeatureKind::AsBuilt
                 && crate::design::assembly::legacy_as_built_421_generation(
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 )
                 .is_some()
             {
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .nth(ordinal + 1)
                     .and_then(|record_index| headers.get(&(stream, *record_index)))
@@ -956,11 +957,11 @@ pub fn decode_face_source_groups(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let Ok(scope_start) = usize::try_from(scope.byte_offset) else {
+        let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
-        let mut reference_headers = Vec::with_capacity(scope.reference_members.len());
-        for record_index in scope.reference_members.values() {
+        let mut reference_headers = Vec::with_capacity(scope.reference_members().len());
+        for record_index in scope.reference_members().values() {
             let Some(byte_offset) = records.first_at_or_after(
                 scope_start.saturating_add(indexed_header::LEN),
                 *record_index,
@@ -1299,7 +1300,7 @@ pub fn bind_sketch_profiles(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let candidates = scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .enumerate()
@@ -1313,8 +1314,8 @@ pub fn bind_sketch_profiles(
             if scope.kind() == crate::records::feature::DesignFeatureKind::BaseFlange {
                 {
                     let value = Some(profile.clone());
-                    if let crate::records::feature::DesignScopePayload::BaseFlange(slot) =
-                        &mut scope.payload
+                    if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+                        scope.payload_mut()
                     {
                         slot.get_or_insert_with(Default::default)
                             .base_flange_profile = value;
@@ -1323,16 +1324,16 @@ pub fn bind_sketch_profiles(
             } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
                 {
                     let value = Some(profile.clone());
-                    if let crate::records::feature::DesignScopePayload::Sweep(slot) =
-                        &mut scope.payload
+                    if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) =
+                        scope.payload_mut()
                     {
                         slot.get_or_insert_with(Default::default).sweep_profile = value;
                     }
                 }
-            } else if let crate::records::feature::DesignScopePayload::Extrude(slot)
-            | crate::records::feature::DesignScopePayload::Extrusion(slot)
-            | crate::records::feature::DesignScopePayload::Extrusao(slot) =
-                &mut scope.payload
+            } else if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+            | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+            | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+                scope.payload_mut()
             {
                 slot.get_or_insert_with(Default::default).extrude_profile = Some(profile.clone());
             }
@@ -1364,7 +1365,7 @@ pub fn decode_extrude_selection_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -1446,7 +1447,7 @@ pub fn decode_construction_operand_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut unclosed = Vec::new();
-        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
@@ -1493,7 +1494,7 @@ pub fn decode_loft_legacy_body_carriers(
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
-                &scope.payload,
+                &scope.payload(),
                 crate::records::feature::DesignScopePayload::Loft(Some(crate::records::feature::DesignLoftConstruction { operation, .. }))
                     if *operation != crate::records::feature::DesignExtrudeOperation::NewBody
             )
@@ -1506,7 +1507,7 @@ pub fn decode_loft_legacy_body_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
+        for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -1941,11 +1942,11 @@ pub fn disambiguate_fixed_fillet_parameters(
             continue;
         };
         if indexed_scopes.contains(&(stream.to_owned(), scope.record_index)) {
-            if let crate::records::feature::DesignScopePayload::Fillet(slot)
-            | crate::records::feature::DesignScopePayload::Conge(slot)
-            | crate::records::feature::DesignScopePayload::Abrundung(slot)
-            | crate::records::feature::DesignScopePayload::Arredondamento(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::Fillet(slot)
+            | crate::records::feature::DesignScopePayloadMut::Conge(slot)
+            | crate::records::feature::DesignScopePayloadMut::Abrundung(slot)
+            | crate::records::feature::DesignScopePayloadMut::Arredondamento(slot) =
+                scope.payload_mut()
             {
                 *slot = None;
             }
@@ -3585,13 +3586,13 @@ pub fn decode_body_recipe_operands(
             })
             .chain(
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .filter(|_| operation.is_none()),
             );
         for record_index in record_indexes {
             let mut ordinals = scope
-                .reference_members
+                .reference_members()
                 .values()
                 .enumerate()
                 .filter(|(_, member)| *member == record_index)

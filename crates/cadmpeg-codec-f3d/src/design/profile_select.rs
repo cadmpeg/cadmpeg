@@ -447,7 +447,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             spatial_sketch,
                             scoped_resolution.spatial_entities,
                             scoped_resolution,
-                            scope.history_state_id,
+                            scope.history_state_id(),
                             effective_previous_history_state_id,
                         )
                     })
@@ -513,7 +513,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     members,
                     sketch,
                     scoped_resolution,
-                    scope.history_state_id,
+                    scope.history_state_id(),
                     effective_previous_history_state_id,
                 )
             })

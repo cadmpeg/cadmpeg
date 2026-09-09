@@ -56,7 +56,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     header(&mut bytes, b"259", 30);
-    let scope = DesignParameterScope {
+    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
         byte_offset: scope_at as u64,
         class_tag: crate::records::DesignClassTag::try_from("451".to_owned()).unwrap(),
@@ -82,7 +82,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: (scope_at + 399) as u64,
-    };
+    })
+    .unwrap();
 
     let construction =
         exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -135,13 +136,17 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
                 .expect("three-byte tag"),
             30,
         );
-        let legacy_scope = DesignParameterScope {
-            frame_length: frame_length as u64,
-            paired_class_tag: crate::records::DesignClassTag::try_from(paired_class_tag.to_owned())
+        let legacy_scope =
+            DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+                frame_length: frame_length as u64,
+                paired_class_tag: crate::records::DesignClassTag::try_from(
+                    paired_class_tag.to_owned(),
+                )
                 .unwrap(),
-            paired_byte_offset: (scope_at + frame_length) as u64,
-            ..scope.clone()
-        };
+                paired_byte_offset: (scope_at + frame_length) as u64,
+                ..scope.clone().into_draft()
+            })
+            .unwrap();
         let construction = exact_component_insert_construction(
             &legacy,
             &IndexedRecordOffsets::build(&legacy),
@@ -193,19 +198,23 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         expanded[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     header(&mut expanded, b"260", 30);
-    let expanded_scope = DesignParameterScope {
-        byte_offset: expanded_scope_at as u64,
-        class_tag: crate::records::DesignClassTag::try_from("335".to_owned()).unwrap(),
-        frame_length: 404,
-        reference_members: crate::records::ReferenceRun::located(vec![crate::records::Located {
-            value: 20,
-            offset: (expanded_scope_at + 42) as u64,
-        }]),
-        payload: scope.kind().try_into().unwrap(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
-        paired_byte_offset: (expanded_scope_at + 404) as u64,
-        ..scope.clone()
-    };
+    let expanded_scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            byte_offset: expanded_scope_at as u64,
+            class_tag: crate::records::DesignClassTag::try_from("335".to_owned()).unwrap(),
+            frame_length: 404,
+            reference_members: crate::records::ReferenceRun::located(vec![
+                crate::records::Located {
+                    value: 20,
+                    offset: (expanded_scope_at + 42) as u64,
+                },
+            ]),
+            payload: scope.kind().try_into().unwrap(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
+            paired_byte_offset: (expanded_scope_at + 404) as u64,
+            ..scope.clone().into_draft()
+        })
+        .unwrap();
     let construction = exact_component_insert_construction(
         &expanded,
         &IndexedRecordOffsets::build(&expanded),
@@ -273,13 +282,15 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         legacy[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     header(&mut legacy, b"261", 30);
-    let legacy_scope = DesignParameterScope {
-        byte_offset: legacy_scope_at as u64,
-        frame_length: 381,
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: (legacy_scope_at + 381) as u64,
-        ..scope
-    };
+    let legacy_scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            byte_offset: legacy_scope_at as u64,
+            frame_length: 381,
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: (legacy_scope_at + 381) as u64,
+            ..scope.clone().into_draft()
+        })
+        .unwrap();
     let construction = exact_component_insert_construction(
         &legacy,
         &IndexedRecordOffsets::build(&legacy),
@@ -382,17 +393,29 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
-    scope.byte_offset = scope_at as u64;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = scope_at as u64;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
-    scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![20],
-        vec![(scope_at + 38) as u64],
-        "reference_members",
-    )
-    .unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 261;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![20],
+                vec![(scope_at + 38) as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
-    scope.paired_byte_offset = (scope_at + 261) as u64;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = (scope_at + 261) as u64;
+        })
+        .unwrap();
 
     let construction =
         exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -489,17 +512,29 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
-    scope.byte_offset = scope_at as u64;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = scope_at as u64;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
-    scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![167],
-        vec![(scope_at + 38) as u64],
-        "reference_members",
-    )
-    .unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 261;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![167],
+                vec![(scope_at + 38) as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.paired_byte_offset = (scope_at + 261) as u64;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = (scope_at + 261) as u64;
+        })
+        .unwrap();
 
     let construction =
         exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -605,17 +640,29 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
-    scope.byte_offset = scope_at as u64;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = scope_at as u64;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("434".to_owned()).unwrap();
-    scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![167],
-        vec![(scope_at + 38) as u64],
-        "reference_members",
-    )
-    .unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 261;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![167],
+                vec![(scope_at + 38) as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
-    scope.paired_byte_offset = (scope_at + 261) as u64;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = (scope_at + 261) as u64;
+        })
+        .unwrap();
 
     let construction =
         exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -727,17 +774,29 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
-    scope.byte_offset = scope_at as u64;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = scope_at as u64;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("426".to_owned()).unwrap();
-    scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![20],
-        vec![(scope_at + 38) as u64],
-        "reference_members",
-    )
-    .unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 261;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![20],
+                vec![(scope_at + 38) as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.paired_byte_offset = (scope_at + 261) as u64;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = (scope_at + 261) as u64;
+        })
+        .unwrap();
 
     let construction =
         exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -767,14 +826,18 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     external_bytes.extend_from_slice(&bytes[695..]);
     let external_scope_at = scope_at + carrier_shift;
     let mut external_scope = scope.clone();
-    external_scope.byte_offset = external_scope_at as u64;
-    external_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        external_scope.reference_members.values().copied().collect(),
-        vec![(external_scope_at + 38) as u64],
-        "reference_members",
-    )
-    .unwrap();
-    external_scope.paired_byte_offset = (external_scope_at + 261) as u64;
+    external_scope
+        .try_edit(|draft| {
+            draft.byte_offset = external_scope_at as u64;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                draft.reference_members.values().copied().collect(),
+                vec![(external_scope_at + 38) as u64],
+                "reference_members",
+            )
+            .unwrap();
+            draft.paired_byte_offset = (external_scope_at + 261) as u64;
+        })
+        .unwrap();
     let external_construction = exact_component_insert_construction(
         &external_bytes,
         &IndexedRecordOffsets::build(&external_bytes),
@@ -876,18 +939,30 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
             crate::records::feature::DesignFeatureKind::ComponentInsert,
             30,
         );
-        scope.byte_offset = scope_at as u64;
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = scope_at as u64;
+            })
+            .unwrap();
         scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
-        scope.frame_length = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(
-            vec![20],
-            vec![(scope_at + 34) as u64],
-            "reference_members",
-        )
-        .unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = frame_length as u64;
+                draft.reference_members = crate::records::ReferenceRun::from_columns(
+                    vec![20],
+                    vec![(scope_at + 34) as u64],
+                    "reference_members",
+                )
+                .unwrap();
+            })
+            .unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope.paired_byte_offset = (scope_at + frame_length) as u64;
+        scope
+            .try_edit(|draft| {
+                draft.paired_byte_offset = (scope_at + frame_length) as u64;
+            })
+            .unwrap();
         (bytes, scope, scope_at)
     };
 

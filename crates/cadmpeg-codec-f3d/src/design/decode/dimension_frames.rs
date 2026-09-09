@@ -1154,7 +1154,7 @@ pub fn decode_dimension_annotation_frames(
                         .and_then(|companion| usize::try_from(companion.byte_offset).ok())
                 })
                 .min()?;
-            let start = usize::try_from(scope.byte_offset).ok()?;
+            let start = usize::try_from(scope.byte_offset()).ok()?;
             (start < end).then_some((start, end, None))
         }));
         for (start, end, containing_companion_record_index) in intervals {
@@ -1759,7 +1759,7 @@ pub(crate) fn companion_owned_interval<'a>(
             native_stream(&scope.id) == Some(native_scope)
                 && Some(scope.record_index) != owning_scope_record_index
         })
-        .flat_map(|scope| scope.reference_members.values().copied())
+        .flat_map(|scope| scope.reference_members().values().copied())
         .collect::<HashSet<_>>();
     let start = usize::try_from(companion.byte_offset)
         .ok()?
@@ -1785,9 +1785,9 @@ pub(crate) fn companion_owned_interval<'a>(
                 .iter()
                 .filter(|scope| {
                     native_stream(&scope.id) == Some(native_scope)
-                        && scope.byte_offset > companion.byte_offset
+                        && scope.byte_offset() > companion.byte_offset
                 })
-                .filter_map(|scope| usize::try_from(scope.byte_offset).ok()),
+                .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
         )
         .chain(
             headers

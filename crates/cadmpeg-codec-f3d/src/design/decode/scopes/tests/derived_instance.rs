@@ -111,10 +111,18 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         crate::records::feature::DesignFeatureKind::DerivedInstance,
         385,
     );
-    scope.byte_offset = SCOPE_AT as u64;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = SCOPE_AT as u64;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("279".to_owned()).unwrap();
-    scope.frame_length = scope_279::LEN as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![383]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = scope_279::LEN as u64;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![383]);
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
 
     let occurrence = DesignComponentOccurrence {

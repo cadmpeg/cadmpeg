@@ -41,10 +41,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         ),
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
+        })
+        .unwrap();
     let group = |record_index, scope_reference_ordinal, member| {
         DesignConstructionOperandGroup::try_from(
             crate::records::topology::DesignConstructionOperandGroupDraft {

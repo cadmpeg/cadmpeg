@@ -43,8 +43,13 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         crate::records::feature::DesignFeatureKind::BoxPrimitive,
         12,
     );
-    box_scope.frame_length = bytes.len() as u64;
-    box_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+    box_scope
+        .try_edit(|draft| {
+            draft.frame_length = bytes.len() as u64;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+        })
+        .unwrap();
     let box_owners = vec![
         owner(12, 20, 0, 3.0),
         owner(12, 21, 1, 4.0),
@@ -71,11 +76,19 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
     let mut cylinder_scope = box_scope;
-    cylinder_scope.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive
-        .try_into()
+    cylinder_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     cylinder_scope.record_index = 13;
-    cylinder_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
+    cylinder_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
+        })
+        .unwrap();
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
@@ -147,23 +160,36 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             crate::records::feature::DesignFeatureKind::CylinderPrimitive,
             record_index,
         );
-        scope.byte_offset = 0;
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 0;
+            })
+            .unwrap();
         scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        scope.paired_byte_offset = frame_length as u64;
-        scope.frame_length = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+        scope
+            .try_edit(|draft| {
+                draft.paired_byte_offset = frame_length as u64;
+                draft.frame_length = frame_length as u64;
+                draft.reference_members =
+                    crate::records::ReferenceRun::unlocated(reference_members);
+            })
+            .unwrap();
         let (reference_count, _, kind, feature_ordinal, previous) = if frame_length == 352 {
             (174, 233, 241, 275, 306)
         } else {
             (302, 383, 391, 425, 456)
         };
-        scope.reference_count_offset = reference_count;
+        scope
+            .try_edit(|draft| {
+                draft.reference_count_offset = reference_count;
 
-        scope.kind_offset = kind;
-        scope.feature_ordinal_offset = feature_ordinal;
-        scope.previous_history_state_id_offset = Some(previous);
+                draft.kind_offset = kind;
+                draft.feature_ordinal_offset = feature_ordinal;
+                draft.previous_history_state_id_offset = Some(previous);
+            })
+            .unwrap();
         scope
     }
 

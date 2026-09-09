@@ -72,7 +72,11 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
-    extrude.history_state_id = Some(4);
+    extrude
+        .try_edit(|draft| {
+            draft.history_state_id = Some(4);
+        })
+        .unwrap();
     let reference = |face: i64| DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
@@ -110,7 +114,9 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         200,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+        work_point.payload_mut()
+    {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
             point_record_byte_offset: 0,
@@ -317,7 +323,11 @@ fn feature_input_topology_projects_historical_vertices() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         7,
     );
-    scope.previous_history_state_id = Some(4);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(4);
+        })
+        .unwrap();
     let feature = Feature {
         id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
             .expect("identity grammar"),
@@ -635,7 +645,11 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         crate::records::feature::DesignFeatureKind::Extrude,
         10,
     );
-    scope.history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+        })
+        .unwrap();
     let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
     let mut operands = vec![crate::records::topology::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
@@ -1007,10 +1021,14 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale
-        .try_into()
+    scale_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Scale
+                .try_into()
+                .unwrap();
+            draft.previous_history_state_id = Some(7);
+        })
         .unwrap();
-    scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
     scale_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
@@ -1045,11 +1063,15 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     ));
 
     let mut move_scope = scope;
-    move_scope.payload = crate::records::feature::DesignFeatureKind::Move
-        .try_into()
+    move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = Some(41);
+        })
         .unwrap();
-    move_scope.history_state_id = Some(42);
-    move_scope.previous_history_state_id = Some(41);
     let move_history = crate::history_records::AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
@@ -1167,7 +1189,11 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         42,
     );
-    scope.history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+        })
+        .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
@@ -1344,8 +1370,12 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         crate::records::feature::DesignFeatureKind::Thread,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
@@ -1509,7 +1539,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(operands[0].resolved_face_slots, [7]);
 
     let mut cylinder_scope = scope.clone();
-    if let crate::records::feature::DesignScopePayload::Thread(slot) = &mut cylinder_scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Thread(slot) =
+        cylinder_scope.payload_mut()
+    {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
@@ -1825,9 +1857,13 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         crate::records::feature::DesignFeatureKind::Hole,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 55,
             point_record_byte_offset: 0,

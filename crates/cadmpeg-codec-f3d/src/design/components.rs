@@ -316,7 +316,8 @@ mod tests {
             crate::records::feature::DesignFeatureKind::CopyPaste,
             10,
         );
-        if let crate::records::feature::DesignScopePayload::CopyPaste(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut()
+        {
             *slot = Some(DesignCopyPasteComponentOperation {
                 relation_record_index: 20,
                 source_occurrence_record_index: 100,
@@ -352,8 +353,8 @@ mod tests {
             crate::records::feature::DesignFeatureKind::DerivedInstance,
             385,
         );
-        if let crate::records::feature::DesignScopePayload::DerivedInstance(slot) =
-            &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::DerivedInstance(slot) =
+            scope.payload_mut()
         {
             *slot = Some(DesignDerivedInstanceConstruction {
                 reference_record_index: 305,

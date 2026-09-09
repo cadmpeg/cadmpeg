@@ -24,13 +24,13 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
         [1_500, 1_600]
     );
-    assert_eq!(scope.frame_length, 225);
+    assert_eq!(scope.frame_length(), 225);
     let operation =
         crate::design::decode::scopes::exact_copy_paste_bodies_operation(&bytes, &records, &scope)
             .expect("CopyPasteBodies operation");

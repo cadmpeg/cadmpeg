@@ -17,8 +17,12 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         crate::records::feature::DesignFeatureKind::Fillet,
         10,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
     let mut operand: crate::records::topology::DesignEdgeOperand =
         serde_json::from_value(serde_json::json!({
             "id": format!("{stream}:design-edge-operand#20"),

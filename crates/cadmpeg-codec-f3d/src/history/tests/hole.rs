@@ -149,9 +149,13 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
         crate::records::feature::DesignFeatureKind::Hole,
         5,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
     scope

@@ -515,7 +515,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let scope = DesignParameterScope {
+    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
@@ -541,7 +541,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
-    };
+    })
+    .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -709,9 +710,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = owning_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile =
             Some(DesignSketchProfileOperand {

@@ -35,7 +35,9 @@ fn dispatcher_projects_datum_feature_scopes() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         3,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+        work_point.payload_mut()
+    {
         *slot = Some(crate::records::feature::DesignWorkPointConstruction {
             point_record_index: 4,
             point_record_byte_offset: 0,
@@ -84,8 +86,8 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         crate::records::feature::DesignFeatureKind::Scale,
         4,
     );
-    if let crate::records::feature::DesignScopePayload::Scale(slot)
-    | crate::records::feature::DesignScopePayload::Massstab(slot) = &mut scale.payload
+    if let crate::records::feature::DesignScopePayloadMut::Scale(slot)
+    | crate::records::feature::DesignScopePayloadMut::Massstab(slot) = scale.payload_mut()
     {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
@@ -250,7 +252,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         40,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut point.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) = point.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
             point_record_byte_offset: 0,
@@ -310,7 +312,11 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         crate::records::feature::DesignFeatureKind::Extrude,
         10,
     );
-    predecessor.history_state_id = Some(4);
+    predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(4);
+        })
+        .unwrap();
     let recipe_id = "f3d:native/BulkStream.dat:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe {
         record_index: 12,
@@ -337,7 +343,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         crate::records::feature::DesignFeatureKind::WorkPoint,
         20,
     );
-    if let crate::records::feature::DesignScopePayload::WorkPoint(slot) = &mut point.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) = point.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
             point_record_byte_offset: 0,
@@ -518,8 +524,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             thickness_record_index: 102,
             settings_record_index: 103,
         });
-        if let crate::records::feature::DesignScopePayload::BaseFlange(slot) =
-            &mut base_flange.payload
+        if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+            base_flange.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .base_flange_operation = value;
@@ -543,8 +549,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             paired_byte_offset: 0,
         });
-        if let crate::records::feature::DesignScopePayload::BaseFlange(slot) =
-            &mut base_flange.payload
+        if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+            base_flange.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .base_flange_profile = value;
@@ -556,7 +562,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::DesignFeatureKind::RemoveBody,
         20,
     );
-    remove_body.reference_members = crate::records::ReferenceRun::unlocated(vec![200]);
+    remove_body
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![200]);
+        })
+        .unwrap();
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
@@ -568,15 +578,21 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         }),
         30,
     );
-    surface_stitch.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
+    surface_stitch
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
+        })
+        .unwrap();
 
     let mut copy_paste = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste"),
         crate::records::feature::DesignFeatureKind::CopyPaste,
         40,
     );
-    if let crate::records::feature::DesignScopePayload::CopyPaste(slot) = &mut copy_paste.payload {
+    if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) =
+        copy_paste.payload_mut()
+    {
         *slot = Some(DesignCopyPasteComponentOperation {
             relation_record_index: 401,
             source_occurrence_record_index: 402,
@@ -605,8 +621,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::DesignFeatureKind::CopyPasteBodies,
         50,
     );
-    if let crate::records::feature::DesignScopePayload::CopyPasteBodies(slot) =
-        &mut copy_paste_bodies.payload
+    if let crate::records::feature::DesignScopePayloadMut::CopyPasteBodies(slot) =
+        copy_paste_bodies.payload_mut()
     {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
@@ -640,8 +656,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::DesignFeatureKind::BaseFeature,
         60,
     );
-    if let crate::records::feature::DesignScopePayload::BaseFeature(slot) =
-        &mut base_feature.payload
+    if let crate::records::feature::DesignScopePayloadMut::BaseFeature(slot) =
+        base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
             bodies: crate::records::feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
@@ -674,7 +690,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::DesignFeatureKind::Thread,
         70,
     );
-    if let crate::records::feature::DesignScopePayload::Thread(slot) = &mut thread.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Thread(slot) = thread.payload_mut() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
@@ -690,7 +706,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .unwrap(),
         });
     }
-    thread.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
+    thread
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
+        })
+        .unwrap();
 
     let scopes = vec![
         base_flange,
@@ -880,7 +900,11 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         crate::records::feature::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+        })
+        .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,
@@ -957,7 +981,11 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         crate::records::feature::DesignFeatureKind::Form,
         201,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+        })
+        .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: feature_id,

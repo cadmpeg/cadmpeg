@@ -122,7 +122,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             },
         }
     );
-    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
         *slot = Some(operation);
     }
     assert_eq!(
@@ -155,7 +155,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_scope.class_tag = crate::records::DesignClassTag::try_from("387".to_owned()).unwrap();
     compact_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    compact_scope.frame_length = 328;
+    compact_scope
+        .try_edit(|draft| {
+            draft.frame_length = 328;
+        })
+        .unwrap();
     let compact = exact_combine_operation(
         &compact_bytes,
         &IndexedRecordOffsets::build(&compact_bytes),
@@ -288,11 +292,19 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         crate::records::feature::DesignFeatureKind::Combine,
         scope_record_index,
     );
-    scope.byte_offset = 0;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 0;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.frame_length = 363;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 363;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+        })
+        .unwrap();
     let records = IndexedRecordOffsets::build(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");
@@ -331,7 +343,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     );
 
     let mut malformed_scope = scope.clone();
-    malformed_scope.frame_length = 367;
+    malformed_scope
+        .try_edit(|draft| {
+            draft.frame_length = 367;
+        })
+        .unwrap();
     assert!(exact_combine_operation(&bytes, &records, &malformed_scope).is_none());
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;

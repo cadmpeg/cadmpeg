@@ -28,10 +28,14 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         382,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
-    ]);
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
+            ]);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(DesignEdgeFlangeOperation {
             height_owner_record_index: 399,
             angle_owner_record_index: 402,
@@ -223,7 +227,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         offset_operation.selection.aggregate_group_record_index(),
     )
     .unwrap();
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut offset_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) =
+        offset_scope.payload_mut()
     {
         *slot = Some(offset_operation);
     }
@@ -308,7 +313,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         multi_operation.selection.aggregate_group_record_index(),
     )
     .unwrap();
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) =
+        multi_scope.payload_mut()
     {
         *slot = Some(multi_operation.clone());
     }
@@ -401,7 +407,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         per_edge_operation.selection.aggregate_group_record_index(),
     )
     .unwrap();
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) =
+        multi_scope.payload_mut()
     {
         *slot = Some(per_edge_operation);
     }
@@ -492,7 +499,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                 .aggregate_group_record_index(),
         )
         .unwrap();
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) =
+        multi_scope.payload_mut()
     {
         *slot = Some(two_sided_per_edge_operation);
     }
@@ -563,7 +571,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         382,
     );
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(DesignEdgeFlangeOperation {
             height_owner_record_index: 399,
             angle_owner_record_index: 402,
@@ -792,9 +800,14 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         317,
     );
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
-    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                318, 320, 323, 328, 331, 334, 336, 339, 343,
+            ]);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(DesignEdgeFlangeOperation {
             height_owner_record_index: 331,
             angle_owner_record_index: 334,
@@ -865,7 +878,8 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
             crate::records::feature::DesignFeatureKind::SurfacePatch,
             1,
         );
-        if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) =
+            scope.payload_mut()
         {
             *slot = boundaries;
         }
@@ -931,11 +945,16 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         crate::records::feature::DesignFeatureKind::SurfacePatch,
         1,
     );
-    scope.frame_length = 442;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
-    ]);
-    if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 442;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
+            ]);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) = scope.payload_mut()
+    {
         *slot = vec![
             DesignSurfacePatchBoundary {
                 scope_reference_ordinal: 3,
@@ -1028,10 +1047,15 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
     ));
 
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
-    ]);
-    let crate::records::feature::DesignScopePayload::SurfacePatch(boundaries) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
+            ]);
+        })
+        .unwrap();
+    let crate::records::feature::DesignScopePayloadMut::SurfacePatch(boundaries) =
+        scope.payload_mut()
     else {
         panic!("SurfacePatch fixture");
     };
@@ -1177,7 +1201,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             crate::records::feature::DesignFeatureKind::Hem,
             record_index,
         );
-        if let crate::records::feature::DesignScopePayload::Hem(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayloadMut::Hem(slot) = scope.payload_mut() {
             *slot = Some(operation);
         }
         let groups = vec![

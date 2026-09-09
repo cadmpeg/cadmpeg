@@ -864,7 +864,10 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         header.byte_offset,
     )
     .expect("compact shifted Extrude scope");
-    assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
+    assert_eq!(
+        scope.reference_count_offset(),
+        REFERENCE_COUNT_OFFSET as u64
+    );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
@@ -945,10 +948,13 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         header.byte_offset,
     )
     .expect("compact mixed Extrude scope");
-    assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
+    assert_eq!(
+        scope.reference_count_offset(),
+        REFERENCE_COUNT_OFFSET as u64
+    );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -1082,8 +1088,11 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             },
         );
         let scope = parse(&bytes, "415");
-        assert_eq!(scope.frame_length, frame_length);
-        assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+        assert_eq!(scope.frame_length(), frame_length);
+        assert_eq!(
+            scope.reference_count_offset(),
+            layout::REFERENCE_COUNT as u64
+        );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -1218,11 +1227,11 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     };
 
     let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
-    assert_eq!(to_face.frame_length, 481);
-    assert_eq!(to_face.reference_count_offset, 278);
+    assert_eq!(to_face.frame_length(), 481);
+    assert_eq!(to_face.reference_count_offset(), 278);
     assert_eq!(
         to_face
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -1248,11 +1257,11 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     assert!(direction_reversed);
 
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
-    assert_eq!(distance.frame_length, 449);
-    assert_eq!(distance.reference_count_offset, 268);
+    assert_eq!(distance.frame_length(), 449);
+    assert_eq!(distance.reference_count_offset(), 268);
     assert_eq!(
         distance
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -1370,8 +1379,11 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         ("397", b"397", b"262"),
     ] {
         let scope = parse(&make_bytes(primary_class, paired_class, 2), class_tag);
-        assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
-        assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
+        assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
+        assert_eq!(
+            scope.reference_count_offset(),
+            REFERENCE_COUNT_OFFSET as u64
+        );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ShiftedReferenceAware {
@@ -1451,9 +1463,9 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         nonzero_header.byte_offset,
     )
     .expect("nonzero-start shifted reference-aware Extrude scope");
-    assert_eq!(nonzero_scope.byte_offset, prefix_length as u64);
+    assert_eq!(nonzero_scope.byte_offset(), prefix_length as u64);
     assert_eq!(
-        nonzero_scope.reference_count_offset,
+        nonzero_scope.reference_count_offset(),
         (prefix_length + REFERENCE_COUNT_OFFSET) as u64
     );
     assert!(nonzero_scope.extrude_prologue().is_some());
@@ -1561,8 +1573,11 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         header.byte_offset,
     )
     .expect("shifted reference-aware class-323 Extrude scope");
-    assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
-    assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+    assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
+    assert_eq!(
+        scope.reference_count_offset(),
+        layout::REFERENCE_COUNT as u64
+    );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
@@ -1711,9 +1726,9 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);
-    assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
+    assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
     assert_eq!(
-        scope.reference_count_offset,
+        scope.reference_count_offset(),
         symmetric::REFERENCE_COUNT as u64
     );
     assert_eq!(

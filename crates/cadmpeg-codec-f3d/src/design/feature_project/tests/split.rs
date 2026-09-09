@@ -71,8 +71,12 @@ fn class_277_258_compact_split_face_frame_projects() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 407;
-    scope.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 407;
+            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+        })
+        .unwrap();
 
     let groups = [
         group(
@@ -121,9 +125,13 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 407;
-    scope.previous_history_state_id = Some(7);
-    scope.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 407;
+            draft.previous_history_state_id = Some(7);
+            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+        })
+        .unwrap();
 
     let groups = [
         group(

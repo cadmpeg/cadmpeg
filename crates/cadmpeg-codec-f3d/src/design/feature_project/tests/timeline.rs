@@ -51,20 +51,32 @@ fn history_state_predecessors_are_component_qualified() {
         crate::records::feature::DesignFeatureKind::Extrude,
         15,
     );
-    first.history_state_id = Some(7);
+    first
+        .try_edit(|draft| {
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
     let mut local_predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#22"),
         crate::records::feature::DesignFeatureKind::Extrude,
         22,
     );
-    local_predecessor.history_state_id = Some(7);
+    local_predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
     let mut second = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#25"),
         crate::records::feature::DesignFeatureKind::Fillet,
         25,
     );
-    second.history_state_id = Some(8);
-    second.previous_history_state_id = Some(7);
+    second
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+        })
+        .unwrap();
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
     let naming_space =
         |component_record_index, context_uuid: &str| crate::records::DesignComponentNamingSpace {
@@ -101,15 +113,23 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
-    earlier.byte_offset = 900;
-    earlier.history_state_id = Some(7);
+    earlier
+        .try_edit(|draft| {
+            draft.byte_offset = 900;
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
     let mut later = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
         crate::records::feature::DesignFeatureKind::Fillet,
         200,
     );
-    later.byte_offset = 100;
-    later.previous_history_state_id = Some(7);
+    later
+        .try_edit(|draft| {
+            draft.byte_offset = 100;
+            draft.previous_history_state_id = Some(7);
+        })
+        .unwrap();
     let scopes = vec![later.clone(), earlier.clone()];
     let timeline = |items: Vec<u64>| {
         DesignFeatureTimeline::try_new(
@@ -246,21 +266,33 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
-    predecessor.history_state_id = Some(7);
+    predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
     let mut internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#150"),
         crate::records::feature::DesignFeatureKind::BaseFeature,
         150,
     );
-    internal.history_state_id = Some(8);
-    internal.previous_history_state_id = Some(7);
+    internal
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+        })
+        .unwrap();
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         crate::records::feature::DesignFeatureKind::Fillet,
         200,
     );
-    successor.history_state_id = Some(9);
-    successor.previous_history_state_id = Some(8);
+    successor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(9);
+            draft.previous_history_state_id = Some(8);
+        })
+        .unwrap();
     let scopes = vec![successor.clone(), internal.clone(), predecessor.clone()];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
@@ -377,8 +409,8 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         crate::records::feature::DesignFeatureKind::Assemble,
         10,
     );
-    if let crate::records::feature::DesignScopePayload::Assemble(slot)
-    | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
     {
         *slot = Some(
             DesignAssemblyAlignment::try_new(
@@ -516,8 +548,8 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             crate::records::feature::DesignFeatureKind::Assemble,
             record_index,
         );
-        if let crate::records::feature::DesignScopePayload::Assemble(slot)
-        | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
+        | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
         {
             *slot = Some(
                 DesignAssemblyAlignment::try_new(
@@ -581,22 +613,34 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         crate::records::feature::DesignFeatureKind::BaseFeature,
         10,
     );
-    first_internal.history_state_id = Some(1);
-    first_internal.previous_history_state_id = Some(2);
+    first_internal
+        .try_edit(|draft| {
+            draft.history_state_id = Some(1);
+            draft.previous_history_state_id = Some(2);
+        })
+        .unwrap();
     let mut second_internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
         crate::records::feature::DesignFeatureKind::BaseFeature,
         20,
     );
-    second_internal.history_state_id = Some(2);
-    second_internal.previous_history_state_id = Some(1);
+    second_internal
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
     let mut consumer = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#30"),
         crate::records::feature::DesignFeatureKind::Move,
         30,
     );
-    consumer.history_state_id = Some(3);
-    consumer.previous_history_state_id = Some(1);
+    consumer
+        .try_edit(|draft| {
+            draft.history_state_id = Some(3);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
     let scopes = vec![first_internal, second_internal, consumer];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -649,15 +693,23 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
-    predecessor.history_state_id = Some(7);
+    predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(7);
+        })
+        .unwrap();
     let internal = |record_index| {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{record_index}"),
             crate::records::feature::DesignFeatureKind::BaseFeature,
             record_index,
         );
-        scope.history_state_id = Some(8);
-        scope.previous_history_state_id = Some(7);
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(8);
+                draft.previous_history_state_id = Some(7);
+            })
+            .unwrap();
         scope
     };
     let mut successor = DesignParameterScope::empty(
@@ -665,8 +717,12 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         crate::records::feature::DesignFeatureKind::Fillet,
         200,
     );
-    successor.history_state_id = Some(9);
-    successor.previous_history_state_id = Some(8);
+    successor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(9);
+            draft.previous_history_state_id = Some(8);
+        })
+        .unwrap();
     let scopes = vec![predecessor, internal(150), internal(160), successor.clone()];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -742,8 +798,12 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
 
     let mut mixed = second;
-    mixed.payload = crate::records::feature::DesignFeatureKind::Fillet
-        .try_into()
+    mixed
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Fillet
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     let mixed_scopes = vec![first, mixed];
     let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
@@ -804,33 +864,36 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
 
 #[test]
 fn history_state_identity_orders_cross_family_feature_dependencies() {
-    let scope = |record_index, byte_offset, kind: &str, current, previous| DesignParameterScope {
-        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
-        byte_offset,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index,
-        frame_length: 200,
-        kind_offset: byte_offset + 100,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: current,
+    let scope = |record_index, byte_offset, kind: &str, current, previous| {
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
+            byte_offset,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index,
+            frame_length: 200,
+            kind_offset: byte_offset + 100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: current,
 
-        previous_history_state_id: previous,
-        previous_history_state_id_offset: Some(byte_offset + 120),
-        reference_count_offset: byte_offset + 80,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            Vec::new(),
-            Vec::new(),
-            "reference_members",
-        )
-        .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-            .expect("nonempty family name")
-            .try_into()
+            previous_history_state_id: previous,
+            previous_history_state_id_offset: Some(byte_offset + 120),
+            reference_count_offset: byte_offset + 80,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                Vec::new(),
+                Vec::new(),
+                "reference_members",
+            )
             .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: byte_offset + 200,
+            payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
+                .expect("nonempty family name")
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: byte_offset + 200,
+        })
+        .unwrap()
     };
     let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
     let successor = scope(22, 100, "Chamfer", Some(11), Some(10));

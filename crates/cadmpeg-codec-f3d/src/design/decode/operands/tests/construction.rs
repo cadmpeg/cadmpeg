@@ -41,7 +41,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let scope = DesignParameterScope {
+    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
@@ -67,7 +67,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
-    };
+    })
+    .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -194,9 +195,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(retained_role_five.extrude_role(), None);
 
     let mut from_face_scope = scope.clone();
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut from_face_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+        from_face_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -239,9 +241,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut to_face_scope = from_face_scope.clone();
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut to_face_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+        to_face_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -424,16 +427,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
     let mut split_scope = scope.clone();
-    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace
-        .try_into()
+    split_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::SplitFace
+                .try_into()
+                .unwrap();
+            draft.frame_length = 334;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![100, 200, 201, 400, 500],
+                vec![1085, 1096, 1107, 1118, 1129],
+                "reference_members",
+            )
+            .unwrap();
+        })
         .unwrap();
-    split_scope.frame_length = 334;
-    split_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![100, 200, 201, 400, 500],
-        vec![1085, 1096, 1107, 1118, 1129],
-        "reference_members",
-    )
-    .unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     tool_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
@@ -478,7 +485,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
     compact_split_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
-    compact_split_scope.frame_length = 330;
+    compact_split_scope
+        .try_edit(|draft| {
+            draft.frame_length = 330;
+        })
+        .unwrap();
     let (compact_features, _) = project_parameter_design(
         &[],
         &[],
@@ -636,16 +647,20 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut split_body_scope = scope.clone();
-    split_body_scope.payload = crate::records::feature::DesignFeatureKind::Split
-        .try_into()
+    split_body_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Split
+                .try_into()
+                .unwrap();
+            draft.frame_length = 325;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![100, 200, 400, 500],
+                vec![1085, 1096, 1107, 1118],
+                "reference_members",
+            )
+            .unwrap();
+        })
         .unwrap();
-    split_body_scope.frame_length = 325;
-    split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![100, 200, 400, 500],
-        vec![1085, 1096, 1107, 1118],
-        "reference_members",
-    )
-    .unwrap();
     let mut split_tool_group = group.clone();
     split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     split_tool_group.record_index = 100;
@@ -719,7 +734,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut historical_split_scope = split_body_scope.clone();
-    historical_split_scope.previous_history_state_id = Some(7);
+    historical_split_scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(7);
+        })
+        .unwrap();
     let mut historical_split_tool = split_tool.clone();
     historical_split_tool.preceding_candidate_faces =
         vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")];
@@ -750,9 +769,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut multiple_targets_scope = split_body_scope.clone();
-    multiple_targets_scope.frame_length = 358;
-    multiple_targets_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
+    multiple_targets_scope
+        .try_edit(|draft| {
+            draft.frame_length = 358;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
+        })
+        .unwrap();
     let mut multiple_targets = split_target_group.clone();
     multiple_targets
         .try_set_members(
@@ -776,9 +799,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut construction_tool_scope = split_body_scope.clone();
-    construction_tool_scope.frame_length = 347;
-    construction_tool_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
+    construction_tool_scope
+        .try_edit(|draft| {
+            draft.frame_length = 347;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
+        })
+        .unwrap();
     let mut construction_tool = split_tool_group.clone();
     construction_tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
         DesignOperandRole::ROLE_0X21,
@@ -885,17 +912,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .is_none());
 
     let mut delete_scope = scope.clone();
-    delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace
-        .try_into()
+    delete_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::DeleteFace
+                .try_into()
+                .unwrap();
+            draft.frame_length = 258;
+            draft.kind_offset = 1161;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![100, 200],
+                vec![1085, 1096],
+                "reference_members",
+            )
+            .unwrap();
+        })
         .unwrap();
-    delete_scope.frame_length = 258;
-    delete_scope.kind_offset = 1161;
-    delete_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![100, 200],
-        vec![1085, 1096],
-        "reference_members",
-    )
-    .unwrap();
     let mut delete_group = group.clone();
     delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     delete_group
@@ -954,8 +985,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: true,
         }
     );
-    delete_scope.frame_length = 263;
-    delete_scope.kind_offset = 1165;
+    delete_scope
+        .try_edit(|draft| {
+            draft.frame_length = 263;
+            draft.kind_offset = 1165;
+        })
+        .unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -970,7 +1005,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace { heal: true, .. }
     ));
-    delete_scope.frame_length += 1;
+    delete_scope
+        .try_edit(|draft| {
+            draft.frame_length += 1;
+        })
+        .unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -990,12 +1029,16 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut surface_scope = delete_scope.clone();
-    let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
-    surface_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
-        .try_into()
+    let reference_bytes = 11 * surface_scope.reference_members().len() as u64;
+    surface_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
+                .try_into()
+                .unwrap();
+            draft.frame_length = 250 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
+        })
         .unwrap();
-    surface_scope.frame_length = 250 + reference_bytes;
-    surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1033,8 +1076,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: false,
         }
     );
-    surface_scope.frame_length = 251 + reference_bytes;
-    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    surface_scope
+        .try_edit(|draft| {
+            draft.frame_length = 251 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+        })
+        .unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1049,8 +1096,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace { heal: false, .. }
     ));
-    surface_scope.frame_length = 236 + reference_bytes;
-    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    surface_scope
+        .try_edit(|draft| {
+            draft.frame_length = 236 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+        })
+        .unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1083,8 +1134,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         surface_scope.paired_class_tag =
             crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        surface_scope.frame_length = base_frame + reference_bytes;
-        surface_scope.kind_offset = surface_scope.byte_offset + base_kind + reference_bytes;
+        surface_scope
+            .try_edit(|draft| {
+                draft.frame_length = base_frame + reference_bytes;
+                draft.kind_offset = draft.byte_offset + base_kind + reference_bytes;
+            })
+            .unwrap();
         let (features, _) = project_parameter_design(
             &[],
             &[],
@@ -1104,8 +1159,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     surface_scope.class_tag = crate::records::DesignClassTag::try_from("327".to_owned()).unwrap();
     surface_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    surface_scope.frame_length = 250 + reference_bytes;
-    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    surface_scope
+        .try_edit(|draft| {
+            draft.frame_length = 250 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+        })
+        .unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1125,15 +1184,23 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
-        delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace
-            .try_into()
+        delete_scope
+            .try_edit(|draft| {
+                draft.payload = crate::records::feature::DesignFeatureKind::DeleteFace
+                    .try_into()
+                    .unwrap();
+            })
             .unwrap();
         delete_scope.class_tag =
             crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         delete_scope.paired_class_tag =
             crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        delete_scope.frame_length = 232 + reference_bytes;
-        delete_scope.kind_offset = delete_scope.byte_offset + 135 + reference_bytes;
+        delete_scope
+            .try_edit(|draft| {
+                draft.frame_length = 232 + reference_bytes;
+                draft.kind_offset = draft.byte_offset + 135 + reference_bytes;
+            })
+            .unwrap();
         let (features, _) = project_parameter_design(
             &[],
             &[],
@@ -1172,8 +1239,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut remove_scope = scope.clone();
-    remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody
-        .try_into()
+    remove_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::RemoveBody
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
@@ -1191,15 +1262,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut stitch_scope = scope;
-    stitch_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
-    stitch_scope.payload =
-        crate::records::feature::DesignScopePayload::SurfaceStitch(DesignSurfaceStitchOperation {
-            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
-            gap_tolerance_offset: 40,
-            tolerance_record_index: 300,
-            settings_record_index: 301,
-        });
+    stitch_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
+            draft.payload = crate::records::feature::DesignScopePayload::SurfaceStitch(
+                DesignSurfaceStitchOperation {
+                    gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01)
+                        .unwrap(),
+                    gap_tolerance_offset: 40,
+                    tolerance_record_index: 300,
+                    settings_record_index: 301,
+                },
+            );
+        })
+        .unwrap();
     let mut stitch_group = remove_group;
     stitch_group
         .try_set_members(
@@ -1312,7 +1389,12 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             scope_kind,
             scope_record_index,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![group_record_index]);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::ReferenceRun::unlocated(vec![group_record_index]);
+            })
+            .unwrap();
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
             byte_offset: frame_at,
@@ -1345,16 +1427,25 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         crate::records::feature::DesignFeatureKind::Extrude,
         296_536,
     );
-    scope.byte_offset = 1000;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 1000;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.frame_length = 536;
-    scope.reference_count_offset = 1291;
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated((0..13).map(|index| 296_500 + index).collect());
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 536;
+            draft.reference_count_offset = 1291;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(
+                (0..13).map(|index| 296_500 + index).collect(),
+            );
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -1426,7 +1517,11 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     );
 
     let mut wrong_length = scope.clone();
-    wrong_length.frame_length = 537;
+    wrong_length
+        .try_edit(|draft| {
+            draft.frame_length = 537;
+        })
+        .unwrap();
     let group =
         parse_construction_operand_group(&bytes, &wrong_length, 0, &RecordFrame::from(&header))
             .complete()
@@ -1770,7 +1865,11 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
                 },
             ),
         );
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);

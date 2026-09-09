@@ -87,7 +87,12 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::ReferenceRun::unlocated(vec![record_index]);
+            })
+            .unwrap();
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("325-byte WorkPlane frame");
         for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {

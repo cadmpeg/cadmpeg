@@ -205,11 +205,11 @@ pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope
     is_class_296_two_sided_to_faces_layout(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-        scope.frame_length,
+        scope.frame_length(),
         scope
-            .reference_count_offset
-            .saturating_sub(scope.byte_offset),
-        scope.reference_members.len(),
+            .reference_count_offset()
+            .saturating_sub(scope.byte_offset()),
+        scope.reference_members().len(),
     ) && scope
         .extrude_prologue()
         .and_then(DesignExtrudePrologue::extent)
@@ -3066,7 +3066,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
                 && scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .any(|value| value == &owner.record_index())
         })
@@ -3080,10 +3080,10 @@ pub(super) fn bind_hem_operation_from_parameters(
                 .map(move |parameter| (owner.record_index(), parameter.source_kind()))
         })
         .collect::<Vec<_>>();
-    let Some(start) = usize::try_from(scope.byte_offset).ok() else {
+    let Some(start) = usize::try_from(scope.byte_offset()).ok() else {
         return;
     };
-    let Some(paired_at) = usize::try_from(scope.paired_byte_offset).ok() else {
+    let Some(paired_at) = usize::try_from(scope.paired_byte_offset()).ok() else {
         return;
     };
     {
@@ -3091,10 +3091,10 @@ pub(super) fn bind_hem_operation_from_parameters(
             bytes,
             start,
             paired_at,
-            scope.reference_members.values().copied(),
+            scope.reference_members().values().copied(),
             &parameter_source_kinds,
         );
-        if let crate::records::feature::DesignScopePayload::Hem(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayloadMut::Hem(slot) = scope.payload_mut() {
             *slot = construction;
         }
     }

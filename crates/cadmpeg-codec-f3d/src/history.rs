@@ -822,7 +822,7 @@ pub(crate) fn bind_feature_outputs(
             continue;
         };
         let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+            (scope.history_state_id(), scope.previous_history_state_id())
         else {
             continue;
         };
@@ -984,7 +984,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
+            if let Some(previous_state_id) = scope.previous_history_state_id() {
                 bind_body_recipe_body_selection(
                     tools,
                     &feature_id,
@@ -1013,7 +1013,7 @@ pub(crate) fn bind_feature_body_selections(
         }
         if let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition {
             let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id, scope.previous_history_state_id)
+                (scope.history_state_id(), scope.previous_history_state_id())
             else {
                 bind_direct_body_recipe_body_selection(target, scope, inputs);
                 bind_direct_body_recipe_body_selection(tools, scope, inputs);
@@ -1216,7 +1216,7 @@ pub(crate) fn bind_feature_body_selections(
             ..
         } = &mut feature.definition
         {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
+            if let Some(previous_state_id) = scope.previous_history_state_id() {
                 bind_body_recipe_body_selection(
                     targets,
                     &feature_id,
@@ -1231,7 +1231,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         if let FeatureDefinition::DeleteBody { bodies, .. } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
+            if let Some(previous_state_id) = scope.previous_history_state_id() {
                 bind_body_recipe_body_selection(
                     bodies,
                     &feature_id,
@@ -1246,7 +1246,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         if let FeatureDefinition::Scale { bodies, .. } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
+            if let Some(previous_state_id) = scope.previous_history_state_id() {
                 bind_body_recipe_body_selection(
                     bodies,
                     &feature_id,
@@ -1292,7 +1292,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+            (scope.history_state_id(), scope.previous_history_state_id())
         else {
             bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             continue;
@@ -1543,7 +1543,7 @@ fn bind_pattern_body_selections(
         } else {
             continue;
         };
-        if let Some(previous_state_id) = scope.previous_history_state_id {
+        if let Some(previous_state_id) = scope.previous_history_state_id() {
             bind_body_recipe_body_selection(
                 selection,
                 &feature.id,
@@ -2049,7 +2049,7 @@ pub(crate) fn bind_feature_face_selections(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let Some(state_id) = scope.history_state_id else {
+        let Some(state_id) = scope.history_state_id() else {
             continue;
         };
         let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
@@ -2263,7 +2263,7 @@ fn bind_surface_stitch_face_selection(
     if native_id != scope.id {
         return;
     }
-    let Some(input_end) = scope.reference_members.len().checked_sub(2) else {
+    let Some(input_end) = scope.reference_members().len().checked_sub(2) else {
         return;
     };
     if input_end == 0 || !input_end.is_multiple_of(2) {
@@ -2287,10 +2287,10 @@ fn bind_surface_stitch_face_selection(
             .enumerate()
             .zip(
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .step_by(2)
-                    .zip(scope.reference_members.values().skip(1).step_by(2)),
+                    .zip(scope.reference_members().values().skip(1).step_by(2)),
             )
             .any(|((ordinal, group), (group_reference, member_reference))| {
                 u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
@@ -2487,7 +2487,7 @@ pub(crate) fn bind_feature_path_selections(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let Some(previous_state_id) = scope.previous_history_state_id else {
+        let Some(previous_state_id) = scope.previous_history_state_id() else {
             continue;
         };
         let feature_id = feature.id.clone();
@@ -2634,14 +2634,14 @@ pub(crate) fn project_feature_input_topologies(
                 return None;
             }
             let previous_state_id = scope
-                .previous_history_state_id
+                .previous_history_state_id()
                 .or_else(|| {
                     crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
                 })
                 .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
                 .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
-                .history_state_id
+                .history_state_id()
                 .and_then(|state_id| {
                     unique_history_state_pair(histories, state_id, previous_state_id)
                         .map(|(_, _, previous)| previous)
@@ -2710,7 +2710,7 @@ pub(crate) fn bind_vertex_recipe_history(
                 let candidate_ordinal =
                     *source_ordinals.get(&(candidate_stream, candidate.record_index))?;
                 (candidate_stream == stream && candidate_ordinal < ordinal)
-                    .then_some((candidate_ordinal, candidate.history_state_id?))
+                    .then_some((candidate_ordinal, candidate.history_state_id()?))
             });
             let predecessor = predecessors.next()?;
             let predecessor = predecessors.fold(predecessor, |latest, candidate| {
@@ -2833,7 +2833,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
             continue;
         }
         let (Some(state_id), Some(previous_state_id)) = (
-            scope.history_state_id,
+            scope.history_state_id(),
             effective_scope_previous_history_state_id(scope, histories),
         ) else {
             continue;
@@ -3078,8 +3078,8 @@ pub(crate) fn effective_scope_previous_history_state_id(
     scope: &crate::records::feature::DesignParameterScope,
     histories: &[AsmHistory],
 ) -> Option<i64> {
-    scope.previous_history_state_id.or_else(|| {
-        let state_id = scope.history_state_id?;
+    scope.previous_history_state_id().or_else(|| {
+        let state_id = scope.history_state_id()?;
         let (history, state) = unique_history_state(histories, state_id)?;
         linked_previous_state_id(history, state)
     })
@@ -3128,7 +3128,7 @@ pub(crate) fn hem_geometry_semantics(
         gap_length_form: None,
     };
     let (Some(state_id), Some(previous_state_id)) = (
-        scope.history_state_id,
+        scope.history_state_id(),
         effective_scope_previous_history_state_id(scope, histories),
     ) else {
         return unresolved;
@@ -3378,8 +3378,8 @@ pub(crate) fn bind_scope_histories(
     let candidates = scopes
         .iter()
         .filter_map(|scope| {
-            let state_id = scope.history_state_id?;
-            let candidates = if let Some(previous_state_id) = scope.previous_history_state_id {
+            let state_id = scope.history_state_id()?;
+            let candidates = if let Some(previous_state_id) = scope.previous_history_state_id() {
                 let direct = histories
                     .iter()
                     .filter(|history| {
@@ -3495,13 +3495,14 @@ pub(crate) fn bind_scope_histories(
     }
     let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
-        let (Some(stream), Some(state_id)) =
-            (crate::ids::native_stream(&scope.id), scope.history_state_id)
-        else {
+        let (Some(stream), Some(state_id)) = (
+            crate::ids::native_stream(&scope.id),
+            scope.history_state_id(),
+        ) else {
             continue;
         };
         groups
-            .entry((stream, state_id, scope.previous_history_state_id))
+            .entry((stream, state_id, scope.previous_history_state_id()))
             .or_default()
             .push(index);
     }
@@ -3764,7 +3765,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             None
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
-        let Some(state_id) = scope.history_state_id else {
+        let Some(state_id) = scope.history_state_id() else {
             continue;
         };
         let Some(previous_state_id) =
@@ -3925,7 +3926,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                         && group.extrude_face_role()
                             == Some(crate::records::topology::DesignExtrudeFaceRole::Termination)
                 });
-        operand.resolved_face_slots = match &scope.payload {
+        operand.resolved_face_slots = match &scope.payload() {
             crate::records::feature::DesignScopePayload::OffsetFaces(Some(_))
             | crate::records::feature::DesignScopePayload::DecalerLesFaces(Some(_)) => {
                 let direct = resolve_direct_face_recipe_clauses(
@@ -4720,7 +4721,7 @@ fn body_recipe_operand_history_pair<'a>(
     if matching_scopes.next().is_some() {
         return None;
     }
-    let state_id = scope.history_state_id?;
+    let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     let (history, state, previous) =
         unique_history_state_pair(histories, state_id, previous_state_id)?;
@@ -4983,7 +4984,7 @@ fn bind_profile_face_group_cardinality(
                 continue;
             }
             let (Some(state_id), Some(previous_state_id)) = (
-                scope.history_state_id,
+                scope.history_state_id(),
                 effective_scope_previous_history_state_id(scope, scoped_histories),
             ) else {
                 continue;
@@ -5623,7 +5624,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let Some(state_id) = scope.history_state_id else {
+        let Some(state_id) = scope.history_state_id() else {
             bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
             continue;
         };
@@ -6495,7 +6496,7 @@ fn bind_face_selection(
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             scope,
-            scope.previous_history_state_id,
+            scope.previous_history_state_id(),
             group,
             operands,
             updated_face_slots,
@@ -6996,7 +6997,7 @@ pub(crate) fn bind_entity_selection_history(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let Some(previous_state_id) = scope.previous_history_state_id else {
+        let Some(previous_state_id) = scope.previous_history_state_id() else {
             continue;
         };
         let mut matching_states = histories
@@ -7044,8 +7045,8 @@ pub(crate) fn bind_hole_selection_history(
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
-        let history_state_id = scope.history_state_id;
-        let previous_history_state_id = scope.previous_history_state_id;
+        let history_state_id = scope.history_state_id();
+        let previous_history_state_id = scope.previous_history_state_id();
         let Some(construction) = scope.hole_construction_mut() else {
             continue;
         };
@@ -7462,8 +7463,8 @@ pub(crate) fn bind_mirror_selection_planes(
     for scope in scopes {
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
-        let history_state_id = scope.history_state_id;
-        let previous_history_state_id = scope.previous_history_state_id;
+        let history_state_id = scope.history_state_id();
+        let previous_history_state_id = scope.previous_history_state_id();
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
@@ -8093,10 +8094,10 @@ pub(crate) fn bind_edge_identity_history(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let Some(previous_state_id) = scope.previous_history_state_id else {
+        let Some(previous_state_id) = scope.previous_history_state_id() else {
             continue;
         };
-        let current_state_id = scope.history_state_id;
+        let current_state_id = scope.history_state_id();
         let bound_history = bound_scope_history(&scope.id, scope_histories, histories);
         let scoped_identities = bound_history
             .and_then(|history| identities_by_history.get(history.id.as_str()))

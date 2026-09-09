@@ -33,16 +33,20 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         crate::records::feature::DesignFeatureKind::Assemble,
         500,
     );
-    assembly.frame_length = 772;
-    assembly.reference_members = crate::records::ReferenceRun::unlocated(
-        first_members
-            .into_iter()
-            .chain(second_members)
-            .chain([90, 91])
-            .collect(),
-    );
-    if let crate::records::feature::DesignScopePayload::Assemble(slot)
-    | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    assembly
+        .try_edit(|draft| {
+            draft.frame_length = 772;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(
+                first_members
+                    .into_iter()
+                    .chain(second_members)
+                    .chain([90, 91])
+                    .collect(),
+            );
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
     {
         *slot = Some(axial_test_alignment([first_transform, second_transform]));
     }
@@ -163,11 +167,16 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         crate::records::feature::DesignFeatureKind::Assemble,
         500,
     );
-    assembly.frame_length = 705;
-    assembly.reference_members =
-        crate::records::ReferenceRun::unlocated(members.into_iter().chain([90, 91]).collect());
-    if let crate::records::feature::DesignScopePayload::Assemble(slot)
-    | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    assembly
+        .try_edit(|draft| {
+            draft.frame_length = 705;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(
+                members.into_iter().chain([90, 91]).collect(),
+            );
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
     {
         *slot = Some(axial_test_alignment([first_transform, second_transform]));
     }
