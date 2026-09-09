@@ -131,15 +131,15 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
 /// not own variants for them.
 #[must_use]
 pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
-    // `docs/dialects.toml` in this crate is a symlink to the workspace file, so
-    // the packaged crate is self-contained (see `cadmpeg-registry`).
-    let registry: toml::Value = toml::from_str(include_str!("../docs/dialects.toml"))
-        .expect("docs/dialects.toml parses as TOML");
+    // This crate is `publish = false`, so reading the sibling crate's file is safe.
+    let registry: toml::Value =
+        toml::from_str(include_str!("../../cadmpeg-registry/docs/dialects.toml"))
+            .expect("crates/cadmpeg-registry/docs/dialects.toml parses as TOML");
     let prefix = format!("{prefix}:");
     let ids = registry
         .get("dialect")
         .and_then(toml::Value::as_array)
-        .expect("docs/dialects.toml declares dialect rows")
+        .expect("crates/cadmpeg-registry/docs/dialects.toml declares dialect rows")
         .iter()
         .filter(|row| {
             row.get("unknown_kind").and_then(toml::Value::as_str) != Some("detect-unreachable")

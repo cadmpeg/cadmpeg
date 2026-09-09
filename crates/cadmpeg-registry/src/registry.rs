@@ -11,10 +11,8 @@ use serde::Deserialize;
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};
 use crate::{build_encoder, Format};
 
-// `docs/` inside this crate holds symlinks to the workspace `docs/` registries.
-// `cargo package` dereferences them, so the published tarball is self-contained;
-// a path that climbs above the crate root is absent from the tarball and fails
-// `cargo publish` verification.
+// The registries live inside this crate so the published tarball carries them;
+// `cargo package` omits paths above the crate root.
 const IDENTITY_TOML: &str = include_str!("../docs/dialects.toml");
 const SUPPORT_TOML: &str = include_str!("../docs/dialect-support.toml");
 

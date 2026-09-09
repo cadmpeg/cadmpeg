@@ -4,7 +4,7 @@
 
 Every rule the checker enforces is exercised here by synthesizing a registry
 that violates exactly that rule and asserting the matching failure fires. The
-last test runs the checker against the committed ``docs/dialects.toml`` and
+last test runs the checker against the committed ``crates/cadmpeg-registry/docs/dialects.toml`` and
 requires a clean pass.
 """
 
@@ -48,11 +48,12 @@ class RegistryCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
+            (root / "crates" / "cadmpeg-registry" / "docs").mkdir(parents=True)
             (root / checker.ID_CONFORMANCE_REL).write_bytes(
                 (REPO / checker.ID_CONFORMANCE_REL).read_bytes()
             )
             if text is not None:
-                (root / "docs" / "dialects.toml").write_text(text, encoding="utf-8")
+                (root / "crates" / "cadmpeg-registry" / "docs" / "dialects.toml").write_text(text, encoding="utf-8")
             for rel in files or []:
                 target = root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -492,7 +493,8 @@ class TestCommittedRegistry(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
-            (root / "docs" / "dialects.toml").write_text("nonsense = =\n", encoding="utf-8")
+            (root / "crates" / "cadmpeg-registry" / "docs").mkdir(parents=True)
+            (root / "crates" / "cadmpeg-registry" / "docs" / "dialects.toml").write_text("nonsense = =\n", encoding="utf-8")
             with contextlib.redirect_stderr(io.StringIO()) as err:
                 code = checker.main([str(root)])
         self.assertEqual(code, 1)

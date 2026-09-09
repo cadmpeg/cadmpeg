@@ -18,7 +18,7 @@
 //!   specification does not state one;
 //! * `[[record.code]]` cross-checks assert a literal substring is present in a
 //!   named source file, which is how a table claims agreement with a parser;
-//! * a record's `dialects` key names the `docs/dialects.toml` rows whose
+//! * a record's `dialects` key names the `crates/cadmpeg-registry/docs/dialects.toml` rows whose
 //!   grammar reads it at these offsets, and every id must be a declared row —
 //!   a table cannot key on a dialect that does not exist. Version scoping used
 //!   to live in record names alone, where nothing could check it and applying
@@ -128,7 +128,7 @@ struct Record {
     note: String,
     /// Registry dialect ids whose grammar reads this record at these offsets.
     ///
-    /// A positive claim about `docs/dialects.toml` rows and only those rows.
+    /// A positive claim about `crates/cadmpeg-registry/docs/dialects.toml` rows and only those rows.
     /// An empty list makes no claim: it says the table has not scoped the
     /// record, never that the record is dialect-invariant. Every listed id must
     /// be a declared row, so a table cannot key on a dialect that does not
@@ -617,7 +617,7 @@ struct Context {
     root: PathBuf,
     /// Spec path -> section number -> normalized body.
     specs: BTreeMap<String, BTreeMap<String, String>>,
-    /// Every `id` declared by a `[[dialect]]` row in `docs/dialects.toml`.
+    /// Every `id` declared by a `[[dialect]]` row in `crates/cadmpeg-registry/docs/dialects.toml`.
     dialects: Option<BTreeSet<String>>,
 }
 
@@ -642,10 +642,10 @@ impl Context {
             struct Row {
                 id: String,
             }
-            let text = read_text(&self.root.join("docs/dialects.toml"))
-                .expect("docs/dialects.toml is readable");
-            let registry: Registry =
-                toml::from_str(&text).expect("docs/dialects.toml parses as TOML");
+            let text = read_text(&self.root.join("crates/cadmpeg-registry/docs/dialects.toml"))
+                .expect("crates/cadmpeg-registry/docs/dialects.toml is readable");
+            let registry: Registry = toml::from_str(&text)
+                .expect("crates/cadmpeg-registry/docs/dialects.toml parses as TOML");
             registry.dialects.into_iter().map(|row| row.id).collect()
         })
     }
@@ -858,7 +858,7 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
                 push(
                     &mut errors,
                     format!(
-                        "{at}: `dialects` names `{id}`, which is not a row in docs/dialects.toml"
+                        "{at}: `dialects` names `{id}`, which is not a row in crates/cadmpeg-registry/docs/dialects.toml"
                     ),
                 );
             }
@@ -1304,7 +1304,10 @@ fn layout_validator_rejects_broken_tables() {
         ("value-width-mismatch.toml", "value is 2 bytes"),
         ("parsed-by-missing.toml", "`parsed_by` path does not exist"),
         ("code-check-in-tests.toml", "names a test file"),
-        ("unknown-dialect.toml", "is not a row in docs/dialects.toml"),
+        (
+            "unknown-dialect.toml",
+            "is not a row in crates/cadmpeg-registry/docs/dialects.toml",
+        ),
     ];
     let root = repo_root();
     let dir = root.join("crates/cadmpeg/tests/fixtures/layout-invalid");

@@ -66,7 +66,7 @@ const DECLARED_SPLMSSTR_VERSION: &str = "splmsstr_version";
 /// Key of the legacy UGII payload version byte in [`DialectMatch::declared`].
 const DECLARED_UGII_VERSION: &str = "ugii_version";
 
-/// One reportable row of `docs/dialects.toml` under the `nx` namespace.
+/// One reportable row of `crates/cadmpeg-registry/docs/dialects.toml` under the `nx` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum NxDialect {
     /// The `SPLMSSTR` member table.

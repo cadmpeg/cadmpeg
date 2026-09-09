@@ -104,7 +104,7 @@ fn join(values: impl IntoIterator<Item = String>) -> String {
     values.into_iter().collect::<Vec<_>>().join(",")
 }
 
-/// One row of `docs/dialects.toml` under the `inventor` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `inventor` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InventorDialect {
     /// `RSeDb` schema 31 and `RSe` Meta Stream version 8, both declared.

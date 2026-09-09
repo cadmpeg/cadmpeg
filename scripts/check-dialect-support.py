@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Check the dialect capability registry, ``docs/dialect-support.toml``.
+"""Check the dialect capability registry, ``crates/cadmpeg-registry/docs/dialect-support.toml``.
 
-The identity registry (``docs/dialects.toml``, checked by
+The identity registry (``crates/cadmpeg-registry/docs/dialects.toml``, checked by
 ``scripts/check-dialects.py``) says which dialects exist. This one says what
 cadmpeg does with each of them, and it changes per commit. It is a sibling
 script rather than a section of the identity checker because its inputs are
@@ -44,8 +44,8 @@ from pathlib import Path
 from dialect_support_data import REGISTRY_ONLY_FORMATS, RegistryDataError, load_documents
 
 ROOT = Path(__file__).resolve().parent.parent
-IDENTITY_REL = Path("docs") / "dialects.toml"
-SUPPORT_REL = Path("docs") / "dialect-support.toml"
+IDENTITY_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialects.toml"
+SUPPORT_REL = Path("crates") / "cadmpeg-registry" / "docs" / "dialect-support.toml"
 EVALUATIONS_REL = Path("docs") / "evaluations.toml"
 
 ROW_KEYS = frozenset({"dialect", "read", "write", "refusal", "reason"})
