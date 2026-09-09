@@ -568,8 +568,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
-                let construction = definition_payload.construction();
-
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
                     ids: &ModelIndex<'_>,
@@ -595,6 +593,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
@@ -631,8 +630,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
-                let construction = definition_payload.construction();
-
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
                     ids: &ModelIndex<'_>,
@@ -658,6 +655,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
@@ -667,8 +665,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
-                let construction = definition_payload.construction();
-
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
                     ids: &ModelIndex<'_>,
@@ -694,6 +690,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 for entry in construction
                     .sections
                     .iter()
@@ -967,10 +964,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Sweep(definition_payload) => {
-                let profile = definition_payload.profile();
-                let spine = definition_payload.spine();
-                let native = definition_payload.native();
-
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
                     ids: &ModelIndex<'_>,
@@ -996,6 +989,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
+                let profile = definition_payload.profile();
+                let spine = definition_payload.spine();
+                let native = definition_payload.native();
                 for curve in [profile, spine] {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
