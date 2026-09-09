@@ -855,7 +855,7 @@ impl JsonSchema for SubdGripWedge {
 #[serde(try_from = "SubdSecondaryGripWire")]
 pub struct SubdSecondaryGrip {
     /// Index in the source cage's `0g` grip array.
-    pub source_index: u32,
+    source_index: u32,
     /// Grip position in document units.
     point: Point3,
     /// Positive rational grip weight.
@@ -890,6 +890,11 @@ impl SubdSecondaryGrip {
             point,
             weight,
         })
+    }
+
+    /// Index in the source cage's grip array.
+    pub const fn source_index(&self) -> u32 {
+        self.source_index
     }
 
     /// Grip position in document units.
