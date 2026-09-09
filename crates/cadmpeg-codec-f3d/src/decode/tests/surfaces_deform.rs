@@ -479,7 +479,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     let TSplineSubtransform::Reference {
         resolved: Some(resolved),
         ..
-    } = &construction.subtransform
+    } = construction.subtransform()
     else {
         panic!("expected resolved T-spline reference")
     };
@@ -507,7 +507,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         panic!("expected round-trip T-spline surface")
     };
     assert!(matches!(
-        construction.subtransform,
+        construction.subtransform(),
         TSplineSubtransform::Inline(_)
     ));
 }

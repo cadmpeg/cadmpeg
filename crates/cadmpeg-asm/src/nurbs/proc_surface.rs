@@ -258,8 +258,7 @@ impl DecodedProceduralSurfaceDefinition {
                 EmbeddedSweepSurfaceLayout::Legacy { .. } => None,
             },
             Self::TSpline(construction) => construction
-                .revision_form
-                .as_ref()
+                .revision_form()
                 .and_then(|form| form.cache.fit_tolerance()),
             Self::Deformable(construction) => match &construction.layout {
                 EmbeddedDeformableSurfaceLayout::Revision(form) => form.cache.fit_tolerance(),
@@ -3772,7 +3771,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     ))
 }
 
-fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+fn t_spl_sur(toks: &[Token], table: &SubtypeTable) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
 
     enum Layout {
@@ -3862,10 +3861,18 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 .ok()?,
             )
         }
-        "ref" => TSplineSubtransform::Reference {
-            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
-            resolved: None,
-        },
+        "ref" => {
+            let index = cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?;
+            let inline = resolve_t_spline_subtransform(
+                usize::try_from(index.get()).ok()?,
+                table,
+                &mut Vec::new(),
+            )?;
+            TSplineSubtransform::Reference {
+                index,
+                resolved: Some(Box::new(inline)),
+            }
+        }
         _ => return None,
     };
     if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
@@ -3881,32 +3888,38 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             discontinuity_flag,
             parameter_ranges,
         } => DecodedProceduralSurface::legacy(
-            DecodedProceduralSurfaceDefinition::TSpline(Box::new(TSplineSurfaceConstruction {
-                parameter_ranges,
-                type_code,
-                subtransform,
-                trailing_value,
-                discontinuities,
-                discontinuity_flag,
-                revision_form: None,
-            })),
+            DecodedProceduralSurfaceDefinition::TSpline(Box::new(
+                TSplineSurfaceConstruction::try_new(
+                    parameter_ranges,
+                    type_code,
+                    subtransform,
+                    trailing_value,
+                    discontinuities,
+                    discontinuity_flag,
+                    None,
+                )
+                .ok()?,
+            )),
             Some(cache_fit_tolerance),
         ),
         Layout::Revision(form) => {
             let bounds = form.support_bounds;
             DecodedProceduralSurface::revision(DecodedProceduralSurfaceDefinition::TSpline(
-                Box::new(TSplineSurfaceConstruction {
-                    parameter_ranges: [
-                        [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
-                        [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
-                    ],
-                    type_code,
-                    subtransform,
-                    trailing_value,
-                    discontinuities: form.discontinuities.clone(),
-                    discontinuity_flag: form.tail_flag,
-                    revision_form: Some(*form),
-                }),
+                Box::new(
+                    TSplineSurfaceConstruction::try_new(
+                        [
+                            [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
+                            [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
+                        ],
+                        type_code,
+                        subtransform,
+                        trailing_value,
+                        form.discontinuities.clone(),
+                        form.tail_flag,
+                        Some(*form),
+                    )
+                    .ok()?,
+                ),
             ))
         }
     })
@@ -4346,9 +4359,9 @@ fn procedural_resolving_refs(
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(mut decoded) = defm_spl_sur(toks)
+    if let Some(decoded) = defm_spl_sur(toks)
         .or_else(|| helix_spl_sur(toks))
-        .or_else(|| t_spl_sur(toks))
+        .or_else(|| t_spl_sur(toks, table))
         .or_else(|| exact_spl_sur(toks))
         .or_else(|| comp_spl_sur(toks))
         .or_else(|| taper_spl_sur(toks, Some(table)))
@@ -4371,18 +4384,6 @@ fn procedural_resolving_refs(
         .or_else(|| full_rb_blend_spl_sur(toks, table))
         .or_else(|| compact_rb_blend_spl_sur(toks))
     {
-        if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
-            if let cadmpeg_ir::geometry::TSplineSubtransform::Reference { index, resolved } =
-                &mut construction.subtransform
-            {
-                let inline = resolve_t_spline_subtransform(
-                    usize::try_from(index.get()).ok()?,
-                    table,
-                    &mut Vec::new(),
-                )?;
-                *resolved = Some(Box::new(inline));
-            }
-        }
         return Some(decoded);
     }
     // Follow references for records whose own construction is absent. A record

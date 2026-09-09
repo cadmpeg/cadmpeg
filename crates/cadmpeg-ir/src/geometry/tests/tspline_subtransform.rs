@@ -39,3 +39,52 @@ fn subtransform_wire_rejects_invalid_payloads_and_recursive_references() {
         assert!(serde_json::from_value::<TSplineSubtransform>(wire).is_err());
     }
 }
+
+#[test]
+fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
+    use super::super::TSplineSurfaceConstruction;
+
+    let inline = TSplineSubtransform::Inline(
+        InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
+    );
+    let admit = |ranges, subtransform| {
+        TSplineSurfaceConstruction::try_new(
+            ranges,
+            0,
+            subtransform,
+            0,
+            Default::default(),
+            false,
+            None,
+        )
+    };
+    let valid = admit([[0.0, 1.0], [2.0, 2.0]], inline.clone()).unwrap();
+    assert_eq!(valid.parameter_ranges(), [[0.0, 1.0], [2.0, 2.0]]);
+    for ranges in [
+        [[1.0, 0.0], [0.0, 1.0]],
+        [[0.0, 1.0], [1.0, 0.0]],
+        [[f64::NAN, 1.0], [0.0, 1.0]],
+        [[0.0, 1.0], [0.0, f64::INFINITY]],
+    ] {
+        assert!(admit(ranges, inline.clone()).is_err());
+    }
+    assert!(admit(
+        [[0.0, 1.0]; 2],
+        TSplineSubtransform::Reference {
+            index: SubtypeTableIndex::try_new(0).unwrap(),
+            resolved: None,
+        },
+    )
+    .is_err());
+    let wire = serde_json::to_value(&valid).unwrap();
+    assert_eq!(
+        serde_json::from_value::<TSplineSurfaceConstruction>(wire.clone()).unwrap(),
+        valid
+    );
+    let mut reversed = wire.clone();
+    reversed["parameter_ranges"] = json!([[1.0, 0.0], [0.0, 1.0]]);
+    assert!(serde_json::from_value::<TSplineSurfaceConstruction>(reversed).is_err());
+    let mut unresolved = wire;
+    unresolved["subtransform"] = json!({"kind": "reference", "index": 0});
+    assert!(serde_json::from_value::<TSplineSurfaceConstruction>(unresolved).is_err());
+}

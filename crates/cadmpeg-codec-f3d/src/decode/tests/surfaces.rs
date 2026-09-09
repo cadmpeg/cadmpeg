@@ -1010,9 +1010,9 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         )
         .expect("T-spline surface decode");
     let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
-    assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
-    assert_eq!((native.type_code, native.trailing_value), (7, 9));
-    let TSplineSubtransform::Inline(inline) = &native.subtransform else {
+    assert_eq!(native.parameter_ranges(), [[-20.0, 30.0], [-40.0, 50.0]]);
+    assert_eq!((native.type_code(), native.trailing_value()), (7, 9));
+    let TSplineSubtransform::Inline(inline) = native.subtransform() else {
         panic!("expected inline T-spline subtransform")
     };
     assert!(inline.program.as_str().contains("v 1 0 0 0"));

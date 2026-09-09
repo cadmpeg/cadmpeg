@@ -412,7 +412,7 @@ fn native_procedural_surface_definition(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "t_spl_sur")?;
-            if let Some(form) = &construction.revision_form {
+            if let Some(form) = construction.revision_form() {
                 if form.revision <= 0 {
                     return Err(CodecError::Malformed(
                         "revision-gated t_spl_sur requires a positive revision".into(),
@@ -423,7 +423,7 @@ fn native_procedural_surface_definition(
                 for bound in &form.support_bounds {
                     native_optional_f64(bytes, *bound);
                 }
-                native_enum(bytes, construction.type_code);
+                native_enum(bytes, construction.type_code());
             } else {
                 native_nurbs_surface(bytes, solved_cache)?;
                 native_solved_cache_fit_tolerance(
@@ -431,19 +431,19 @@ fn native_procedural_surface_definition(
                     "T-spline surface",
                     procedural.cache_fit_tolerance(),
                 )?;
-                for values in &construction.discontinuities {
+                for values in construction.discontinuities() {
                     native_compound_loft_float_array(bytes, values)?;
                 }
-                bytes.push(native_bool(construction.discontinuity_flag));
-                for range in &construction.parameter_ranges {
+                bytes.push(native_bool(construction.discontinuity_flag()));
+                for range in &construction.parameter_ranges() {
                     for value in range {
                         native_f64(bytes, *value / LEN_TO_MM);
                     }
                 }
-                native_i64(bytes, construction.type_code);
+                native_i64(bytes, construction.type_code());
             }
             bytes.push(0x0f);
-            let inline = construction.subtransform.inline().ok_or_else(|| {
+            let inline = construction.subtransform().inline().ok_or_else(|| {
                 CodecError::NotImplemented(
                     "source-less referenced t_spl_subtrans_object has no resolved target".into(),
                 )
@@ -455,7 +455,7 @@ fn native_procedural_surface_definition(
             }
             native_u16_string(bytes, inline.values.as_str())?;
             bytes.push(0x10);
-            native_i64(bytes, construction.trailing_value);
+            native_i64(bytes, construction.trailing_value());
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Exact { spline } => {
