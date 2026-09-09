@@ -1984,9 +1984,11 @@ fn try_decode_text_model(
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
     for name in &names {
         let bytes = scan.entry_bytes(name)?;
-        let Ok(stream) = cadmpeg_asm::sat::parse(bytes) else {
-            continue;
-        };
+        let stream = cadmpeg_asm::sat::parse(bytes).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "text BREP entry {name} failed to parse: {error}"
+            ))
+        })?;
         let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
@@ -3939,15 +3941,11 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let Some(planar) = crate::ids::neutral_sketch_id(entity) else {
-                continue;
-            };
+            let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
                 note(planar.as_str(), "sketch");
             }
-            let Some(spatial) = crate::ids::neutral_spatial_sketch_id(entity) else {
-                continue;
-            };
+            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
                 note(spatial.as_str(), "spatial_sketch");
             }

@@ -187,7 +187,6 @@ pub(crate) fn exact_one_sided_extrude_prologue(
         return None;
     }
     let extent = super::extrude_sheet_metal::exact_extrude_extent(
-        super::extrude_sheet_metal::ExtrudeExtentContext::Common,
         direction_face_extend_values[0],
         side_extent_discriminators,
     )?;

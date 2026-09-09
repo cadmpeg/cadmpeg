@@ -158,7 +158,7 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform.rows());
+                apply_occurrence_transform(&mut component_ir.model, transform.rows())?;
             }
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let mut scope = OccurrenceScope {
@@ -264,25 +264,33 @@ fn occurrence_key(reference: &XrefReference) -> String {
     format!("{role}/occurrence-{}", reference.occurrence_ordinal)
 }
 
-fn apply_occurrence_transform(model: &mut Model, source_rows: [[f64; 4]; 4]) {
+fn apply_occurrence_transform(
+    model: &mut Model,
+    source_rows: [[f64; 4]; 4],
+) -> Result<(), CodecError> {
     let mut rows = source_rows;
     for row in rows.iter_mut().take(3) {
         row[3] *= 10.0;
     }
-    let occurrence = cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+    let occurrence = cadmpeg_ir::transform::Transform::from_rows(rows).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "F3Z occurrence translation is not a finite affine transform"
+        ))
+    })?;
     for body in &mut model.bodies {
         body.transform = Some(match body.transform {
-            Some(local) => compose_transforms(occurrence, local),
+            Some(local) => compose_transforms(occurrence, local)?,
             None => occurrence,
         });
     }
+    Ok(())
 }
 
 /// Composes a component-local transform after its archive occurrence transform.
 pub(super) fn compose_transforms(
     outer: cadmpeg_ir::transform::Transform,
     inner: cadmpeg_ir::transform::Transform,
-) -> cadmpeg_ir::transform::Transform {
+) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
     let mut rows = [[0.0; 4]; 4];
     for (row, values) in rows.iter_mut().enumerate() {
         for (column, value) in values.iter_mut().enumerate() {
@@ -291,7 +299,11 @@ pub(super) fn compose_transforms(
                 .sum();
         }
     }
-    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform")
+    cadmpeg_ir::transform::Transform::from_rows(rows).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "F3Z occurrence composition is not a finite affine transform"
+        ))
+    })
 }
 
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
@@ -411,5 +423,40 @@ fn rescope_json_fields(fields: &mut serde_json::Map<String, serde_json::Value>, 
     }
     for value in fields.values_mut() {
         rescope_json(value, occurrence);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occurrence_translation_overflow_is_rejected() {
+        let rows = [
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let source = cadmpeg_ir::transform::Transform::from_rows(rows).unwrap();
+        let error = apply_occurrence_transform(&mut Model::default(), source.rows()).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("F3Z occurrence translation is not a finite affine transform"));
+    }
+
+    #[test]
+    fn occurrence_composition_overflow_is_rejected() {
+        let transform = cadmpeg_ir::transform::Transform::from_rows([
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+        let error = compose_transforms(transform, transform).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("F3Z occurrence composition is not a finite affine transform"));
     }
 }

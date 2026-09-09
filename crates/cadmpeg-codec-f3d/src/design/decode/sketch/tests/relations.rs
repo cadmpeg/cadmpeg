@@ -440,3 +440,20 @@ fn genesis_relation_record(
     out.extend_from_slice(&[0u8; 4]);
     out
 }
+
+#[test]
+fn indexed_record_index_requires_a_complete_class_header() {
+    use crate::design::decode::sketch::indexed_record_index;
+
+    let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
+    assert_eq!(indexed_record_index(&header, 0), Some(42));
+    for (offset, byte) in [(0, 2), (4, b'x'), (5, 0), (6, b' ')] {
+        let mut invalid = header;
+        invalid[offset] = byte;
+        assert_eq!(indexed_record_index(&invalid, 0), None);
+    }
+    for length in 0..header.len() {
+        assert_eq!(indexed_record_index(&header[..length], 0), None);
+    }
+    assert_eq!(indexed_record_index(&header, usize::MAX), None);
+}
