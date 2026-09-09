@@ -969,6 +969,52 @@ fn test_association() -> SourceObjectAssociation {
 }
 
 #[test]
+fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
+    let object = object_record(ArchiveVersion::V5, 8, [0; 16]);
+    let scan = scan_with_objects(&[object]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        let mut extrusion = cap_extrusion([true, false]);
+        extrusion.cap_normals[0] = Vector3::new(0.0, 0.0, 0.0);
+        assert!(!context.commit_extrusion(0, extrusion));
+        assert!(context.report.phase_warnings.iter().any(|warning| {
+            warning.contains("extrusion cap staging: PlaneSurface.normal/u_axis")
+        }));
+        assert!(context
+            .report
+            .phase_warnings
+            .iter()
+            .all(|warning| { !warning.contains("IR validation") }));
+        assert!(context.ir.model.surfaces.is_empty());
+    });
+}
+
+#[test]
+fn candidate_rejections_distinguish_admission_from_validation() {
+    let scan = scan_with_objects(&[]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        let admission = context.validate_candidate_fallible::<()>(|_, _| Err("admission".into()));
+        assert!(
+            matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
+        );
+        let validation = context.validate_candidate_fallible(|candidate, _| {
+            let point = Point {
+                id: "rhino:test:point#duplicate"
+                    .try_into()
+                    .expect("point identity"),
+                position: Point3::new(0.0, 0.0, 0.0),
+                source_object: None,
+            };
+            candidate.model.points.extend([point.clone(), point]);
+            Ok(())
+        });
+        assert!(matches!(validation, Err(CandidateError::Validation(_))));
+        assert!(context.ir.model.points.is_empty());
+    });
+}
+
+#[test]
 fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
     for (caps, expected_faces) in [([true, false], 1), ([false, true], 1), ([true, true], 2)] {
         let mut ir = CadIr::empty();

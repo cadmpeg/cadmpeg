@@ -38,6 +38,20 @@ pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 
 #[derive(Debug)]
+enum CandidateError {
+    Admission(String),
+    Validation(String),
+}
+
+impl std::fmt::Display for CandidateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Admission(message) | Self::Validation(message) => formatter.write_str(message),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ClassOutcome<'a> {
     decoded: usize,
     retained: usize,
@@ -611,12 +625,13 @@ impl<'a> DecodeContext<'a> {
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> T,
     ) -> Result<T, String> {
         self.validate_candidate_fallible(|ir, annotations| Ok(apply(ir, annotations)))
+            .map_err(|error| error.to_string())
     }
 
     fn validate_candidate_fallible<T>(
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, String>,
-    ) -> Result<T, String> {
+    ) -> Result<T, CandidateError> {
         let before = ArenaLengths::capture(&self.ir);
         let annotation_checkpoint = self.annotations.clone();
         let value = match apply(&mut self.ir, &mut self.annotations) {
@@ -624,7 +639,7 @@ impl<'a> DecodeContext<'a> {
             Err(error) => {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
         };
         self.ir
@@ -645,7 +660,7 @@ impl<'a> DecodeContext<'a> {
                 Err(error) => {
                     before.truncate(&mut self.ir);
                     self.annotations = annotation_checkpoint;
-                    return Err(error.to_string());
+                    return Err(CandidateError::Admission(error.to_string()));
                 }
             };
             let mut link_updates = Vec::with_capacity(unknowns.len());
@@ -657,19 +672,22 @@ impl<'a> DecodeContext<'a> {
                 else {
                     before.truncate(&mut self.ir);
                     self.annotations = annotation_checkpoint;
-                    return Err(format!("candidate introduced unknown {}", reference.id));
+                    return Err(CandidateError::Admission(format!(
+                        "candidate introduced unknown {}",
+                        reference.id
+                    )));
                 };
                 link_updates.push((index, reference.links));
             }
             if let Err(error) = self.expansion_budget.entities(appended.len()) {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
             if let Err(error) = self.charge_session_entities(appended.len()) {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
             for (index, links) in link_updates {
                 *self.unknowns[index].links_mut() = links;
@@ -679,7 +697,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             before.truncate(&mut self.ir);
             self.annotations = annotation_checkpoint;
-            Err(validation_findings(&validation))
+            Err(CandidateError::Validation(validation_findings(&validation)))
         }
     }
 
@@ -2315,10 +2333,7 @@ impl<'a> DecodeContext<'a> {
                 if self.commit_extrusion(source_order, extrusion) {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(
-                        source_order,
-                        "extrusion candidate rejected atomically by IR validation",
-                    );
+                    self.scan_warning(source_order, "extrusion candidate rejected atomically");
                     self.commit_unknown_surface(source_order);
                 }
             }
@@ -3057,7 +3072,11 @@ impl<'a> DecodeContext<'a> {
         });
         let links = match result {
             Ok(links) => links,
-            Err(findings) => {
+            Err(CandidateError::Admission(error)) => {
+                self.scan_warning(source_order, &error);
+                return false;
+            }
+            Err(CandidateError::Validation(findings)) => {
                 self.scan_warning(
                     source_order,
                     &format!("extrusion candidate rejected by IR validation: {findings}"),
@@ -3585,7 +3604,7 @@ fn stage_extrusion_caps(
                     extrusion.cap_u_axes[cap],
                 ) {
                     Ok(plane) => plane,
-                    Err(error) => return Err(error.to_string()),
+                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
                 },
             ),
             source_object: Some(association.clone()),
@@ -3693,7 +3712,7 @@ fn stage_extrusion_caps(
                     None,
                 ) {
                     Ok(metadata) => metadata,
-                    Err(error) => return Err(error.to_string()),
+                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
                 },
             });
             ir.model.coedges.push(Coedge {
