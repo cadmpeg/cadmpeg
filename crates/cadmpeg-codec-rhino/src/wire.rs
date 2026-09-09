@@ -106,15 +106,39 @@ impl Uuid {
     }
 }
 
-impl fmt::Display for Uuid {
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
+struct UuidTail([u8; uuid_wire::LEN]);
+
+impl fmt::Display for UuidTail {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, byte) in self.bytes.iter().enumerate() {
+        write!(formatter, "{:x}", self.0[0] & 0x0f)?;
+        for (index, byte) in self.0.iter().enumerate().skip(1) {
             if matches!(index, 4 | 6 | 8 | 10) {
                 formatter.write_str("-")?;
             }
             write!(formatter, "{byte:02x}")?;
         }
         Ok(())
+    }
+}
+
+impl Uuid {
+    /// Renders the UUID as a source identifier, which always has a leading hex digit.
+    pub(crate) fn to_nonempty(self) -> cadmpeg_ir::products::NonEmptyString {
+        cadmpeg_ir::products::NonEmptyString::prefixed(
+            HEX_DIGITS[usize::from(self.bytes[0] >> 4)],
+            UuidTail(self.bytes),
+        )
+    }
+}
+
+impl fmt::Display for Uuid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let leading = HEX_DIGITS[usize::from(self.bytes[0] >> 4)];
+        write!(formatter, "{leading}{}", UuidTail(self.bytes))
     }
 }
 

@@ -1056,11 +1056,10 @@ pub(crate) fn project_marker_backed_sketches(
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
-                // The fixed prefix makes this generated label nonempty.
-                let native_kind = super::names::checked_nonempty_name(format!(
+                let native_kind = cadmpeg_ir::nonempty_literal!(
                     "sldprt:marker-geometry:{}",
                     marker.kind.native_code()
-                ));
+                );
                 let entity = (|| {
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?;

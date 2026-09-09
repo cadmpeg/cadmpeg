@@ -34,12 +34,6 @@ fn object_names_follow_the_lane_name_class_token() {
 }
 
 #[test]
-#[should_panic(expected = "native kind name must not be empty")]
-fn native_kind_literal_rejects_empty_text() {
-    super::checked_nonempty_name("");
-}
-
-#[test]
 fn operand_kind_names_preserve_wire_spelling() {
     use crate::records::FeatureInputOperandKind;
     for (kind, expected) in [
@@ -52,4 +46,21 @@ fn operand_kind_names_preserve_wire_spelling() {
     ] {
         assert_eq!(super::operand_kind_name(kind).as_str(), expected);
     }
+}
+
+#[test]
+fn marker_literals_keep_their_wire_spelling() {
+    use cadmpeg_ir::nonempty_literal;
+    assert_eq!(
+        nonempty_literal!("sldprt:marker-local-id").as_str(),
+        "sldprt:marker-local-id"
+    );
+    assert_eq!(
+        nonempty_literal!("sldprt:marker-relation:{}", 34).as_str(),
+        "sldprt:marker-relation:34"
+    );
+    assert_eq!(
+        nonempty_literal!("sldprt:marker-geometry:{}", 2).as_str(),
+        "sldprt:marker-geometry:2"
+    );
 }
