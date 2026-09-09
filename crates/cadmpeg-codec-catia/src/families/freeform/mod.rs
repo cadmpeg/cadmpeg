@@ -1892,7 +1892,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         (*pos, None),
                         carrier,
                         None,
-                        ConsolidatedCarrierChart::Cylinder { radius: radius },
+                        ConsolidatedCarrierChart::Cylinder { radius },
                         "consolidated_b2_03_28_cylinder",
                         "cylinder",
                     )

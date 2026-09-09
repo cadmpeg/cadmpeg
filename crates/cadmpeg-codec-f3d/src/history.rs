@@ -8743,18 +8743,9 @@ pub(crate) fn historical_topology(
         .filter_map(|surface| {
             use cadmpeg_ir::geometry::SurfaceGeometry;
             let radius = match &surface.geometry {
-                SurfaceGeometry::Cylinder(cylinder_surface) => {
-                    let radius = cylinder_surface.radius();
-                    radius
-                }
-                SurfaceGeometry::Sphere(sphere_surface) => {
-                    let radius = sphere_surface.radius();
-                    radius
-                }
-                SurfaceGeometry::Torus(torus_surface) => {
-                    let minor_radius = torus_surface.minor_radius();
-                    minor_radius
-                }
+                SurfaceGeometry::Cylinder(cylinder_surface) => cylinder_surface.radius(),
+                SurfaceGeometry::Sphere(sphere_surface) => sphere_surface.radius(),
+                SurfaceGeometry::Torus(torus_surface) => torus_surface.minor_radius(),
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceRadius {

@@ -3295,8 +3295,7 @@ pub(crate) fn validate_surface_edits(
                     && ratio.is_finite()
                     && ratio > 0.0
                     && half_angle.is_finite()
-                    && half_angle >= 0.0
-                    && half_angle < std::f64::consts::FRAC_PI_2
+                    && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {

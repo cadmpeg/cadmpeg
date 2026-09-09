@@ -1315,7 +1315,7 @@ fn closed_planar_circle(
     }
     Some(CircularHole {
         center: frame.project(*center),
-        radius: radius,
+        radius,
     })
 }
 
@@ -1827,7 +1827,7 @@ fn cylindrical_trim(
         origin: *origin,
         axis,
         ref_direction: *ref_direction,
-        radius: radius,
+        radius,
         min_axial,
         max_axial,
         angular_start,
@@ -1984,8 +1984,8 @@ fn conical_trim(
         origin: *origin,
         axis,
         ref_direction: *ref_direction,
-        radius: radius,
-        ratio: ratio,
+        radius,
+        ratio,
         slope,
         min_axial,
         max_axial,

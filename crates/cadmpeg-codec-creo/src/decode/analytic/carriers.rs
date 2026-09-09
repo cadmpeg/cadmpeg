@@ -473,7 +473,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 origin: [origin.x, origin.y, origin.z],
                 axis: [axis.x, axis.y, axis.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                radius: radius,
+                radius,
             }))
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
@@ -483,7 +483,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             Some(CarrierEquation::Sphere(SphereEquation {
                 center: [center.x, center.y, center.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                radius: radius,
+                radius,
             }))
         }
         SurfaceGeometry::Cone(cone_surface) => {
@@ -512,8 +512,8 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
                 center: [center.x, center.y, center.z],
                 axis: [axis.x, axis.y, axis.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                major_radius: major_radius,
-                minor_radius: minor_radius,
+                major_radius,
+                minor_radius,
             }))
         }
         _ => None,

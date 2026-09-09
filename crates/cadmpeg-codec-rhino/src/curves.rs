@@ -673,7 +673,7 @@ pub(crate) fn exact_nurbs(
                     axis: *axis,
                     xaxis: *ref_direction,
                     yaxis,
-                    radius: radius,
+                    radius,
                 };
                 arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }
