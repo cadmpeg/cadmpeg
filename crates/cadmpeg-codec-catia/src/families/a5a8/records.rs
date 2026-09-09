@@ -3,6 +3,7 @@
 //! Decodes `a5`/`a8` NURBS surface carriers, common-form and consolidated
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
+use super::knot_lane::{strictly_increasing_finite, A8KnotLane};
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
@@ -383,38 +384,6 @@ fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
     let mut frames = Vec::new();
     walk(data, 0, true, true, &mut frames);
     frames
-}
-
-/// Distinct finite increasing knots paired with their multiplicities.
-#[derive(Debug, Clone, PartialEq)]
-pub struct A8KnotLane {
-    distinct: Vec<f64>,
-    multiplicities: Vec<u32>,
-}
-
-impl A8KnotLane {
-    /// Multiplicity of each distinct knot.
-    #[cfg(test)]
-    pub(crate) fn multiplicities(&self) -> &[u32] {
-        &self.multiplicities
-    }
-
-    fn try_new(distinct: Vec<f64>, multiplicities: Vec<u32>) -> Option<Self> {
-        (distinct.len() == multiplicities.len() && strictly_increasing_finite(&distinct)).then_some(
-            Self {
-                distinct,
-                multiplicities,
-            },
-        )
-    }
-
-    fn expanded(&self) -> Option<Vec<f64>> {
-        expand_knots(&self.distinct, &self.multiplicities)
-    }
-
-    fn pole_count(&self, degree: u32) -> Option<u32> {
-        pole_count(&self.multiplicities, degree)
-    }
 }
 
 /// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
@@ -1670,7 +1639,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     let tail_end = at.checked_add(141)?;
     let elided = tail_end <= end
         && closed_a8_child_run(data, tail_end, end)
-        && parse_a8_elided_surface_tail(data, at, &v_knots.distinct).is_some();
+        && parse_a8_elided_surface_tail(data, at, v_knots.distinct()).is_some();
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1804,10 +1773,6 @@ fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>
     (0..count).map(|_| compact_int(bytes, at)).collect()
 }
 
-fn strictly_increasing_finite(values: &[f64]) -> bool {
-    values.iter().all(|value| value.is_finite()) && knots_strictly_increasing(values)
-}
-
 fn a5_int(byte: u8) -> Option<u32> {
     (byte % 4 == 1).then(|| u32::from((byte - 1) / 4))
 }
@@ -1887,22 +1852,4 @@ pub(super) fn a5_weights(
         .iter()
         .all(|weight| weight.is_finite() && *weight != 0.0)
         .then_some(weights)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::A8KnotLane;
-
-    #[test]
-    fn knot_lane_admission_requires_aligned_increasing_values() {
-        assert!(A8KnotLane::try_new(vec![0.0, 1.0], vec![2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![1.0, 0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0, 0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0, f64::INFINITY], vec![2, 2]).is_none());
-        let lane =
-            A8KnotLane::try_new(vec![0.0, 1.0], vec![2, 2]).expect("aligned increasing knot lane");
-        assert_eq!(lane.expanded(), Some(vec![0.0, 0.0, 1.0, 1.0]));
-        assert_eq!(lane.pole_count(1), Some(2));
-    }
 }
