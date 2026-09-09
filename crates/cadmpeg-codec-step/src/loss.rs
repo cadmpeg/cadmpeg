@@ -13,7 +13,12 @@
 //! leaves only the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `step` namespace.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{LossKind, LossNamespace, LossNote, LossTaxonomy, Severity};
+
+const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
+    Ok(namespace) => namespace,
+    Err(_) => panic!("reserved codec namespace"),
+};
 
 /// A stable, machine-readable identifier for one STEP / `.stp` transfer loss.
 ///
@@ -824,16 +829,7 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced(
-            const {
-                match cadmpeg_ir::report::LossNamespace::new("step") {
-                    Ok(namespace) => namespace,
-                    Err(_) => panic!("reserved codec namespace"),
-                }
-            },
-            self.code(),
-            self.shared_taxonomy(),
-        )
+        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
