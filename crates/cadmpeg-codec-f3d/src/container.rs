@@ -131,7 +131,12 @@ pub fn classify(name: &str) -> ContainerRole {
 #[derive(Debug, Clone)]
 pub enum KernelFraming {
     /// Autodesk Shape Manager binary framing.
-    Asm(KernelHeader),
+    Asm {
+        /// Parsed ASM header.
+        header: KernelHeader,
+        /// Exact byte boundary between solved records and construction history.
+        solved_record_limit: Option<usize>,
+    },
     /// Spatial ACIS binary framing.
     Acis(KernelHeader),
 }
@@ -140,15 +145,26 @@ impl KernelFraming {
     /// Borrow this owned framing as the shared dialect-classification input.
     pub(crate) fn as_header_ref(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'_> {
         match self {
-            Self::Asm(header) => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
+            Self::Asm { header, .. } => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
             Self::Acis(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
+        }
+    }
+
+    /// The ASM solved-record boundary, when present.
+    pub(crate) fn solved_record_limit(&self) -> Option<usize> {
+        match self {
+            Self::Asm {
+                solved_record_limit,
+                ..
+            } => *solved_record_limit,
+            Self::Acis(_) => None,
         }
     }
 
     /// Return the header only when ASM framing owns it.
     pub(crate) fn asm_header(&self) -> Option<&KernelHeader> {
         match self {
-            Self::Asm(header) => Some(header),
+            Self::Asm { header, .. } => Some(header),
             Self::Acis(_) => None,
         }
     }
@@ -164,8 +180,6 @@ pub struct BrepFacts {
     pub uncompressed_len: u64,
     /// Parsed ASM or ACIS framing, when either header matched.
     pub kernel: Option<KernelFraming>,
-    /// Exact byte boundary between solved records and construction history.
-    pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
     pub sha256: String,
 }
@@ -359,14 +373,14 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                asm_header::parse(buf).map(KernelFraming::Asm)
+                asm_header::parse(buf).map(|header| KernelFraming::Asm {
+                    solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
+                    header,
+                })
             } else {
                 acis_header::parse(buf).map(KernelFraming::Acis)
             };
-            let solved_record_limit = kernel
-                .as_ref()
-                .and_then(KernelFraming::asm_header)
-                .and_then(|header| asm_header::solved_record_limit_with_header(buf, header));
+            let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
             let sha = sha256_hex(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
@@ -418,7 +432,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 name: name.clone(),
                 uncompressed_len: uncompressed_size,
                 kernel,
-                solved_record_limit,
                 sha256: sha,
             });
         }
