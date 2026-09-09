@@ -21,10 +21,10 @@ fn e5_circle_parser_reads_framed_carrier() {
         cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(*radius, 2.5);
+            assert_eq!(radius, 2.5);
         }
         other => panic!("expected circle, got {other:?}"),
     }
@@ -278,15 +278,15 @@ fn e5_surface_parser_reads_framed_torus() {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
-            assert_eq!((*major_radius, *minor_radius), (12.0, 2.0));
+            assert_eq!((major_radius, minor_radius), (12.0, 2.0));
         }
         other => panic!("expected torus, got {other:?}"),
     }

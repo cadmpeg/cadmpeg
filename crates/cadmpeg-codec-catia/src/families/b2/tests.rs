@@ -1617,10 +1617,10 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
-            assert_eq!(*radius, 2.0);
+            assert_eq!(radius, 2.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }

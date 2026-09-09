@@ -112,8 +112,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(cap, cylinder), Some((CurveGeometry::Circle(circle_curve), "plane_cylinder_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    center.z == 3.0 && *radius == 2.0
+        let radius = circle_curve.radius();
+                    center.z == 3.0 && radius == 2.0
                 })
     );
     let oblique = CarrierEquation::Plane(PlaneEquation {
@@ -123,9 +123,9 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(oblique, cylinder), Some((CurveGeometry::Ellipse(ellipse_curve), "plane_cylinder_ellipse"))
                 if {
-                    let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
-                    (major_radius - 2.0 * 2.0_f64.sqrt()).abs() < EPS_CARRIER_INTERSECTION && *minor_radius == 2.0
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
+                    (major_radius - 2.0 * 2.0_f64.sqrt()).abs() < EPS_CARRIER_INTERSECTION && minor_radius == 2.0
                 })
     );
     assert!(
@@ -231,8 +231,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(equator, sphere), Some((CurveGeometry::Circle(circle_curve), "plane_sphere_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
                 })
     );
     assert_eq!(solve_carriers(&[equator, secant, sphere]), None);
@@ -254,7 +254,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(first_sphere, second_sphere), Some((CurveGeometry::Circle(circle_curve), "sphere_intersection_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     center.x == 2.0 && (radius - 5.0_f64.sqrt()).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
@@ -304,8 +304,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(cylinder, sphere), Some((CurveGeometry::Circle(circle_curve), "coaxial_cylinder_sphere_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
                 })
     );
     let cylinder_sphere_tangent_candidates =
@@ -314,8 +314,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(cylinder_sphere_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_sphere_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
                 })
     );
     assert_eq!(
@@ -335,8 +335,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cylinder_sphere_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
-                    (center.z - sphere_offset).abs() < EPS_CARRIER_INTERSECTION && *radius == 1.0
+    let radius = circle_curve.radius();
+                    (center.z - sphere_offset).abs() < EPS_CARRIER_INTERSECTION && radius == 1.0
                 }));
     assert!(select_unique_curve_candidate(
         coaxial_cylinder_sphere_circle_candidates(coaxial_secant, sphere),
@@ -383,7 +383,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(cap, cone), Some((CurveGeometry::Circle(circle_curve), "plane_cone_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
@@ -402,8 +402,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(cap, elliptical_cone), Some((CurveGeometry::Ellipse(ellipse_curve), "plane_cone_parallel_ellipse"))
                 if {
                     let center = ellipse_curve.center();
-        let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
+        let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
                     *center == Point3::new(0.0, 0.0, 3.0)
                         && (major_radius - 5.0).abs() < EPS_CARRIER_INTERSECTION
                         && (minor_radius - 2.5).abs() < EPS_CARRIER_INTERSECTION
@@ -460,9 +460,9 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_ellipse_plane, cone), Some((CurveGeometry::Ellipse(ellipse_curve), "plane_cone_ellipse"))
                 if {
-                    let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
-                    major_radius > minor_radius && *minor_radius > 0.0
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
+                    major_radius > minor_radius && minor_radius > 0.0
                 })
     );
     let cone_parabola_plane = CarrierEquation::Plane(PlaneEquation {
@@ -472,8 +472,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_parabola_plane, cone), Some((CurveGeometry::Parabola(parabola_curve), "plane_cone_parabola"))
         if {
-            let focal_distance = &parabola_curve.focal_distance();
-            *focal_distance > 0.0
+            let focal_distance = parabola_curve.focal_distance();
+            focal_distance > 0.0
         })
     );
     let cone_hyperbola_plane = CarrierEquation::Plane(PlaneEquation {
@@ -483,9 +483,9 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_hyperbola_plane, cone), Some((CurveGeometry::Hyperbola(hyperbola_curve), "plane_cone_hyperbola"))
                 if {
-                    let major_radius = &hyperbola_curve.major_radius();
-        let minor_radius = &hyperbola_curve.minor_radius();
-                    *major_radius > 0.0 && *minor_radius > 0.0
+                    let major_radius = hyperbola_curve.major_radius();
+        let minor_radius = hyperbola_curve.minor_radius();
+                    major_radius > 0.0 && minor_radius > 0.0
                 })
     );
     let rotated_ellipse_plane = CarrierEquation::Plane(PlaneEquation {
@@ -554,7 +554,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(cone_tangent_sphere, cone), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_sphere_tangent_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     (center.z + 1.0).abs() < EPS_CARRIER_INTERSECTION && (radius - 1.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
@@ -564,8 +564,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(cone_sphere_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cone_sphere_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    center.z == -1.0 && *radius == 1.0
+        let radius = circle_curve.radius();
+                    center.z == -1.0 && radius == 1.0
                 })
     );
     let cone_sphere_plane = CarrierEquation::Plane(PlaneEquation {
@@ -596,7 +596,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_sphere_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
                     (center.z - upper_parameter).abs() < EPS_CARRIER_INTERSECTION
                         && (radius - upper_radius).abs() < EPS_CARRIER_INTERSECTION
                 }));
@@ -612,8 +612,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_cylinder_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
-                    (center.z - 1.0).abs() < EPS_CARRIER_INTERSECTION && *radius == 3.0
+    let radius = circle_curve.radius();
+                    (center.z - 1.0).abs() < EPS_CARRIER_INTERSECTION && radius == 3.0
                 }));
     let held_token = crate::curve::FcCurveCoordinateToken {
         value_mm: 1.0,
@@ -644,8 +644,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cone_cylinder_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
-                    (center.z - 1.0).abs() < EPS_CARRIER_INTERSECTION && *radius == 3.0
+    let radius = circle_curve.radius();
+                    (center.z - 1.0).abs() < EPS_CARRIER_INTERSECTION && radius == 3.0
                 }));
     let mut mixed_coordinates = held_coordinates;
     mixed_coordinates.tokens[3].value_mm = -1.0;
@@ -688,8 +688,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(torus_tangent, torus), Some((CurveGeometry::Circle(circle_curve), "plane_torus_tangent_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 2.0) && *radius == 5.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
                 })
     );
     assert!(carrier_intersection_curve(equator, torus).is_none());
@@ -701,8 +701,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "plane_torus_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+    let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
                 }));
     let plane_torus_tangent_candidates =
         axis_normal_plane_torus_circle_candidates(torus_tangent, torus);
@@ -710,8 +710,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(plane_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "plane_torus_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 2.0) && *radius == 5.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
                 })
     );
     let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
@@ -721,8 +721,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                     "coaxial_cylinder_torus_tangent_circle",
                 )) if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
                 })
     );
     let cylinder_torus_tangent_candidates =
@@ -731,8 +731,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(cylinder_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_cylinder_torus_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
                 })
     );
     let secant_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 6.0);
@@ -746,8 +746,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_cylinder_torus_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
-                    (center.z - section_height).abs() < EPS_CARRIER_INTERSECTION && *radius == 6.0
+    let radius = circle_curve.radius();
+                    (center.z - section_height).abs() < EPS_CARRIER_INTERSECTION && radius == 6.0
                 }));
     let outer_circle_tangent = CarrierEquation::Plane(PlaneEquation {
         origin: [7.0, 0.0, 0.0],
@@ -767,7 +767,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(torus_tangent_sphere, torus), Some((CurveGeometry::Circle(circle_curve), "coaxial_sphere_torus_tangent_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(0.0, 0.0, 0.0) && (radius - 3.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
@@ -777,8 +777,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(sphere_torus_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_sphere_torus_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 3.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 3.0
                 })
     );
     let torus_secant_sphere = CarrierEquation::Sphere(SphereEquation {
@@ -799,7 +799,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_sphere_torus_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
                     (center.z - sphere_torus_height).abs() < EPS_CARRIER_INTERSECTION && (radius - 4.6).abs() < EPS_CARRIER_INTERSECTION
                 }));
     let torus_sphere_plane = CarrierEquation::Plane(PlaneEquation {
@@ -860,7 +860,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(carrier_intersection_curve(torus, second_torus), Some((CurveGeometry::Circle(circle_curve), "coaxial_tori_tangent_circle"))
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(0.0, 0.0, 0.0) && (radius - 7.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
@@ -869,8 +869,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         matches!(tori_tangent_candidates.as_slice(), [(CurveGeometry::Circle(circle_curve), "coaxial_tori_tangent_circle")]
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
                 })
     );
     let secant_torus = CarrierEquation::Torus(TorusEquation {
@@ -889,7 +889,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         ), Some((CurveGeometry::Circle(circle_curve), "coaxial_tori_secant_circle"))
                 if {
                     let center = circle_curve.center();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
                     (center.z - tori_height).abs() < EPS_CARRIER_INTERSECTION && (radius - 5.5).abs() < EPS_CARRIER_INTERSECTION
                 }));
     let tori_plane = CarrierEquation::Plane(PlaneEquation {

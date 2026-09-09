@@ -2608,10 +2608,10 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     };
     let left_center = circle_curve.center();
     let left_axis = circle_curve.axis();
-    let left_radius = &circle_curve.radius();
+    let left_radius = circle_curve.radius();
     let right_center = circle_curve_2.center();
     let right_axis = circle_curve_2.axis();
-    let right_radius = &circle_curve_2.radius();
+    let right_radius = circle_curve_2.radius();
     if (*left_center).distance(*right_center) > E5_ENDPOINT_MATCH_TOLERANCE
         || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
         || (*left_axis).dot(*right_axis) < 1.0 - E5_CARRIER_AXIS_COSINE_TOLERANCE
@@ -2655,11 +2655,11 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
             let left_center = circle_curve.center();
             let left_axis = circle_curve.axis();
             let left_ref_direction = circle_curve.ref_direction();
-            let left_radius = &circle_curve.radius();
+            let left_radius = circle_curve.radius();
             let right_center = circle_curve_2.center();
             let right_axis = circle_curve_2.axis();
             let right_ref_direction = circle_curve_2.ref_direction();
-            let right_radius = &circle_curve_2.radius();
+            let right_radius = circle_curve_2.radius();
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
                 && (*left_axis).dot(*right_axis) >= 1.0 - EPS_E5_DECODE_GEOMETRY
@@ -2678,14 +2678,14 @@ pub(crate) fn e5_constant_v_circle(
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = &cylinder_surface.radius();
-            Some(((*origin).translated(*axis, v), *radius, *axis))
+            let radius = cylinder_surface.radius();
+            Some(((*origin).translated(*axis, v), radius, *axis))
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             Some((
                 (*origin).translated(*axis, v),
                 (radius + v * half_angle.tan()).abs(),
@@ -2695,7 +2695,7 @@ pub(crate) fn e5_constant_v_circle(
         SurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             Some((
                 (*center).translated(*axis, radius * v.sin()),
                 radius * v.cos().abs(),
@@ -2705,8 +2705,8 @@ pub(crate) fn e5_constant_v_circle(
         SurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             Some((
                 (*center).translated(*axis, minor_radius * v.sin()),
                 (major_radius + minor_radius * v.cos()).abs(),
@@ -2726,22 +2726,22 @@ pub(crate) fn e5_constant_u_circle(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
-            Some((*center, *radius, (*axis).cross(radial)))
+            Some((*center, radius, (*axis).cross(radial)))
         }
         SurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((
-                (*center).translated(radial, *major_radius),
-                *minor_radius,
+                (*center).translated(radial, major_radius),
+                minor_radius,
                 (*axis).cross(radial),
             ))
         }
@@ -3809,8 +3809,8 @@ mod route_tests {
         assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
+        let radius = circle_curve.radius();
+                    *center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
                 }));
         assert!(
             (range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs()
@@ -4072,11 +4072,11 @@ mod route_tests {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(5.0, 7.0, 3.0)
                         && *axis == Vector3::new(0.0, 0.0, 1.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 2.0
+                        && radius == 2.0
                 }));
 
         let (curve, range) = e5_boundary_curve(
@@ -4094,11 +4094,11 @@ mod route_tests {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(-3.0, -3.0, 3.0)
                         && *axis == Vector3::new(0.0, 0.0, 1.0)
                         && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
-                        && *radius == 2.0
+                        && radius == 2.0
                 }));
     }
 

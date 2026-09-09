@@ -1477,16 +1477,16 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
     }
     match geometry {
         CurveGeometry::Circle(circle_curve) => {
-            let radius = &circle_curve.radius();
-            radius.is_finite() && *radius > 0.0
+            let radius = circle_curve.radius();
+            radius.is_finite() && radius > 0.0
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             major_radius.is_finite()
-                && *major_radius > 0.0
+                && major_radius > 0.0
                 && minor_radius.is_finite()
-                && *minor_radius > 0.0
+                && minor_radius > 0.0
         }
         _ => false,
     }

@@ -468,52 +468,52 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             Some(CarrierEquation::Cylinder(CylinderEquation {
                 origin: [origin.x, origin.y, origin.z],
                 axis: [axis.x, axis.y, axis.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                radius: *radius,
+                radius: radius,
             }))
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             Some(CarrierEquation::Sphere(SphereEquation {
                 center: [center.x, center.y, center.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                radius: *radius,
+                radius: radius,
             }))
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             Some(CarrierEquation::Cone(ConeEquation::new(
                 [origin.x, origin.y, origin.z],
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
-                *radius,
-                *ratio,
-                *half_angle,
+                radius,
+                ratio,
+                half_angle,
             )?))
         }
         SurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             Some(CarrierEquation::Torus(TorusEquation {
                 center: [center.x, center.y, center.z],
                 axis: [axis.x, axis.y, axis.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                major_radius: *major_radius,
-                minor_radius: *minor_radius,
+                major_radius: major_radius,
+                minor_radius: minor_radius,
             }))
         }
         _ => None,

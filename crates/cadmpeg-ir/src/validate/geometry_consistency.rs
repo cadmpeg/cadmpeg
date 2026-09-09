@@ -58,7 +58,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         } = procedural.definition()
         {
             let endpoints = intersection.endpoints();
-            let tolerance = &intersection.tolerance();
+            let tolerance = intersection.tolerance();
 
             let evaluated = parameterization
                 .parameter_range()
@@ -74,7 +74,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 continue;
             };
             let mismatch = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
-            if !mismatch.is_finite() || mismatch > *tolerance {
+            if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,

@@ -359,7 +359,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
         };
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = &cylinder_surface.radius();
+        let radius = cylinder_surface.radius();
         let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
         if !alignment.is_finite()
             || (alignment.abs() - 1.0).abs()

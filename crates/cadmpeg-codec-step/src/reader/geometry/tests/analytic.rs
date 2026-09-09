@@ -431,9 +431,9 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
     assert!(
         matches!(*ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry), CurveGeometry::Ellipse(ellipse_curve)
                 if {
-                    let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
-                    *major_radius == 6.0 && *minor_radius == 2.0
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
+                    major_radius == 6.0 && minor_radius == 2.0
                 })
     );
 }
@@ -496,11 +496,11 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .unwrap_or(&reversed.geometry), CurveGeometry::Ellipse(ellipse_curve)
             if {
                 let major_direction = ellipse_curve.major_direction();
-    let major_radius = &ellipse_curve.major_radius();
-    let minor_radius = &ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius();
+    let minor_radius = ellipse_curve.minor_radius();
                 *major_direction == Vector3::new(0.0, 1.0, 0.0)
-                    && *major_radius == 6.0
-                    && *minor_radius == 2.0
+                    && major_radius == 6.0
+                    && minor_radius == 2.0
             }));
 
     let ordered = decoded
@@ -514,11 +514,11 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         matches!(*ordered.geometry.solved_cache().unwrap_or(&ordered.geometry), CurveGeometry::Ellipse(ellipse_curve)
                 if {
                     let major_direction = ellipse_curve.major_direction();
-        let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
+        let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
                     *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 6.0
-                        && *minor_radius == 2.0
+                        && major_radius == 6.0
+                        && minor_radius == 2.0
                 })
     );
 
@@ -627,8 +627,8 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let half_angle = &cone_surface.half_angle();
-                    *half_angle == 0.0
+                    let half_angle = cone_surface.half_angle();
+                    half_angle == 0.0
                 })
     }));
     assert!(result.report().losses.iter().all(|loss| !loss

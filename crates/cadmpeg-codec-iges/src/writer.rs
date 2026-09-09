@@ -3082,12 +3082,12 @@ fn oriented_curve_entity(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
                 *center,
                 *axis,
                 *ref_direction,
-                *radius,
+                radius,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3110,14 +3110,14 @@ fn oriented_curve_entity(
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
                 *center,
                 *axis,
                 *major_direction,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3140,12 +3140,12 @@ fn oriented_curve_entity(
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
                 *vertex,
                 *axis,
                 *major_direction,
-                *focal_distance,
+                focal_distance,
                 span.range,
             )
             .ok_or_else(|| {
@@ -3189,8 +3189,8 @@ fn oriented_curve_entity(
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             // The hyperbola parameterization satisfies p(-u) = p(u) with its
             // transverse axis reversed. Emit that equivalent frame with the
             // reflected interval so the Type 104 endpoints follow the
@@ -3200,8 +3200,8 @@ fn oriented_curve_entity(
                     *center,
                     axis.scale(-1.0),
                     *major_direction,
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
@@ -4801,8 +4801,8 @@ fn surface_entities(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
-            if !radius.is_finite() || *radius <= 0.0 {
+            let radius = cylinder_surface.radius();
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES cylinder radius must be positive and finite".into(),
                 ));
@@ -4820,7 +4820,7 @@ fn surface_entities(
                     "{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*radius),
+                    number(radius),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -4833,22 +4833,22 @@ fn surface_entities(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
-            if !same_float(*ratio, 1.0) {
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
+            if !same_float(ratio, 1.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES analytic cone writer only encodes circular cones".into(),
                 ));
             }
-            if !radius.is_finite() || *radius < 0.0 {
+            if !radius.is_finite() || radius < 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES cone radius must be finite and non-negative".into(),
                 ));
             }
             if !half_angle.is_finite()
-                || *half_angle <= 0.0
-                || *half_angle >= std::f64::consts::FRAC_PI_2
+                || half_angle <= 0.0
+                || half_angle >= std::f64::consts::FRAC_PI_2
             {
                 return Err(CodecError::Malformed(
                     "IGES cone semi-angle must be in (0, 90) degrees".into(),
@@ -4867,7 +4867,7 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*radius),
+                    number(radius),
                     number(half_angle.to_degrees()),
                     reference_marker(reference)
                 )
@@ -4881,8 +4881,8 @@ fn surface_entities(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
-            if !radius.is_finite() || *radius <= 0.0 {
+            let radius = sphere_surface.radius();
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES sphere radius must be positive and finite".into(),
                 ));
@@ -4899,7 +4899,7 @@ fn surface_entities(
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
-                    number(*radius),
+                    number(radius),
                     reference_marker(axis),
                     reference_marker(reference)
                 )
@@ -4913,12 +4913,12 @@ fn surface_entities(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *minor_radius <= 0.0
-                || *minor_radius >= *major_radius
+                || minor_radius <= 0.0
+                || minor_radius >= major_radius
             {
                 return Err(CodecError::Malformed(
                     "IGES torus radii must satisfy 0 < minor < major".into(),
@@ -4937,8 +4937,8 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(*major_radius),
-                    number(*minor_radius),
+                    number(major_radius),
+                    number(minor_radius),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -5658,9 +5658,9 @@ fn curve_entity(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
-            if !radius.is_finite() || *radius <= 0.0 {
+            if !radius.is_finite() || radius <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES circle radius must be positive and finite".into(),
                 ));
@@ -5693,13 +5693,13 @@ fn curve_entity(
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
             if !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *major_radius <= 0.0
-                || *minor_radius <= 0.0
+                || major_radius <= 0.0
+                || minor_radius <= 0.0
             {
                 return Err(CodecError::Malformed(
                     "IGES ellipse basis or radii are invalid".into(),
@@ -5739,16 +5739,16 @@ fn curve_entity(
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
-            if range[0] == range[1] || !focal_distance.is_finite() || *focal_distance <= 0.0 {
+            let focal_distance = parabola_curve.focal_distance();
+            if range[0] == range[1] || !focal_distance.is_finite() || focal_distance <= 0.0 {
                 return Err(CodecError::Malformed(
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "parabola basis")?;
             let x_axis = major.cross(axis);
-            let start_xy = parabola_point(*focal_distance, range[0])?;
-            let end_xy = parabola_point(*focal_distance, range[1])?;
+            let start_xy = parabola_point(focal_distance, range[0])?;
+            let end_xy = parabola_point(focal_distance, range[1])?;
             Ok(Entity {
                 type_code: 104,
                 form: 3,
@@ -5770,13 +5770,13 @@ fn curve_entity(
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             if range[0] == range[1]
                 || !major_radius.is_finite()
                 || !minor_radius.is_finite()
-                || *major_radius <= 0.0
-                || *minor_radius <= 0.0
+                || major_radius <= 0.0
+                || minor_radius <= 0.0
             {
                 return Err(CodecError::Malformed(
                     "IGES hyperbola requires positive radii and a finite span".into(),
@@ -5784,8 +5784,8 @@ fn curve_entity(
             }
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "hyperbola basis")?;
             let y_axis = axis.cross(major);
-            let start_xy = hyperbola_point(*major_radius, *minor_radius, range[0])?;
-            let end_xy = hyperbola_point(*major_radius, *minor_radius, range[1])?;
+            let start_xy = hyperbola_point(major_radius, minor_radius, range[0])?;
+            let end_xy = hyperbola_point(major_radius, minor_radius, range[1])?;
             Ok(Entity {
                 type_code: 104,
                 form: 2,

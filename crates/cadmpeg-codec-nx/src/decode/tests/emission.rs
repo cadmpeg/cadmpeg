@@ -124,18 +124,18 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let ratio = &cone_surface.ratio();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle();
     let mut origin = *origin;
     origin.x = 0.1;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
         origin,
         *axis,
         *ref_direction,
-        *radius,
-        *ratio,
-        *half_angle,
+        radius,
+        ratio,
+        half_angle,
     )
     .unwrap();
     assert!(analytic_surface_offset(&support, &lateral).is_none());
@@ -147,18 +147,18 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let ratio = &cone_surface.ratio();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle();
     let mut origin = *origin;
     origin.z += 0.1;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
         origin,
         *axis,
         *ref_direction,
-        *radius,
-        *ratio,
-        *half_angle,
+        radius,
+        ratio,
+        half_angle,
     )
     .unwrap();
     assert!(analytic_surface_offset(&support, &shifted_parameterization).is_none());
@@ -170,17 +170,17 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let half_angle = cone_surface.half_angle();
 
     let ratio = 0.5;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
         *origin,
         *axis,
         *ref_direction,
-        *radius,
+        radius,
         ratio,
-        *half_angle,
+        half_angle,
     )
     .unwrap();
     assert!(analytic_surface_offset(&support, &elliptical).is_none());
@@ -756,8 +756,8 @@ fn decode_transfers_point_plane_cylinder_line() {
         .iter()
         .filter_map(|s| match &s.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let radius = &cylinder_surface.radius();
-                Some(*radius)
+                let radius = cylinder_surface.radius();
+                Some(radius)
             }
             _ => None,
         })

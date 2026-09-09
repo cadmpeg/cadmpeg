@@ -164,9 +164,9 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     else {
         panic!("reversed offset parabola");
     };
-    let distance = &offset_pcurve.distance();
+    let distance = offset_pcurve.distance();
     let basis = offset_pcurve.basis();
-    assert_eq!(*distance, -1.25);
+    assert_eq!(distance, -1.25);
     for parameter in [0.25, 1.0, 2.0, 2.75] {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
@@ -196,9 +196,9 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let PcurveGeometry::Offset(offset_pcurve) = &reversed else {
         panic!("reversed offset");
     };
-    let distance = &offset_pcurve.distance();
+    let distance = offset_pcurve.distance();
     let basis = offset_pcurve.basis();
-    assert_eq!(*distance, -2.5);
+    assert_eq!(distance, -2.5);
     for parameter in [2.0, 3.0, 5.0, 6.0] {
         let expected_basis = cadmpeg_ir::eval::pcurve_uv(
             match &pcurve {

@@ -133,10 +133,10 @@ impl<'a> WritableObjectCurve<'a> {
                 let center = circle.center();
                 let axis = circle.axis();
                 let ref_direction = circle.ref_direction();
-                let radius = &circle.radius();
+                let radius = circle.radius();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(*center, *axis, *ref_direction, *radius),
+                    super::circle_payload(*center, *axis, *ref_direction, radius),
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {

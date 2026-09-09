@@ -173,7 +173,7 @@ pub(crate) fn reverse_curve_geometry(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             if !finite_point3(*center)
                 || ![
                     axis.x,
@@ -205,7 +205,7 @@ pub(crate) fn reverse_curve_geometry(
                         *center,
                         (*axis).scale(-1.0),
                         ref_direction,
-                        *radius,
+                        radius,
                     )
                     .ok()?,
                 ),
@@ -295,7 +295,7 @@ pub(crate) fn reverse_helix_definition(
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     if range != *angle_range
@@ -308,13 +308,13 @@ pub(crate) fn reverse_helix_definition(
                     .into_iter()
                     .flat_map(|vector| [vector.x, vector.y, vector.z]),
             )
-            .chain([*apex_factor])
+            .chain([apex_factor])
             .all(f64::is_finite)
     {
         return None;
     }
     let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-    let radial_scale_at_end = 1.0 + *apex_factor * revolutions;
+    let radial_scale_at_end = 1.0 + apex_factor * revolutions;
     if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
         return None;
     }
@@ -328,7 +328,7 @@ pub(crate) fn reverse_helix_definition(
     let minor = minor_at_end.scale(radial_scale_at_end);
     let center = center.translated(*pitch, revolutions);
     let pitch = pitch.scale(-1.0);
-    let apex_factor = -*apex_factor / radial_scale_at_end;
+    let apex_factor = -apex_factor / radial_scale_at_end;
     let axis = axis.scale(-1.0);
     if ![center.x, center.y, center.z, apex_factor]
         .into_iter()
@@ -393,7 +393,7 @@ pub(crate) fn circular_helix_cache(
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
@@ -426,7 +426,7 @@ pub(crate) fn circular_helix_cache(
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
         || !angle_range.iter().copied().all(f64::is_finite)
         || angle_range[0] >= angle_range[1]
-        || *apex_factor != 0.0
+        || apex_factor != 0.0
     {
         return None;
     }
@@ -916,7 +916,7 @@ mod tests {
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
-            let apex_factor = &helix_payload.apex_factor();
+            let apex_factor = helix_payload.apex_factor();
 
             let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
             let scale = 1.0 + apex_factor * fraction;

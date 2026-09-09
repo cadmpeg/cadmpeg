@@ -337,7 +337,7 @@ fn validate_zero_entity_model_curve_construction(
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
-            let apex_factor = &helix_payload.apex_factor();
+            let apex_factor = helix_payload.apex_factor();
             let axis = helix_payload.axis();
 
             angle_range.iter().copied().all(f64::is_finite)
@@ -413,12 +413,12 @@ fn validate_zero_entity_model_curve(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             finite_point(center)
                 && finite_vector(axis)
                 && finite_vector(ref_direction)
                 && radius.is_finite()
-                && *radius > 0.0
+                && radius > 0.0
         }
         (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
         _ => false,

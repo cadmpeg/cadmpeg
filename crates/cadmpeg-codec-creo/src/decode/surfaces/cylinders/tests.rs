@@ -323,8 +323,8 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = &cylinder_surface.radius();
-                    *radius == 0.3125
+        let radius = cylinder_surface.radius();
+                    radius == 0.3125
                         && *origin == [0.0, 1.625, -1.0].into()
                         && *axis == [0.0, 0.0, 1.0].into()
                 })

@@ -57,7 +57,7 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             let center = circle_pcurve.center();
             let x_axis = circle_pcurve.x_axis();
             let y_axis = circle_pcurve.y_axis();
-            let radius = &circle_pcurve.radius();
+            let radius = circle_pcurve.radius();
             Some(Point2::new(
                 center.u + radius * (x_axis.u * parameter.cos() + y_axis.u * parameter.sin()),
                 center.v + radius * (x_axis.v * parameter.cos() + y_axis.v * parameter.sin()),
@@ -67,8 +67,8 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             let center = ellipse_pcurve.center();
             let x_axis = ellipse_pcurve.x_axis();
             let y_axis = ellipse_pcurve.y_axis();
-            let major_radius = &ellipse_pcurve.major_radius();
-            let minor_radius = &ellipse_pcurve.minor_radius();
+            let major_radius = ellipse_pcurve.major_radius();
+            let minor_radius = ellipse_pcurve.minor_radius();
             Some(Point2::new(
                 center.u
                     + major_radius * x_axis.u * parameter.cos()
@@ -91,7 +91,7 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             let vertex = parabola_pcurve.vertex();
             let x_axis = parabola_pcurve.x_axis();
             let y_axis = parabola_pcurve.y_axis();
-            let focal_distance = &parabola_pcurve.focal_distance();
+            let focal_distance = parabola_pcurve.focal_distance();
             Some(Point2::new(
                 vertex.u
                     + focal_distance * x_axis.u * parameter * parameter
@@ -105,8 +105,8 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             let center = hyperbola_pcurve.center();
             let x_axis = hyperbola_pcurve.x_axis();
             let y_axis = hyperbola_pcurve.y_axis();
-            let major_radius = &hyperbola_pcurve.major_radius();
-            let minor_radius = &hyperbola_pcurve.minor_radius();
+            let major_radius = hyperbola_pcurve.major_radius();
+            let minor_radius = hyperbola_pcurve.minor_radius();
             Some(Point2::new(
                 center.u
                     + major_radius * x_axis.u * parameter.cosh()
@@ -154,7 +154,7 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             pcurve(basis, parameter)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let distance = &offset_pcurve.distance();
+            let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let delta = f64::EPSILON.sqrt() * parameter.abs().max(1.0);
             let point = pcurve(basis, parameter)?;
@@ -190,7 +190,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             let side = axis.cross(*ref_direction);
             let point = center.translated(*ref_direction, radius * parameter.cos());
             Some(point.translated(side, radius * parameter.sin()))
@@ -199,8 +199,8 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             let point = center.translated(*major_direction, major_radius * parameter.cos());
             Some(point.translated(minor_direction, minor_radius * parameter.sin()))
@@ -209,7 +209,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             let minor_direction = axis.cross(*major_direction);
             let point = vertex.translated(*major_direction, focal_distance * parameter * parameter);
             Some(point.translated(minor_direction, 2.0 * focal_distance * parameter))
@@ -218,8 +218,8 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             let point = center.translated(*major_direction, major_radius * parameter.cosh());
             Some(point.translated(minor_direction, minor_radius * parameter.sinh()))

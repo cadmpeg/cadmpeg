@@ -610,15 +610,15 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     for surface in &ir.model.surfaces {
         match &surface.geometry {
             SurfaceGeometry::Cone(cone_surface) => {
-                let ratio = &cone_surface.ratio();
-                let half_angle = &cone_surface.half_angle();
-                if *ratio != 1.0 {
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
+                if ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
                         surface.id.as_str(), ratio
                     )));
                 }
-                if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
                         surface.id.as_str(), half_angle
@@ -627,11 +627,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             }
             SurfaceGeometry::Sphere(sphere_surface)
                 if {
-                    let radius = &sphere_surface.radius();
-                    *radius < 0.0
+                    let radius = sphere_surface.radius();
+                    radius < 0.0
                 } =>
             {
-                let radius = &sphere_surface.radius();
+                let radius = sphere_surface.radius();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
@@ -639,13 +639,13 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             }
             SurfaceGeometry::Torus(torus_surface)
                 if {
-                    let major_radius = &torus_surface.major_radius();
-                    let minor_radius = &torus_surface.minor_radius();
-                    !(*major_radius > *minor_radius && *minor_radius > 0.0)
+                    let major_radius = torus_surface.major_radius();
+                    let minor_radius = torus_surface.minor_radius();
+                    !(major_radius > minor_radius && minor_radius > 0.0)
                 } =>
             {
-                let major_radius = &torus_surface.major_radius();
-                let minor_radius = &torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
@@ -3046,7 +3046,7 @@ pub(super) fn surface_values(
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             (
                 0x33,
                 vec![
@@ -3056,7 +3056,7 @@ pub(super) fn surface_values(
                     axis.x,
                     axis.y,
                     axis.z,
-                    scaled(*radius),
+                    scaled(radius),
                     reference.x,
                     reference.y,
                     reference.z,
@@ -3066,15 +3066,15 @@ pub(super) fn surface_values(
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
-            if *ratio != 1.0 {
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
+            if ratio != 1.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
                 ));
             }
-            if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+            if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers require an acute positive half-angle".into(),
                 ));
@@ -3088,7 +3088,7 @@ pub(super) fn surface_values(
                     axis.x,
                     axis.y,
                     axis.z,
-                    scaled(*radius),
+                    scaled(radius),
                     half_angle.sin(),
                     half_angle.cos(),
                     reference.x,
@@ -3100,8 +3100,8 @@ pub(super) fn surface_values(
         SurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
-            let radius = &sphere_surface.radius();
-            if *radius < 0.0 {
+            let radius = sphere_surface.radius();
+            if radius < 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact sphere carriers require a positive radius".into(),
                 ));
@@ -3113,7 +3113,7 @@ pub(super) fn surface_values(
                     scaled(center.x),
                     scaled(center.y),
                     scaled(center.z),
-                    scaled(*radius),
+                    scaled(radius),
                     axis.x,
                     axis.y,
                     axis.z,
@@ -3126,9 +3126,9 @@ pub(super) fn surface_values(
         SurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
-            if !(*major_radius > *minor_radius && *minor_radius > 0.0) {
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
+            if !(major_radius > minor_radius && minor_radius > 0.0) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),
                 ));
@@ -3142,8 +3142,8 @@ pub(super) fn surface_values(
                     axis.x,
                     axis.y,
                     axis.z,
-                    scaled(*major_radius),
-                    scaled(*minor_radius),
+                    scaled(major_radius),
+                    scaled(minor_radius),
                     reference.x,
                     reference.y,
                     reference.z,
@@ -3456,7 +3456,7 @@ pub(super) fn curve_values(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             let reference = *ref_direction;
             (
                 0x1f,
@@ -3470,7 +3470,7 @@ pub(super) fn curve_values(
                     reference.x,
                     reference.y,
                     reference.z,
-                    scaled(*radius),
+                    scaled(radius),
                 ],
             )
         }
@@ -3478,8 +3478,8 @@ pub(super) fn curve_values(
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             (
                 0x20,
                 vec![
@@ -3492,8 +3492,8 @@ pub(super) fn curve_values(
                     major_direction.x,
                     major_direction.y,
                     major_direction.z,
-                    scaled(*major_radius),
-                    scaled(*minor_radius),
+                    scaled(major_radius),
+                    scaled(minor_radius),
                 ],
             )
         }

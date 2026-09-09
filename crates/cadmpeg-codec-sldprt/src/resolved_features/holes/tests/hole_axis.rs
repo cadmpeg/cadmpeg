@@ -85,11 +85,11 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.z = 20.0;
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
             .unwrap();
     let mut faces = [
         Face {
@@ -705,16 +705,16 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let ratio = &cone_surface.ratio();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
 
     let half_angle = 0.5;
     *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
         *origin,
         *axis,
         *ref_direction,
-        *radius,
-        *ratio,
+        radius,
+        ratio,
         half_angle,
     )
     .unwrap();

@@ -86,8 +86,8 @@ fn bind_consolidated_revolution_faces_and_seams(
         };
         let center = torus_surface.center();
         let axis = torus_surface.axis();
-        let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
         let offset = point.vector_from(*center);
         let axial = offset.dot(*axis);
         let radial = Vector3::new(
@@ -115,8 +115,8 @@ fn bind_consolidated_revolution_faces_and_seams(
         };
         let center = torus_surface.center();
         let axis = torus_surface.axis();
-        let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
         if !expected_sweep.is_finite()
             || expected_sweep <= 0.0
             || expected_sweep > std::f64::consts::PI
@@ -184,7 +184,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                         first.y / first_norm,
                         first.z / first_norm,
                     ),
-                    *minor_radius,
+                    minor_radius,
                 )
                 .ok()?,
             ),
@@ -622,7 +622,7 @@ fn refine_consolidated_analytic_surfaces(
             Some(SurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = &cylinder_surface.radius();
+                let radius = cylinder_surface.radius();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
                     (same_point(*origin, cylinder.origin)
                         && same_axis(*axis, cylinder.axis)
@@ -632,14 +632,14 @@ fn refine_consolidated_analytic_surfaces(
             }
             Some(SurfaceGeometry::Cone(cone_surface))
                 if {
-                    let radius = &cone_surface.radius();
-                    let ratio = &cone_surface.ratio();
-                    *radius == 0.0 && *ratio == 1.0
+                    let radius = cone_surface.radius();
+                    let ratio = cone_surface.ratio();
+                    radius == 0.0 && ratio == 1.0
                 } =>
             {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
-                let half_angle = &cone_surface.half_angle();
+                let half_angle = cone_surface.half_angle();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(*origin, cone.apex)
                         && same_axis(*axis, cone.axis)
@@ -664,7 +664,7 @@ fn refine_consolidated_analytic_surfaces(
             }
             Some(SurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center();
-                let radius = &sphere_surface.radius();
+                let radius = sphere_surface.radius();
                 exactly_one(spheres.iter().filter(|sphere| {
                     same_point(*center, sphere.center)
                         && radius.to_bits() == quantized(sphere.radius).to_bits()
@@ -679,8 +679,8 @@ fn refine_consolidated_analytic_surfaces(
             Some(SurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
-                let major_radius = &torus_surface.major_radius();
-                let minor_radius = &torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 exactly_one(tori.iter().filter(|torus| {
                     same_point(*center, torus.center)
                         && same_axis(*axis, torus.axis)
@@ -6034,13 +6034,13 @@ pub(crate) fn same_cone_generator_pair(
     };
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
-    let radius = &cone_surface.radius();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let half_angle = cone_surface.half_angle();
     let tangent = half_angle.tan();
     if !tangent.is_finite() || tangent == 0.0 {
         return false;
     }
-    let apex_offset = -*radius / tangent;
+    let apex_offset = -radius / tangent;
     if !apex_offset.is_finite() {
         return false;
     }
@@ -7137,11 +7137,11 @@ pub(crate) fn standard_pcurve_geometry(
     if let SurfaceGeometry::Cone(cone_surface) = surface {
         let origin = cone_surface.origin();
         let axis = cone_surface.axis();
-        let radius = &cone_surface.radius();
-        let half_angle = &cone_surface.half_angle();
+        let radius = cone_surface.radius();
+        let half_angle = cone_surface.half_angle();
         let tangent = half_angle.tan();
         if tangent.is_finite() && tangent != 0.0 {
-            let apex_offset = -*radius / tangent;
+            let apex_offset = -radius / tangent;
             if apex_offset.is_finite() {
                 let apex = Point3::new(
                     origin.x + apex_offset * axis.x,
@@ -7184,9 +7184,9 @@ pub(crate) fn standard_pcurve_geometry(
                 matches!(curve, CurveGeometry::Circle(circle_curve)
                                 if {
                                     let axis = circle_curve.axis();
-                let curve_radius = &circle_curve.radius();
+                let curve_radius = circle_curve.radius();
                                     axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
-                                        && (*curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
+                                        && (curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
                                 })
             });
         if !contained_carrier {
@@ -7317,8 +7317,8 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let ratio = &cone_surface.ratio();
-            if !ratio.is_finite() || *ratio == 0.0 {
+            let ratio = cone_surface.ratio();
+            if !ratio.is_finite() || ratio == 0.0 {
                 return None;
             }
             let offset = point.vector_from(*origin);
@@ -7332,8 +7332,8 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
-            if !radius.is_finite() || *radius == 0.0 {
+            let radius = sphere_surface.radius();
+            if !radius.is_finite() || radius == 0.0 {
                 return None;
             }
             let offset = point.vector_from(*center);
@@ -7347,7 +7347,7 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
+            let major_radius = torus_surface.major_radius();
             let offset = point.vector_from(*center);
             let tangent = (*axis).cross(*ref_direction);
             let u = offset.dot(tangent).atan2(offset.dot(*ref_direction));
@@ -7393,16 +7393,16 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let axial = point.vector_from(*origin).dot(*axis);
             let radial = point.distance_squared(*origin) - axial * axial;
-            (radial.max(0.0).sqrt() - *radius).abs()
+            (radial.max(0.0).sqrt() - radius).abs()
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let axial = point.vector_from(*origin).dot(*axis);
             let radial = (point.distance_squared(*origin) - axial * axial)
                 .max(0.0)
@@ -7411,14 +7411,14 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             (point.distance_squared(*center).sqrt() - radius.abs()).abs()
         }
         SurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let axial = point.vector_from(*center).dot(*axis);
             let radial = (point.distance_squared(*center) - axial * axial)
                 .max(0.0)
@@ -7486,8 +7486,8 @@ pub(crate) fn standard_spline_line(
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let tangent = half_angle.tan();
             if !tangent.is_finite() || tangent == 0.0 {
                 false
@@ -7529,10 +7529,10 @@ fn standard_spline_circle(
         match (&left.geometry, &right.geometry) {
             (SurfaceGeometry::Sphere(sphere_surface), SurfaceGeometry::Plane(plane_surface)) => {
                 let center = sphere_surface.center();
-                let radius = &sphere_surface.radius();
+                let radius = sphere_surface.radius();
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
-                (*center, *radius, *origin, *normal)
+                (*center, radius, *origin, *normal)
             }
             (
                 SurfaceGeometry::Plane(plane_surface_2),
@@ -7541,8 +7541,8 @@ fn standard_spline_circle(
                 let origin = plane_surface_2.origin();
                 let normal = plane_surface_2.normal();
                 let center = sphere_surface_2.center();
-                let radius = &sphere_surface_2.radius();
-                (*center, *radius, *origin, *normal)
+                let radius = sphere_surface_2.radius();
+                (*center, radius, *origin, *normal)
             }
             _ => return None,
         };
@@ -7604,13 +7604,13 @@ fn standard_spline_cylinder_plane(
             ) => {
                 let cylinder_origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = &cylinder_surface.radius();
+                let radius = cylinder_surface.radius();
                 let plane_origin = plane_surface.origin();
                 let plane_normal = plane_surface.normal();
                 (
                     *axis,
                     *cylinder_origin,
-                    *radius,
+                    radius,
                     *plane_origin,
                     *plane_normal,
                 )
@@ -7623,11 +7623,11 @@ fn standard_spline_cylinder_plane(
                 let plane_normal = plane_surface_2.normal();
                 let cylinder_origin = cylinder_surface_2.origin();
                 let axis = cylinder_surface_2.axis();
-                let radius = &cylinder_surface_2.radius();
+                let radius = cylinder_surface_2.radius();
                 (
                     *axis,
                     *cylinder_origin,
-                    *radius,
+                    radius,
                     *plane_origin,
                     *plane_normal,
                 )
@@ -7731,17 +7731,17 @@ fn standard_spline_perpendicular_cylinders(
             ) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = &cylinder_surface.radius();
+                let radius = cylinder_surface.radius();
                 let second_origin = cylinder_surface_2.origin();
                 let second_axis = cylinder_surface_2.axis();
-                let second_radius = &cylinder_surface_2.radius();
+                let second_radius = cylinder_surface_2.radius();
                 (
                     *axis,
                     *origin,
-                    *radius,
+                    radius,
                     *second_axis,
                     *second_origin,
-                    *second_radius,
+                    second_radius,
                 )
             }
             _ => return None,
@@ -7860,23 +7860,23 @@ fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Opt
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             (
                 *center,
-                ref_direction.scale(*radius),
-                axis.cross(*ref_direction).scale(*radius),
+                ref_direction.scale(radius),
+                axis.cross(*ref_direction).scale(radius),
             )
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             (
                 *center,
-                major_direction.scale(*major_radius),
-                axis.cross(*major_direction).scale(*minor_radius),
+                major_direction.scale(major_radius),
+                axis.cross(*major_direction).scale(minor_radius),
             )
         }
         _ => return None,
@@ -9201,10 +9201,10 @@ fn standard_circle_axis_from_carrier(
 ) -> Option<Vector3> {
     if let SurfaceGeometry::Sphere(sphere_surface) = surface {
         let sphere_center = sphere_surface.center();
-        let sphere_radius = &sphere_surface.radius();
+        let sphere_radius = sphere_surface.radius();
         let center_distance = center.distance(*sphere_center);
         if center_distance <= SPHERE_CENTER_COINCIDENCE_TOLERANCE
-            && close_length(circle_radius, *sphere_radius)
+            && close_length(circle_radius, sphere_radius)
         {
             return None;
         }
@@ -9226,18 +9226,18 @@ pub(crate) fn circle_axis_from_carrier(
         SurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let offset = center.vector_from(*origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
-            (close_length(radial.norm(), 0.0) && close_length(circle_radius, *radius))
+            (close_length(radial.norm(), 0.0) && close_length(circle_radius, radius))
                 .then_some(*axis)
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let offset = center.vector_from(*origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
@@ -9247,7 +9247,7 @@ pub(crate) fn circle_axis_from_carrier(
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
             let sphere_center = sphere_surface.center();
-            let sphere_radius = &sphere_surface.radius();
+            let sphere_radius = sphere_surface.radius();
             let offset = center.vector_from(*sphere_center);
             let distance = offset.x.hypot(offset.y).hypot(offset.z);
             (distance.is_finite()
@@ -9261,15 +9261,15 @@ pub(crate) fn circle_axis_from_carrier(
         SurfaceGeometry::Torus(torus_surface) => {
             let torus_center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let offset = center.vector_from(*torus_center);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             let radial_distance = radial.norm();
             if close_length(axial, 0.0)
-                && close_length(radial_distance, *major_radius)
-                && close_length(circle_radius, *minor_radius)
+                && close_length(radial_distance, major_radius)
+                && close_length(circle_radius, minor_radius)
             {
                 unit_vector((*axis).cross(radial))
             } else if close_length(radial_distance, 0.0)

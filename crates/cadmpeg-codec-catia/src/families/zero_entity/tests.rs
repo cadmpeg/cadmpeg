@@ -110,14 +110,14 @@ fn decode_zero_entity_transfers_framed_cylinder() {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             );
-            assert_eq!(*radius, 4.0);
+            assert_eq!(radius, 4.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }

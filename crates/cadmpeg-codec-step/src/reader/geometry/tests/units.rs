@@ -194,9 +194,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
                 if {
-                    let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
-                    *major_radius == 6.0 && *minor_radius == 2.0
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
+                    major_radius == 6.0 && minor_radius == 2.0
                 })
     ));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
@@ -292,40 +292,40 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let radius = &cylinder_surface.radius();
-            *radius == 5.0
+            let radius = cylinder_surface.radius();
+            radius == 5.0
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let radius = &cone_surface.radius();
-        let ratio = &cone_surface.ratio();
-        let half_angle = &cone_surface.half_angle();
-                    *radius == 5.0 && *ratio == 1.0 && *half_angle == 0.25
+                    let radius = cone_surface.radius();
+        let ratio = cone_surface.ratio();
+        let half_angle = cone_surface.half_angle();
+                    radius == 5.0 && ratio == 1.0 && half_angle == 0.25
                 })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
         if {
-            let radius = &sphere_surface.radius();
-            *radius == 5.0
+            let radius = sphere_surface.radius();
+            radius == 5.0
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
                 if {
-                    let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
-                    *major_radius == 8.0 && *minor_radius == 2.0
+                    let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
+                    major_radius == 8.0 && minor_radius == 2.0
                 })
     ));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
                 if {
                     let center = circle_curve.center();
-        let radius = &circle_curve.radius();
-                    center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && *radius == 4.0
+        let radius = circle_curve.radius();
+                    center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
                 })
     ));
     assert!(result.report().geometry_transferred());
@@ -426,9 +426,9 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
         if {
-            let radius = &cone_surface.radius();
-let half_angle = &cone_surface.half_angle();
-            *radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
+            let radius = cone_surface.radius();
+let half_angle = cone_surface.half_angle();
+            radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

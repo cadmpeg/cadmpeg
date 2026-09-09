@@ -182,10 +182,10 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
-    assert!((*radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert!((radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert_eq!(ir.model.curves[0].id, id);
     assert!(ir.model.procedural_curves.is_empty());
 }
@@ -268,8 +268,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     let center = ellipse_curve.center();
     let axis = ellipse_curve.axis();
     let major_direction = ellipse_curve.major_direction();
-    let major_radius = &ellipse_curve.major_radius();
-    let minor_radius = &ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius();
+    let minor_radius = ellipse_curve.minor_radius();
     assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= CYLINDER_PLANE_CONIC_TOLERANCE);
     assert!(
         axis.cross(Vector3::new(0.0, sqrt_three / 2.0, -0.5)).norm()
@@ -281,8 +281,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
             .abs()
             >= 1.0 - CYLINDER_PLANE_CONIC_TOLERANCE
     );
-    assert!((*major_radius - 4.0 / sqrt_three).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
-    assert!((*minor_radius - 2.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!((major_radius - 4.0 / sqrt_three).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!((minor_radius - 2.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
     assert_eq!(ir.model.curves[0].id, id);
     assert!(ir.model.procedural_curves.is_empty());
 }
@@ -360,8 +360,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let center = ellipse_curve.center();
     let axis = ellipse_curve.axis();
     let major_direction = ellipse_curve.major_direction();
-    let major_radius = &ellipse_curve.major_radius();
-    let minor_radius = &ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius();
+    let minor_radius = ellipse_curve.minor_radius();
     assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
     assert!(
         axis.dot(Vector3::new(-1.0, 0.0, 1.0).scale(1.0 / 2.0_f64.sqrt()))
@@ -374,8 +374,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
             .abs()
             >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
     );
-    assert!((*major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
-    assert!((*minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!((major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!((minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
     assert_eq!(ir.model.curves[0].id, id);
     assert!(ir.model.procedural_curves.is_empty());
 }

@@ -1708,7 +1708,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
+    let radius = cone_surface.radius();
 
     let ratio = 0.4;
     let half_angle = 0.35;
@@ -1716,7 +1716,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         *origin,
         *axis,
         *ref_direction,
-        *radius,
+        radius,
         ratio,
         half_angle,
     )
@@ -1731,7 +1731,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     assert!(
         matches!(round_trip.ir().model.surfaces[0].geometry, SurfaceGeometry::Cone(cone_surface)
         if {
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             (cone_surface.ratio() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
         })
     );

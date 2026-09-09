@@ -6100,9 +6100,9 @@ pub(crate) mod tests {
         else {
             panic!("expected offset pcurve");
         };
-        let distance = &offset_pcurve.distance();
+        let distance = offset_pcurve.distance();
         let basis = offset_pcurve.basis();
-        assert_eq!(*distance, 0.25);
+        assert_eq!(distance, 0.25);
         assert!(
             matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
             if {

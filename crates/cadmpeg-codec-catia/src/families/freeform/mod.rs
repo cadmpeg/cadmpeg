@@ -1884,15 +1884,15 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
                         continue;
                     };
- let radius = &cylinder_surface.radius();
-                    if *radius <= 0.0 || !radius.is_finite() {
+ let radius = cylinder_surface.radius();
+                    if radius <= 0.0 || !radius.is_finite() {
                         continue;
                     }
                     (
                         (*pos, None),
                         carrier,
                         None,
-                        ConsolidatedCarrierChart::Cylinder { radius: *radius },
+                        ConsolidatedCarrierChart::Cylinder { radius: radius },
                         "consolidated_b2_03_28_cylinder",
                         "cylinder",
                     )
@@ -2684,15 +2684,15 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     let left_origin = cone_surface.origin();
     let left_axis = cone_surface.axis();
     let left_reference = cone_surface.ref_direction();
-    let left_radius = &cone_surface.radius();
-    let left_ratio = &cone_surface.ratio();
-    let left_angle = &cone_surface.half_angle();
+    let left_radius = cone_surface.radius();
+    let left_ratio = cone_surface.ratio();
+    let left_angle = cone_surface.half_angle();
     let right_origin = cone_surface_2.origin();
     let right_axis = cone_surface_2.axis();
     let right_reference = cone_surface_2.ref_direction();
-    let right_radius = &cone_surface_2.radius();
-    let right_ratio = &cone_surface_2.ratio();
-    let right_angle = &cone_surface_2.half_angle();
+    let right_radius = cone_surface_2.radius();
+    let right_ratio = cone_surface_2.ratio();
+    let right_angle = cone_surface_2.half_angle();
     if left_axis != right_axis
         || left_reference != right_reference
         || left_ratio.to_bits() != right_ratio.to_bits()
@@ -2711,8 +2711,8 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
             origin.z - axis.z * radius / tangent,
         )
     };
-    let left_apex = apex(*left_origin, *left_axis, *left_radius);
-    let right_apex = apex(*right_origin, *right_axis, *right_radius);
+    let left_apex = apex(*left_origin, *left_axis, left_radius);
+    let right_apex = apex(*right_origin, *right_axis, right_radius);
     let scale = [
         left_apex.x,
         left_apex.y,

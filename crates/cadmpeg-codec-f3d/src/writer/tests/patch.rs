@@ -213,11 +213,11 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-        let radius = &sphere_surface.radius();
+        let radius = sphere_surface.radius();
                     *center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == -25.0
+                        && radius == -25.0
                 })
     );
 }
@@ -306,13 +306,13 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-        let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
                     *center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 20.0
-                        && *minor_radius == -35.0
+                        && major_radius == 20.0
+                        && minor_radius == -35.0
                 })
     );
 }
@@ -402,11 +402,11 @@ fn generated_cylinder_preserves_native_angle_branch() {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
-        let radius = &cylinder_surface.radius();
+        let radius = cylinder_surface.radius();
                     *origin == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 40.0
+                        && radius == 40.0
                 })
     );
 }
@@ -506,13 +506,13 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
                     let center = ellipse_curve.center();
         let axis = ellipse_curve.axis();
         let major_direction = ellipse_curve.major_direction();
-        let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
+        let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
                     *center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 40.0
-                        && *minor_radius == 10.0
+                        && major_radius == 40.0
+                        && minor_radius == 10.0
                 })
     );
 }

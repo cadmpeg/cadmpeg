@@ -1352,16 +1352,16 @@ pub(crate) fn zero_entity_neutral_pcurve(
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             (radius.recip(), 1.0)
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             (1.0, half_angle.cos())
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             (major_radius.recip(), minor_radius.recip())
         }
         SurfaceGeometry::Plane(_) => (1.0, 1.0),
@@ -1472,7 +1472,7 @@ fn zero_entity_model_curve(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let height = constant_coordinate(1)?;
             Some((
                 CurveGeometry::Circle(
@@ -1484,7 +1484,7 @@ fn zero_entity_model_curve(
                         ),
                         *axis,
                         *ref_direction,
-                        *radius,
+                        radius,
                     )
                     .ok()?,
                 ),
@@ -1496,7 +1496,7 @@ fn zero_entity_model_curve(
         {
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             let angle = constant_coordinate(0)?;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1525,8 +1525,8 @@ fn zero_entity_model_curve(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let slant = constant_coordinate(1)?;
             let circle_radius = radius + slant * half_angle.sin();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1559,8 +1559,8 @@ fn zero_entity_model_curve(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let angle = constant_coordinate(0)? / major_radius;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1578,7 +1578,7 @@ fn zero_entity_model_curve(
                         ),
                         radial.cross(*axis),
                         radial,
-                        *minor_radius,
+                        minor_radius,
                     )
                     .ok()?,
                 ),
@@ -1589,8 +1589,8 @@ fn zero_entity_model_curve(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let angle = constant_coordinate(1)? / minor_radius;
             let circle_radius = major_radius + minor_radius * angle.cos();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1653,8 +1653,8 @@ fn zero_entity_model_curve_construction(
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let half_angle = cone_surface.half_angle();
     if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
         return None;
     }
@@ -1724,7 +1724,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let angle = u / radius;
             let transverse = axis.cross(*ref_direction);
             Point3::new(
@@ -1741,15 +1741,15 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         }
         SurfaceGeometry::Cone(cone_surface)
             if {
-                let ratio = &cone_surface.ratio();
-                *ratio == 1.0
+                let ratio = cone_surface.ratio();
+                ratio == 1.0
             } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let transverse = axis.cross(*ref_direction);
             let axial = v * half_angle.cos();
             let radial = radius + v * half_angle.sin();
@@ -1769,8 +1769,8 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let major_angle = u / major_radius;
             let minor_angle = v / minor_radius;
             let transverse = axis.cross(*ref_direction);

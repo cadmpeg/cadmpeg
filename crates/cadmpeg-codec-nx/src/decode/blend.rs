@@ -3103,20 +3103,20 @@ pub(crate) fn analytic_surface_offset(
                 && support_ref == offset_ref
         } =>
         {
-            let support_radius = &cylinder_surface.radius();
-            let offset_radius = &cylinder_surface_2.radius();
+            let support_radius = cylinder_surface.radius();
+            let offset_radius = cylinder_surface_2.radius();
             Some(offset_radius - support_radius)
         }
         (SurfaceGeometry::Cone(cone_surface), SurfaceGeometry::Cone(cone_surface_2))
             if {
                 let support_axis = cone_surface.axis();
                 let support_ref = cone_surface.ref_direction();
-                let support_ratio = &cone_surface.ratio();
-                let support_angle = &cone_surface.half_angle();
+                let support_ratio = cone_surface.ratio();
+                let support_angle = cone_surface.half_angle();
                 let offset_axis = cone_surface_2.axis();
                 let offset_ref = cone_surface_2.ref_direction();
-                let offset_ratio = &cone_surface_2.ratio();
-                let offset_angle = &cone_surface_2.half_angle();
+                let offset_ratio = cone_surface_2.ratio();
+                let offset_angle = cone_surface_2.half_angle();
                 support_axis == offset_axis
                     && support_ref == offset_ref
                     && support_ratio.to_bits() == 1.0_f64.to_bits()
@@ -3126,10 +3126,10 @@ pub(crate) fn analytic_surface_offset(
         {
             let support_origin = cone_surface.origin();
             let support_axis = cone_surface.axis();
-            let support_radius = &cone_surface.radius();
-            let support_angle = &cone_surface.half_angle();
+            let support_radius = cone_surface.radius();
+            let support_angle = cone_surface.half_angle();
             let offset_origin = cone_surface_2.origin();
-            let offset_radius = &cone_surface_2.radius();
+            let offset_radius = cone_surface_2.radius();
             let delta = Vector3::new(
                 offset_origin.x - support_origin.x,
                 offset_origin.y - support_origin.y,
@@ -3152,8 +3152,8 @@ pub(crate) fn analytic_surface_offset(
                 offset_origin.x,
                 offset_origin.y,
                 offset_origin.z,
-                *support_radius,
-                *offset_radius,
+                support_radius,
+                offset_radius,
                 axial_delta,
                 distance,
                 tangent_residual,
@@ -3171,19 +3171,19 @@ pub(crate) fn analytic_surface_offset(
                 let support_center = sphere_surface.center();
                 let support_axis = sphere_surface.axis();
                 let support_ref = sphere_surface.ref_direction();
-                let support_radius = &sphere_surface.radius();
+                let support_radius = sphere_surface.radius();
                 let offset_center = sphere_surface_2.center();
                 let offset_axis = sphere_surface_2.axis();
                 let offset_ref = sphere_surface_2.ref_direction();
-                let offset_radius = &sphere_surface_2.radius();
+                let offset_radius = sphere_surface_2.radius();
                 support_center == offset_center
                     && support_axis == offset_axis
                     && support_ref == offset_ref
                     && support_radius.signum().to_bits() == offset_radius.signum().to_bits()
             } =>
         {
-            let support_radius = &sphere_surface.radius();
-            let offset_radius = &sphere_surface_2.radius();
+            let support_radius = sphere_surface.radius();
+            let offset_radius = sphere_surface_2.radius();
             Some((offset_radius - support_radius) * support_radius.signum())
         }
         (SurfaceGeometry::Torus(torus_surface), SurfaceGeometry::Torus(torus_surface_2))
@@ -3191,24 +3191,24 @@ pub(crate) fn analytic_surface_offset(
                 let support_center = torus_surface.center();
                 let support_axis = torus_surface.axis();
                 let support_ref = torus_surface.ref_direction();
-                let support_major = &torus_surface.major_radius();
-                let support_minor = &torus_surface.minor_radius();
+                let support_major = torus_surface.major_radius();
+                let support_minor = torus_surface.minor_radius();
                 let offset_center = torus_surface_2.center();
                 let offset_axis = torus_surface_2.axis();
                 let offset_ref = torus_surface_2.ref_direction();
-                let offset_major = &torus_surface_2.major_radius();
-                let offset_minor = &torus_surface_2.minor_radius();
+                let offset_major = torus_surface_2.major_radius();
+                let offset_minor = torus_surface_2.minor_radius();
                 support_center == offset_center
                     && support_axis == offset_axis
                     && support_ref == offset_ref
                     && support_major.to_bits() == offset_major.to_bits()
                     && support_minor.signum().to_bits() == offset_minor.signum().to_bits()
-                    && *support_major > support_minor.abs()
-                    && *offset_major > offset_minor.abs()
+                    && support_major > support_minor.abs()
+                    && offset_major > offset_minor.abs()
             } =>
         {
-            let support_minor = &torus_surface.minor_radius();
-            let offset_minor = &torus_surface_2.minor_radius();
+            let support_minor = torus_surface.minor_radius();
+            let offset_minor = torus_surface_2.minor_radius();
             Some((offset_minor - support_minor) * support_minor.signum())
         }
         _ => None,
@@ -3560,17 +3560,17 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
     let CurveGeometry::Ellipse(ellipse_curve) = geometry else {
         unreachable!("periodic analytic curve is a circle or ellipse");
     };
-    let major_radius = &ellipse_curve.major_radius();
-    let minor_radius = &ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius();
+    let minor_radius = ellipse_curve.minor_radius();
     let x = dot_vector(delta, reference);
     let y = dot_vector(delta, transverse);
     let difference = minor_radius * minor_radius - major_radius * major_radius;
     let coefficients = [
-        -*minor_radius * y,
+        -minor_radius * y,
         2.0 * (difference + major_radius * x),
         0.0,
         2.0 * (major_radius * x - difference),
-        *minor_radius * y,
+        minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
     let roots = real_polynomial_roots(&coefficients)?;

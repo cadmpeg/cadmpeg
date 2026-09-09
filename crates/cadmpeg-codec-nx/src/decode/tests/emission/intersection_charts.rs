@@ -90,11 +90,11 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     };
     let supports = intersection.supports();
     let endpoints = intersection.endpoints();
-    let tolerance = &intersection.tolerance();
+    let tolerance = intersection.tolerance();
 
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
-    assert_eq!(*tolerance, 0.01);
+    assert_eq!(tolerance, 0.01);
     assert_eq!(*parameterization, None);
 
     let start = off_support_ir.model.edges[0].start.clone();

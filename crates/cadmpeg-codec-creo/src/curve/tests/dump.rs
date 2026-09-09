@@ -1161,7 +1161,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
@@ -1169,7 +1169,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, -5.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 10.0));
-    assert_eq!(*apex_factor, 0.0);
+    assert_eq!(apex_factor, 0.0);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
 }
 

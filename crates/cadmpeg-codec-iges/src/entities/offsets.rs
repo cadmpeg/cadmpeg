@@ -59,13 +59,13 @@ fn placed_offset_source(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     transform.apply_point(*center),
                     unit_vector(transform.apply_vector(*axis))?.scale(orientation),
                     unit_vector(transform.apply_vector(*ref_direction))?,
-                    *radius,
+                    radius,
                 )
                 .ok()?,
             ))
@@ -451,7 +451,7 @@ pub(super) fn project(
                         let center = circle_curve.center();
                         let axis = circle_curve.axis();
                         let ref_direction = circle_curve.ref_direction();
-                        let radius = &circle_curve.radius();
+                        let radius = circle_curve.radius();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(

@@ -188,11 +188,11 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
 
     let axis = Vector3::new(0.0, 0.0, -1.0);
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, radius)
             .unwrap();
     surfaces.push(opposite);
     assert_eq!(
@@ -367,7 +367,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             };
             let origin = cylinder_surface.origin();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let mut origin = *origin;
 
             origin.z = 20.0;
@@ -376,7 +376,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
                 origin,
                 axis,
                 *ref_direction,
-                *radius,
+                radius,
             )
             .unwrap();
             surface

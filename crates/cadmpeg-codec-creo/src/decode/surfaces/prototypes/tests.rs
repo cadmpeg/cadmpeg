@@ -56,7 +56,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
-        let half_angle = &cone_surface.half_angle();
+        let half_angle = cone_surface.half_angle();
                     (cone_surface.radius() == 0.0)
                         && (cone_surface.ratio() == 1.0)
                         && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
@@ -346,8 +346,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert!(
         matches!(nonvisible_surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let radius = &cylinder_surface.radius();
-            *radius == 50.8
+            let radius = cylinder_surface.radius();
+            radius == 50.8
         })
     );
     assert_eq!(
