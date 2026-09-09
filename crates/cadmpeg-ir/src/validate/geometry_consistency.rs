@@ -163,7 +163,9 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 std::borrow::Cow::Borrowed(definition_payload.context()),
                 None,
             ),
-            crate::geometry::ProceduralCurveDefinition::Projection { context, .. } => {
+            crate::geometry::ProceduralCurveDefinition::Projection(definition_payload) => {
+                let context = definition_payload.context();
+
                 (std::borrow::Cow::Borrowed(context), None)
             }
             crate::geometry::ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
@@ -175,18 +177,23 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
                 (std::borrow::Cow::Borrowed(family.context()), None)
             }
-            crate::geometry::ProceduralCurveDefinition::Spring { layout, .. } => (
-                match layout.support_context() {
-                    Ok(context) => context,
-                    Err(_) => continue,
-                },
-                None,
-            ),
-            crate::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                context,
-                third,
-                ..
-            } => (std::borrow::Cow::Borrowed(context), Some(third)),
+            crate::geometry::ProceduralCurveDefinition::Spring(definition_payload) => {
+                let layout = definition_payload.layout();
+                (
+                    match layout.support_context() {
+                        Ok(context) => context,
+                        Err(_) => continue,
+                    },
+                    None,
+                )
+            }
+            crate::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                definition_payload,
+            ) => {
+                let context = definition_payload.context();
+                let third = definition_payload.third();
+                (std::borrow::Cow::Borrowed(context), Some(third))
+            }
             _ => continue,
         };
         let Some(curve) = curves.get(owner.as_str()) else {

@@ -130,8 +130,9 @@ fn native_procedural_surface_definition(
         )));
     }
     match procedural.definition() {
-        ProceduralSurfaceDefinition::Deformable { construction } => {
+        ProceduralSurfaceDefinition::Deformable(definition_payload) => {
             use cadmpeg_ir::geometry::DeformableSurfaceData;
+            let construction = definition_payload.construction();
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::Malformed(
                     "deformable surface requires a native cache-fit tolerance".into(),
@@ -454,7 +455,9 @@ fn native_procedural_surface_definition(
             native_i64(bytes, construction.trailing_value());
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Exact { spline } => {
+        ProceduralSurfaceDefinition::Exact(definition_payload) => {
+            let spline = definition_payload.spline();
+
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
@@ -500,7 +503,9 @@ fn native_procedural_surface_definition(
             }
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Compound { components } => {
+        ProceduralSurfaceDefinition::Compound(definition_payload) => {
+            let components = definition_payload.components();
+
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "comp_spl_sur")?;
@@ -671,31 +676,36 @@ fn native_procedural_surface_definition(
                 bytes.push(0x10);
             }
         }
-        ProceduralSurfaceDefinition::Loft {
-            sections,
-            revision_form,
-            parameters,
-            closures,
-            singularities,
-            mode,
-            bridge,
-        } => encode_native_loft(
-            bytes,
-            target,
-            procedural,
-            sections,
-            revision_form.as_ref(),
-            parameters,
-            closures,
-            singularities,
-            *mode,
-            bridge,
-            Some(solved_cache),
-        )?,
-        ProceduralSurfaceDefinition::CompoundLoft { construction } => {
+        ProceduralSurfaceDefinition::Loft(definition_payload) => {
+            let sections = definition_payload.sections();
+            let revision_form = definition_payload.revision_form();
+            let parameters = definition_payload.parameters();
+            let closures = definition_payload.closures();
+            let singularities = definition_payload.singularities();
+            let mode = definition_payload.mode();
+            let bridge = definition_payload.bridge();
+            encode_native_loft(
+                bytes,
+                target,
+                procedural,
+                sections,
+                revision_form.as_ref(),
+                parameters,
+                closures,
+                singularities,
+                *mode,
+                bridge,
+                Some(solved_cache),
+            )?;
+        }
+        ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_compound_loft(bytes, target, procedural, construction, solved_cache)?;
         }
-        ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
+        ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_scaled_compound_loft(
                 bytes,
                 target,
@@ -704,35 +714,48 @@ fn native_procedural_surface_definition(
                 Some(solved_cache),
             )?;
         }
-        ProceduralSurfaceDefinition::Skin { construction } => {
+        ProceduralSurfaceDefinition::Skin(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
         }
-        ProceduralSurfaceDefinition::Law { construction } => {
+        ProceduralSurfaceDefinition::Law(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_law_surface(bytes, target, procedural, construction, Some(solved_cache))?;
         }
-        ProceduralSurfaceDefinition::Net { construction } => {
+        ProceduralSurfaceDefinition::Net(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
         }
-        ProceduralSurfaceDefinition::Sweep {
-            profile,
-            spine,
-            native: Some(construction),
-        } => encode_native_sweep_surface(
-            bytes,
-            target,
-            procedural,
-            profile,
-            spine,
-            construction,
-            Some(solved_cache),
-        )?,
-        ProceduralSurfaceDefinition::Sweep { native: None, .. } => {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D sweep surface {} lacks its native construction graph",
-                procedural.id
-            )))
+        ProceduralSurfaceDefinition::Sweep(definition_payload) => {
+            match (
+                definition_payload.profile(),
+                definition_payload.spine(),
+                definition_payload.native(),
+            ) {
+                (profile, spine, Some(construction)) => encode_native_sweep_surface(
+                    bytes,
+                    target,
+                    procedural,
+                    profile,
+                    spine,
+                    construction,
+                    Some(solved_cache),
+                )?,
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D sweep surface {} lacks its native construction graph",
+                        procedural.id
+                    )))
+                }
+            }
         }
-        ProceduralSurfaceDefinition::G2Blend { construction } => {
+
+        ProceduralSurfaceDefinition::G2Blend(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
         ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
@@ -741,10 +764,12 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
             encode_native_revision_g2_blend(bytes, target, construction, Some(solved_cache))?;
         }
-        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+        ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
+            let construction = definition_payload.construction();
+
             encode_native_variable_blend(bytes, target, construction, Some(solved_cache))?;
         }
-        ProceduralSurfaceDefinition::VertexBlend { .. } => {
+        ProceduralSurfaceDefinition::VertexBlend(..) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D vertex blend {} must use its procedural carrier because VBL_SURF has no solved-cache field",
                 procedural.id
@@ -1108,13 +1133,13 @@ fn native_procedural_surface_definition(
                 Some(solved_cache),
             )?;
         }
-        ProceduralSurfaceDefinition::Blend {
-            supports,
-            spine,
-            radius,
-            cross_section,
-            native,
-        } => {
+        ProceduralSurfaceDefinition::Blend(definition_payload) => {
+            let supports = definition_payload.supports();
+            let spine = definition_payload.spine();
+            let radius = definition_payload.radius();
+            let cross_section = definition_payload.cross_section();
+            let native = definition_payload.native();
+
             if let Some(native) = native {
                 encode_complete_native_rolling_ball(bytes, target, native, Some(solved_cache))?;
             } else {
@@ -2013,9 +2038,11 @@ fn native_cacheless_procedural_surface_definition(
             return Ok(true);
         }
     }
-    if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+    if let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
         procedural.definition()
     {
+        let construction = definition_payload.construction();
+
         if matches!(
             construction.shape,
             cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
@@ -2024,7 +2051,9 @@ fn native_cacheless_procedural_surface_definition(
             return Ok(true);
         }
     }
-    if let ProceduralSurfaceDefinition::Law { construction } = procedural.definition() {
+    if let ProceduralSurfaceDefinition::Law(definition_payload) = procedural.definition() {
+        let construction = definition_payload.construction();
+
         if !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
@@ -2052,76 +2081,81 @@ fn native_cacheless_procedural_surface_definition(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let ProceduralSurfaceDefinition::VertexBlend { construction } = procedural.definition() {
+    if let ProceduralSurfaceDefinition::VertexBlend(definition_payload) = procedural.definition() {
+        let construction = definition_payload.construction();
+
         encode_native_vertex_blend(bytes, target, construction)?;
         return Ok(true);
     }
-    if let ProceduralSurfaceDefinition::Sweep {
-        profile,
-        spine,
-        native: Some(construction),
-    } = procedural.definition()
-    {
-        if construction
-            .revision_form
-            .as_ref()
-            .is_some_and(|form| form.cache.parameterization().is_some())
-        {
-            encode_native_sweep_surface(
-                bytes,
-                target,
-                procedural,
-                profile,
-                spine,
-                construction,
-                None,
-            )?;
-            return Ok(true);
+    if let ProceduralSurfaceDefinition::Sweep(definition_payload) = procedural.definition() {
+        if let (profile, spine, Some(construction)) = (
+            definition_payload.profile(),
+            definition_payload.spine(),
+            definition_payload.native(),
+        ) {
+            if construction
+                .revision_form
+                .as_ref()
+                .is_some_and(|form| form.cache.parameterization().is_some())
+            {
+                encode_native_sweep_surface(
+                    bytes,
+                    target,
+                    procedural,
+                    profile,
+                    spine,
+                    construction,
+                    None,
+                )?;
+                return Ok(true);
+            }
         }
     }
     // Tail form `2` stores the parameterization in place of a solved cache, so
     // a blend record carrying it regenerates without one.
-    if let ProceduralSurfaceDefinition::Blend {
-        native: Some(construction),
-        ..
-    } = procedural.definition()
-    {
-        if construction.cache.parameterization().is_some() {
-            encode_complete_native_rolling_ball(bytes, target, construction, None)?;
-            return Ok(true);
+    if let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() {
+        if let (Some(construction),) = (definition_payload.native(),) {
+            if construction.cache.parameterization().is_some() {
+                encode_complete_native_rolling_ball(bytes, target, construction, None)?;
+                return Ok(true);
+            }
         }
     }
-    if let ProceduralSurfaceDefinition::VariableBlend { construction } = procedural.definition() {
+    if let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = procedural.definition()
+    {
+        let construction = definition_payload.construction();
+
         if construction.cache.parameterization().is_some() {
             encode_native_variable_blend(bytes, target, construction, None)?;
             return Ok(true);
         }
     }
-    if let ProceduralSurfaceDefinition::Loft {
-        sections,
-        revision_form: Some(form),
-        parameters,
-        closures,
-        singularities,
-        mode,
-        bridge,
-    } = procedural.definition()
-    {
-        if form.cache.parameterization().is_some() {
-            encode_native_loft(
-                bytes,
-                target,
-                procedural,
-                sections,
-                Some(form),
-                parameters,
-                closures,
-                singularities,
-                *mode,
-                bridge,
-                None,
-            )?;
-            return Ok(true);
+    if let ProceduralSurfaceDefinition::Loft(definition_payload) = procedural.definition() {
+        if let (sections, Some(form), parameters, closures, singularities, mode, bridge) = (
+            definition_payload.sections(),
+            definition_payload.revision_form(),
+            definition_payload.parameters(),
+            definition_payload.closures(),
+            definition_payload.singularities(),
+            definition_payload.mode(),
+            definition_payload.bridge(),
+        ) {
+            if form.cache.parameterization().is_some() {
+                encode_native_loft(
+                    bytes,
+                    target,
+                    procedural,
+                    sections,
+                    Some(form),
+                    parameters,
+                    closures,
+                    singularities,
+                    *mode,
+                    bridge,
+                    None,
+                )?;
+                return Ok(true);
+            }
         }
     }
     if let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
@@ -4746,13 +4780,14 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-        context,
-        discontinuity_flag,
-        source,
-        tail,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(definition_payload) =
+        procedural.definition()
     {
+        let context = definition_payload.context();
+        let discontinuity_flag = definition_payload.discontinuity_flag();
+        let source = definition_payload.source();
+        let tail = definition_payload.tail();
+
         let source = target
             .model
             .curves
@@ -5014,9 +5049,12 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { layout, direction } =
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(definition_payload) =
         procedural.definition()
     {
+        let layout = definition_payload.layout();
+        let direction = definition_payload.direction();
+
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "spring_int_cur")?;
@@ -5112,12 +5150,14 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-        context,
-        selector,
-        third,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+        definition_payload,
+    ) = procedural.definition()
     {
+        let context = definition_payload.context();
+        let selector = definition_payload.selector();
+        let third = definition_payload.third();
+
         let surface_id = third.surface.as_ref().ok_or_else(|| {
             CodecError::NotImplemented(
                 "source-less F3D sss_int_cur requires a third support surface".into(),
@@ -5231,88 +5271,50 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = match procedural
-        .definition()
-    {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => (
-            helix_payload.angle_range(),
-            helix_payload.center(),
-            helix_payload.major(),
-            helix_payload.minor(),
-            helix_payload.pitch(),
-            &helix_payload.apex_factor(),
-            helix_payload.axis(),
-        ),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_) => {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D offset curve {} lacks a defined native offset-law grammar",
-                procedural.id
-            )))
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D offset curve {} lacks a defined native offset-law grammar",
-                procedural.id
-            )))
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D blend-spine curve {} lacks its native blend construction",
-                procedural.id
-            )))
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_) => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
-            unreachable!("procedural curve variant returned from its native writer")
-        }
-    };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) =
+        match procedural.definition() {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => (
+                helix_payload.angle_range(),
+                helix_payload.center(),
+                helix_payload.major(),
+                helix_payload.minor(),
+                helix_payload.pitch(),
+                &helix_payload.apex_factor(),
+                helix_payload.axis(),
+            ),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(_) => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D offset curve {} lacks a defined native offset-law grammar",
+                    procedural.id
+                )))
+            }
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D blend-spine curve {} lacks its native blend construction",
+                    procedural.id
+                )))
+            }
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(..)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
+            | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
+                unreachable!("procedural curve variant returned from its native writer")
+            }
+        };
     native_curve_base(bytes, "intcurve")?;
     bytes.push(0x0f);
     native_ident(bytes, "helix_int_cur")?;

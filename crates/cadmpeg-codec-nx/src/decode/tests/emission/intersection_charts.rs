@@ -602,22 +602,25 @@ fn blend_contact_transfer_fixture(
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface: support.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: other_support,
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(spine),
-                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [
+                        Some(BlendSupport {
+                            surface: support.clone(),
+                            reversed: false,
+                        }),
+                        Some(BlendSupport {
+                            surface: other_support,
+                            reversed: false,
+                        }),
+                    ],
+                    Some(spine),
+                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -735,22 +738,25 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             target_construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface: source.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: other_support,
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(spine),
-                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [
+                        Some(BlendSupport {
+                            surface: source.clone(),
+                            reversed: false,
+                        }),
+                        Some(BlendSupport {
+                            surface: other_support,
+                            reversed: false,
+                        }),
+                    ],
+                    Some(spine),
+                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

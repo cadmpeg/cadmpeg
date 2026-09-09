@@ -569,20 +569,23 @@ fn law_formula_keeps_its_flat_wire_shape_and_rejects_sentinel_payloads() {
 }
 
 fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
-    crate::geometry::ProceduralCurveDefinition::Spring {
-        layout: crate::geometry::SpringLayout::ContextFirst {
-            supports: [
-                crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
-                crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
-            ],
-            first_pcurve: crate::geometry::SpringPcurve::Range([8.0, 9.0]),
-            second_pcurve: None,
-            parameter_range: [-1.0, 2.0],
-            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            discontinuity_flag: true,
-        },
-        direction: 4,
-    }
+    crate::geometry::ProceduralCurveDefinition::Spring(
+        crate::geometry::curve_payloads::SpringCurvePayload::try_new(
+            crate::geometry::SpringLayout::ContextFirst {
+                supports: [
+                    crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
+                    crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
+                ],
+                first_pcurve: crate::geometry::SpringPcurve::Range([8.0, 9.0]),
+                second_pcurve: None,
+                parameter_range: [-1.0, 2.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                discontinuity_flag: true,
+            },
+            4,
+        )
+        .unwrap(),
+    )
 }
 
 #[test]

@@ -1704,12 +1704,15 @@ fn geometry_signal_excludes_opaque_carriers() {
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Exact {
-                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                    ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    extension: 0,
-                },
-            },
+            ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                    },
+                )
+                .expect("finite ordered exact-spline fixture ranges"),
+            ),
             None,
         )
         .expect("valid ProceduralSurface fixture"),
