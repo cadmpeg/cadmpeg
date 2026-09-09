@@ -3633,7 +3633,9 @@ fn stage_extrusion_caps(
                 boundary.end_nurbs.control_points().first().copied()
             };
             let Some(endpoint) = endpoint else {
-                return Err("extrusion cap staging failed".to_string());
+                return Err(format!(
+                    "extrusion cap staging: cap {cap} profile {profile} has no endpoint"
+                ));
             };
             let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}.{suffix}")
                 .try_into()
@@ -3661,30 +3663,36 @@ fn stage_extrusion_caps(
             } else {
                 &boundary.end_pcurve
             };
-            let Ok(degree) = usize::try_from(pcurve.degree) else {
-                return Err("extrusion cap staging failed".to_string());
-            };
-            let Some(end_index) = pcurve.knots.len().checked_sub(degree + 1) else {
-                return Err("extrusion cap staging failed".to_string());
-            };
-            let Some(parameter_range) = pcurve
+            let degree = usize::try_from(pcurve.degree).map_err(|error| {
+                format!(
+                    "extrusion cap staging: pcurve degree {}: {error}",
+                    pcurve.degree
+                )
+            })?;
+            let end_index = degree.checked_add(1)
+                .and_then(|order| pcurve.knots.len().checked_sub(order))
+                .ok_or_else(|| format!(
+                    "extrusion cap staging: pcurve knot count {} cannot supply degree {degree} support",
+                    pcurve.knots.len()
+                ))?;
+            let parameter_range = pcurve
                 .knots
                 .get(degree)
                 .copied()
                 .zip(pcurve.knots.get(end_index).copied())
                 .map(|(start, end)| [start, end])
-            else {
-                return Err("extrusion cap staging failed".to_string());
-            };
-            let Ok(nurbs) = PcurveNurbs::new(
+                .ok_or_else(|| format!(
+                    "extrusion cap staging: pcurve parameter range indexes {degree} and {end_index} exceed knot count {}",
+                    pcurve.knots.len()
+                ))?;
+            let nurbs = PcurveNurbs::new(
                 pcurve.degree,
                 pcurve.knots.clone(),
                 pcurve.control_points.clone(),
                 pcurve.weights.clone(),
                 pcurve.periodic,
-            ) else {
-                return Err("extrusion cap staging failed".to_string());
-            };
+            )
+            .map_err(|error| format!("extrusion cap staging: {error}"))?;
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
@@ -3779,7 +3787,7 @@ fn stage_extrusion_caps(
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
-        return Err("extrusion cap staging failed".to_string());
+        return Err("extrusion cap staging: no enabled caps".to_string());
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
