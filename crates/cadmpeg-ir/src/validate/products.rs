@@ -70,21 +70,15 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
         let auxiliary_definitions = occurrence.link.as_ref().is_none_or(|link| {
             [
-                link.element_component.as_ref(),
-                link.copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.source.as_ref()),
-                link.copy_on_change
-                    .as_ref()
-                    .and_then(|copy| copy.group.as_ref()),
+                link.element_component(),
+                link.copy_on_change().and_then(|copy| copy.source.as_ref()),
+                link.copy_on_change().and_then(|copy| copy.group.as_ref()),
             ]
             .into_iter()
             .flatten()
             .all(|definition| definitions.contains_key(definition.as_str()))
         });
-        let affine = occurrence.scale.iter().all(|value| value.is_finite());
-        if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
-        {
+        if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
             invalid(
                 findings,
                 occurrence.id.as_str(),
@@ -103,29 +97,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     OperandContainer::Root | OperandContainer::External(_) => true,
                 });
-        let finite = joint
-            .angle()
-            .into_iter()
-            .chain(joint.translation_offset().into_iter().flatten())
-            .chain(joint.distance())
-            .chain(joint.distance2())
-            .chain(
-                joint
-                    .angular_limits()
-                    .into_iter()
-                    .chain(joint.linear_limits())
-                    .flat_map(|limits| [limits.minimum(), limits.maximum()])
-                    .flatten(),
-            )
-            .all(f64::is_finite);
-        let ordered = [joint.angular_limits(), joint.linear_limits()]
-            .into_iter()
-            .flatten()
-            .all(|limits| match (limits.minimum(), limits.maximum()) {
-                (Some(minimum), Some(maximum)) => minimum <= maximum,
-                _ => true,
-            });
-        if !operands_valid || !finite || !ordered {
+        if !operands_valid {
             invalid(
                 findings,
                 joint.id.as_str(),
@@ -198,7 +170,7 @@ mod tests {
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [crate::features::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

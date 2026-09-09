@@ -49,7 +49,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         assert_eq!(ir.model.features.len(), 1);
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class_name));
         assert!(matches!(
-            ir.model.features[0].definition,
+            ir.model.features[0].evaluation.definition(),
             FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane
             }

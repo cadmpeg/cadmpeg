@@ -139,7 +139,7 @@ impl<'a> SketchCurveSelectionResolution<'a> {
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
     let SketchCurveSelectionResolution {
         scopes,
@@ -153,215 +153,257 @@ pub(crate) fn bind_sweep_sketch_selections(
     } = resolution;
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let Some(stream) = native_stream(&scope.id) else {
-            continue;
-        };
-        let FeatureDefinition::Sweep {
-            section,
-            path,
-            guide_rail,
-            ..
-        } = &mut feature.definition
-        else {
-            continue;
-        };
-        if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
-            (section.referenced_profile(), scope.sweep_profile())
-        {
-            let group_id = group_id.clone();
-            let group_matches = {
-                let mut matching_groups = groups.iter().filter(|group| {
-                    group.id == group_id
-                        && group.scope_record_index == scope.record_index
-                        && group.role() == DesignOperandRole::PROFILE
-                        && group
-                            .members()
-                            .iter()
-                            .map(|member| member.value)
-                            .eq([profile_operand.record_index])
-                        && native_stream(&group.id) == Some(stream)
-                });
-                matches!(
-                    (matching_groups.next(), matching_groups.next()),
-                    (Some(_), None)
-                )
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
             };
-            if group_matches {
-                let mut candidates = placements.iter().filter(|placement| {
-                    native_stream(&placement.id) == Some(stream)
-                        && placement.entity_id.suffix() == profile_operand.entity_id.suffix()
-                });
-                if let (Some(placement), None) = (candidates.next(), candidates.next()) {
-                    let Some(sketch) = neutral_sketch_id(placement) else {
-                        continue;
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                break 'feature_edit;
+            };
+            if matching_scopes.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(stream) = native_stream(&scope.id) else {
+                break 'feature_edit;
+            };
+            let FeatureDefinition::Sweep {
+                shape,
+                path,
+                guide_rail,
+                ..
+            } = &mut definition
+            else {
+                break 'feature_edit;
+            };
+            let mut edited_section = shape.section().clone();
+            {
+                let section = &mut edited_section;
+                if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
+                    (section.referenced_profile(), scope.sweep_profile())
+                {
+                    let group_id = group_id.clone();
+                    let group_matches = {
+                        let mut matching_groups = groups.iter().filter(|group| {
+                            group.id == group_id
+                                && group.scope_record_index == scope.record_index
+                                && group.role() == DesignOperandRole::PROFILE
+                                && group
+                                    .members()
+                                    .iter()
+                                    .map(|member| member.value)
+                                    .eq([profile_operand.record_index])
+                                && native_stream(&group.id) == Some(stream)
+                        });
+                        matches!(
+                            (matching_groups.next(), matching_groups.next()),
+                            (Some(_), None)
+                        )
                     };
-                    if sketches.iter().any(|candidate| candidate.id == sketch) {
-                        *section =
-                            cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(sketch));
+                    if group_matches {
+                        let mut candidates = placements.iter().filter(|placement| {
+                            native_stream(&placement.id) == Some(stream)
+                                && placement.entity_id.suffix()
+                                    == profile_operand.entity_id.suffix()
+                        });
+                        if let (Some(placement), None) = (candidates.next(), candidates.next()) {
+                            let Some(sketch) = neutral_sketch_id(placement) else {
+                                break 'feature_edit;
+                            };
+                            if sketches.iter().any(|candidate| candidate.id == sketch) {
+                                *section =
+                                    cadmpeg_ir::features::SweepSection::Profile((sketch).into());
+                            }
+                        }
                     }
                 }
-            }
-        }
-        if let Some(ProfileRef::Native(group_id)) = section.referenced_profile() {
-            let group_id = group_id.clone();
-            let resolved = (|| {
-                let mut matching_groups = groups.iter().filter(|group| {
-                    group.id == group_id
-                        && group.scope_record_index == scope.record_index
-                        && group.role() == DesignOperandRole::PROFILE
-                        && group.members().len() == 1
-                        && native_stream(&group.id) == Some(stream)
-                });
-                let group = matching_groups.next()?;
-                if matching_groups.next().is_some() {
-                    return None;
+                if let Some(ProfileRef::Native(group_id)) = section.referenced_profile() {
+                    let group_id = group_id.clone();
+                    let resolved = (|| {
+                        let mut matching_groups = groups.iter().filter(|group| {
+                            group.id == group_id
+                                && group.scope_record_index == scope.record_index
+                                && group.role() == DesignOperandRole::PROFILE
+                                && group.members().len() == 1
+                                && native_stream(&group.id) == Some(stream)
+                        });
+                        let group = matching_groups.next()?;
+                        if matching_groups.next().is_some() {
+                            return None;
+                        }
+                        let mut matching_operands = operands.iter().filter(|operand| {
+                            operand.scope_record_index == scope.record_index
+                                && operand.group_record_index == group.record_index
+                                && operand.group_member_ordinal == 0
+                                && operand.record_index == group.members()[0].value
+                                && native_stream(&operand.id) == Some(stream)
+                        });
+                        let operand = matching_operands.next()?;
+                        if matching_operands.next().is_some() {
+                            return None;
+                        }
+                        let mut matching_placements = placements.iter().filter(|placement| {
+                            native_stream(&placement.id) == Some(stream)
+                                && placement.entity_id.suffix() == operand.primary_identity
+                        });
+                        let placement = matching_placements.next()?;
+                        if matching_placements.next().is_some() {
+                            return None;
+                        }
+                        let sketch = neutral_sketch_id(placement)?;
+                        if !sketches.iter().any(|candidate| candidate.id == sketch) {
+                            return None;
+                        }
+                        let owner_reference = u32::try_from(operand.primary_identity).ok()?;
+                        let mut matching_curves = curve_identities.iter().filter(|curve| {
+                            native_stream(&curve.id) == Some(stream)
+                                && curve.owner_reference == Some(owner_reference)
+                                && entity_selection_matches_curve(operand, curve)
+                        });
+                        let curve = matching_curves.next()?;
+                        if matching_curves.next().is_some() {
+                            return None;
+                        }
+                        let selected = neutral_sketch_curve_id(
+                            &sketch,
+                            curve.primary_id.get(),
+                            curve.secondary_id,
+                        )?;
+                        sketch_entities
+                            .iter()
+                            .any(|entity| entity.sketch == sketch && entity.id() == &selected)
+                            .then_some((sketch, selected))
+                    })();
+                    if let Some((sketch, selected)) = resolved {
+                        let profile = ProfileRef::sketch_entities(sketch, vec![selected])
+                            .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                        let profile = profile
+                            .try_into()
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        *section = cadmpeg_ir::features::SweepSection::Profile(profile);
+                    }
                 }
-                let mut matching_operands = operands.iter().filter(|operand| {
-                    operand.scope_record_index == scope.record_index
-                        && operand.group_record_index == group.record_index
-                        && operand.group_member_ordinal == 0
-                        && operand.record_index == group.members()[0].value
-                        && native_stream(&operand.id) == Some(stream)
-                });
-                let operand = matching_operands.next()?;
-                if matching_operands.next().is_some() {
-                    return None;
-                }
-                let mut matching_placements = placements.iter().filter(|placement| {
-                    native_stream(&placement.id) == Some(stream)
-                        && placement.entity_id.suffix() == operand.primary_identity
-                });
-                let placement = matching_placements.next()?;
-                if matching_placements.next().is_some() {
-                    return None;
-                }
-                let sketch = neutral_sketch_id(placement)?;
-                if !sketches.iter().any(|candidate| candidate.id == sketch) {
-                    return None;
-                }
-                let owner_reference = u32::try_from(operand.primary_identity).ok()?;
-                let mut matching_curves = curve_identities.iter().filter(|curve| {
-                    native_stream(&curve.id) == Some(stream)
-                        && curve.owner_reference == Some(owner_reference)
-                        && entity_selection_matches_curve(operand, curve)
-                });
-                let curve = matching_curves.next()?;
-                if matching_curves.next().is_some() {
-                    return None;
-                }
-                let selected =
-                    neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)?;
-                sketch_entities
-                    .iter()
-                    .any(|entity| entity.sketch == sketch && entity.id() == &selected)
-                    .then_some((sketch, selected))
-            })();
-            if let Some((sketch, selected)) = resolved {
-                *section =
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::SketchEntities {
-                        sketch,
-                        entities: vec![selected],
+                let resolve_path = |path: &mut PathRef| -> Option<()> {
+                    let PathRef::Native(group_id) = path else {
+                        return None;
+                    };
+                    let mut matching_groups = groups.iter().filter(|group| {
+                        group.id == *group_id
+                            && group.scope_record_index == scope.record_index
+                            && group.role() == DesignOperandRole::ROLE_0X5
+                            && native_stream(&group.id) == Some(stream)
                     });
+                    let group = matching_groups.next()?;
+                    if matching_groups.next().is_some() || group.members().len() != 1 {
+                        return None;
+                    }
+                    *path = resolve_entity_selection_path(group, &path_resolution)?;
+                    Some(())
+                };
+                if let Some(path) = path {
+                    let _ = resolve_path(path);
+                }
+                if let Some(guide_rail) = guide_rail {
+                    let _ = resolve_path(&mut guide_rail.path);
+                }
             }
+            *shape = cadmpeg_ir::features::SweepShape::new(
+                edited_section,
+                shape.sections().to_vec(),
+                shape.mode(),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        let resolve_path = |path: &mut PathRef| -> Option<()> {
-            let PathRef::Native(group_id) = path else {
-                return None;
-            };
-            let mut matching_groups = groups.iter().filter(|group| {
-                group.id == *group_id
-                    && group.scope_record_index == scope.record_index
-                    && group.role() == DesignOperandRole::ROLE_0X5
-                    && native_stream(&group.id) == Some(stream)
-            });
-            let group = matching_groups.next()?;
-            if matching_groups.next().is_some() || group.members().len() != 1 {
-                return None;
-            }
-            *path = resolve_entity_selection_path(group, &path_resolution)?;
-            Some(())
-        };
-        if let Some(path) = path {
-            let _ = resolve_path(path);
-        }
-        if let Some(guide_rail) = guide_rail {
-            let _ = resolve_path(&mut guide_rail.path);
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Resolve `SplitFace` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, SplitFaceTool};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let FeatureDefinition::SplitFace { tool, .. } = &mut feature.definition else {
-            continue;
-        };
-        let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
-            continue;
-        };
-        let mut matching_groups = resolution.groups.iter().filter(|group| {
-            group.id == *group_id
-                && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members().is_empty()
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::SplitFace { tool, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = resolution.groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.role() == DesignOperandRole::ROLE_0X21
+                    && !group.members().is_empty()
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() {
+                break 'feature_edit;
+            }
+            if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+                *tool = SplitFaceTool::Path(path);
+            }
         }
-        if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
-            *tool = SplitFaceTool::Path(path);
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let FeatureDefinition::TrimSurface { tool, .. } = &mut feature.definition else {
-            continue;
-        };
-        let PathRef::Native(group_id) = tool else {
-            continue;
-        };
-        let mut matching_groups = resolution.groups.iter().filter(|group| {
-            group.id == *group_id
-                && group.role() == DesignOperandRole::ROLE_0X21
-                && !group.members().is_empty()
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::TrimSurface { tool, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            let PathRef::Native(group_id) = tool else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = resolution.groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.role() == DesignOperandRole::ROLE_0X21
+                    && !group.members().is_empty()
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() {
+                break 'feature_edit;
+            }
+            if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+                *tool = path;
+            }
         }
-        if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
-            *tool = path;
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn bind_extrude_profile_selections(
@@ -372,163 +414,173 @@ pub(crate) fn bind_extrude_profile_selections(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
     for feature in features {
-        let Some(scope) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
-            continue;
-        };
-        let scoped_histories =
-            histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
-        let scoped_resolution = resolution.scoped(scoped_histories);
-        let effective_previous_history_state_id =
-            crate::history::effective_scope_previous_history_state_id(scope, scoped_histories);
-        let mut matching_groups = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-            })
-            .collect::<Vec<_>>();
-        matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
-        let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
-            continue;
-        };
-        if let ProfileRef::Native(native) = profile {
-            let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
-                group.id == *native
-                    && native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-            });
-            if let (Some(group), None) = (entity_groups.next(), entity_groups.next()) {
-                if let Some(selection) =
-                    resolve_entity_selection_profile(group, &curve_resolution.path_resolution())
-                {
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(scope) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
+                break 'feature_edit;
+            };
+            let scoped_histories =
+                histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
+            let scoped_resolution = resolution.scoped(scoped_histories);
+            let effective_previous_history_state_id =
+                crate::history::effective_scope_previous_history_state_id(scope, scoped_histories);
+            let mut matching_groups = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == native_stream(&scope.id)
+                        && group.scope_record_index == scope.record_index
+                })
+                .collect::<Vec<_>>();
+            matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
+            let FeatureDefinition::Extrude { profile, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if let ProfileRef::Native(native) = profile {
+                let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
+                    group.id == *native
+                        && native_stream(&group.id) == native_stream(&scope.id)
+                        && group.scope_record_index == scope.record_index
+                });
+                if let (Some(group), None) = (entity_groups.next(), entity_groups.next()) {
+                    if let Some(selection) =
+                        resolve_entity_selection_profile(group, &curve_resolution.path_resolution())
+                    {
+                        *profile = selection;
+                        break 'feature_edit;
+                    }
+                }
+                if let Some(selection) = historical_face_profile_selection(
+                    &matching_groups,
+                    members,
+                    effective_previous_history_state_id,
+                    &feature.id,
+                    scoped_histories,
+                ) {
                     *profile = selection;
-                    continue;
+                }
+                break 'feature_edit;
+            }
+            let ProfileRef::Sketch(sketch_id) = profile else {
+                break 'feature_edit;
+            };
+            let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+                if matching_groups.is_empty() {
+                    break 'feature_edit;
+                }
+                let spatial_id = sketch_id.as_str().replacen(
+                    "f3d:model:sketch#",
+                    "f3d:model:spatial-sketch#",
+                    1,
+                );
+                if let Some(spatial_sketch) = resolution
+                    .spatial_sketches
+                    .iter()
+                    .find(|candidate| candidate.id.as_str() == spatial_id)
+                {
+                    let selections = matching_groups
+                        .iter()
+                        .map(|group| {
+                            resolved_spatial_extrude_profile_selection(
+                                group,
+                                members,
+                                spatial_sketch,
+                                scoped_resolution.spatial_entities,
+                                scoped_resolution,
+                                scope.history_state_id,
+                                effective_previous_history_state_id,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    let mut indices = Vec::new();
+                    if selections.iter().all(|selection| {
+                        if let Some(index) = selection {
+                            if !indices.contains(index) {
+                                indices.push(*index);
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }) {
+                        *profile =
+                            ProfileRef::spatial_sketch_profiles(spatial_sketch.id.clone(), indices)
+                                .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                    } else {
+                        *profile = ProfileRef::spatial_sketch_selection(
+                            spatial_sketch.id.clone(),
+                            matching_groups
+                                .iter()
+                                .map(|group| group.id.clone())
+                                .collect(),
+                        )
+                        .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                    }
+                    break 'feature_edit;
+                }
+                *profile = ProfileRef::Native(match matching_groups.as_slice() {
+                    [group] => group.id.clone(),
+                    _ => scope.id.clone(),
+                });
+                break 'feature_edit;
+            };
+            if let (Some(profile_operand), Some(stream)) =
+                (scope.extrude_profile(), native_stream(&scope.id))
+            {
+                if let Some(profiles) = resolved_sketch_profile_regions(
+                    stream,
+                    profile_operand,
+                    sketch,
+                    curve_resolution.curve_identities,
+                    curve_resolution.sketch_entities,
+                ) {
+                    *profile = ProfileRef::sketch_profiles(sketch_id.clone(), profiles)
+                        .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                    break 'feature_edit;
                 }
             }
-            if let Some(selection) = historical_face_profile_selection(
-                &matching_groups,
-                members,
-                effective_previous_history_state_id,
-                &feature.id,
-                scoped_histories,
-            ) {
-                *profile = selection;
-            }
-            continue;
-        }
-        let ProfileRef::Sketch(sketch_id) = profile else {
-            continue;
-        };
-        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             if matching_groups.is_empty() {
-                continue;
+                break 'feature_edit;
             }
-            let spatial_id =
-                sketch_id
-                    .as_str()
-                    .replacen("f3d:model:sketch#", "f3d:model:spatial-sketch#", 1);
-            if let Some(spatial_sketch) = resolution
-                .spatial_sketches
+            let selections = matching_groups
                 .iter()
-                .find(|candidate| candidate.id.as_str() == spatial_id)
-            {
-                let selections = matching_groups
-                    .iter()
-                    .map(|group| {
-                        resolved_spatial_extrude_profile_selection(
-                            group,
-                            members,
-                            spatial_sketch,
-                            scoped_resolution.spatial_entities,
-                            scoped_resolution,
-                            scope.history_state_id,
-                            effective_previous_history_state_id,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let mut indices = Vec::new();
-                if selections.iter().all(|selection| {
-                    if let Some(index) = selection {
-                        if !indices.contains(index) {
-                            indices.push(*index);
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                }) {
-                    *profile = ProfileRef::SpatialSketchProfiles {
-                        sketch: spatial_sketch.id.clone(),
-                        profiles: indices,
-                    };
-                } else {
-                    *profile = ProfileRef::SpatialSketchSelection {
-                        sketch: spatial_sketch.id.clone(),
-                        selections: matching_groups
+                .map(|group| {
+                    resolved_extrude_profile_selection(
+                        sketch_id,
+                        group,
+                        members,
+                        sketch,
+                        scoped_resolution,
+                        scope.history_state_id,
+                        effective_previous_history_state_id,
+                    )
+                })
+                .collect::<Vec<_>>();
+            *profile =
+                merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
+                    ProfileRef::sketch_selection(
+                        sketch_id.clone(),
+                        matching_groups
                             .iter()
                             .map(|group| group.id.clone())
                             .collect(),
-                    };
-                }
-                continue;
-            }
-            *profile = ProfileRef::Native(match matching_groups.as_slice() {
-                [group] => group.id.clone(),
-                _ => scope.id.clone(),
-            });
-            continue;
-        };
-        if let (Some(profile_operand), Some(stream)) =
-            (scope.extrude_profile(), native_stream(&scope.id))
-        {
-            if let Some(profiles) = resolved_sketch_profile_regions(
-                stream,
-                profile_operand,
-                sketch,
-                curve_resolution.curve_identities,
-                curve_resolution.sketch_entities,
-            ) {
-                *profile = ProfileRef::SketchProfiles {
-                    sketch: sketch_id.clone(),
-                    profiles,
-                };
-                continue;
-            }
+                    )
+                    .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()))
+                });
         }
-        if matching_groups.is_empty() {
-            continue;
-        }
-        let selections = matching_groups
-            .iter()
-            .map(|group| {
-                resolved_extrude_profile_selection(
-                    sketch_id,
-                    group,
-                    members,
-                    sketch,
-                    scoped_resolution,
-                    scope.history_state_id,
-                    effective_previous_history_state_id,
-                )
-            })
-            .collect::<Vec<_>>();
-        *profile = merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
-            ProfileRef::SketchSelection {
-                sketch: sketch_id.clone(),
-                selections: matching_groups
-                    .iter()
-                    .map(|group| group.id.clone())
-                    .collect(),
-            }
-        });
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn resolve_entity_selection_profile(
@@ -572,10 +624,7 @@ fn resolve_entity_selection_profile(
                     entities: curves,
                 })
             } else {
-                Some(ProfileRef::SketchProfiles {
-                    sketch,
-                    profiles: selected_profiles,
-                })
+                Some(ProfileRef::sketch_profiles(sketch, selected_profiles).ok()?)
             }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
@@ -593,7 +642,7 @@ fn resolve_entity_selection_profile(
                         .collect::<HashSet<_>>()
                 }),
             )?;
-            Some(ProfileRef::SpatialSketchProfiles { sketch, profiles })
+            Some(ProfileRef::spatial_sketch_profiles(sketch, profiles).ok()?)
         }
         _ => None,
     }
@@ -704,9 +753,9 @@ fn historical_face_profile_selection(
         .as_str()
         .split_once('#')
         .map_or(feature_id.as_str(), |(_, key)| key);
-    Some(ProfileRef::HistoricalFaces {
-        state: feature_input_topology_id(feature_id, previous_state_id),
-        faces: selected_faces
+    ProfileRef::historical_faces(
+        feature_input_topology_id(feature_id, previous_state_id),
+        selected_faces
             .into_iter()
             .map(|face| {
                 ids::history_input_face_id(
@@ -715,8 +764,9 @@ fn historical_face_profile_selection(
                 )
             })
             .collect(),
-        native: groups.iter().map(|group| group.id.clone()).collect(),
-    })
+        groups.iter().map(|group| group.id.clone()).collect(),
+    )
+    .ok()
 }
 
 pub(crate) fn historical_profile_face_candidates(
@@ -845,21 +895,23 @@ pub(crate) fn merge_resolved_profile_selections(
         ProfileRef::SketchProfiles {
             sketch: selected,
             profiles,
-        } if selected == sketch => Some(ResolvedProfileSelection::Loops(profiles.clone())),
+        } if selected == sketch => Some(ResolvedProfileSelection::Loops(
+            profiles.as_slice().to_vec(),
+        )),
         ProfileRef::SketchRegions {
             sketch: selected,
             regions,
-        } if selected == sketch => Some(ResolvedProfileSelection::Regions(regions.clone())),
+        } if selected == sketch => Some(ResolvedProfileSelection::Regions(
+            regions.as_slice().to_vec(),
+        )),
         _ => None,
     }))? {
-        ResolvedProfileSelection::Loops(profiles) => Some(ProfileRef::SketchProfiles {
-            sketch: sketch.clone(),
-            profiles,
-        }),
-        ResolvedProfileSelection::Regions(regions) => Some(ProfileRef::SketchRegions {
-            sketch: sketch.clone(),
-            regions,
-        }),
+        ResolvedProfileSelection::Loops(profiles) => {
+            Some(ProfileRef::sketch_profiles(sketch.clone(), profiles).ok()?)
+        }
+        ResolvedProfileSelection::Regions(regions) => {
+            Some(ProfileRef::sketch_regions(sketch.clone(), regions).ok()?)
+        }
     }
 }
 
@@ -941,18 +993,16 @@ pub(crate) fn resolved_extrude_profile_selection(
             (sketch.profiles.len() == 1).then_some(ResolvedProfileSelection::Loops(vec![0]))
         });
     match resolved_profiles {
-        Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::SketchProfiles {
-            sketch: sketch_id.clone(),
-            profiles,
-        },
-        Some(ResolvedProfileSelection::Regions(regions)) => ProfileRef::SketchRegions {
-            sketch: sketch_id.clone(),
-            regions,
-        },
-        None => ProfileRef::SketchSelection {
-            sketch: sketch_id.clone(),
-            selections: vec![group.id.clone()],
-        },
+        Some(ResolvedProfileSelection::Loops(profiles)) => {
+            ProfileRef::sketch_profiles(sketch_id.clone(), profiles)
+                .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
+        }
+        Some(ResolvedProfileSelection::Regions(regions)) => {
+            ProfileRef::sketch_regions(sketch_id.clone(), regions)
+                .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
+        }
+        None => ProfileRef::sketch_selection(sketch_id.clone(), vec![group.id.clone()])
+            .unwrap_or_else(|_| ProfileRef::Native(group.id.clone())),
     }
 }
 
@@ -1096,7 +1146,7 @@ pub(crate) fn inserted_cylindrical_profile_selection(
             };
             ((candidate_center.u - center.u).hypot(candidate_center.v - center.v)
                 <= linear_tolerance
-                && (candidate_radius.0 - cylinder.radius).abs() <= linear_tolerance
+                && (candidate_radius.get() - cylinder.radius).abs() <= linear_tolerance
                 && projected
                     .iter()
                     .all(|point| point_on_sketch_entity(*point, entity, linear_tolerance)))
@@ -1391,8 +1441,8 @@ pub(crate) fn transition_inserted_profile_selection(
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
         ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
-            [SketchProfileRegion::Loops { outer, holes }] if !holes.is_empty() => {
-                Some((*outer, holes.as_slice()))
+            [SketchProfileRegion::Loops(loops)] if !loops.holes().is_empty() => {
+                Some((loops.outer(), loops.holes()))
             }
             _ => None,
         },
@@ -1408,10 +1458,7 @@ pub(crate) fn transition_inserted_profile_selection(
             ResolvedProfileSelection::Regions(regions)
                 if matches!(
                     regions.as_slice(),
-                    [SketchProfileRegion::Loops {
-                        outer: candidate_outer,
-                        holes: candidate_holes,
-                    }] if *candidate_outer == outer && candidate_holes.as_slice() == holes
+                    [SketchProfileRegion::Loops(loops)] if loops.outer() == outer && loops.holes() == holes
                 ) => {}
             ResolvedProfileSelection::Loops(loops)
                 if !loops.is_empty()
@@ -1424,12 +1471,12 @@ pub(crate) fn transition_inserted_profile_selection(
             _ => return None,
         }
     }
-    has_boundary_support.then(|| {
-        ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
-            outer,
-            holes: holes.to_vec(),
-        }])
-    })
+    if !has_boundary_support {
+        return None;
+    }
+    Some(ResolvedProfileSelection::Regions(vec![
+        SketchProfileRegion::loops(outer, holes.to_vec()).ok()?,
+    ]))
 }
 
 pub(crate) fn historical_face_points(
@@ -1630,7 +1677,7 @@ fn region_with_boundary_selection_members(
     let [region] = regions.first()? else {
         return None;
     };
-    let SketchProfileRegion::Loops { outer, holes } = region else {
+    let SketchProfileRegion::Loops(loops) = region else {
         return None;
     };
     if regions
@@ -1639,8 +1686,8 @@ fn region_with_boundary_selection_members(
     {
         return None;
     }
-    let boundary = std::iter::once(*outer)
-        .chain(holes.iter().copied())
+    let boundary = std::iter::once(loops.outer())
+        .chain(loops.holes().iter().copied())
         .collect::<HashSet<_>>();
     let member_matches = |member: &DesignExtrudeSelectionMember,
                           selection: &Option<ResolvedProfileSelection>| {
@@ -1660,12 +1707,7 @@ fn region_with_boundary_selection_members(
         .iter()
         .zip(selections)
         .all(|(member, selection)| member_matches(member, selection))
-        .then(|| {
-            ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
-                outer: *outer,
-                holes: holes.clone(),
-            }])
-        })
+        .then(|| ResolvedProfileSelection::Regions(vec![region.clone()]))
 }
 
 fn resolved_selection_member_profiles(
@@ -1951,15 +1993,16 @@ fn resolve_entity_selection_path(
         {
             return None;
         }
-        return Some(PathRef::SpatialSketchCurves {
-            sketch: spatial_sketch.clone(),
-            curves: curve_ids
+        return PathRef::spatial_sketch_curves(
+            spatial_sketch.clone(),
+            curve_ids
                 .into_iter()
                 .map(|(primary, secondary)| {
                     neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
                 })
                 .collect::<Option<Vec<_>>>()?,
-        });
+        )
+        .ok();
     }
 
     let sketch = neutral_sketch_id(placement)?;
@@ -1986,7 +2029,7 @@ fn resolve_entity_selection_path(
     }) {
         return None;
     }
-    Some(PathRef::SketchCurves { sketch, curves })
+    PathRef::sketch_curves(sketch, curves).ok()
 }
 
 /// Resolve one ordered Loft guide or centerline group whose members select
@@ -2158,7 +2201,7 @@ fn coincident_spatial_profile_geometry(
         + center_delta.y * center_delta.y
         + center_delta.z * center_delta.z
         <= linear_tolerance * linear_tolerance
-        && (first_radius.0 - second_radius.0).abs() <= linear_tolerance
+        && (first_radius.get() - second_radius.get()).abs() <= linear_tolerance
         && normal_angle <= angular_tolerance
 }
 
@@ -2325,13 +2368,16 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         {
             resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution)
                 .map_or_else(
-                    || ProfileRef::SpatialSketchSelection {
-                        sketch: spatial_sketch_id.clone(),
-                        selections: vec![group.id.clone()],
+                    || {
+                        ProfileRef::spatial_sketch_selection(
+                            spatial_sketch_id.clone(),
+                            vec![group.id.clone()],
+                        )
+                        .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                     },
-                    |profiles| ProfileRef::SpatialSketchProfiles {
-                        sketch: spatial_sketch_id.clone(),
-                        profiles,
+                    |profiles| {
+                        ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), profiles)
+                            .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                     },
                 )
         } else {
@@ -2428,63 +2474,85 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         resolved_profiles.insert(
             group.id.clone(),
             profile.map_or_else(
-                || ProfileRef::SpatialSketchSelection {
-                    sketch: spatial_sketch_id.clone(),
-                    selections: vec![operand.id.clone()],
+                || {
+                    ProfileRef::spatial_sketch_selection(
+                        spatial_sketch_id.clone(),
+                        vec![operand.id.clone()],
+                    )
+                    .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                 },
-                |profile| ProfileRef::SpatialSketchProfiles {
-                    sketch: spatial_sketch_id.clone(),
-                    profiles: vec![profile],
+                |profile| {
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), vec![profile])
+                        .unwrap_or_else(|_| ProfileRef::Native(group.id.clone()))
                 },
             ),
         );
     }
     for feature in features.iter_mut() {
-        let FeatureDefinition::Loft {
-            sections, guidance, ..
-        } = &mut feature.definition
-        else {
-            continue;
-        };
-        for section in sections.iter_mut() {
-            let LoftSection::Profile(ProfileRef::Native(native)) = section else {
-                continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Loft {
+                sections, guidance, ..
+            } = &mut definition
+            else {
+                break 'feature_edit;
             };
-            if let Some(profile) = resolved_profiles.get(native) {
-                *section = LoftSection::Profile(profile.clone());
+            for section in sections.iter_mut() {
+                let LoftSection::Profile(ProfileRef::Native(native)) = section else {
+                    continue;
+                };
+                if let Some(profile) = resolved_profiles.get(native) {
+                    *section = LoftSection::Profile(profile.clone());
+                }
             }
-        }
-        match guidance {
-            cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
-                for guide in guides.iter_mut() {
-                    let PathRef::Native(native) = guide else {
-                        continue;
-                    };
-                    if let Some(path) = resolved_entity_paths.get(native) {
-                        *guide = path.clone();
+            match guidance {
+                cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                    for guide in guides.iter_mut() {
+                        let PathRef::Native(native) = guide else {
+                            continue;
+                        };
+                        if let Some(path) = resolved_entity_paths.get(native) {
+                            *guide = path.clone();
+                        }
+                    }
+                }
+                cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                    if let PathRef::Native(native) = centerline {
+                        if let Some(path) = resolved_entity_paths.get(native) {
+                            *centerline = path.clone();
+                        }
                     }
                 }
             }
-            cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                if let PathRef::Native(native) = centerline {
-                    if let Some(path) = resolved_entity_paths.get(native) {
-                        *centerline = path.clone();
-                    }
-                }
-            }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for feature in features.iter_mut() {
-        let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
-            continue;
-        };
-        let Some(ProfileRef::Native(native)) = construction.profile() else {
-            continue;
-        };
-        let Some(profile) = resolved_profiles.get(native) else {
-            continue;
-        };
-        construction.set_profile(Some(profile.clone()));
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Revolve { construction, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            let Some(ProfileRef::Native(native)) = construction.profile().map(AsRef::as_ref) else {
+                break 'feature_edit;
+            };
+            let Some(profile) = resolved_profiles.get(native) else {
+                break 'feature_edit;
+            };
+            construction.set_profile(Some(
+                profile
+                    .clone()
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ));
+        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }

@@ -58,7 +58,7 @@ fn decode_resolves_feature_topology_selections() {
     let tool_body_id = decoded.ir().model.bodies[1].id.clone();
 
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -66,22 +66,20 @@ fn decode_resolves_feature_topology_selections() {
         }] if edges == &[base.ir().model.edges[0].id.clone()] && native == edge)
     ));
     assert!(matches!(
-        &decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved { faces, native },
             ..
         } if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir().model.features[2].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Resolved { bodies, native },
-            tools: BodySelection::Resolved { .. },
+        decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Combine {
+            operands,
+
             ..
-        } if bodies == &[base.ir().model.bodies[0].id.clone()] && native == body
-    ));
+        } if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies == &[base.ir().model.bodies[0].id.clone()] && native == body)));
     assert!(matches!(
-        &decoded.ir().model.features[3].definition,
+        decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(profile_faces),
             extent: ExtrudeExtent::OneSided {
@@ -98,54 +96,75 @@ fn decode_resolves_feature_topology_selections() {
             && faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir().model.features[4].definition,
+        decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             ..
         } if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir().model.features[5].definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Faces(faces)),
+        decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             path: Some(PathRef::Edges(edges)),
             ..
-        } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
-    ));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Faces(faces),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)))));
 
-    if let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[0].definition
-    {
-        groups[0].edges = EdgeSelection::Edges(vec![edge_id.clone()]);
-    }
-    if let FeatureDefinition::DeleteFace { faces, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    {
-        *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    }
-    if let FeatureDefinition::Combine { target, tools, .. } =
-        &mut decoded.ir_mut().model.features[2].definition
-    {
-        *target = BodySelection::Bodies(vec![body_id.clone()]);
-        *tools = BodySelection::Bodies(vec![tool_body_id.clone()]);
-    }
-    if let FeatureDefinition::Extrude {
-        extent:
-            ExtrudeExtent::OneSided {
-                side:
-                    ExtrudeSide {
-                        termination: LinearTermination::ToFace { face, .. },
-                        ..
+    decoded.ir_mut().model.features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::Fillet { groups } = definition {
+                groups[0].edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+            }
+        })
+        .unwrap();
+    decoded.ir_mut().model.features[1]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::DeleteFace { faces, .. } = definition {
+                *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            }
+        })
+        .unwrap();
+    decoded.ir_mut().model.features[2]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::Combine { operands, .. } = definition {
+                operands
+                    .try_edit(|target, tools| {
+                        *target = BodySelection::Bodies(vec![body_id.clone()]);
+                        *tools = BodySelection::Bodies(vec![tool_body_id.clone()]);
+                    })
+                    .unwrap();
+            }
+        })
+        .unwrap();
+    decoded.ir_mut().model.features[3]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::Extrude {
+                extent:
+                    ExtrudeExtent::OneSided {
+                        side:
+                            ExtrudeSide {
+                                termination: LinearTermination::ToFace { face, .. },
+                                ..
+                            },
                     },
-            },
-        ..
-    } = &mut decoded.ir_mut().model.features[3].definition
-    {
-        *face = FaceSelection::Faces(vec![face_id.clone()]);
-    }
-    if let FeatureDefinition::Hole { face, .. } = &mut decoded.ir_mut().model.features[4].definition
-    {
-        *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
-    }
+                ..
+            } = definition
+            {
+                *face = FaceSelection::Faces(vec![face_id.clone()]);
+            }
+        })
+        .unwrap();
+    decoded.ir_mut().model.features[4]
+        .evaluation
+        .try_edit(|definition, _| {
+            if let FeatureDefinition::Hole { face, .. } = definition {
+                *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
+            }
+        })
+        .unwrap();
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -181,7 +200,10 @@ fn decode_reports_unresolved_feature_output_scope() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.ir().model.features[0].outputs.is_empty());
+    assert!(decoded.ir().model.features[0]
+        .evaluation
+        .outputs()
+        .is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies."
@@ -190,7 +212,7 @@ fn decode_reports_unresolved_feature_output_scope() {
 
 #[test]
 fn decode_dispatches_typed_features_by_xml_family() {
-    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, HoleKind, Length, RadiusSpec};
+    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, HoleKind, RadiusSpec};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -209,26 +231,26 @@ fn decode_dispatches_typed_features_by_xml_family() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Sketch { .. }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::DatumPoint { .. }
     ));
     assert!(matches!(
-        &decoded.ir().model.features[2].definition,
+        decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
-                radius: Length(2.0),
+                radius: actual_radius,
             },
             ..
-        }])
+        }] if actual_radius.get() == 2.0)
     ));
     assert_eq!(
-        decoded.ir().model.features[2].dependencies,
+        decoded.ir().model.features[2].dependencies.as_slice(),
         vec![
             decoded.ir().model.features[0].id.clone(),
             decoded.ir().model.features[1].id.clone(),
@@ -239,38 +261,41 @@ fn decode_dispatches_typed_features_by_xml_family() {
         "RollingBall"
     );
     assert!(matches!(
-        &decoded.ir().model.features[3].definition,
+        decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Chamfer {
             groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::Distance {
-                distance: Length(3.0),
+                distance: actual_distance,
             },
             ..
-        }])
+        }] if actual_distance.get() == 3.0)
     ));
     assert!(matches!(
-        decoded.ir().model.features[4].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+        decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+
+            ..
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
-            },
-            diameter: Some(Length(4.0)),
-            ..
-        }
-    ));
+            }, Some(actual_diameter),) if actual_diameter.get() == 4.0)));
 
     {
         let mut ir = decoded.ir_mut();
-        let FeatureDefinition::Fillet { groups } = &mut ir.model.features[2].definition else {
+        let updated_ir_evaluation = &mut ir.model.features[2].evaluation;
+        let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
+        let FeatureDefinition::Fillet { groups } = &mut updated_ir_definition else {
             panic!("typed custom fillet");
         };
         let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
             panic!("constant fillet");
         };
-        *radius = Length(2.5);
+        *radius = cadmpeg_ir::features::PositiveLength::new(2.5).unwrap();
+        updated_ir_evaluation
+            .set_definition(updated_ir_definition)
+            .unwrap();
         ir.model.features[2]
             .source_properties
             .insert("Algorithm".into(), "FaceBlend".into());
@@ -295,13 +320,15 @@ fn decode_dispatches_typed_features_by_xml_family() {
         "FaceBlend"
     );
     assert_eq!(
-        regenerated.ir().model.features[2].dependencies,
+        regenerated.ir().model.features[2].dependencies.as_slice(),
         vec![
             regenerated.ir().model.features[0].id.clone(),
             regenerated.ir().model.features[1].id.clone(),
         ]
     );
-    regenerated.ir_mut().model.features[2].dependencies.pop();
+    let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
+    dependencies.pop();
+    regenerated.ir_mut().model.features[2].dependencies = dependencies.try_into().unwrap();
     let error = crate::test_support::plan_inherited_write(
         regenerated.ir(),
         regenerated.source_fidelity(),
@@ -336,7 +363,7 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 
@@ -352,7 +379,7 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 }
@@ -421,34 +448,28 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .unwrap();
     assert!(
         matches!(
-            decoded.ir().model.features[0].definition,
-            FeatureDefinition::Combine {
-                target: BodySelection::Unresolved,
-                tools: BodySelection::Unresolved,
+            decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Combine {
+                operands,
+
                 ..
-            }
-        ),
+            } if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))),
         "feature: {:?}",
-        decoded.ir().model.features[0].definition
+        decoded.ir().model.features[0].evaluation.definition()
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Native(target),
-            tools: BodySelection::Native(tools),
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Combine {
+            operands,
+
             ..
-        } if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:")
-    ));
+        } if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
+            && tools.starts_with("sldprt:feature-input:body-path:"))));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Combine {
+            operands,
+
             ..
-        }
-    ));
+        } if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
 
     let mut source = outer_header();
     source.extend(make_block(
@@ -484,22 +505,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Combine {
+            operands,
+
             ..
-        }
-    ));
+        } if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Native(target),
-            tools: BodySelection::Native(tools),
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Combine {
+            operands,
+
             ..
-        } if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:")
-    ));
+        } if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
+            && tools.starts_with("sldprt:feature-input:body-path:"))));
 }
 
 #[test]
@@ -516,13 +533,13 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Revolve {
             construction,
             op: BooleanOp::Cut,
         } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle },
-                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
@@ -554,24 +571,20 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Sweep {
-            mode: SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join
-            },
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             ..
-        }
-    ));
+        } if matches!((shape.mode(),), (SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanKind::Join
+            },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
-        decoded.ir().model.configurations[0].feature_states[feature_id].definition,
-        FeatureDefinition::Sweep {
-            mode: SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join
-            },
+        &decoded.ir().model.configurations[0].feature_states[feature_id].definition, FeatureDefinition::Sweep {
+            shape,
             ..
-        }
-    ));
+        } if matches!((shape.mode(),), (SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanKind::Join
+            },))));
 }
 
 #[test]
@@ -600,7 +613,7 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Sweep {
             path: Some(PathRef::Native(path)),
             ..
@@ -644,7 +657,7 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Sweep { path: None, .. }
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
@@ -688,14 +701,11 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Sweep {
-            mode: SweepMode::Surface,
+        decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             path: Some(PathRef::Native(ref path)),
             ..
-        }
-        if path.ends_with(&format!(":{path_offset}"))
-    ));
+        } if matches!((shape.mode(),), (SweepMode::Surface,) if path.ends_with(&format!(":{path_offset}")))));
 }
 
 #[test]
@@ -757,26 +767,40 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
         .unwrap();
     assert!(matches!(
-        &sweep.definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(feature)),
+        sweep.evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             ..
-        } if feature == &helix.id
-    ));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Feature(feature),) if feature == &helix.id))));
     assert!(sweep.dependencies.contains(&helix.id));
 
     let mut changed_profile = decoded.ir().clone();
-    let FeatureDefinition::Sweep { section, .. } = &mut changed_profile
+    let updated_changed_profile_evaluation = &mut changed_profile
         .model
         .features
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
         .unwrap()
-        .definition
-    else {
+        .evaluation;
+    let mut updated_changed_profile_definition =
+        updated_changed_profile_evaluation.definition().clone();
+    let FeatureDefinition::Sweep { shape, .. } = &mut updated_changed_profile_definition else {
         unreachable!("typed surface sweep");
     };
-    *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native("other".into()));
+    let mut edited_section = shape.section().clone();
+    let section = &mut edited_section;
+    *section = cadmpeg_ir::features::SweepSection::Profile(
+        (ProfileRef::Native("other".into())).try_into().unwrap(),
+    );
+
+    *shape = cadmpeg_ir::features::SweepShape::new(
+        edited_section,
+        shape.sections().to_vec(),
+        shape.mode(),
+    )
+    .unwrap();
+    updated_changed_profile_evaluation
+        .set_definition(updated_changed_profile_definition)
+        .unwrap();
     let error = crate::test_support::plan_inherited_write(
         &changed_profile,
         decoded.source_fidelity(),
@@ -812,12 +836,10 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
-            .map(|feature| &feature.definition),
-        Some(FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_)),
+            .map(|feature| feature.evaluation.definition()), Some(FeatureDefinition::Sweep {
+            shape,
             ..
-        })
-    ));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Feature(_),)))));
 }
 
 #[test]
@@ -887,18 +909,16 @@ fn decode_projects_generated_surface_sweep_profile_path() {
         .find(|feature| feature.name.as_deref() == Some("Surface-Sweep2"))
         .unwrap();
     assert!(matches!(
-        &second.definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+        second.evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
+            ..
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Generated {
                 curves,
                 native,
-            }),
-            ..
-        } if curves.len() == 1
+            },) if curves.len() == 1
             && curves[0].feature == first.id
             && curves[0].local_id == "7"
-            && native.ends_with(&wrapper.to_string())
-    ));
+            && native.ends_with(&wrapper.to_string())))));
     assert!(second.dependencies.contains(&first.id));
 }
 
@@ -1015,7 +1035,8 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
         .expect("projected extrusion feature");
-    let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } = &feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
+        feature.evaluation.definition()
     else {
         panic!("typed extrusion feature");
     };
@@ -1024,7 +1045,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         &cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(25.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(25.0).unwrap(),
                 },
                 draft: None,
             }
@@ -1041,7 +1062,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter
@@ -1129,7 +1150,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
     ));
     let parameter = decoded
@@ -1143,7 +1164,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter

@@ -205,7 +205,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(20.0, 20.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -598,7 +598,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -1093,7 +1093,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )

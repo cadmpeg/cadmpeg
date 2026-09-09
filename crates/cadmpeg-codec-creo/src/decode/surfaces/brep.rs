@@ -1696,7 +1696,7 @@ pub(in super::super) fn transfer_native_brep(
         let shell_ids = shell_specs
             .iter()
             .enumerate()
-            .map(|(shell_index, shell)| {
+            .filter_map(|(shell_index, shell)| {
                 let shell_id = if shell_index == 0 {
                     ShellId::mint(format!("creo:visibgeom:shell#{}", component_index + 1))
                         .expect("identity grammar")
@@ -1719,28 +1719,36 @@ pub(in super::super) fn transfer_native_brep(
                 for face_id in &shell.faces {
                     face_shell_ids.insert(*face_id, shell_id.clone());
                 }
-                ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region_id.clone(),
-                    faces: shell
-                        .faces
-                        .iter()
-                        .map(|face| {
-                            FaceId::mint(format!("creo:visibgeom:face#{face}"))
-                                .expect("identity grammar")
-                        })
-                        .collect(),
-                    wire_edges: shell
-                        .wire_curves
-                        .iter()
-                        .map(|curve_id| {
-                            EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}"))
-                                .expect("identity grammar")
-                        })
-                        .collect(),
-                    free_vertices: Vec::new(),
-                });
-                shell_id
+                ir.model.shells.push(
+                    match Shell::new(
+                        shell_id.clone(),
+                        region_id.clone(),
+                        shell
+                            .faces
+                            .iter()
+                            .map(|face| {
+                                FaceId::mint(format!("creo:visibgeom:face#{face}"))
+                                    .expect("identity grammar")
+                            })
+                            .collect(),
+                        shell
+                            .wire_curves
+                            .iter()
+                            .map(|curve_id| {
+                                EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}"))
+                                    .expect("identity grammar")
+                            })
+                            .collect(),
+                        Vec::new(),
+                    ) {
+                        Ok(shell) => shell,
+                        Err(_) => {
+                            diagnostics.empty_component_count += 1;
+                            return None;
+                        }
+                    },
+                );
+                Some(shell_id)
             })
             .collect::<Vec<_>>();
         ir.model.bodies.push(Body {

@@ -138,7 +138,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1659,9 +1660,9 @@ fn intersects_evaluated_section_carriers() {
 
     let circle_half = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
     })
     .expect("valid test fixture");
     let endpoint_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -1701,9 +1702,9 @@ fn intersects_evaluated_section_carriers() {
     let circle = |center, radius| {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: cadmpeg_ir::math::Point2::new(center, 0.0),
-            radius: Length(radius),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
+            radius: Length::new(radius).expect("finite length fixture"),
+            start_angle: Angle::new(0.0).expect("finite angle fixture"),
+            end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
         })
         .expect("valid test fixture")
     };

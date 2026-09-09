@@ -97,13 +97,11 @@ fn edgeless_doc() -> CadIr {
         color: None,
         tolerance: None,
     });
-    ir.model.shells.push(Shell {
-        id: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
-        region: RegionId::mint("test:model:region#l0").expect("identity grammar"),
-        faces: vec![FaceId::mint("test:model:face#f0").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
+        RegionId::mint("test:model:region#l0").expect("identity grammar"),
+        FaceId::mint("test:model:face#f0").expect("identity grammar"),
+    ));
     ir.model.regions.push(Region {
         id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
         body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
@@ -284,7 +282,7 @@ fn writer_reports_root_occurrence_scale() {
         ordinal: 0,
         transform: Transform::identity(),
         linked_prototype: None,
-        scale: [2.0, 1.0, 1.0],
+        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::features::FiniteReal::new(value).unwrap()),
         name: Some("Scaled root".into()),
         visible: None,
         link: None,
@@ -441,7 +439,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -457,7 +455,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         ordinal: 1,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [1.0; 3],
+        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -525,12 +523,15 @@ fn writer_reports_topology_without_an_emitted_region() {
 fn writer_reports_wire_region_without_connected_edges() {
     let mut ir = unit_cube();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.model.shells[0].faces.clear();
-    ir.model.shells[0].wire_edges =
-        vec![
-            cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
-                .expect("identity grammar"),
-        ];
+    ir.model.shells[0]
+        .edit_topology(|faces, wire_edges, _| {
+            faces.clear();
+            *wire_edges = vec![
+                cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
+                    .expect("identity grammar"),
+            ];
+        })
+        .unwrap();
 
     let report = write_step(
         &ir,

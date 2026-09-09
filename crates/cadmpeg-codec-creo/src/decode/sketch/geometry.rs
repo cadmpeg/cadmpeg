@@ -92,9 +92,9 @@ pub(crate) fn section_arc_geometry(
     }
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
-        radius: Length(first_radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
+        radius: Length::new(first_radius)?,
+        start_angle: Angle::new(start)?,
+        end_angle: Angle::new(end)?,
     })
     .ok()
 }
@@ -108,7 +108,7 @@ pub(crate) fn section_circle_geometry(
     let radius = *radii.get(&segment.radius_ref)?;
     SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(center[0], center[1]),
-        radius: Length(radius),
+        radius: Length::new(radius)?,
     })
     .ok()
 }
@@ -424,9 +424,9 @@ pub(crate) fn saved_section_arc_geometry(
     }
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-        radius: Length(radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(start)?,
+        end_angle: Angle::new(end)?,
     })
     .ok()
 }
@@ -477,7 +477,7 @@ pub(crate) fn saved_section_circle_values(
     let SketchGeometryDefinition::Circle { center, radius } = geometry.definition() else {
         return None;
     };
-    Some(([center.u, center.v], radius.0))
+    Some(([center.u, center.v], radius.get()))
 }
 
 pub(crate) fn saved_section_entity_geometry(
@@ -531,9 +531,9 @@ pub(crate) fn saved_section_entity_geometry(
                 arc.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                     center: Point2::new(center_u, center_v),
-                    radius: Length(radius),
-                    start_angle: Angle(start_angle),
-                    end_angle: Angle(end_angle),
+                    radius: Length::new(radius)?,
+                    start_angle: Angle::new(start_angle)?,
+                    end_angle: Angle::new(end_angle)?,
                 })
                 .ok()?,
                 arc.offset,
@@ -550,7 +550,7 @@ pub(crate) fn saved_section_entity_geometry(
                 circle.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: Point2::new(center_u, center_v),
-                    radius: Length(radius),
+                    radius: Length::new(radius)?,
                 })
                 .ok()?,
                 circle.offset,
@@ -616,9 +616,10 @@ pub(crate) fn saved_section_entity_geometry(
                 {
                     None
                 }
-                [Some(start), Some(end)] if start.is_finite() && end > start => {
-                    Some([Angle(start + parameter_shift), Angle(end + parameter_shift)])
-                }
+                [Some(start), Some(end)] if start.is_finite() && end > start => Some([
+                    Angle::new(start + parameter_shift)?,
+                    Angle::new(end + parameter_shift)?,
+                ]),
                 [Some(start), None]
                     if start.is_finite()
                         && start.abs() <= EPS_PARAMETER_FULL_TURN
@@ -632,9 +633,9 @@ pub(crate) fn saved_section_entity_geometry(
                 conic.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: Point2::new(frame[9], frame[10]),
-                    major_angle: Angle(major_axis[1].atan2(major_axis[0])),
-                    major_radius: Length(major_radius),
-                    minor_radius: Length(minor_radius),
+                    major_angle: Angle::new(major_axis[1].atan2(major_axis[0]))?,
+                    major_radius: Length::new(major_radius)?,
+                    minor_radius: Length::new(minor_radius)?,
                     bounds,
                 })
                 .ok()?,
@@ -656,7 +657,7 @@ pub(crate) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
             start_angle,
             end_angle,
             ..
-            } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs()
+            } if (end_angle.get() - start_angle.get() - std::f64::consts::TAU).abs()
                 <= EPS_ANGLE_FULL_TURN
     )
 }
@@ -671,12 +672,12 @@ pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f6
             end_angle,
         } if !is_full_circle_geometry(geometry) => Some([
             [
-                center.u + radius.0 * start_angle.0.cos(),
-                center.v + radius.0 * start_angle.0.sin(),
+                center.u + radius.get() * start_angle.get().cos(),
+                center.v + radius.get() * start_angle.get().sin(),
             ],
             [
-                center.u + radius.0 * end_angle.0.cos(),
-                center.v + radius.0 * end_angle.0.sin(),
+                center.u + radius.get() * end_angle.get().cos(),
+                center.v + radius.get() * end_angle.get().sin(),
             ],
         ]),
         SketchGeometryDefinition::Nurbs { curve } => {
@@ -949,11 +950,11 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
                         ..
                     },
                 ) => {
-                    let radius_scale = stored_radius.0.max(saved_radius.0).max(1.0);
+                    let radius_scale = stored_radius.get().max(saved_radius.get()).max(1.0);
                     saved_points_coincide(
                         [stored_center.u, stored_center.v],
                         [saved_center.u, saved_center.v],
-                    ) && (stored_radius.0 - saved_radius.0).abs()
+                    ) && (stored_radius.get() - saved_radius.get()).abs()
                         <= EPS_RADIUS_AGREEMENT * radius_scale
                         && saved_geometry_endpoints(&stored)
                             .zip(saved_geometry_endpoints(&saved))

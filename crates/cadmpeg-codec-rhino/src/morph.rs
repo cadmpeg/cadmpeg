@@ -606,42 +606,44 @@ pub(crate) fn project(
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "morph_control".into(),
-            parameters: {
-                let mut parameters = BTreeMap::from([
-                    ("variant".to_string(), variant.to_string()),
-                    (
-                        "captive_ids".to_string(),
-                        morph
-                            .captive_ids
-                            .iter()
-                            .map(Uuid::to_string)
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    ),
-                    ("tolerance".to_string(), morph.tolerance.to_string()),
-                    ("quick_preview".to_string(), morph.quick_preview.to_string()),
-                    (
-                        "preserve_structure".to_string(),
-                        morph.preserve_structure.to_string(),
-                    ),
-                ]);
-                parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
-                    |(index, id)| {
-                        resolve_captive(*id)
-                            .map(|record| (format!("captive_{index}_object"), record))
-                    },
-                ));
-                parameters
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "morph_control".into(),
+                parameters: {
+                    let mut parameters = BTreeMap::from([
+                        ("variant".to_string(), variant.to_string()),
+                        (
+                            "captive_ids".to_string(),
+                            morph
+                                .captive_ids
+                                .iter()
+                                .map(Uuid::to_string)
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        ),
+                        ("tolerance".to_string(), morph.tolerance.to_string()),
+                        ("quick_preview".to_string(), morph.quick_preview.to_string()),
+                        (
+                            "preserve_structure".to_string(),
+                            morph.preserve_structure.to_string(),
+                        ),
+                    ]);
+                    parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
+                        |(index, id)| {
+                            resolve_captive(*id)
+                                .map(|record| (format!("captive_{index}_object"), record))
+                        },
+                    ));
+                    parameters
+                },
             },
-        },
+        ),
         native_ref: Some(native_ref),
     }
 }
@@ -741,7 +743,7 @@ mod tests {
         let feature = project(&morph, "test", None, "native".to_string(), |_| None);
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            &feature.definition
+            feature.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };
@@ -750,7 +752,7 @@ mod tests {
             Some("rhino:object:record#000007".to_string())
         });
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-            &resolved.definition
+            resolved.evaluation.definition()
         else {
             panic!("expected a native morph definition");
         };

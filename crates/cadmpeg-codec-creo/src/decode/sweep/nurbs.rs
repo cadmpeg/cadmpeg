@@ -47,7 +47,7 @@ pub(in super::super) fn extruded_geometry_surface(
                     transform.u_axis()[1],
                     transform.u_axis()[2],
                 ),
-                radius: radius.0,
+                radius: radius.get(),
             })
         }
         _ => None,

@@ -44,13 +44,15 @@ fn named_feature(id: &str, name: &str) -> Feature {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::StoredGeometry,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::StoredGeometry,
+        ),
         native_ref: None,
     }
 }
@@ -73,28 +75,33 @@ fn empty_subtype_requires_established_count_semantics() {
 fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, Length, PatternKind, PatternTransform,
+    };
 
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Linear {
-                direction: None,
-                spacing: Length(10.0),
-                count: 2,
-                second: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::new(PatternTransform::Linear {
+                    direction: None,
+                    spacing: Length::new(10.0).unwrap(),
+                    count: 2,
+                    second: None,
+                })
+                .unwrap(),
             },
-        },
+        ),
         native_ref: None,
     };
 
@@ -114,20 +121,23 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         name: "D1".into(),
         expression: "12mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(12.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("keywords-dimension".into()),
     }];
     let record = dimension("Linear", 0.034);
 
-    apply_to_parameters(&mut parameters, &[feature], &[record]);
+    apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression, "12mm");
     assert_eq!(parameter.display, None);
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
+    );
     assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
     assert_eq!(
         parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
@@ -148,7 +158,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[first, second]);
+    apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -162,7 +172,7 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]);
+    apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -556,7 +566,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
@@ -582,7 +592,7 @@ fn decode_extracts_pmi_semantic_dimension() {
             .expect("editable PMI-backed parameter");
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.0),
+            cadmpeg_ir::features::Length::new(50.0).unwrap(),
         ));
         let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
         semantic.precision = 4;
@@ -779,7 +789,7 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         let parameter = &mut ir.model.parameters[0];
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.0),
+            cadmpeg_ir::features::Length::new(50.0).unwrap(),
         ));
     }
 
@@ -860,13 +870,16 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
             .iter_mut()
             .find(|parameter| parameter.name == "D1")
             .expect("ordinate parameter");
-        assert_eq!(ordinate.value, Some(ParameterValue::Length(Length(25.0))));
+        assert_eq!(
+            ordinate.value,
+            Some(ParameterValue::Length(Length::new(25.0).unwrap()))
+        );
         assert_eq!(
             ordinate.pmi.as_ref().map(|pmi| &pmi.subtype),
             Some(&PmiDimensionSubtype::Ordinate)
         );
         ordinate.expression = "50mm".into();
-        ordinate.value = Some(ParameterValue::Length(Length(50.0)));
+        ordinate.value = Some(ParameterValue::Length(Length::new(50.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -893,8 +906,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
-        ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -918,20 +930,20 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(25.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: BooleanOp::Unresolved,
             ..
-        }
+        } if actual_length.get() == 25.0
     ));
     let parameter = decoded
         .ir()

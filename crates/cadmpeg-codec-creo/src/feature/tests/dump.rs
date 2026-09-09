@@ -55,7 +55,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("round feature");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -75,7 +75,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        mixed.ir().model.features[0].definition,
+        mixed.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -203,7 +203,7 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
         .expect("revolution feature");
 
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Revolve {
             construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -229,7 +229,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         .expect("extrusion feature");
 
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
@@ -262,7 +262,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
 
     assert_eq!(feature.name.as_deref(), Some("Extrude 1 id 40"));
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
@@ -449,7 +449,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0)
+            cadmpeg_ir::features::Angle::new(1.0).unwrap()
         ))
     );
     assert!(relation.dependencies.is_empty());
@@ -457,7 +457,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
+            cadmpeg_ir::features::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let model_feature = result
@@ -468,7 +468,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("model feature");
     assert!(matches!(
-        &model_feature.definition,
+        model_feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Native(profile),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
@@ -493,7 +493,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:sketch_feature#917")
         .expect("sketch feature");
     assert_eq!(
-        sketch_feature.source_content,
+        sketch_feature.source_content.as_slice(),
         [
             cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
@@ -821,7 +821,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     assert!(result.ir().model.parameters.iter().all(|parameter| {
         parameter.value
             == Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::features::Length::new(1.0).unwrap(),
             ))
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -1075,7 +1075,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         .iter()
         .all(|state| state.fields()["recipe_conflict"] == true));
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind.as_str() == "Native Feature"
     ));

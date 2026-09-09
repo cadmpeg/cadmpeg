@@ -208,15 +208,17 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: crate::features::SketchFeatureBinding::Unresolved,
-            },
+            source_content: crate::features::FeatureContent::default(),
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: crate::features::SketchFeatureBinding::Unresolved,
+                },
+            ),
             native_ref: None,
         });
         ir.model.sketches.push(Sketch {
@@ -243,15 +245,17 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: crate::features::ConfigurationBodies::Resolved(
+                crate::features::DistinctMembers::default(),
+            ),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: crate::features::DistinctMembers::default(),
                     },
-                    dependencies: Vec::new(),
+                    dependencies: crate::features::DistinctMembers::default(),
                     definition: FeatureDefinition::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },
@@ -267,21 +271,23 @@ mod tests {
 
     #[test]
     fn split_face_plane_sets_require_two_unique_plane_dependencies() {
-        let feature =
-            |id: FeatureId, ordinal, dependencies, definition: FeatureDefinition| Feature {
-                id,
-                ordinal,
-                name: None,
-                suppressed: Some(false),
-                dependencies,
-                source_properties: BTreeMap::new(),
-                source_tag: None,
-                source_text: None,
-                source_content: Vec::new(),
-                outputs: Vec::new(),
-                definition,
-                native_ref: None,
-            };
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: (dependencies).try_into().unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
         let second = FeatureId::mint("test:model:feature#plane-b").expect("identity grammar");
         let split = FeatureId::mint("test:model:feature#split").expect("identity grammar");
@@ -310,7 +316,7 @@ mod tests {
                 FeatureDefinition::SplitFace {
                     targets: FaceSelection::Unresolved,
                     tool: SplitFaceTool::Planes {
-                        planes: vec![first.clone(), second.clone()],
+                        planes: vec![first.clone(), second.clone()].try_into().unwrap(),
                     },
                 },
             ),
@@ -318,30 +324,5 @@ mod tests {
 
         let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone()],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report.findings.iter().any(|finding| {
-            finding.message == "split-face plane set has fewer than two planes"
-        }));
-
-        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
-            *tool = SplitFaceTool::Planes {
-                planes: vec![first.clone(), first],
-            };
-        } else {
-            unreachable!();
-        }
-        let report = validate_neutral(&ir, Vec::new());
-        assert!(report
-            .findings
-            .iter()
-            .any(|finding| { finding.message == "split-face plane set contains repeated planes" }));
     }
 }

@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
+
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -84,11 +86,11 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: None }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -97,8 +99,10 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());
-    decoded.ir_mut().model.features[1].definition =
-        FeatureDefinition::SpatialSketch { sketch: None };
+    decoded.ir_mut().model.features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::SpatialSketch { sketch: None })
+        .unwrap();
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -120,7 +124,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .features
         .iter()
         .all(|feature| matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::SpatialSketch { sketch: None }
         )));
 }
@@ -306,7 +310,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
                     panic!("circle sketch entity");
                 };
                 center.u = 250.0;
-                *radius = Length(750.0);
+                *radius = Length::new(750.0).unwrap();
             })
             .unwrap();
     }
@@ -325,8 +329,8 @@ fn semantic_writer_applies_circle_sketch_edits() {
         (regenerated.ir().model.sketch_entities[0].geometry).definition(),
         SketchGeometryDefinition::Circle {
             center: cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 },
-            radius: Length(750.0),
-        }
+            radius: actual_radius,
+        } if actual_radius.get() == 750.0
     ));
 }
 
@@ -358,9 +362,9 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
                     panic!("ellipse sketch entity");
                 };
                 center.v = 125.0;
-                *major_angle = Angle(0.25);
-                *major_radius = Length(1500.0);
-                *minor_radius = Length(500.0);
+                *major_angle = Angle::new(0.25).unwrap();
+                *major_radius = Length::new(1500.0).unwrap();
+                *minor_radius = Length::new(500.0).unwrap();
             })
             .unwrap();
     }
@@ -375,17 +379,16 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert!(
-        matches!((regenerated.ir().model.sketch_entities[0].geometry).definition(),
-            SketchGeometryDefinition::Ellipse {
-                center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
-                major_angle: Angle(angle),
-                major_radius: Length(1500.0),
-                minor_radius: Length(500.0),
-                bounds: None,
-            } if (angle - 0.25).abs() < 1.0e-12
-        )
-    );
+    assert!(matches!(
+        regenerated.ir().model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Ellipse {
+            center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
+            major_angle: angle,
+            major_radius: actual_major_radius,
+            minor_radius: actual_minor_radius,
+            bounds: None,
+        } if ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
+    ));
 }
 
 #[test]
@@ -425,9 +428,9 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                     unreachable!();
                 };
                 center.u = 100.0;
-                *radius = Length(800.0);
-                *start_angle = Angle(0.25);
-                *end_angle = Angle(1.25);
+                *radius = Length::new(800.0).unwrap();
+                *start_angle = Angle::new(0.25).unwrap();
+                *end_angle = Angle::new(1.25).unwrap();
             })
             .unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
@@ -469,12 +472,11 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         |entity| matches!(*entity.geometry.definition(),
             SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 },
-                radius: Length(800.0),
-                start_angle: Angle(start),
-                end_angle: Angle(end),
-            } if (start - 0.25).abs() < 1.0e-12 && (end - 1.25).abs() < 1.0e-12
-        )
-    ));
+                radius: actual_radius,
+                start_angle: start,
+                end_angle: end,
+            } if ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && actual_radius.get() == 800.0
+        )));
 }
 
 #[test]

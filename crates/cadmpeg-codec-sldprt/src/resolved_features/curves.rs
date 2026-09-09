@@ -283,9 +283,9 @@ pub(super) fn resolve_two_center_semicircle_profile(
             };
             let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
-                radius: Length(radius),
-                start_angle: Angle((start.v - center.v).atan2(start.u - center.u)),
-                end_angle: Angle((end.v - center.v).atan2(end.u - center.u)),
+                radius: Length::new(radius)?,
+                start_angle: Angle::new((start.v - center.v).atan2(start.u - center.u))?,
+                end_angle: Angle::new((end.v - center.v).atan2(end.u - center.u))?,
             })
             .ok()?;
             Some((geometry, vec![start_ref.clone(), end_ref.clone()]))
@@ -428,9 +428,9 @@ pub(super) fn tangent_bounded_curve(
     let (start_angle, end_angle, _) = minor_arc_angles(first, second);
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center,
-        radius: Length(radius),
-        start_angle: Angle(start_angle),
-        end_angle: Angle(end_angle),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(start_angle)?,
+        end_angle: Angle::new(end_angle)?,
     })
     .ok()
 }
@@ -958,7 +958,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
                 sketch: entity.sketch.clone(),
                 endpoints: [start.clone(), end.clone()],
                 center,
-                radius: radius.0,
+                radius: radius.get(),
             })
         })
         .collect::<Vec<_>>();
@@ -1083,8 +1083,8 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             continue;
         };
         let geometry_start = Point2::new(
-            center.u + radius.0 * start_angle.0.cos(),
-            center.v + radius.0 * start_angle.0.sin(),
+            center.u + radius.get() * start_angle.get().cos(),
+            center.v + radius.get() * start_angle.get().sin(),
         );
         let first_distance = (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
         let second_distance = (geometry_start.u - second.u).hypot(geometry_start.v - second.v);
@@ -1286,18 +1286,16 @@ pub(super) fn sketch_plane_frames(
     let mut frames_by_feature = features
         .iter()
         .filter_map(|feature| {
-            let frame = match feature.definition {
+            let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    SketchPlaneFrame::native(principal_sketch_frame(plane))
+                    SketchPlaneFrame::native(principal_sketch_frame(*plane))
                 }
-                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => SketchPlaneFrame::from_frame(
-                    (origin, normal, u_axis),
-                    feature_u_axis_source(feature),
-                ),
+                cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame } => {
+                    SketchPlaneFrame::from_frame(
+                        (frame.origin(), frame.normal(), frame.u_axis()),
+                        feature_u_axis_source(feature),
+                    )
+                }
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -1311,7 +1309,7 @@ pub(super) fn sketch_plane_frames(
                 let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                     reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(reference)),
                     distance,
-                } = &feature.definition
+                } = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -1320,9 +1318,9 @@ pub(super) fn sketch_plane_frames(
                     feature.id.clone(),
                     SketchPlaneFrame {
                         origin: Point3::new(
-                            frame.origin.x + frame.normal.x * distance.0,
-                            frame.origin.y + frame.normal.y * distance.0,
-                            frame.origin.z + frame.normal.z * distance.0,
+                            frame.origin.x + frame.normal.x * distance.get(),
+                            frame.origin.y + frame.normal.y * distance.get(),
+                            frame.origin.z + frame.normal.z * distance.get(),
                         ),
                         ..frame
                     },
@@ -1357,16 +1355,12 @@ pub(super) fn lane_sketch_plane_frames(
         else {
             continue;
         };
-        let frame = match feature.definition {
+        let frame = match feature.evaluation.definition() {
             FeatureDefinition::DatumPrincipalPlane { plane } => {
-                SketchPlaneFrame::native(principal_sketch_frame(plane))
+                SketchPlaneFrame::native(principal_sketch_frame(*plane))
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => SketchPlaneFrame::from_frame(
-                (origin, normal, u_axis),
+            FeatureDefinition::DatumPlane { frame } => SketchPlaneFrame::from_frame(
+                (frame.origin(), frame.normal(), frame.u_axis()),
                 feature_u_axis_source(feature),
             ),
             _ => continue,

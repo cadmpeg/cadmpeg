@@ -34,20 +34,16 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         },
     ];
     let shells = [
-        Shell {
-            id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
-            region: RegionId::mint("test:model:region#1").expect("identity grammar"),
-            faces: vec![FaceId::mint("test:model:face#1").expect("identity grammar")],
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        },
-        Shell {
-            id: ShellId::mint("test:model:shell#2").expect("identity grammar"),
-            region: RegionId::mint("test:model:region#2").expect("identity grammar"),
-            faces: vec![FaceId::mint("test:model:face#2").expect("identity grammar")],
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        },
+        Shell::with_face(
+            ShellId::mint("test:model:shell#1").expect("identity grammar"),
+            RegionId::mint("test:model:region#1").expect("identity grammar"),
+            FaceId::mint("test:model:face#1").expect("identity grammar"),
+        ),
+        Shell::with_face(
+            ShellId::mint("test:model:shell#2").expect("identity grammar"),
+            RegionId::mint("test:model:region#2").expect("identity grammar"),
+            FaceId::mint("test:model:face#2").expect("identity grammar"),
+        ),
     ];
     let operand = crate::records::topology::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
@@ -115,7 +111,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         regions: &regions,
         shells: &shells,
     };
-    let mut selection = BodySelection::NativeSet(vec![native.clone()]);
+    let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(&mut selection, &scope, &inputs);
-    assert_eq!(selection, BodySelection::NativeSet(vec![native]));
+    assert_eq!(
+        selection,
+        BodySelection::NativeSet(vec![native].try_into().unwrap())
+    );
 }

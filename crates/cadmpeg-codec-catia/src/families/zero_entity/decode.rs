@@ -554,13 +554,14 @@ fn transfer_closed_wire_loops(
                     body: body_id,
                     shells: vec![shell_id.clone()],
                 });
-                ir.model.shells.push(Shell {
-                    id: shell_id,
-                    region: region_id,
-                    faces: Vec::new(),
-                    wire_edges: edge_ids,
-                    free_vertices: Vec::new(),
-                });
+                ir.model.shells.push(
+                    match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
+                        Ok(shell) => shell,
+                        Err(_) => {
+                            return Ok(counts);
+                        }
+                    },
+                );
                 counts.bodies += 1;
             }
             counts.loops += 1;
@@ -616,13 +617,14 @@ fn transfer_closed_wire_loops(
             body: body_id,
             shells: vec![shell_id.clone()],
         });
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: Vec::new(),
-            wire_edges: owned_edge_ids,
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(shell_id, region_id, Vec::new(), owned_edge_ids, Vec::new()) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    return Ok(counts);
+                }
+            },
+        );
         counts.bodies += 1;
         counts.owned_bodies += 1;
     }
@@ -1216,7 +1218,7 @@ mod tests {
                 .expect("identity grammar")
         );
         assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
-        assert_eq!(ir.model.shells[0].wire_edges.len(), 4);
+        assert_eq!(ir.model.shells[0].wire_edges().len(), 4);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[1].param_range, Some([0.0, 1.0]));
         assert_eq!(

@@ -30,10 +30,10 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     .get("D1")
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             }
-        }) {
-        RadiusSpec::Constant {
-            radius: Length(radius),
-        }
+        })
+        .and_then(cadmpeg_ir::features::PositiveLength::new)
+    {
+        RadiusSpec::Constant { radius }
     } else {
         let points = feature
             .parameters
@@ -54,7 +54,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     index,
                     VariableRadius {
                         parameter,
-                        radius: Length(radius),
+                        radius: Length::new(radius)?,
                     },
                 ))
             })
@@ -68,6 +68,12 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                         .enumerate()
                         .all(|(expected, (actual, _))| expected == *actual))
                 .then_some(points)
+            })
+            .and_then(|points| {
+                cadmpeg_ir::features::VariableRadii::new(
+                    points.into_iter().map(|(_, point)| point).collect(),
+                )
+                .ok()
             })
             .map_or_else(
                 || {
@@ -87,13 +93,11 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                         RadiusSpec::Unresolved
                     }
                 },
-                |points| RadiusSpec::Variable {
-                    points: points.into_iter().map(|(_, point)| point).collect(),
-                },
+                |points| RadiusSpec::Variable { points },
             )
     };
     FeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: feature
                 .properties
                 .get("Edges")
@@ -101,7 +105,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
             radius,
             tangency_weight: None,
-        }],
+        }),
     }
 }
 
@@ -152,7 +156,7 @@ pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
             .get("RemovedFaces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.map(Length),
+        thickness: thickness.and_then(cadmpeg_ir::features::PositiveLength::new),
         outward,
         mode: None,
         join: None,
@@ -195,7 +199,7 @@ pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.map(Length),
+        thickness: thickness.and_then(cadmpeg_ir::features::PositiveLength::new),
         side,
     }
 }
@@ -205,7 +209,7 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Direction")
         .and_then(|value| parse_vector3(value))
-        .filter(|direction| direction.norm().is_finite() && direction.norm() > 0.0);
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
     let neutral_plane = feature
         .properties
         .get("NeutralPlane")
@@ -231,7 +235,7 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
             .get("Angle")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_angle_rad(value))
-            .map(Angle),
+            .and_then(cadmpeg_ir::features::SlopeAngle::new),
         outward: feature
             .properties
             .get("Outward")
@@ -247,16 +251,20 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         .try_into()
         .ok()?;
     Some(FeatureDefinition::Combine {
-        target: feature
-            .properties
-            .get("Target")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
-        tools: feature
-            .properties
-            .get("Tools")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            feature
+                .properties
+                .get("Target")
+                .cloned()
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+            feature
+                .properties
+                .get("Tools")
+                .cloned()
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+        )
+        .ok()?,
+
         op,
         keep_tools: false,
     })
@@ -322,8 +330,11 @@ pub(crate) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition
 
 pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::ReplaceFace {
-        targets: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        replacements: FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
+        operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+            FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
+        )
+        .ok()?,
     })
 }
 
@@ -334,7 +345,7 @@ pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value))
-            .map(Length)
+            .and_then(Length::new)
     };
     let motion = match feature
         .properties
@@ -346,18 +357,24 @@ pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             distance: distance()?,
         },
         "translate" => FaceMotion::Translate {
-            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
+                feature.properties.get("Direction")?,
+            )?)?,
             distance: distance()?,
         },
         "rotate" => FaceMotion::Rotate {
-            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-            angle: Angle(
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
+                feature.properties.get("AxisOrigin")?,
+            )?)?,
+            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
+                feature.properties.get("AxisDirection")?,
+            )?)?,
+            angle: Angle::new(
                 feature
                     .parameters
                     .get("Angle")
                     .and_then(|value| parse_angle_rad(value))?,
-            ),
+            )?,
         },
         _ => return None,
     };
@@ -381,9 +398,13 @@ pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
     let translation = Vector3::new(translation.x, translation.y, translation.z);
     let rotation = match feature.parameters.get("Rotation") {
         Some(angle) => Some(AxisAngle {
-            origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
-            direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
-            angle: Angle(parse_angle_rad(angle)?),
+            origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
+                feature.properties.get("RotationOrigin")?,
+            )?)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
+                feature.properties.get("RotationAxis")?,
+            )?)?,
+            angle: Angle::new(parse_angle_rad(angle)?)?,
         }),
         None => None,
     };
@@ -393,7 +414,7 @@ pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
         .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
     Some(FeatureDefinition::MoveBody {
         bodies,
-        translation,
+        translation: cadmpeg_ir::features::FiniteVector3::new(translation)?,
         rotation,
         copies,
     })
@@ -411,7 +432,7 @@ pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
             .get("Height")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_positive_length_mm(value))
-            .map(Length),
+            .and_then(cadmpeg_ir::features::PositiveLength::new),
         elliptical: feature
             .properties
             .get("Elliptical")
@@ -428,24 +449,25 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Axis")
         .or_else(|| feature.properties.get("AxisDirection"))
-        .and_then(|value| parse_valid_direction(value));
+        .and_then(|value| parse_valid_direction(value))
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
     let angle = feature
         .parameters
         .get("Angle")
         .and_then(|value| parse_angle_rad(value))
         .filter(|value| value.is_finite())
-        .map(Angle);
+        .and_then(Angle::new);
     let factor = feature
         .parameters
         .get("Factor")
         .and_then(|value| value.trim().parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0);
+        .and_then(cadmpeg_ir::features::PositiveReal::new);
     let distance = feature
         .parameters
         .get("Distance")
         .and_then(|value| parse_length_mm(value))
         .filter(|value| value.is_finite())
-        .map(Length);
+        .and_then(Length::new);
     let form = feature.properties.get("Mode").and_then(|value| {
         match value.to_ascii_lowercase().as_str() {
             "bending" | "bend" => Some(FlexForm::Bending),
@@ -471,6 +493,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Center")
             .and_then(|value| parse_point3_mm(value))
+            .and_then(cadmpeg_ir::features::FinitePoint3::new)
             .map(ScaleCenter::Point),
         Some("Centroid") => Some(ScaleCenter::Centroid),
         Some("Origin" | "ModelOrigin") => Some(ScaleCenter::ModelOrigin),
@@ -487,7 +510,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get(name)
             .and_then(|value| value.trim().parse::<f64>().ok())
-            .filter(|value| value.is_finite() && *value != 0.0)
+            .and_then(cadmpeg_ir::features::NonZeroReal::new)
     };
     let factors = match (
         factor("Factor"),
@@ -496,7 +519,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
         factor("ScaleZ"),
     ) {
         (Some(uniform), None, None, None) => ScaleFactors::Uniform(uniform),
-        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis(Vector3::new(x, y, z)),
+        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis([x, y, z]),
         _ => ScaleFactors::Unresolved,
     };
     FeatureDefinition::Scale {
@@ -522,7 +545,7 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
                     .get(positional)
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .map(Length)
+            .and_then(cadmpeg_ir::features::PositiveLength::new)
     };
     let positional_angle = feature
         .parameters
@@ -538,13 +561,19 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .collect::<Vec<_>>();
     let ordered_spec = || match ordered_dimensions.as_slice() {
         [distance] => Some(ChamferSpec::Distance {
-            distance: Length(parse_positive_dimension_length_mm(distance)?),
+            distance: cadmpeg_ir::features::PositiveLength::new(
+                parse_positive_dimension_length_mm(distance)?,
+            )?,
         }),
         [first, second] => {
-            let first_length = parse_positive_dimension_length_mm(first).map(Length);
-            let second_length = parse_positive_dimension_length_mm(second).map(Length);
-            let first_angle = parse_bounded_angle_rad(first).map(Angle);
-            let second_angle = parse_bounded_angle_rad(second).map(Angle);
+            let first_length = parse_positive_dimension_length_mm(first)
+                .and_then(cadmpeg_ir::features::PositiveLength::new);
+            let second_length = parse_positive_dimension_length_mm(second)
+                .and_then(cadmpeg_ir::features::PositiveLength::new);
+            let first_angle =
+                parse_bounded_angle_rad(first).and_then(cadmpeg_ir::features::InteriorAngle::new);
+            let second_angle =
+                parse_bounded_angle_rad(second).and_then(cadmpeg_ir::features::InteriorAngle::new);
             match (first_length, second_length, first_angle, second_angle) {
                 (Some(distance), None, None, Some(angle))
                 | (None, Some(distance), Some(angle), None) => {
@@ -563,7 +592,9 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
                     distance: length("Distance", "D1")?,
-                    angle: Angle(parse_bounded_angle_rad(value)?),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(parse_bounded_angle_rad(
+                        value,
+                    )?)?,
                 }
             } else if let (Some(first), Some(second)) =
                 (length("Distance1", "D1"), length("Distance2", "D2"))
@@ -593,14 +624,14 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         }
     });
     FeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: feature
                 .properties
                 .get("Edges")
                 .cloned()
                 .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
             spec,
-        }],
+        }),
         flip_direction: false,
     }
 }

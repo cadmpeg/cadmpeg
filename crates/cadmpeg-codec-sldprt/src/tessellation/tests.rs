@@ -550,14 +550,19 @@ fn model_with_body() -> cadmpeg_ir::document::Model {
         body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
     }];
-    model.shells = vec![Shell {
-        id: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
-        region: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    }];
+
     model
+}
+
+fn set_shell_faces(model: &mut cadmpeg_ir::document::Model, faces: Vec<FaceId>) {
+    model.shells = vec![Shell::new(
+        model.regions[0].shells[0].clone(),
+        model.regions[0].id.clone(),
+        faces,
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap()];
 }
 
 fn persistent_mesh(id: &str) -> Tessellation {
@@ -689,7 +694,7 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
 fn persistent_surface_identity_binds_one_face_and_body() {
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "persistent", 0.0);
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -716,7 +721,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-persistent", 0.0);
     let second = add_square_face(&mut model, "second-persistent", 3.0);
-    model.shells[0].faces = vec![first.clone(), second.clone()];
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -734,7 +739,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-mesh", 0.0);
     let second = add_square_face(&mut model, "second-mesh", 3.0);
-    model.shells[0].faces = vec![first.clone(), second.clone()];
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -761,7 +766,7 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-tail", 0.0);
     let second = add_square_face(&mut model, "second-tail", 3.0);
-    model.shells[0].faces = vec![first.clone(), second.clone()];
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
@@ -786,7 +791,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first", -4.0);
     let second = add_square_face(&mut model, "second", 2.0);
-    model.shells[0].faces = vec![first.clone(), second.clone()];
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#mesh",
@@ -832,7 +837,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     let mut model = model_with_body();
     let lower = add_cylindrical_patch_face(&mut model, "lower", 0.0, 1.0);
     let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
-    model.shells[0].faces = vec![lower.clone(), upper.clone()];
+    set_shell_faces(&mut model, vec![lower.clone(), upper.clone()]);
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#lower-mesh",
@@ -865,7 +870,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
 fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     let mut model = model_with_body();
     let face = add_cylindrical_patch_face(&mut model, "chordal", 0.0, 1.0);
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::from_decoded(
@@ -902,7 +907,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
 fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     let mut model = model_with_body();
     let face = add_cylindrical_patch_face(&mut model, "inconsistent-normals", 0.0, 1.0);
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::from_decoded(
@@ -939,7 +944,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
 fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "off-surface", 0.0);
-    model.shells[0].faces.push(face);
+    set_shell_faces(&mut model, vec![face]);
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#off-surface-mesh",
@@ -1035,7 +1040,7 @@ fn cone_support_binds_display_list_face() {
             Point3::new(0.0, -local_radius * 0.5, v),
         ],
     );
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#cone-mesh",
@@ -1088,7 +1093,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
             Point3::new(0.0, -surface_radius * 0.5, axial),
         ],
     );
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     let cache_radius = surface_radius - 0.1;
     let vertices = vec![
         Point3::new(cache_radius, 0.0, axial),
@@ -1189,7 +1194,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         SurfaceGeometry::Nurbs(surface.clone()),
         test_nurbs_corners(&surface),
     );
-    model.shells[0].faces.push(face.clone());
+    set_shell_faces(&mut model, vec![face.clone()]);
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
         .to_vec();
@@ -1221,7 +1226,7 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         SurfaceGeometry::Nurbs(surface.clone()),
         test_nurbs_corners(&surface),
     );
-    model.shells[0].faces.push(face);
+    set_shell_faces(&mut model, vec![face]);
     let samples =
         [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
     let deflection = 0.02;
@@ -1264,7 +1269,11 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         SurfaceGeometry::Nurbs(surface.clone()),
         corners,
     );
-    model.shells[0].faces.extend([first, second]);
+    {
+        for face in [first, second] {
+            set_shell_faces(&mut model, vec![face]);
+        }
+    };
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#nurbs-ambiguous-mesh",
@@ -1306,7 +1315,11 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         },
         corners,
     );
-    model.shells[0].faces.extend([nurbs_face, plane_face]);
+    {
+        for face in [nurbs_face, plane_face] {
+            set_shell_faces(&mut model, vec![face]);
+        }
+    };
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
@@ -1803,7 +1816,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             radius,
         };
     }
-    model.shells[0].faces = vec![target.clone(), competitor];
+    set_shell_faces(&mut model, vec![target.clone(), competitor]);
     model.tessellations.push(
         Tessellation::from_decoded(
             "synthetic:test:tessellation#arc-trim-mesh",

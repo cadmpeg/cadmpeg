@@ -194,6 +194,9 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         7,
     );
     assert_eq!(state, feature_input_topology_id(&feature, 7),);
-    assert_eq!(edges, vec![crate::ids::history_input_edge_id(&prefix, 42)],);
-    assert_eq!(native, groups[0].id);
+    assert_eq!(
+        edges.as_slice(),
+        vec![crate::ids::history_input_edge_id(&prefix, 42)],
+    );
+    assert_eq!(native.as_str(), groups[0].id);
 }

@@ -439,7 +439,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges,
+        brep.shells[0].wire_edges(),
         vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
@@ -727,17 +727,19 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         record(3, "shell", vec![Token::Ref(1)]),
         record(4, "loop", vec![Token::Ref(2)]),
     ];
+    let face_id = FaceId::mint("test:model:face#0").expect("identity grammar");
     let mut brep = AsmBrep {
-        shells: vec![Shell {
-            id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
-            region: RegionId::mint("test:model:region#0").expect("identity grammar"),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
+        shells: vec![Shell::new(
+            ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
+            RegionId::mint("test:model:region#0").expect("identity grammar"),
+            vec![face_id.clone()],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
-            face: FaceId::mint("test:model:face#0").expect("identity grammar"),
+            face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")

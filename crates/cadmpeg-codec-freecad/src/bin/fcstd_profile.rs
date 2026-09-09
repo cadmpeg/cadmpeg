@@ -557,7 +557,8 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for feature in &ir.model.features {
-        if let Ok(Value::Object(definition)) = serde_json::to_value(&feature.definition) {
+        if let Ok(Value::Object(definition)) = serde_json::to_value(feature.evaluation.definition())
+        {
             insert_string(&definition, "definition", &mut observed.feature_definitions);
             if let Some(Value::Object(operation)) = definition.get("operation") {
                 insert_string(operation, "definition", &mut observed.feature_operations);

@@ -11,7 +11,7 @@ use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled
 use crate::vecmath::dot;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
@@ -171,7 +171,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(length),
+                    length: cadmpeg_ir::features::NonZeroLength::new(length)?,
                 },
                 draft: None,
             },
@@ -824,7 +824,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(*length),
+                    length: cadmpeg_ir::features::NonZeroLength::new(*length)?,
                 },
                 draft: None,
             },
@@ -886,7 +886,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
     else {
         return None;
     };
-    directed_blind_extrusion_span(transform.normal(), direction, length.0)
+    directed_blind_extrusion_span(transform.normal(), direction, length.get())
 }
 
 pub(in super::super) fn resolved_feature_extrusion_span(

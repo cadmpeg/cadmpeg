@@ -80,18 +80,24 @@ fn typed_native_operands_are_reported_as_design_losses() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Combine {
-            target: BodySelection::Native("target".into()),
-            tools: BodySelection::Native("tools".into()),
-            op: cadmpeg_ir::features::BooleanKind::Join,
-            keep_tools: false,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Combine {
+                operands: cadmpeg_ir::features::CombineOperands::new(
+                    BodySelection::Native("target".into()),
+                    BodySelection::Native("tools".into()),
+                )
+                .unwrap(),
+
+                op: cadmpeg_ir::features::BooleanKind::Join,
+                keep_tools: false,
+            },
+        ),
         native_ref: None,
     });
     let mut report = super::empty_report(true);

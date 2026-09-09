@@ -291,7 +291,8 @@ pub(crate) fn pattern_hole_nominal_context(
         {
             continue;
         }
-        let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } = &pattern.definition
+        let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } =
+            pattern.evaluation.definition()
         else {
             continue;
         };
@@ -320,21 +321,20 @@ pub(crate) fn pattern_hole_nominal_context(
                     .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
             })
             .filter_map(|candidate| {
-                let cadmpeg_ir::features::FeatureDefinition::Hole { diameter, .. } =
-                    &candidate.definition
+                let cadmpeg_ir::features::FeatureDefinition::Hole { shape, .. } =
+                    candidate.evaluation.definition()
                 else {
                     return None;
                 };
-                Some(
+                let diameter = &shape.diameter();
+                Some(diameter.as_ref().and_then(|diameter| {
+                    let diameter = diameter.get();
+
                     diameter
-                        .as_ref()
-                        .and_then(|cadmpeg_ir::features::Length(diameter)| {
-                            diameter
-                                .is_finite()
-                                .then_some(*diameter)
-                                .filter(|diameter| *diameter > 0.0)
-                        }),
-                )
+                        .is_finite()
+                        .then_some(diameter)
+                        .filter(|diameter| *diameter > 0.0)
+                }))
             })
             .collect::<Vec<_>>();
         let [Some(diameter)] = holes.as_slice() else {

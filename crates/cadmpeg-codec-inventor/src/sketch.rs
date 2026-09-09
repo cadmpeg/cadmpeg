@@ -1588,7 +1588,7 @@ fn project_geometry(
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
-                    radius: Length(radius * 10.0),
+                    radius: Length::new(radius * 10.0)?,
                 })
                 .ok()?,
             )
@@ -1608,9 +1608,9 @@ fn project_geometry(
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: neutral_point(center),
-                    major_angle: Angle(major_direction[1].atan2(major_direction[0])),
-                    major_radius: Length(major_radius * 10.0),
-                    minor_radius: Length(minor_radius * 10.0),
+                    major_angle: Angle::new(major_direction[1].atan2(major_direction[0]))?,
+                    major_radius: Length::new(major_radius * 10.0)?,
+                    minor_radius: Length::new(minor_radius * 10.0)?,
                     bounds: None,
                 })
                 .ok()?,

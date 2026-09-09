@@ -71,7 +71,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         SketchId::mint("f3d:model:sketch#radial").unwrap(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(2.0, 3.0),
-            radius: Length(5.0),
+            radius: Length::new(5.0).unwrap(),
         })
         .unwrap(),
     );
@@ -152,10 +152,13 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     duplicate
         .geometry
         .edit(|definition| {
+            const RADIUS_PERTURBATION: f64 = 5.0e-7;
+
             let SketchGeometryDefinition::Circle { radius, .. } = definition else {
                 unreachable!("test entity is circular")
             };
-            radius.0 += 5.0e-7;
+            *radius =
+                cadmpeg_ir::features::Length::new(radius.get() + RADIUS_PERTURBATION).unwrap();
         })
         .unwrap();
     assert!(matches!(
@@ -199,9 +202,9 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
 
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(2.0, 3.0),
-        radius: Length(5.0),
-        start_angle: cadmpeg_ir::features::Angle(0.0),
-        end_angle: cadmpeg_ir::features::Angle(1.0),
+        radius: Length::new(5.0).unwrap(),
+        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::features::Angle::new(1.0).unwrap(),
     })
     .unwrap();
     assert!(
@@ -210,9 +213,9 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     );
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
-        major_angle: cadmpeg_ir::features::Angle(0.0),
-        major_radius: Length(5.0),
-        minor_radius: Length(3.0),
+        major_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        major_radius: Length::new(5.0).unwrap(),
+        minor_radius: Length::new(3.0).unwrap(),
         bounds: None,
     })
     .unwrap();
@@ -513,7 +516,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(u, v),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )

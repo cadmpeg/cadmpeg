@@ -3,7 +3,7 @@
 use super::{feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent};
 use crate::decode::holes::extrusion_extent_and_direction;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -13,7 +13,8 @@ fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(8.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -129,7 +130,8 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(6.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -331,7 +333,8 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(34.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(34.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },

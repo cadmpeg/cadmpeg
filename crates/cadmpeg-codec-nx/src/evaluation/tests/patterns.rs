@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::features::PatternTransform;
 
 #[test]
 fn body_pattern_adds_one_copy_per_non_original_occurrence() {
@@ -19,15 +20,19 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![
                 seed.clone()
             ]))],
-            pattern: PatternKind::Linear {
+            pattern: PatternKind::new(PatternTransform::Linear {
                 direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-                spacing: Length(2.0),
+                spacing: Length::new(2.0).unwrap(),
                 count: 3,
                 second: None,
-            },
+            })
+            .unwrap(),
         },
     );
-    pattern.outputs = vec![first_copy.clone(), second_copy.clone()];
+    pattern
+        .evaluation
+        .set_outputs(vec![first_copy.clone(), second_copy.clone()])
+        .unwrap();
     ir.model.features.push(pattern);
 
     assert_eq!(
@@ -46,16 +51,18 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            },
+        ),
         native_ref: None,
     });
 
@@ -76,10 +83,11 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         seed.clone(),
         FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
-            pattern: PatternKind::Mirror {
+            pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(0.0, 0.0, 0.0),
                 plane_normal: Vector3::new(1.0, 0.0, 0.0),
-            },
+            })
+            .unwrap(),
         },
     ));
 
@@ -109,13 +117,14 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
         body,
         FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::Mirror {
+            pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: Point3::new(0.0, 0.0, 0.0),
                 plane_normal: Vector3::new(1.0, 0.0, 0.0),
-            },
+            })
+            .unwrap(),
         },
     );
-    pattern.dependencies.push(seed);
+    pattern.dependencies.insert(seed);
     ir.model.features.push(pattern);
 
     assert_eq!(

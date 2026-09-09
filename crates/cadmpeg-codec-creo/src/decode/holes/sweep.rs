@@ -5,7 +5,7 @@ use crate::vecmath::normalize;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
+    BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
     LinearTermination, ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -230,7 +230,7 @@ pub fn compact_simple_hole_geometry<'a>(
         )?],
         direction: frame.axis(),
         extent: LinearTermination::Blind {
-            length: Length(length),
+            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
         },
         geometry: HoleCylinder {
             origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
@@ -388,10 +388,18 @@ pub fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: Vector3::new(sweep.direction[0], sweep.direction[1], sweep.direction[2]),
-            source: None,
-        },
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            sweep.direction[0],
+            sweep.direction[1],
+            sweep.direction[2],
+        ))
+        .map_or(
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+            |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector,
+                source: None,
+            },
+        ),
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
@@ -579,7 +587,7 @@ pub fn extrusion_extent_and_direction(
         };
         return Some((
             ExtrudeExtent::OneSided {
-                side: blind_extrude_side(signed_length.abs()),
+                side: blind_extrude_side(signed_length.abs())?,
             },
             direction.map(|value| value * signed_length.signum()),
         ));
@@ -589,24 +597,24 @@ pub fn extrusion_extent_and_direction(
     let scale = first.max(second).max(1.0);
     let extent = if (first - second).abs() <= EPS_EXTENT_AGREEMENT * scale {
         ExtrudeExtent::Symmetric {
-            side: blind_extrude_side(first + second),
+            side: blind_extrude_side(first + second)?,
         }
     } else {
         ExtrudeExtent::TwoSided {
-            first: blind_extrude_side(first),
-            second: blind_extrude_side(second),
+            first: blind_extrude_side(first)?,
+            second: blind_extrude_side(second)?,
         }
     };
     Some((extent, direction))
 }
 
-pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
-    ExtrudeSide {
+pub fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
+    Some(ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: Length(length),
+            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
         },
         draft: None,
-    }
+    })
 }
 
 #[cfg(test)]

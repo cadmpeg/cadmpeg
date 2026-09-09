@@ -260,9 +260,9 @@ pub(crate) fn sync_neutral_parameters(
             )));
         }
         let value = match parameter.value {
-            Some(ParameterValue::Length(length)) => length.0 / 1000.0,
-            Some(ParameterValue::Angle(angle)) => angle.0,
-            Some(ParameterValue::Real(value)) => value,
+            Some(ParameterValue::Length(length)) => length.get() / 1000.0,
+            Some(ParameterValue::Angle(angle)) => angle.get(),
+            Some(ParameterValue::Real(value)) => value.get(),
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT scalar {} requires a real-valued parameter",

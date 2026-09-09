@@ -66,17 +66,19 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            )),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                    SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                )),
+            },
+        ),
         native_ref: Some("feature".into()),
     });
     ir.model.sketch_entities.push(
@@ -185,11 +187,13 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
 
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
 
-    ir.model.features[0].definition = FeatureDefinition::TreeNode {
-        role: FeatureTreeNodeRole::History,
-        children: Vec::new(),
-        active_child: None,
-    };
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: cadmpeg_ir::features::TreeChildren::default(),
+        })
+        .unwrap();
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
 
@@ -383,17 +387,18 @@ fn native_dimension_subtypes_are_reported() {
         ordinal: 0,
         name: Some("Feature".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: cadmpeg_ir::features::TreeChildren::default(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
@@ -403,8 +408,10 @@ fn native_dimension_subtypes_are_reported() {
         name: "D1".into(),
         expression: "1".into(),
         display: None,
-        value: Some(ParameterValue::Real(1.0)),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: Some(ParameterPmi {
             subtype: PmiDimensionSubtype::Native("Ordinate".into()),

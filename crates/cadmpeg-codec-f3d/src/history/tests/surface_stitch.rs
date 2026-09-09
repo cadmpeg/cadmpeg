@@ -165,17 +165,17 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             faces: FaceSelection::Native(scope_id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
+            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
         },
     );
     feature.native_ref = Some(scope_id.clone());
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (Vec::new()).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
     let mut ambiguous_feature = feature.clone();
@@ -202,7 +202,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    )
+    .unwrap();
 
     let FeatureDefinition::KnitSurface {
         faces:
@@ -212,7 +213,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 native,
             },
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         panic!("SurfaceStitch face selection remains unresolved");
     };
@@ -222,14 +223,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(
-        faces,
+        faces.as_slice(),
         &vec![
             crate::ids::history_input_face_id(&prefix, 30),
             crate::ids::history_input_face_id(&prefix, 31),
         ]
     );
-    assert_eq!(native, &scope_id);
-    assert_eq!(&input_topologies[0].faces, faces);
+    assert_eq!(native.as_str(), &scope_id);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
         std::slice::from_mut(&mut ambiguous_feature),
@@ -240,9 +241,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &ambiguous_operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        &ambiguous_feature.definition,
+        ambiguous_feature.evaluation.definition(),
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Native(native),
             ..

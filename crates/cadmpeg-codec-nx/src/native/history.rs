@@ -178,29 +178,37 @@ pub(crate) fn active_feature_closure(
         .iter()
         .filter(|(_, (_, feature))| {
             feature
-                .outputs
+                .evaluation
+                .outputs()
                 .iter()
                 .any(|output| active_bodies.contains(output))
         })
         .map(|(id, &resolved)| (id.clone(), resolved))
         .collect::<BTreeMap<_, _>>();
-    let has_neutral_body_writer = active_features
-        .values()
-        .any(|(_, feature)| !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. }));
+    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
+        !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::BaseFeature { .. }
+        )
+    });
     let has_native_body_witness = active_features.values().any(|(_, feature)| {
-        matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-            && feature.outputs.len() == active_bodies.len()
-            && feature.outputs.iter().collect::<BTreeSet<_>>() == active_bodies
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::BaseFeature { .. }
+        ) && feature.evaluation.outputs().len() == active_bodies.len()
+            && feature.evaluation.outputs().iter().collect::<BTreeSet<_>>() == active_bodies
             && feature
                 .source_properties
                 .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
     });
     let has_retained_history_input = active_features.values().any(|(_, feature)| {
-        matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-            && feature
-                .source_properties
-                .keys()
-                .any(|key| key.starts_with("segment_body_binding."))
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::BaseFeature { .. }
+        ) && feature
+            .source_properties
+            .keys()
+            .any(|key| key.starts_with("segment_body_binding."))
     });
     if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
         return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
@@ -282,17 +290,20 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies,
+            dependencies: (dependencies).try_into().unwrap(),
             source_properties,
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs,
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: cadmpeg_ir::features::TreeChildren::default(),
+                },
+                outputs,
+            )
+            .unwrap(),
             native_ref: native.then(|| format!("native:{id}")),
         }
     }
@@ -351,7 +362,9 @@ mod tests {
 
         let mut missing = writer();
         missing.dependencies =
-            vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")];
+            (vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")])
+                .try_into()
+                .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
@@ -364,7 +377,9 @@ mod tests {
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
         out_of_order.dependencies =
-            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")];
+            (vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")])
+                .try_into()
+                .unwrap();
         let dependency = history_feature(
             "synthetic:test:id#dependency",
             2,
@@ -543,18 +558,22 @@ mod tests {
                 ordinal: 0,
                 name: Some("base".into()),
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
-                outputs: vec![body.clone()],
-                definition: FeatureDefinition::BaseFeature {
-                    bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()],
-                        native: "test".into(),
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    FeatureDefinition::BaseFeature {
+                        bodies: BodySelection::Resolved {
+                            bodies: vec![body.clone()],
+                            native: "test".into(),
+                        },
                     },
-                },
+                    vec![body.clone()],
+                )
+                .unwrap(),
                 native_ref: None,
             },
             history_feature(
@@ -624,21 +643,25 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::from([(
                 "segment_body_binding.0".into(),
                 "nx:segment-body-bindings:binding#0".into(),
             )]),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body.clone()],
-            definition: FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Resolved {
-                    bodies: vec![body.clone()],
-                    native: "test".into(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: vec![body.clone()],
+                        native: "test".into(),
+                    },
                 },
-            },
+                vec![body.clone()],
+            )
+            .unwrap(),
             native_ref: None,
         }]);
 

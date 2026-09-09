@@ -509,8 +509,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
                     .expect("valid test fixture")
             ),
-            distance: Length(2.0),
-            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance: Length::new(2.0).expect("finite length fixture"),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
             distance_parameter: None,
         }
     );
@@ -544,8 +544,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
                     .expect("valid test fixture")
             ),
-            distance: Length(2.0),
-            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance: Length::new(2.0).expect("finite length fixture"),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
             distance_parameter: None,
         }
     );
@@ -688,7 +688,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11")
                     .expect("valid test fixture")
             ),
-            distance: Length(5.0),
+            distance: Length::new(5.0).expect("finite length fixture"),
             parameter: None,
         }
     );
@@ -853,7 +853,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                     .expect("valid test fixture")
             ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length(2.0),
+            value: Length::new(2.0).expect("finite length fixture"),
         }
     );
 
@@ -886,7 +886,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                     .expect("valid test fixture")
             ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length(2.0),
+            value: Length::new(2.0).expect("finite length fixture"),
         }
     );
     let mut conflicting_equality_midpoint = propagated_midpoint.clone();
@@ -973,7 +973,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
                     .expect("valid test fixture")
             ),
-            values: [Length(2.0), Length(1.0)],
+            values: [
+                Length::new(2.0).expect("finite length fixture"),
+                Length::new(1.0).expect("finite length fixture")
+            ],
         }
     );
 
@@ -1000,7 +1003,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
                     .expect("valid test fixture")
             ),
-            values: [Length(2.0), Length(1.0)],
+            values: [
+                Length::new(2.0).expect("finite length fixture"),
+                Length::new(1.0).expect("finite length fixture")
+            ],
         }
     );
     let mut conflicting_equality_point = propagated_point.clone();

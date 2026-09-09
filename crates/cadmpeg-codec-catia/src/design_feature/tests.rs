@@ -49,13 +49,15 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::StoredGeometry,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::StoredGeometry,
+        ),
         native_ref: Some(native_ref.to_string()),
     }
 }
@@ -285,9 +287,9 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
         expression: "1 mm".to_string(),
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(1.0),
+            cadmpeg_ir::features::Length::new(1.0).unwrap(),
         )),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(native_ref.to_string()),
@@ -393,7 +395,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         })
         .unwrap();
     assert_eq!(
-        source.dependencies,
+        source.dependencies.as_slice(),
         [
             FeatureId::mint("synthetic:test:id#first-feature").expect("identity grammar"),
             FeatureId::mint("synthetic:test:id#second-feature").expect("identity grammar")
@@ -471,13 +473,13 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         Some(&FeatureId::mint("synthetic:test:feature#parent-object").expect("identity grammar"))
     );
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
     ));
     assert!(matches!(
-        ir.model.features[1].definition,
+        ir.model.features[1].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Fillet
         }
@@ -595,7 +597,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         match feature.source_tag.as_deref() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Extrude
                     }
@@ -603,22 +605,19 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Revolve
                     }
                 ));
             }
             Some("Sweep_ThickThin1") => {
-                let FeatureDefinition::Sweep {
-                    section,
-                    path,
-                    mode,
-                    ..
-                } = &feature.definition
+                let FeatureDefinition::Sweep { shape, path, .. } = feature.evaluation.definition()
                 else {
                     panic!("expected a typed unresolved sweep");
                 };
+                let section = shape.section();
+                let mode = shape.mode();
                 assert!(matches!(
                     section,
                     cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
@@ -631,20 +630,21 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             }
             Some("EdgeFillet") => {
                 assert!(matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Fillet
                     }
                 ));
             }
             Some("CircPattern_RadialNumber") => {
-                let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+                let FeatureDefinition::Pattern { seeds, pattern } = feature.evaluation.definition()
+                else {
                     panic!("expected a typed unresolved circular pattern");
                 };
                 assert!(seeds.is_empty());
                 assert!(matches!(
-                    pattern,
-                    cadmpeg_ir::features::PatternKind::UnresolvedCircular
+                    (pattern).definition(),
+                    cadmpeg_ir::features::PatternTransform::UnresolvedCircular
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),
@@ -724,7 +724,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -865,7 +865,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -1008,7 +1008,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     let transfer = transfer_design_features(&mut ir, &native, None);
 
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Extrude
         }
@@ -1141,7 +1141,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     ir.model.parameters.push(document_parameter);
 
     let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(
         ir.model
@@ -1263,7 +1263,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         .push(parameter("parameter", "parameter-entity"));
 
     let transfer = transfer_design_features(&mut ir, &native, None);
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     let child_feature =
         FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
@@ -1291,16 +1291,18 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Prism_ThickThin1".into(),
-            parameters: BTreeMap::new(),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Prism_ThickThin1".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: Some("native-feature".to_string()),
     });
     let mut first = parameter("first", "first-native");
@@ -1323,9 +1325,11 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
                 FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
         ]),
-    );
+    )
+    .unwrap();
 
-    let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
+    let FeatureDefinition::Native { parameters, .. } = ir.model.features[0].evaluation.definition()
+    else {
         panic!("expected an opaque native operation");
     };
     assert_eq!(
@@ -1345,16 +1349,18 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: cadmpeg_ir::features::PatternKind::UnresolvedCircular,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_CIRCULAR,
+            },
+        ),
         native_ref: Some("pattern-feature".to_string()),
     });
     let mut value = parameter("pattern-parameter", "pattern-native");
@@ -1370,7 +1376,8 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
                 .expect("identity grammar"),
             FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         )]),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         ir.model.features[0]
@@ -1587,16 +1594,16 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
@@ -1765,13 +1772,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(child_entity_id),
         });
 
-    transfer.assign_parameter_owners(&mut ir, &native);
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
@@ -1815,8 +1822,8 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         assert!(ir.model.sketches.is_empty());
         assert_eq!(ir.model.features.len(), 1);
         assert_eq!(
-            ir.model.features[0].definition,
-            FeatureDefinition::DatumPrincipalPlane { plane }
+            ir.model.features[0].evaluation.definition(),
+            &FeatureDefinition::DatumPrincipalPlane { plane }
         );
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
         assert_eq!(

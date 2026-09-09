@@ -455,7 +455,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 else {
                     return Some(native());
                 };
-                let raw = end_angle.0 - start_angle.0;
+                let raw = end_angle.get() - start_angle.get();
                 let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
                 if sweep <= EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
                     && raw.abs()
@@ -469,7 +469,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::ArcAngle {
                 entity,
-                angle: cadmpeg_ir::features::Angle(angle),
+                angle: cadmpeg_ir::features::Angle::new(angle)?,
             }
         }
         EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => {
@@ -497,7 +497,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             else {
                 return Some(native());
             };
-            let raw = end.0 - start.0;
+            let raw = end.get() - start.get();
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
             if sweep <= EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
                 && raw.abs() > EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
@@ -509,7 +509,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             SketchConstraintDefinitionInput::EllipseAngle {
                 entity,
-                angle: cadmpeg_ir::features::Angle(angle),
+                angle: cadmpeg_ir::features::Angle::new(angle)?,
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
@@ -828,17 +828,17 @@ fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
             start_angle,
             end_angle,
         } => {
-            let raw = end_angle.0 - start_angle.0;
+            let raw = end_angle.get() - start_angle.get();
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
             if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12
                 && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12
             {
                 sweep = std::f64::consts::TAU;
             }
-            let angle = start_angle.0 + sweep * 0.5;
+            let angle = start_angle.get() + sweep * 0.5;
             Some(Point2::new(
-                center.u + radius.0 * angle.cos(),
-                center.v + radius.0 * angle.sin(),
+                center.u + radius.get() * angle.cos(),
+                center.v + radius.get() * angle.sin(),
             ))
         }
         _ => None,
@@ -867,7 +867,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                     <= SKETCH_POINT_TOLERANCE * length
         }
         SketchGeometryDefinition::Circle { center, radius } => {
-            same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0)
+            same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.get())
         }
         SketchGeometryDefinition::Arc {
             center,
@@ -875,17 +875,18 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             start_angle,
             end_angle,
         } => {
-            if !same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0) {
+            if !same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.get())
+            {
                 return false;
             }
-            let raw = end_angle.0 - start_angle.0;
+            let raw = end_angle.get() - start_angle.get();
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
             if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
                 && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
             {
                 sweep = std::f64::consts::TAU;
             }
-            let parameter = ((point.v - center.v).atan2(point.u - center.u) - start_angle.0)
+            let parameter = ((point.v - center.v).atan2(point.u - center.u) - start_angle.get())
                 .rem_euclid(std::f64::consts::TAU);
             parameter <= sweep + EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
         }
@@ -896,21 +897,22 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             minor_radius,
             bounds,
         } => {
-            let cosine = major_angle.0.cos();
-            let sine = major_angle.0.sin();
+            let cosine = major_angle.get().cos();
+            let sine = major_angle.get().sin();
             let du = point.u - center.u;
             let dv = point.v - center.v;
             let x = du * cosine + dv * sine;
             let y = -du * sine + dv * cosine;
-            let equation = (x / major_radius.0).powi(2) + (y / minor_radius.0).powi(2);
+            let equation = (x / major_radius.get()).powi(2) + (y / minor_radius.get()).powi(2);
             if (equation - 1.0).abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9 {
                 return false;
             }
             match bounds {
                 Some([start, end]) => {
-                    let parameter = ((y / minor_radius.0).atan2(x / major_radius.0) - start.0)
-                        .rem_euclid(std::f64::consts::TAU);
-                    let raw = end.0 - start.0;
+                    let parameter = ((y / minor_radius.get()).atan2(x / major_radius.get())
+                        - start.get())
+                    .rem_euclid(std::f64::consts::TAU);
+                    let raw = end.get() - start.get();
                     let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
                     if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
                         && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
@@ -929,14 +931,14 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             minor_radius,
             bounds,
         } => {
-            let cosine = major_angle.0.cos();
-            let sine = major_angle.0.sin();
+            let cosine = major_angle.get().cos();
+            let sine = major_angle.get().sin();
             let du = point.u - center.u;
             let dv = point.v - center.v;
             let x = du * cosine + dv * sine;
             let y = -du * sine + dv * cosine;
-            let parameter = (y / minor_radius.0).asinh();
-            let on_curve = (x - major_radius.0 * parameter.cosh()).abs()
+            let parameter = (y / minor_radius.get()).asinh();
+            let on_curve = (x - major_radius.get() * parameter.cosh()).abs()
                 <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
@@ -951,13 +953,13 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             focal_length,
             bounds,
         } => {
-            let cosine = axis_angle.0.cos();
-            let sine = axis_angle.0.sin();
+            let cosine = axis_angle.get().cos();
+            let sine = axis_angle.get().sin();
             let du = point.u - vertex.u;
             let dv = point.v - vertex.v;
             let x = du * cosine + dv * sine;
             let parameter = -du * sine + dv * cosine;
-            let on_curve = (x - parameter * parameter / (4.0 * focal_length.0)).abs()
+            let on_curve = (x - parameter * parameter / (4.0 * focal_length.get())).abs()
                 <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
@@ -1080,7 +1082,7 @@ fn centered_geometry(entity: &SketchEntity) -> Option<Point2> {
 fn circular_radius(entity: &SketchEntity) -> Option<f64> {
     match entity.geometry.definition() {
         SketchGeometryDefinition::Circle { radius, .. }
-        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.0),
+        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
         _ => None,
     }
 }
@@ -1117,7 +1119,7 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
                 radius: second_radius,
                 ..
             },
-        ) => same_dimension_length(first_radius.0, second_radius.0),
+        ) => same_dimension_length(first_radius.get(), second_radius.get()),
         (
             SketchGeometryDefinition::Ellipse {
                 major_radius: first_major,
@@ -1130,8 +1132,8 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
                 ..
             },
         ) => {
-            same_dimension_length(first_major.0, second_major.0)
-                && same_dimension_length(first_minor.0, second_minor.0)
+            same_dimension_length(first_major.get(), second_major.get())
+                && same_dimension_length(first_minor.get(), second_minor.get())
         }
         _ => false,
     }
@@ -1151,11 +1153,11 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
                 return false;
             };
             let normal = [-dv / length, du / length];
-            let major = [major_angle.0.cos(), major_angle.0.sin()];
+            let major = [major_angle.get().cos(), major_angle.get().sin()];
             let minor = [-major[1], major[0]];
-            let support = ((major_radius.0 * (normal[0] * major[0] + normal[1] * major[1]))
+            let support = ((major_radius.get() * (normal[0] * major[0] + normal[1] * major[1]))
                 .powi(2)
-                + (minor_radius.0 * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
+                + (minor_radius.get() * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
             .sqrt();
             return point_line_distance_value(*center, line)
                 .is_some_and(|distance| same_dimension_length(distance, support));

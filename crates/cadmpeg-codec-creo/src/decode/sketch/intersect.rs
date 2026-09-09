@@ -111,7 +111,7 @@ pub(crate) fn intersect_section_line_arc(
     };
     let direction = [end.u - start.u, end.v - start.v];
     let length = direction[0].hypot(direction[1]);
-    if length <= EPS_RADIUS_NONZERO || radius.0 <= EPS_RADIUS_NONZERO {
+    if length <= EPS_RADIUS_NONZERO || radius.get() <= EPS_RADIUS_NONZERO {
         return None;
     }
     let direction = direction.map(|value| value / length);
@@ -125,7 +125,7 @@ pub(crate) fn intersect_section_line_arc(
         closest[0] - center.u,
         (closest[1] - center.v) * (closest[1] - center.v),
     );
-    let radial_squared = radius.0 * radius.0;
+    let radial_squared = radius.get() * radius.get();
     let scale = radial_squared.max(1.0);
     if distance_squared > radial_squared + EPS_RADIAL_RESIDUAL * scale {
         return None;
@@ -141,7 +141,7 @@ pub(crate) fn intersect_section_line_arc(
             closest[1] - travel * direction[1],
         ],
     ];
-    if travel <= EPS_RADIAL_RESIDUAL * radius.0.max(1.0) {
+    if travel <= EPS_RADIAL_RESIDUAL * radius.get().max(1.0) {
         let parameter = projection / length;
         return (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND)
             .contains(&parameter)
@@ -184,7 +184,7 @@ pub(crate) fn intersect_tangent_section_arcs(
     else {
         return None;
     };
-    if first_radius.0 <= EPS_RADIUS_NONZERO || second_radius.0 <= EPS_RADIUS_NONZERO {
+    if first_radius.get() <= EPS_RADIUS_NONZERO || second_radius.get() <= EPS_RADIUS_NONZERO {
         return None;
     }
     let delta = [
@@ -192,16 +192,21 @@ pub(crate) fn intersect_tangent_section_arcs(
         second_center.v - first_center.v,
     ];
     let distance = delta[0].hypot(delta[1]);
-    let scale = distance.max(first_radius.0).max(second_radius.0).max(1.0);
+    let scale = distance
+        .max(first_radius.get())
+        .max(second_radius.get())
+        .max(1.0);
     if distance <= EPS_CENTER_DISTANCE * scale {
         return None;
     }
-    let offset = (first_radius
-        .0
-        .mul_add(first_radius.0, -(second_radius.0 * second_radius.0))
-        + distance * distance)
+    let offset = (first_radius.get().mul_add(
+        first_radius.get(),
+        -(second_radius.get() * second_radius.get()),
+    ) + distance * distance)
         / (2.0 * distance);
-    let height_squared = first_radius.0.mul_add(first_radius.0, -(offset * offset));
+    let height_squared = first_radius
+        .get()
+        .mul_add(first_radius.get(), -(offset * offset));
     if height_squared.abs() > EPS_HEIGHT_RESIDUAL * scale * scale {
         return None;
     }
@@ -609,9 +614,9 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         }
         return SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
+            radius: Length::new(radius)?,
+            start_angle: Angle::new(start_angle)?,
+            end_angle: Angle::new(end_angle)?,
         })
         .ok();
     } else {
