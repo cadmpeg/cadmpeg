@@ -2131,11 +2131,6 @@ pub(crate) fn parse_binary_prefix(
                     *node = u32::try_from(value).map_err(|_| {
                         CodecError::Malformed("negative binary triangle node".into())
                     })?;
-                    if *node == 0 || usize::try_from(*node).is_ok_and(|node| node > node_count) {
-                        return Err(CodecError::Malformed(
-                            "binary triangle node index is out of bounds".into(),
-                        ));
-                    }
                 }
                 Ok(triangle)
             })
@@ -5967,7 +5962,7 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
         assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
-        assert_eq!(facts.triangulations[0].triangles, [[1, 2, 3]]);
+        assert_eq!(facts.triangulations[0].triangles(), [[0, 1, 2]]);
         assert!(facts.tshapes.is_empty());
         assert!(facts.roots.is_empty());
     }
@@ -6024,7 +6019,7 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];
         assert_eq!(triangulation.nodes().len(), 3);
-        assert_eq!(triangulation.triangles, [[1, 2, 3]]);
+        assert_eq!(triangulation.triangles(), [[0, 1, 2]]);
         assert_eq!(triangulation.uv_nodes().map(<[_]>::len), Some(3));
         assert_eq!(triangulation.normals().map(<[_]>::len), Some(3));
     }
