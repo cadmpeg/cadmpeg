@@ -362,7 +362,7 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .iter_mut()
-                .find(|surface| surface.id.as_str() == surface_id)
+                .find(|surface| surface.id.as_str() == surface_id.as_str())
             {
                 if surface.source_object.is_none() {
                     surface.source_object = Some(SourceObjectAssociation {
@@ -383,7 +383,7 @@ pub(super) fn decode(
             }
         }
         let mesh = match Tessellation::from_decoded(
-            ids::tessellation("mesh", id),
+            ids::tessellation("mesh", id).into_string(),
             local_vertices,
             local_triangles,
             strip_lengths,

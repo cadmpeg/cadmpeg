@@ -90,13 +90,20 @@ impl NativeRecord {
     /// Identity syntax is checked here; document validation checks uniqueness.
     pub fn new(
         id: impl Into<String>,
-        mut fields: Map<String, Value>,
+        fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
-        let id = id.into();
-        Self::require_identity(&id)?;
+        Ok(Self::from_identity(crate::ids::Identity::new(id)?, fields))
+    }
+
+    /// Build a record from an admitted identity and codec-owned fields.
+    pub fn from_identity(
+        id: impl Into<crate::ids::Identity>,
+        mut fields: Map<String, Value>,
+    ) -> Self {
+        let id = id.into().into_string();
         fields.remove("id");
         let json = Self::canonical_json(&id, &fields);
-        Ok(Self { id, json })
+        Self { id, json }
     }
 
     fn require_identity(id: &str) -> Result<(), NativeConvertError> {
