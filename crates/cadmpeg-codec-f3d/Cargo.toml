@@ -36,6 +36,7 @@ serde-value.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]
+cadmpeg-asm = { workspace = true, features = ["test-support"] }
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 # Test-only golden harness and round-trip helpers.

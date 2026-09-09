@@ -2003,9 +2003,9 @@ fn try_decode_text_model(
             BrepFacts {
                 name: name.clone(),
                 uncompressed_len: bytes.len() as u64,
-                kernel: Some(crate::container::KernelFraming::Asm {
+                kernel: Some(crate::container::KernelFraming::Text {
                     header,
-                    solved_record_limit: None,
+                    terminator: stream.terminator,
                 }),
                 sha256: sha256_hex(bytes),
             },
@@ -4835,7 +4835,7 @@ fn source_attributes_and_tolerances(
     if let Some(h) = primary_model_brep
         .kernel
         .as_ref()
-        .and_then(crate::container::KernelFraming::asm_header)
+        .and_then(crate::container::KernelFraming::model_metadata)
     {
         if let Some(pf) = &h.product_family {
             attributes.insert("product_family".to_string(), pf.clone());
@@ -4983,7 +4983,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         if let Some(h) = brep
             .kernel
             .as_ref()
-            .and_then(crate::container::KernelFraming::asm_header)
+            .and_then(crate::container::KernelFraming::model_metadata)
         {
             if let Some(pf) = &h.product_family {
                 attributes.insert("product_family".to_string(), pf.clone());

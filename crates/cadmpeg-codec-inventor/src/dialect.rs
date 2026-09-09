@@ -355,7 +355,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch, recovery: &DialectRecovery) -
 /// The `acis:` kernel-layer match for one parsed active carrier.
 fn kernel_layer(
     family: KernelFamily,
-    header: &cadmpeg_asm::kernel_header::KernelHeader,
+    header: &cadmpeg_asm::kernel_header::BinaryHeader,
 ) -> DialectMatch {
     let header = match family {
         KernelFamily::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),

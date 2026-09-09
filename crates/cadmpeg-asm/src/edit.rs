@@ -107,7 +107,7 @@ impl AsmEditSet {
         let records = sab::frame(bytes, start, limit, ref_width).map_err(|error| {
             CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
         })?;
-        let header_scale = header.scale.unwrap_or(1.0);
+        let header_scale = header.metadata.scale.unwrap_or(1.0);
         Ok(Self::from_framed(records, ref_width, header_scale))
     }
 
@@ -213,11 +213,7 @@ impl AsmEditSet {
                 record.index
             )));
         }
-        bytes[offset] = match sense {
-            Sense::Forward => 0x0b,
-            Sense::Reversed => 0x0a,
-        };
-        Ok(())
+        Self::patch_native_bool(bytes, offset, sense == Sense::Reversed)
     }
 
     /// Replace one boolean token without changing its field position.
@@ -278,8 +274,7 @@ impl AsmEditSet {
                 record.index
             )));
         }
-        bytes[offset + 2..offset + 2 + encoded_length].copy_from_slice(value.as_bytes());
-        Ok(())
+        Self::patch_bytes_at(bytes, offset, 2, value.as_bytes())
     }
 
     /// Replace one packed true-color integer without changing its carrier.
@@ -300,13 +295,13 @@ impl AsmEditSet {
             })?;
         match (bytes.get(offset).copied(), self.ref_width) {
             (Some(0x17), _) => {
-                bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
+                Self::patch_bytes_at(bytes, offset, 1, &i64::from(packed).to_le_bytes())?;
             }
             (Some(0x04), RefWidth::Four) => {
-                bytes[offset + 1..offset + 5].copy_from_slice(&packed.to_le_bytes());
+                Self::patch_bytes_at(bytes, offset, 1, &packed.to_le_bytes())?;
             }
             (Some(0x04), RefWidth::Eight) => {
-                bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
+                Self::patch_bytes_at(bytes, offset, 1, &i64::from(packed).to_le_bytes())?;
             }
             _ => {
                 return Err(CodecError::malformed(format_args!(
@@ -364,15 +359,25 @@ impl AsmEditSet {
             )));
         }
         let encoded = format!("{packed:0width$}");
-        let start = offset + 1 + length_width;
-        let output = bytes.get_mut(start..start + width).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "{} record {} decimal-color text is truncated",
-                record.head(),
-                record.index
-            ))
-        })?;
-        output.copy_from_slice(encoded.as_bytes());
+        Self::patch_bytes_at(bytes, offset, 1 + length_width, encoded.as_bytes())
+    }
+
+    fn patch_bytes_at(
+        bytes: &mut [u8],
+        offset: usize,
+        skip: usize,
+        payload: &[u8],
+    ) -> Result<(), CodecError> {
+        let offset = offset
+            .checked_add(skip)
+            .ok_or_else(|| CodecError::Malformed("native byte payload offset overflows".into()))?;
+        let end = offset
+            .checked_add(payload.len())
+            .ok_or_else(|| CodecError::Malformed("native byte payload offset overflows".into()))?;
+        let target = bytes
+            .get_mut(offset..end)
+            .ok_or_else(|| CodecError::Malformed("native byte payload is truncated".into()))?;
+        target.copy_from_slice(payload);
         Ok(())
     }
 
@@ -881,19 +886,9 @@ impl AsmEditSet {
         bytes: &mut [u8],
         record: &Record,
         edit: NurbsCurveEdit<'_>,
-        final_cache: bool,
+        target: CacheTarget,
     ) -> Result<(), CodecError> {
-        patch_nurbs_curve_record(
-            bytes,
-            self.ref_width,
-            record,
-            &edit,
-            if final_cache {
-                CacheTarget::Final
-            } else {
-                CacheTarget::First
-            },
-        )
+        patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, target)
     }
 
     /// Apply the fields selected by an inline cache or reference wrapper edit.
@@ -1318,9 +1313,12 @@ fn patch_projection_definition(
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
             )?;
-            let role_range = role_range.range();
-            let role_target = record.offset + role_range.start..record.offset + role_range.end;
-            bytes[role_target].copy_from_slice(role.as_str().as_bytes());
+            AsmEditSet::patch_bytes_at(
+                bytes,
+                record.offset,
+                role_range.range().start,
+                role.as_str().as_bytes(),
+            )?;
         }
         _ => {
             return Err(CodecError::NotImplemented(
@@ -1936,6 +1934,58 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn byte_payload_patch_rejects_truncation_and_overflow_without_writing() {
+        for (offset, skip) in [(2, 0), (usize::MAX, 0), (usize::MAX, 1)] {
+            let mut bytes = [0x11; 5];
+            let before = bytes;
+            let error = AsmEditSet::patch_bytes_at(&mut bytes, offset, skip, b"surf2").unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+            assert_eq!(bytes, before);
+        }
+    }
+
+    #[test]
+    fn ascii_field_patch_preserves_the_token_length_and_surrounding_bytes() {
+        let mut bytes = b"\x0d\x01x\x07\x05surf1\x11".to_vec();
+        let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        edits
+            .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
+            .unwrap();
+        assert_eq!(bytes, b"\x0d\x01x\x07\x05surf2\x11");
+        let before = bytes.clone();
+        assert!(edits
+            .patch_ascii_field(&mut bytes, &records[0], 0, "longer")
+            .is_err());
+        assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn truecolor_field_patch_preserves_all_unsigned_bits_and_carrier_widths() {
+        for (tag, width, payload_width) in [
+            (0x04, RefWidth::Four, 4),
+            (0x04, RefWidth::Eight, 8),
+            (0x17, RefWidth::Four, 8),
+            (0x17, RefWidth::Eight, 8),
+        ] {
+            let mut bytes = vec![0x0d, 1, b'x', tag];
+            bytes.extend_from_slice(&[0; 8][..payload_width]);
+            bytes.push(0x11);
+            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            edits
+                .patch_truecolor_field(&mut bytes, &records[0], 0, u32::MAX)
+                .unwrap();
+            assert_eq!(&bytes[..4], &[0x0d, 1, b'x', tag]);
+            assert_eq!(
+                &bytes[4..4 + payload_width],
+                &u64::from(u32::MAX).to_le_bytes()[..payload_width]
+            );
+            assert_eq!(bytes.last(), Some(&0x11));
+        }
+    }
 
     #[test]
     fn native_bool_patch_rejects_a_truncated_record_without_writing() {

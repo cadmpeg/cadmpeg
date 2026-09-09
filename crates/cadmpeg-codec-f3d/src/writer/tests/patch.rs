@@ -50,11 +50,11 @@ fn sketch_relation_state_encoding_requires_the_stored_width_discriminator() {
 #[test]
 fn generated_face_sense_edit_preserves_native_normalization_relation() {
     assert_eq!(
-        normalized_face_sense_to_native(Sense::Reversed, Sense::Forward, Sense::Forward,),
+        normalized_face_sense_to_native(Sense::Reversed, false),
         Sense::Reversed
     );
     assert_eq!(
-        normalized_face_sense_to_native(Sense::Reversed, Sense::Reversed, Sense::Forward,),
+        normalized_face_sense_to_native(Sense::Reversed, true),
         Sense::Forward
     );
 }

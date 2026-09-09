@@ -209,19 +209,106 @@ pub enum FaceContainment {
     Out,
 }
 
-native_record! {
-    /// Native sidedness fields stored on one ASM face record.
-    FaceSidedness, face_sidedness, "face-sidedness",
+/// Native sidedness fields stored on one ASM face record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceSidedness {
+    /// Source namespace of the native record.
+    pub source_namespace: identity::NativeRecordNamespace,
     /// Source SAB record index.
-    record_index,
+    pub record_index: u32,
     /// Solved B-rep face carrying the fields.
-    face: FaceId,
+    pub face: FaceId,
     /// Sense token stored in the native face record before carrier normalization.
-    native_sense: cadmpeg_ir::topology::Sense,
-    /// IR sense produced when `native_sense` was decoded.
-    normalized_sense: cadmpeg_ir::topology::Sense,
+    pub native_sense: cadmpeg_ir::topology::Sense,
+    /// Whether decoding reversed the native surface carrier orientation.
+    pub carrier_flipped: bool,
     /// Conditional containment direction; absence denotes a single-sided face.
-    containment: Option<FaceContainment> [serde(default, skip_serializing_if = "Option::is_none")],
+    pub containment: Option<FaceContainment>,
+}
+
+impl Serialize for FaceSidedness {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FaceSidednessWire::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FaceSidedness {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        FaceSidednessWire::deserialize(deserializer)
+            .and_then(|w| FaceSidedness::try_from(w).map_err(serde::de::Error::custom))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for FaceSidedness {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FaceSidedness".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        FaceSidednessWire::json_schema(generator)
+    }
+}
+
+impl FaceSidedness {
+    /// Derive the native record id from its source identity.
+    #[must_use]
+    pub fn id(&self) -> String {
+        self.source_namespace
+            .id("face-sidedness", self.record_index)
+    }
+}
+
+/// Serialized face sidedness with the native and normalized senses.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct FaceSidednessWire {
+    id: String,
+    face: FaceId,
+    record_index: u32,
+    native_sense: cadmpeg_ir::topology::Sense,
+    normalized_sense: cadmpeg_ir::topology::Sense,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    containment: Option<FaceContainment>,
+}
+
+impl From<FaceSidedness> for FaceSidednessWire {
+    fn from(value: FaceSidedness) -> Self {
+        use cadmpeg_ir::topology::Sense;
+        let normalized_sense = match (value.native_sense, value.carrier_flipped) {
+            (Sense::Forward, true) => Sense::Reversed,
+            (Sense::Reversed, true) => Sense::Forward,
+            (sense, false) => sense,
+        };
+        Self {
+            id: value.id(),
+            face: value.face,
+            record_index: value.record_index,
+            native_sense: value.native_sense,
+            normalized_sense,
+            containment: value.containment,
+        }
+    }
+}
+
+impl TryFrom<FaceSidednessWire> for FaceSidedness {
+    type Error = String;
+
+    fn try_from(value: FaceSidednessWire) -> Result<Self, Self::Error> {
+        let source_namespace = identity::NativeRecordNamespace::from_wire(
+            &value.id,
+            value.record_index,
+            "face-sidedness",
+        )?;
+        Ok(Self {
+            source_namespace,
+            record_index: value.record_index,
+            face: value.face,
+            native_sense: value.native_sense,
+            carrier_flipped: value.native_sense != value.normalized_sense,
+            containment: value.containment,
+        })
+    }
 }
 
 native_record! {
