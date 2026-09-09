@@ -1169,6 +1169,29 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         variable_assignments[0].tangency_weight_parameter_record_index,
         Some(91)
     );
+    let (variable_features, _) = project_parameter_design(
+        &variable_parameters,
+        &variable_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[1..],
+        &variable_assignments,
+        &[],
+        &[],
+        &[],
+    );
+    let FeatureDefinition::Fillet { groups } = &variable_features[0].definition else {
+        panic!("expected assigned variable Fillet");
+    };
+    assert_eq!(groups.len(), 1);
+    assert_eq!(
+        groups[0].edges,
+        cadmpeg_ir::features::EdgeSelection::Native(variable_assignments[0].id.clone())
+    );
+    assert_eq!(groups[0].tangency_weight, Some(0.75));
+    assert!(matches!(
+        &groups[0].radius,
+        cadmpeg_ir::features::RadiusSpec::Variable { points } if points.len() == 3
+    ));
     let variable_without_weight_parameters = [
         parameter(50, 51, "StartRadius", Some("mm"), 0.2),
         parameter(60, 61, "EndRadius", Some("mm"), 0.6),
