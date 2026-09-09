@@ -5128,15 +5128,13 @@ pub fn model_surface_point(
         )
         .map(|partials| partials.point),
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
-            match (
-                definition_payload.profile(),
-                definition_payload.spine(),
-                definition_payload.native(),
-            ) {
-                (profile, spine, Some(construction)) => {
-                    cacheless_law_sweep_point(&index, profile, spine, construction, u, v)
-                }
-                _ => None,
+            if let Some(construction) = definition_payload.native() {
+                let profile = definition_payload.profile();
+                let spine = definition_payload.spine();
+
+                cacheless_law_sweep_point(&index, profile, spine, construction, u, v)
+            } else {
+                None
             }
         }
         ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
@@ -5145,24 +5143,22 @@ pub fn model_surface_point(
             cacheless_variable_blend_point(&index, construction, u, v)
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
-            match (
-                definition_payload.supports(),
-                definition_payload.radius(),
-                definition_payload.cross_section(),
-                definition_payload.native(),
-            ) {
-                (supports, radius, cross_section, Some(native)) => {
-                    cacheless_constant_rolling_ball_point(
-                        &index,
-                        supports,
-                        radius,
-                        cross_section,
-                        native,
-                        u,
-                        v,
-                    )
-                }
-                _ => None,
+            if let Some(native) = definition_payload.native() {
+                let supports = definition_payload.supports();
+                let radius = definition_payload.radius();
+                let cross_section = definition_payload.cross_section();
+
+                cacheless_constant_rolling_ball_point(
+                    &index,
+                    supports,
+                    radius,
+                    cross_section,
+                    native,
+                    u,
+                    v,
+                )
+            } else {
+                None
             }
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
@@ -6758,53 +6754,49 @@ fn model_surface_point_by_id_inner(
                 })
             }
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
-                match (
-                    definition_payload.profile(),
-                    definition_payload.spine(),
-                    definition_payload.native(),
-                ) {
-                    (profile, spine, Some(construction)) => {
-                        cacheless_law_sweep_point(index, profile, spine, construction, u, v)
-                            .map(|point| SurfaceEvaluation {
-                                point,
-                                oriented_normal: None,
-                            })
-                            .or_else(|| {
-                                if !sweep_has_current_cache(construction) {
-                                    return None;
-                                }
-                                let (point, oriented_normal) =
-                                    surface_cache_evaluation(&surface.geometry, u, v)?;
-                                Some(SurfaceEvaluation {
-                                    point,
-                                    oriented_normal,
-                                })
-                            })
-                    }
-                    _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(
-                        |partials| {
-                            let normal = partials.du.cross(partials.dv);
-                            let normal = match &surface.geometry {
-                                SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
-                                    scale_vector(normal, -1.0)
-                                }
-                                _ => normal,
-                            };
-                            let magnitude = normal.norm();
-                            let oriented_normal =
-                                (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                                    Vector3::new(
-                                        normal.x / magnitude,
-                                        normal.y / magnitude,
-                                        normal.z / magnitude,
-                                    )
-                                });
-                            SurfaceEvaluation {
-                                point: partials.point,
-                                oriented_normal,
+                if let Some(construction) = definition_payload.native() {
+                    let profile = definition_payload.profile();
+                    let spine = definition_payload.spine();
+
+                    cacheless_law_sweep_point(index, profile, spine, construction, u, v)
+                        .map(|point| SurfaceEvaluation {
+                            point,
+                            oriented_normal: None,
+                        })
+                        .or_else(|| {
+                            if !sweep_has_current_cache(construction) {
+                                return None;
                             }
-                        },
-                    ),
+                            let (point, oriented_normal) =
+                                surface_cache_evaluation(&surface.geometry, u, v)?;
+                            Some(SurfaceEvaluation {
+                                point,
+                                oriented_normal,
+                            })
+                        })
+                } else {
+                    surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
+                        let normal = partials.du.cross(partials.dv);
+                        let normal = match &surface.geometry {
+                            SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
+                                scale_vector(normal, -1.0)
+                            }
+                            _ => normal,
+                        };
+                        let magnitude = normal.norm();
+                        let oriented_normal =
+                            (magnitude.is_finite() && magnitude > 0.0).then(|| {
+                                Vector3::new(
+                                    normal.x / magnitude,
+                                    normal.y / magnitude,
+                                    normal.z / magnitude,
+                                )
+                            });
+                        SurfaceEvaluation {
+                            point: partials.point,
+                            oriented_normal,
+                        }
+                    })
                 }
             }
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
@@ -6828,14 +6820,21 @@ fn model_surface_point_by_id_inner(
                     })
             }
             Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-                match (
-                    definition_payload.supports(),
-                    definition_payload.radius(),
-                    definition_payload.cross_section(),
-                    definition_payload.native(),
-                ) {
-                    (supports, radius, cross_section, Some(native)) => {
-                        if let Some(point) = cacheless_constant_rolling_ball_point(
+                if let Some(native) = definition_payload.native() {
+                    let supports = definition_payload.supports();
+                    let radius = definition_payload.radius();
+                    let cross_section = definition_payload.cross_section();
+
+                    if let Some(point) = cacheless_constant_rolling_ball_point(
+                        index,
+                        supports,
+                        radius,
+                        cross_section,
+                        native,
+                        u,
+                        v,
+                    ) {
+                        let oriented_normal = cacheless_constant_rolling_ball_partials(
                             index,
                             supports,
                             radius,
@@ -6843,56 +6842,45 @@ fn model_surface_point_by_id_inner(
                             native,
                             u,
                             v,
-                        ) {
-                            let oriented_normal = cacheless_constant_rolling_ball_partials(
-                                index,
-                                supports,
-                                radius,
-                                cross_section,
-                                native,
-                                u,
-                                v,
-                            )
-                            .and_then(|partials| partials.du.cross(partials.dv).unit());
-                            Some(SurfaceEvaluation {
-                                point,
-                                oriented_normal,
-                            })
-                        } else if revision_surface_tail_has_current_cache(&native.cache) {
-                            let (point, oriented_normal) =
-                                surface_cache_evaluation(&surface.geometry, u, v)?;
-                            Some(SurfaceEvaluation {
-                                point,
-                                oriented_normal,
-                            })
-                        } else {
-                            None
-                        }
+                        )
+                        .and_then(|partials| partials.du.cross(partials.dv).unit());
+                        Some(SurfaceEvaluation {
+                            point,
+                            oriented_normal,
+                        })
+                    } else if revision_surface_tail_has_current_cache(&native.cache) {
+                        let (point, oriented_normal) =
+                            surface_cache_evaluation(&surface.geometry, u, v)?;
+                        Some(SurfaceEvaluation {
+                            point,
+                            oriented_normal,
+                        })
+                    } else {
+                        None
                     }
-                    _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(
-                        |partials| {
-                            let normal = partials.du.cross(partials.dv);
-                            let normal = match &surface.geometry {
-                                SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
-                                    scale_vector(normal, -1.0)
-                                }
-                                _ => normal,
-                            };
-                            let magnitude = normal.norm();
-                            let oriented_normal =
-                                (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                                    Vector3::new(
-                                        normal.x / magnitude,
-                                        normal.y / magnitude,
-                                        normal.z / magnitude,
-                                    )
-                                });
-                            SurfaceEvaluation {
-                                point: partials.point,
-                                oriented_normal,
+                } else {
+                    surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
+                        let normal = partials.du.cross(partials.dv);
+                        let normal = match &surface.geometry {
+                            SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
+                                scale_vector(normal, -1.0)
                             }
-                        },
-                    ),
+                            _ => normal,
+                        };
+                        let magnitude = normal.norm();
+                        let oriented_normal =
+                            (magnitude.is_finite() && magnitude > 0.0).then(|| {
+                                Vector3::new(
+                                    normal.x / magnitude,
+                                    normal.y / magnitude,
+                                    normal.z / magnitude,
+                                )
+                            });
+                        SurfaceEvaluation {
+                            point: partials.point,
+                            oriented_normal,
+                        }
+                    })
                 }
             }
             Some(ProceduralSurfaceDefinition::RollingBallJet(_)) => procedural
@@ -7039,12 +7027,11 @@ pub fn model_surface_partials_by_id(
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        if let (supports, radius, cross_section, Some(native)) = (
-            definition_payload.supports(),
-            definition_payload.radius(),
-            definition_payload.cross_section(),
-            definition_payload.native(),
-        ) {
+        if let Some(native) = definition_payload.native() {
+            let supports = definition_payload.supports();
+            let radius = definition_payload.radius();
+            let cross_section = definition_payload.cross_section();
+
             if let Some(partials) = cacheless_constant_rolling_ball_partials(
                 index,
                 supports,
@@ -7083,11 +7070,10 @@ pub fn model_surface_partials_by_id(
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        if let (profile, spine, Some(construction)) = (
-            definition_payload.profile(),
-            definition_payload.spine(),
-            definition_payload.native(),
-        ) {
+        if let Some(construction) = definition_payload.native() {
+            let profile = definition_payload.profile();
+            let spine = definition_payload.spine();
+
             if let Some(partials) =
                 cacheless_law_sweep_partials(index, profile, spine, construction, u, v)
             {
