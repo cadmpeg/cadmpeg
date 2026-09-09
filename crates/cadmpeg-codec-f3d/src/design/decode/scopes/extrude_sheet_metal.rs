@@ -286,11 +286,7 @@ fn exact_compact_shifted_extrude_prologue(
     if side_extent_discriminators != [1, 0] {
         return None;
     }
-    let extent = exact_extrude_extent(
-        ExtrudeExtentContext::Common,
-        direction_face_extend_values[0],
-        side_extent_discriminators,
-    )?;
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
     let direction_reversed_offset = start.checked_add(compact_extrude::DIRECTION_REVERSED)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
@@ -1243,17 +1239,13 @@ fn exact_current_extrude_prologue(
     {
         return None;
     }
-    let extent = exact_extrude_extent(
-        ExtrudeExtentContext::Common,
-        direction_face_extend_values[0],
-        side_extent_discriminators,
-    )
-    .or_else(|| {
-        (legacy_class_415_symmetric_distance
-            && direction_face_extend_values == [3, 2]
-            && side_extent_discriminators == [1, 1])
-        .then_some(DesignExtrudeExtent::SymmetricDistance)
-    })?;
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
+        .or_else(|| {
+            (legacy_class_415_symmetric_distance
+                && direction_face_extend_values == [3, 2]
+                && side_extent_discriminators == [1, 1])
+            .then_some(DesignExtrudeExtent::SymmetricDistance)
+        })?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
@@ -1508,11 +1500,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    let extent = exact_extrude_extent(
-        ExtrudeExtentContext::Common,
-        direction_face_extend_values[0],
-        side_extent_discriminators,
-    )?;
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
     let expected_side_extent_discriminators = if tail_form == TailForm::SymmetricThroughAll {
         [4, 4]
     } else {
@@ -1679,22 +1667,10 @@ fn exact_shifted_reference_aware_extrude_prologue(
     })
 }
 
-/// Grammar that assigns meaning to the side extent discriminators.
-#[derive(Clone, Copy)]
-pub(crate) enum ExtrudeExtentContext {
-    Common,
-    Class397Symmetric(super::legacy_class_397::Class397SymmetricFrame),
-}
-
 pub(crate) fn exact_extrude_extent(
-    context: ExtrudeExtentContext,
     direction: u32,
     side_extent_discriminators: [u32; 2],
 ) -> Option<DesignExtrudeExtent> {
-    if let ExtrudeExtentContext::Class397Symmetric(_) = context {
-        return (direction == 3 && side_extent_discriminators == [1, 1])
-            .then_some(DesignExtrudeExtent::SymmetricDistance);
-    }
     match (direction, side_extent_discriminators) {
         (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
         (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
@@ -1826,11 +1802,7 @@ fn exact_legacy_shifted_extrude_prologue(
             View::u32_le_at(bytes, offsets[0])?,
             View::u32_le_at(bytes, offsets[1])?,
         ];
-        let extent = exact_extrude_extent(
-            ExtrudeExtentContext::Common,
-            direction_face_extend_values[0],
-            discriminators,
-        )?;
+        let extent = exact_extrude_extent(direction_face_extend_values[0], discriminators)?;
         Some((offsets, discriminators, extent))
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
@@ -1843,11 +1815,7 @@ fn exact_legacy_shifted_extrude_prologue(
             (
                 offsets,
                 discriminators,
-                exact_extrude_extent(
-                    ExtrudeExtentContext::Common,
-                    direction_face_extend_values[0],
-                    discriminators,
-                )?,
+                exact_extrude_extent(direction_face_extend_values[0], discriminators)?,
             )
         } else {
             let (first_offset, second_offset) = match reference_count_delta {
