@@ -2085,9 +2085,8 @@ fn scope_properties(
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id
         }) {
-            if let Some(id) = neutral_sketch_id(placement) {
-                properties.insert("profile".into(), id.into_string());
-            }
+            let id = neutral_sketch_id(placement);
+            properties.insert("profile".into(), id.into_string());
         }
     }
     properties
@@ -2541,12 +2540,8 @@ pub fn bind_sketch_feature_geometry(
             let [placement] = matching.as_slice() else {
                 break 'feature_edit;
             };
-            let Some(planar) = neutral_sketch_id(placement) else {
-                break 'feature_edit;
-            };
-            let Some(spatial) = neutral_spatial_sketch_id(placement) else {
-                break 'feature_edit;
-            };
+            let planar = neutral_sketch_id(placement);
+            let spatial = neutral_spatial_sketch_id(placement);
             let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
             let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
             definition = match (has_planar, has_spatial) {
@@ -2588,9 +2583,9 @@ pub fn bind_sketch_feature_geometry(
             }
             let matching = placements
                 .iter()
-                .filter(|placement| neutral_sketch_id(placement).as_ref() == Some(&planar_id))
+                .filter(|placement| neutral_sketch_id(placement) == planar_id)
                 .filter_map(|placement| {
-                    let spatial_id = neutral_spatial_sketch_id(placement)?;
+                    let spatial_id = neutral_spatial_sketch_id(placement);
                     spatial_sketches
                         .iter()
                         .find(|candidate| candidate.id == spatial_id)
@@ -3533,7 +3528,7 @@ fn project_base_flange(
             && placement.entity_id == profile.entity_id
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
-        profile: (ProfileRef::Sketch(neutral_sketch_id(placement)?))
+        profile: (ProfileRef::Sketch(neutral_sketch_id(placement)))
             .try_into()
             .ok()?,
         thickness: cadmpeg_ir::features::PositiveLength::new(operation.thickness.get() * 10.0)?,
@@ -8028,7 +8023,7 @@ pub(crate) fn project_extrude(
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id
             })?;
-            ProfileRef::Sketch(neutral_sketch_id(placement)?)
+            ProfileRef::Sketch(neutral_sketch_id(placement))
         }
         None => {
             let [first, rest @ ..] = profile_groups.as_slice() else {

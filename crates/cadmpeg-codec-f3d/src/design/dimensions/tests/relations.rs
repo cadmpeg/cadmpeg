@@ -1019,7 +1019,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     };
     let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));
     let candidate = curve(42, Point2::new(0.0, 0.0), Point2::new(1.0, 3.0f64.sqrt()));
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let point_entity = SketchEntity::new(
         SketchEntityId::mint("generated:test:point#40").unwrap(),
         sketch.clone(),
