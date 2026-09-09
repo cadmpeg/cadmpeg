@@ -227,7 +227,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
             previous_history_state_id: Some(1),
             previous_history_state_id_offset: None,
-            reference_count_offset: (0) + 9,
+            reference_count_offset: 9,
             reference_members: crate::records::ReferenceRun::from_columns(
                 vec![
                     count_record_index,
