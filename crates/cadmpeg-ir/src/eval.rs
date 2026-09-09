@@ -3152,7 +3152,6 @@ fn helix_differential(
     let major = *major;
     let minor = *minor;
     let pitch = *pitch;
-    let apex_factor = apex_factor;
     let axis = *axis;
     let [start, end] = angle_range;
     if ![start, end, apex_factor, parameter]
