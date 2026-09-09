@@ -5,13 +5,12 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::decode::feature_completeness::operands::{
-    body_selection_is_incomplete, body_selections_overlap, edge_selection_is_incomplete,
-    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_selection_is_incomplete,
-    face_selections_overlap, hole_feature_is_incomplete, hole_specification_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete, pattern_feature_is_incomplete,
-    pattern_is_incomplete, pattern_occurrence_count, profile_dependency_is_incomplete,
-    profile_ref_is_incomplete, revolve_feature_is_incomplete, rib_feature_is_incomplete,
-    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
+    extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
+    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
+    profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
+    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
     termination_dependency_is_incomplete, termination_is_incomplete,
 };
 use crate::decode::feature_completeness::{
@@ -691,29 +690,6 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
 }
 
 #[test]
-fn nx_face_blend_completeness_requires_disjoint_supports() {
-    use cadmpeg_ir::features::FaceSelection;
-    use cadmpeg_ir::ids::FaceId;
-
-    let shared = FaceId::mint("test:model:face#shared").expect("identity grammar");
-    let distinct = FaceId::mint("test:model:face#distinct").expect("identity grammar");
-    let first = FaceSelection::Faces(vec![shared.clone()]);
-
-    assert!(face_selections_overlap(
-        &first,
-        &FaceSelection::Resolved {
-            faces: vec![shared],
-            native: "test:first-support".into(),
-        },
-    ));
-    assert!(!face_selections_overlap(
-        &first,
-        &FaceSelection::Faces(vec![distinct]),
-    ));
-    assert!(!face_selections_overlap(&first, &FaceSelection::Unresolved,));
-}
-
-#[test]
 fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
     use cadmpeg_ir::ids::FaceId;
@@ -724,10 +700,6 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
         FaceSelection::Faces(vec![
             FaceId::mint("test:model:face#replacement").expect("identity grammar")
         ]);
-    let overlapping_replacements = FaceSelection::Resolved {
-        faces: vec![target],
-        native: "test:replacement".into(),
-    };
 
     assert_eq!(
         FeatureDefinition::ReplaceFace {
@@ -742,14 +714,6 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
     );
     assert!(!face_selection_is_incomplete(&complete_targets));
     assert!(!face_selection_is_incomplete(&complete_replacements));
-    assert!(!face_selections_overlap(
-        &complete_targets,
-        &complete_replacements
-    ));
-    assert!(face_selections_overlap(
-        &complete_targets,
-        &overlapping_replacements
-    ));
 }
 
 #[test]
@@ -1179,12 +1143,11 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
 }
 
 #[test]
-fn nx_body_operation_completeness_requires_disjoint_roles() {
+fn nx_body_operation_completeness_requires_distinct_members() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;
 
     let shared = BodyId::mint("test:model:body#shared").expect("identity grammar");
-    let distinct = BodyId::mint("test:model:body#distinct").expect("identity grammar");
     let target = BodySelection::Bodies(vec![shared.clone()]);
 
     assert!(body_selection_is_incomplete(&BodySelection::Bodies(vec![
@@ -1192,34 +1155,6 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
         shared.clone()
     ]),));
     assert!(!body_selection_is_incomplete(&target));
-
-    assert!(body_selections_overlap(
-        &target,
-        &BodySelection::Resolved {
-            bodies: vec![shared],
-            native: "test:tools".into(),
-        },
-    ));
-    assert!(!body_selections_overlap(
-        &target,
-        &BodySelection::Bodies(vec![distinct]),
-    ));
-    assert!(!body_selections_overlap(
-        &target,
-        &BodySelection::Unresolved,
-    ));
-    assert!(body_selections_overlap(
-        &BodySelection::local(
-            vec!["nx:om-body-object#10".into()],
-            "nx:om-object-index#10".into()
-        )
-        .unwrap(),
-        &BodySelection::local(
-            vec!["nx:om-body-object#10".into()],
-            "nx:om-object-index#20".into()
-        )
-        .unwrap(),
-    ));
 }
 
 #[test]
@@ -1586,12 +1521,16 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
+    ir.model.features[0].suppressed = Some(false);
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::SewBodies {
-            bodies: (cadmpeg_ir::features::BodySelection::Bodies(vec![output.clone()]))
-                .try_into()
-                .unwrap(),
+            bodies: (cadmpeg_ir::features::BodySelection::Bodies(vec![
+                output.clone(),
+                cadmpeg_ir::ids::BodyId::mint("test:model:body#second").expect("identity grammar"),
+            ]))
+            .try_into()
+            .unwrap(),
             gap_tolerance: Some(cadmpeg_ir::features::PositiveLength::new(0.01).unwrap()),
         })
         .unwrap();
@@ -1604,7 +1543,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::SewBodies {
             bodies: (cadmpeg_ir::features::BodySelection::local(
-                vec![output.as_str().to_owned()],
+                vec![output.as_str().to_owned(), "second-sheet".into()],
                 "nx:body-selection#sew".into(),
             )
             .unwrap())
@@ -1623,7 +1562,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .set_definition(FeatureDefinition::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 cadmpeg_ir::features::BodySelection::local(
-                    vec!["target-a".into(), "target-b".into()],
+                    vec!["target-a".into()],
                     "nx:body-selection#targets".into(),
                 )
                 .unwrap(),

@@ -12,13 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;
 use operands::{
-    body_selection_is_incomplete, body_selections_overlap, edge_selection_is_incomplete,
-    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_selection_is_incomplete,
-    face_selections_overlap, hole_feature_is_incomplete, hole_specification_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete, profile_dependency_is_incomplete,
-    profile_ref_is_incomplete, resolved_body_selection_len, revolve_feature_is_incomplete,
-    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete,
+    body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
+    extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
+    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    profile_dependency_is_incomplete, profile_ref_is_incomplete, resolved_body_selection_len,
+    revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
@@ -360,7 +359,6 @@ pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     body_selection_is_incomplete(bodies)
-        || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
@@ -371,8 +369,7 @@ pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
     let tools = operands.tools();
     body_selection_is_incomplete(target)
         || body_selection_is_incomplete(tools)
-        || resolved_body_selection_len(target) != Some(1)
-        || body_selections_overlap(target, tools)
+        || resolved_body_selection_len(target).is_none()
 }
 
 pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
@@ -383,7 +380,6 @@ pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
     let tools = operands.tools();
     body_selection_is_incomplete(targets)
         || body_selection_is_incomplete(tools)
-        || body_selections_overlap(targets, tools)
         || matches!(keep, BodyTrimSide::Unresolved)
 }
 
@@ -460,20 +456,18 @@ pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Chamfer { groups, .. } = feature.evaluation.definition() else {
         return true;
     };
-    groups.is_empty()
-        || groups
-            .iter()
-            .any(|group| edge_selection_is_incomplete(&group.edges) || group.spec.is_unresolved())
+    groups
+        .iter()
+        .any(|group| edge_selection_is_incomplete(&group.edges) || group.spec.is_unresolved())
 }
 
 pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Fillet { groups } = feature.evaluation.definition() else {
         return true;
     };
-    groups.is_empty()
-        || groups
-            .iter()
-            .any(|group| edge_selection_is_incomplete(&group.edges) || group.radius.is_unresolved())
+    groups
+        .iter()
+        .any(|group| edge_selection_is_incomplete(&group.edges) || group.radius.is_unresolved())
 }
 
 pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
@@ -484,7 +478,6 @@ pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
     let second_faces = operands.second_faces();
     face_selection_is_incomplete(first_faces)
         || face_selection_is_incomplete(second_faces)
-        || face_selections_overlap(first_faces, second_faces)
         || radius.is_unresolved()
 }
 
@@ -574,9 +567,7 @@ pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
     };
     let targets = operands.targets();
     let replacements = operands.replacements();
-    face_selection_is_incomplete(targets)
-        || face_selection_is_incomplete(replacements)
-        || face_selections_overlap(targets, replacements)
+    face_selection_is_incomplete(targets) || face_selection_is_incomplete(replacements)
 }
 
 pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {

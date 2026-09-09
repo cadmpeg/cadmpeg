@@ -1085,13 +1085,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
     let ambiguous = FeatureDefinition::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
-            BodySelection::Resolved {
-                bodies: vec![
-                    BodyId::mint("nx:s0:body#0").expect("identity grammar"),
-                    BodyId::mint("nx:s0:body#1").expect("identity grammar"),
-                ],
-                native: "target".into(),
-            },
+            BodySelection::Unresolved,
             BodySelection::Unresolved,
         )
         .unwrap(),

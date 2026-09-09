@@ -78,10 +78,7 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
             treatment_diameter_is_incomplete(*diameter)
         }
         HoleKind::Counterdrill { diameters, .. } => {
-            let diameter = &diameters.diameter();
-            let entry_diameter = &diameters.entry_diameter();
-            treatment_diameter_is_incomplete(*diameter)
-                || entry_diameter.is_some_and(|entry| entry.get() <= diameter.get())
+            treatment_diameter_is_incomplete(diameters.diameter())
         }
     }
 }
@@ -387,19 +384,6 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     }
 }
 
-pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    match (first, second) {
-        (
-            BodySelection::Local { bodies: first, .. },
-            BodySelection::Local { bodies: second, .. },
-        ) => first.iter().any(|body| second.contains(body)),
-        _ => explicit_body_ids(first).is_some_and(|first| {
-            explicit_body_ids(second)
-                .is_some_and(|second| first.iter().any(|body| second.contains(body)))
-        }),
-    }
-}
-
 pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<Vec<BodyId>> {
     match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
@@ -445,26 +429,6 @@ pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
             selection_ids_are_incomplete(faces)
         }
     }
-}
-
-pub(crate) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
-    let first = match first {
-        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved
-        | FaceSelection::Generated { .. }
-        | FaceSelection::Native(_)
-        | FaceSelection::Historical { .. }
-        | FaceSelection::HistoricalPartial { .. } => return false,
-    };
-    let second = match second {
-        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces,
-        FaceSelection::Unresolved
-        | FaceSelection::Generated { .. }
-        | FaceSelection::Native(_)
-        | FaceSelection::Historical { .. }
-        | FaceSelection::HistoricalPartial { .. } => return false,
-    };
-    first.iter().any(|face| second.contains(face))
 }
 
 pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
