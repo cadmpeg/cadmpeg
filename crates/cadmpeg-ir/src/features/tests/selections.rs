@@ -53,7 +53,7 @@ fn historical_selection_admission_preserves_partial_and_reference_semantics() {
 fn generated_selection_admission_rejects_blank_identities_and_preserves_duplicates() {
     let feature = crate::features::FeatureId::mint("test:model:feature#1").unwrap();
     assert!(GeneratedEdgeRef::new(feature.clone(), " ".into()).is_err());
-    assert!(GeneratedFaceRef::new(feature.clone(), "".into()).is_err());
+    assert!(GeneratedFaceRef::new(feature.clone(), String::new()).is_err());
     let edge = GeneratedEdgeRef::new(feature.clone(), "edge".into()).unwrap();
     let face = GeneratedFaceRef::new(feature, "face".into()).unwrap();
     assert!(EdgeSelection::generated(vec![], "native".into()).is_err());
