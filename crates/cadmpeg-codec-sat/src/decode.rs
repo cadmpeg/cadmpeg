@@ -210,15 +210,20 @@ fn build_result(
         DialectLayers::of(matched).with(kernel.clone()),
         attributes,
     ));
-    if let Some(linear) = header.linear {
-        ir.tolerances.linear = cadmpeg_ir::units::PositiveScalar::new(linear)
-            .ok_or_else(|| CodecError::malformed("linear tolerance must be positive and finite"))?;
-    }
-    if let Some(angular) = header.angular {
-        ir.tolerances.angular =
-            cadmpeg_ir::units::PositiveScalar::new(angular).ok_or_else(|| {
-                CodecError::malformed("angular tolerance must be positive and finite")
-            })?;
+    let mut losses = Vec::new();
+    for (name, value, tolerance) in [
+        ("linear", header.linear, &mut ir.tolerances.linear),
+        ("angular", header.angular, &mut ir.tolerances.angular),
+    ] {
+        if let Some(value) = value {
+            if let Some(value) = cadmpeg_ir::units::PositiveScalar::new(value) {
+                *tolerance = value;
+            } else {
+                losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
+                    "header {name} tolerance {value} is not positive and finite; keeping the default"
+                )));
+            }
+        }
     }
 
     let AsmTransferRemainder {
@@ -229,7 +234,6 @@ fn build_result(
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    let mut losses = Vec::new();
     losses.extend(dialect_loss(kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
