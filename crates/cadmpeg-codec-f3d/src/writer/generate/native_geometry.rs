@@ -889,8 +889,8 @@ fn native_procedural_surface_definition(
             let axis_origin = definition_payload.axis_origin();
             let axis_direction = definition_payload.axis_direction();
             let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             let revision_form = definition_payload.revision_form();
             {
@@ -942,7 +942,7 @@ fn native_procedural_surface_definition(
                     bytes.push(0x10);
                     return Ok(true);
                 }
-                let parameter_interval = (*parameter_interval).ok_or_else(|| {
+                let parameter_interval = (parameter_interval).ok_or_else(|| {
                     CodecError::NotImplemented(
                         "source-less F3D rot_spl_sur requires a directrix parameter interval"
                             .into(),
@@ -1086,9 +1086,9 @@ fn native_procedural_surface_definition(
         }
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let direction = definition_payload.direction();
-            let native_position = &definition_payload.native_position();
+            let native_position = definition_payload.native_position();
             let revision_form = definition_payload.revision_form();
             encode_native_extrusion(
                 bytes,
@@ -1873,9 +1873,9 @@ fn native_cacheless_procedural_surface_definition(
     }
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
         let directrix = definition_payload.directrix();
-        let parameter_interval = &definition_payload.parameter_interval();
+        let parameter_interval = definition_payload.parameter_interval();
         let direction = definition_payload.direction();
-        let native_position = &definition_payload.native_position();
+        let native_position = definition_payload.native_position();
         let revision_form = definition_payload.revision_form();
         encode_native_extrusion(
             bytes,
@@ -2034,7 +2034,7 @@ fn native_cacheless_procedural_surface_definition(
     }
     if let ProceduralSurfaceDefinition::SubSurface(definition_payload) = procedural.definition() {
         let support = definition_payload.support();
-        let parameter_ranges = &definition_payload.parameter_ranges();
+        let parameter_ranges = definition_payload.parameter_ranges();
         let support = target
             .model
             .surfaces
@@ -4288,8 +4288,9 @@ fn native_interval_curve(
     }
     match geometry {
         CurveGeometry::Nurbs(curve) => Ok(curve.clone()),
-        CurveGeometry::Line(line_curve) => { let origin = line_curve.origin();
-let direction = line_curve.direction();
+        CurveGeometry::Line(line_curve) => {
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             if !finite_point(*origin) || !finite_vector(*direction) || direction.norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "source-less F3D interval line requires finite nonzero geometry".into(),
@@ -4315,30 +4316,36 @@ let direction = line_curve.direction();
                 false,
             )
             .map_err(|error| CodecError::Malformed(error.to_string()))
-        },
-        CurveGeometry::Circle(circle_curve) => { let center = circle_curve.center();
-let axis = circle_curve.axis();
-let ref_direction = circle_curve.ref_direction();
-let radius = circle_curve.radius(); native_conic_interval_curve(
-            *center,
-            *axis,
-            *ref_direction,
-            radius,
-            radius,
-            parameter_range,
-        ) },
-        CurveGeometry::Ellipse(ellipse_curve) => { let center = ellipse_curve.center();
-let axis = ellipse_curve.axis();
-let major_direction = ellipse_curve.major_direction();
-let major_radius = ellipse_curve.major_radius();
-let minor_radius = ellipse_curve.minor_radius(); native_conic_interval_curve(
-            *center,
-            *axis,
-            *major_direction,
-            major_radius,
-            minor_radius,
-            parameter_range,
-        ) },
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
+            native_conic_interval_curve(
+                *center,
+                *axis,
+                *ref_direction,
+                radius,
+                radius,
+                parameter_range,
+            )
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
+            native_conic_interval_curve(
+                *center,
+                *axis,
+                *major_direction,
+                major_radius,
+                minor_radius,
+                parameter_range,
+            )
+        }
         _ => Err(CodecError::NotImplemented(
             "source-less F3D interval construction requires a NURBS, line, circle, or ellipse source curve".into(),
         )),
@@ -4632,7 +4639,7 @@ pub(crate) fn native_procedural_curve(
         let context = definition_payload.context();
         let cache_first = definition_payload.cache_first();
         let source = definition_payload.source();
-        let source_parameter_range = &definition_payload.source_parameter_range();
+        let source_parameter_range = definition_payload.source_parameter_range();
         let data = definition_payload.data();
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
@@ -4665,7 +4672,7 @@ pub(crate) fn native_procedural_curve(
             }
         }
         for bound in source_parameter_range {
-            native_optional_f64(bytes, *bound);
+            native_optional_f64(bytes, bound);
         }
         match data {
             cadmpeg_ir::geometry::DeformableCurveData::VectorField {

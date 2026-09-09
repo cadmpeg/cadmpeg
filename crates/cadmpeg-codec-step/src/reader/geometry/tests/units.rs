@@ -427,7 +427,7 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
         if {
             let radius = cone_surface.radius();
-let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));

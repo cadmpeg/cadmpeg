@@ -647,8 +647,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             && matches!(surface.geometry.solved_cache(), Some(cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
                     if {
                         let center = torus_surface.center();
-let axis = torus_surface.axis();
-let ref_direction = torus_surface.ref_direction();
+                        let axis = torus_surface.axis();
+                        let ref_direction = torus_surface.ref_direction();
                         (torus_surface.major_radius() == 2.0)
                             && (torus_surface.minor_radius() == 3.0)
                             && (*center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)

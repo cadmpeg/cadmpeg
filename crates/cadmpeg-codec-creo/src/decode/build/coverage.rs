@@ -217,7 +217,7 @@ pub(in super::super) fn collect_feature_coverage(
             } => {
                 let construction = shape.construction();
                 let exit_kind = shape.exit_kind();
-                let diameter = &shape.diameter();
+                let diameter = shape.diameter();
                 hole_feature_count += 1;
                 let unresolved_location = profile.is_none() && placements.is_none();
                 let unresolved_profile =

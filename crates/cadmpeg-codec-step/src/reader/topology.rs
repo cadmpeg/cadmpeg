@@ -3935,7 +3935,7 @@ fn surface_selection_parameter_domains(
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
-            let parameter_ranges = &definition_payload.parameter_ranges();
+            let parameter_ranges = definition_payload.parameter_ranges();
             [
                 subset_parameter_domain(parameter_ranges[0]),
                 subset_parameter_domain(parameter_ranges[1]),

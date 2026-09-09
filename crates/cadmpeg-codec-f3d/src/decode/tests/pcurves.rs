@@ -318,14 +318,14 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         let context = definition_payload.context();
         let cache_first = definition_payload.cache_first();
         let source = definition_payload.source();
-        let source_parameter_range = &definition_payload.source_parameter_range();
+        let source_parameter_range = definition_payload.source_parameter_range();
         let data = definition_payload.data();
         let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision, 23100);
         assert_eq!(context.parameter_range(), [-1.0, 2.0]);
-        assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
+        assert_eq!(source_parameter_range, [Some(0.0), Some(1.0)]);
         assert!(result
             .ir()
             .model

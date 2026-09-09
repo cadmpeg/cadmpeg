@@ -5061,13 +5061,13 @@ pub fn model_surface_point(
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
             let direction = definition_payload.direction();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let revision_form = definition_payload.revision_form();
             model_native_extrusion_partials(
                 &index,
                 directrix,
                 *direction,
-                *parameter_interval,
+                parameter_interval,
                 carrier_interval,
                 extrusion_directrix_reversed(revision_form.as_ref()),
                 u,
@@ -5086,8 +5086,8 @@ pub fn model_surface_point(
             let axis_origin = definition_payload.axis_origin();
             let axis_direction = definition_payload.axis_direction();
             let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             model_native_revolution_partials(
                 &index,
@@ -5095,8 +5095,8 @@ pub fn model_surface_point(
                 *axis_origin,
                 *axis_direction,
                 *angular_interval,
-                *angular_parameter_interval,
-                *parameter_interval,
+                angular_parameter_interval,
+                parameter_interval,
                 carrier_interval,
                 *transposed,
                 u,
@@ -6666,13 +6666,13 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
                 let directrix = definition_payload.directrix();
                 let direction = definition_payload.direction();
-                let parameter_interval = &definition_payload.parameter_interval();
+                let parameter_interval = definition_payload.parameter_interval();
                 let revision_form = definition_payload.revision_form();
                 model_native_extrusion_partials(
                     index,
                     directrix,
                     *direction,
-                    *parameter_interval,
+                    parameter_interval,
                     carrier_interval,
                     extrusion_directrix_reversed(revision_form.as_ref()),
                     u,
@@ -6701,8 +6701,8 @@ fn model_surface_point_by_id_inner(
                 let axis_origin = definition_payload.axis_origin();
                 let axis_direction = definition_payload.axis_direction();
                 let angular_interval = definition_payload.angular_interval();
-                let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-                let parameter_interval = &definition_payload.parameter_interval();
+                let angular_parameter_interval = definition_payload.angular_parameter_interval();
+                let parameter_interval = definition_payload.parameter_interval();
                 let transposed = definition_payload.transposed();
                 model_native_revolution_partials(
                     index,
@@ -6710,8 +6710,8 @@ fn model_surface_point_by_id_inner(
                     *axis_origin,
                     *axis_direction,
                     *angular_interval,
-                    *angular_parameter_interval,
-                    *parameter_interval,
+                    angular_parameter_interval,
+                    parameter_interval,
                     carrier_interval,
                     *transposed,
                     u,
@@ -6853,7 +6853,7 @@ fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
                 let support = definition_payload.support();
-                let parameter_ranges = &definition_payload.parameter_ranges();
+                let parameter_ranges = definition_payload.parameter_ranges();
                 let u_sense = definition_payload.u_sense();
                 let v_sense = definition_payload.v_sense();
                 {
@@ -6861,7 +6861,7 @@ fn model_surface_point_by_id_inner(
                         subset_support_parameters_with_derivatives(
                             u,
                             v,
-                            *parameter_ranges,
+                            parameter_ranges,
                             *u_sense,
                             *v_sense,
                         )?;
@@ -7134,14 +7134,14 @@ fn model_surface_mapping(
         Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
             let directrix = definition_payload.directrix();
             let direction = definition_payload.direction();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let revision_form = definition_payload.revision_form();
             Some(SurfaceMapping {
                 base: model_native_extrusion_partials(
                     index,
                     directrix,
                     *direction,
-                    *parameter_interval,
+                    parameter_interval,
                     carrier_interval,
                     extrusion_directrix_reversed(revision_form.as_ref()),
                     u,
@@ -7183,8 +7183,8 @@ fn model_surface_mapping(
             let axis_origin = definition_payload.axis_origin();
             let axis_direction = definition_payload.axis_direction();
             let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             Some(SurfaceMapping {
                 base: model_native_revolution_partials(
@@ -7193,8 +7193,8 @@ fn model_surface_mapping(
                     *axis_origin,
                     *axis_direction,
                     *angular_interval,
-                    *angular_parameter_interval,
-                    *parameter_interval,
+                    angular_parameter_interval,
+                    parameter_interval,
                     carrier_interval,
                     *transposed,
                     u,
@@ -7246,7 +7246,7 @@ fn model_surface_mapping(
         }
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let support = definition_payload.support();
-            let parameter_ranges = &definition_payload.parameter_ranges();
+            let parameter_ranges = definition_payload.parameter_ranges();
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
             {
@@ -7254,7 +7254,7 @@ fn model_surface_mapping(
                     subset_support_parameters_with_derivatives(
                         u,
                         v,
-                        *parameter_ranges,
+                        parameter_ranges,
                         *u_sense,
                         *v_sense,
                     )?;

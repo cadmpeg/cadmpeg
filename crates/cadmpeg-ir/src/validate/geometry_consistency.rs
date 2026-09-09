@@ -861,8 +861,8 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         })
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        let parameter_ranges = &definition_payload.parameter_ranges();
-        let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
+        let parameter_ranges = definition_payload.parameter_ranges();
+        let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
         let u_span = (u_end - u_start).abs();
         let v_span = (v_end - v_start).abs();
         if u_span.is_finite() && u_span > 0.0 && v_span.is_finite() && v_span > 0.0 {

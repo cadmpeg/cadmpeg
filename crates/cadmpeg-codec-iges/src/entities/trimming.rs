@@ -465,32 +465,32 @@ fn procedural_pcurve_parameter_map(
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             {
                 if line_directrix(ir, directrix) {
                     u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
                 } else if let Some(parameter_interval) = parameter_interval {
-                    u_map = affine_parameter_map(*parameter_interval, carrier_interval)?;
+                    u_map = affine_parameter_map(parameter_interval, carrier_interval)?;
                 }
             }
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             {
                 let directrix_map = if line_directrix(ir, directrix) {
                     affine_parameter_map([0.0, 1.0], carrier_interval)?
                 } else if let Some(parameter_interval) = parameter_interval {
-                    affine_parameter_map(*parameter_interval, carrier_interval)?
+                    affine_parameter_map(parameter_interval, carrier_interval)?
                 } else {
                     (1.0, 0.0)
                 };
                 let angular_map = match angular_parameter_interval {
                     Some(parameter_interval) => {
-                        affine_parameter_map(*parameter_interval, *angular_interval)?
+                        affine_parameter_map(parameter_interval, *angular_interval)?
                     }
                     None => (1.0, 0.0),
                 };

@@ -157,7 +157,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
             construction.definition()
         );
     };
-    let parameter_ranges = &definition_payload_0.parameter_ranges();
+    let parameter_ranges = definition_payload_0.parameter_ranges();
     let Some(true) = definition_payload_0.u_sense() else {
         panic!(
             "unexpected cyclic trimmed definition: {:?}",

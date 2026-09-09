@@ -3379,12 +3379,12 @@ pub(crate) fn validate_procedural_surface_edits(
                 && definition_payload_0.revision_form().is_none()
                 && definition_payload_1.revision_form().is_none() =>
             {
-                let before_parameter_interval = &definition_payload_0.parameter_interval();
+                let before_parameter_interval = definition_payload_0.parameter_interval();
                 let before_direction = definition_payload_0.direction();
-                let before_native_position = &definition_payload_0.native_position();
-                let after_parameter_interval = &definition_payload_1.parameter_interval();
+                let before_native_position = definition_payload_0.native_position();
+                let after_parameter_interval = definition_payload_1.parameter_interval();
                 let after_direction = definition_payload_1.direction();
-                let after_native_position = &definition_payload_1.native_position();
+                let after_native_position = definition_payload_1.native_position();
                 {
                     let interval = after_parameter_interval.ok_or_else(|| {
                         CodecError::malformed(format_args!(
