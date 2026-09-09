@@ -39,7 +39,7 @@ impl fmt::Display for Column {
     }
 }
 
-/// A capability ladder level from zero through nine.
+/// An opaque capability ladder token from zero through nine, exposed through Display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LadderLevel(u8);
 
