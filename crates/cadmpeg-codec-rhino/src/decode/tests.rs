@@ -1037,7 +1037,8 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &extrusion,
             &boundaries,
             &mut links,
-        ));
+        )
+        .is_ok());
         assert_eq!(ir.model.faces.len(), expected_faces);
         assert_eq!(ir.model.regions.len(), expected_faces);
         assert_eq!(ir.model.shells.len(), expected_faces);
