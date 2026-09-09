@@ -1241,11 +1241,6 @@ impl DesignParameterOwner {
                 ParameterFrameOrder::OwnerCompanionParameter => 2,
             }
     }
-    /// The owned ordinal value.
-    #[cfg(test)]
-    pub fn owned_ordinal(&self) -> u32 {
-        self.owned_ordinal
-    }
     /// The companion record index value.
     pub fn companion_record_index(&self) -> u32 {
         self.base_index
