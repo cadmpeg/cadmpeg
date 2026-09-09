@@ -1,4 +1,4 @@
-# generated at ee06f3e21
+# generated at 7a344d53f
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
