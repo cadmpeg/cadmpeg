@@ -5120,14 +5120,85 @@ pub struct DesignEdgeTreatmentVertexOperand {
 /// Plane through three persistent B-rep vertices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
-    from = "DesignWorkPlaneConstructionWire",
+    try_from = "DesignWorkPlaneConstructionWire",
     into = "DesignWorkPlaneConstructionWire"
 )]
 pub struct DesignWorkPlaneConstruction {
     /// Solved placement-frame record named by the scope.
     pub placement_record_index: u32,
     /// Persistent vertex inputs in source order.
-    pub inputs: Box<[DesignVertexRecipe; 3]>,
+    inputs: Box<[DesignVertexRecipe; 3]>,
+}
+
+impl DesignWorkPlaneConstruction {
+    /// Admit an unresolved triple or three distinct vertices from one history state.
+    pub fn try_new(
+        placement_record_index: u32,
+        inputs: Box<[DesignVertexRecipe; 3]>,
+    ) -> Result<Self, String> {
+        validate_three_point_resolutions(inputs.each_ref().map(|input| input.resolution))?;
+        Ok(Self {
+            placement_record_index,
+            inputs,
+        })
+    }
+
+    /// Persistent vertex recipes in source order.
+    pub fn inputs(&self) -> &[DesignVertexRecipe; 3] {
+        &self.inputs
+    }
+
+    /// Candidate references without mutable access to vertex resolutions.
+    pub(crate) fn recipe_references_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DesignRecipeReference> {
+        self.inputs
+            .iter_mut()
+            .flat_map(|recipe| recipe.recipe_references.iter_mut())
+    }
+
+    /// Remove resolution for the complete vertex triple.
+    pub(crate) fn clear_resolution(&mut self) {
+        for input in self.inputs.iter_mut() {
+            input.resolution = None;
+        }
+    }
+
+    /// Commit three distinct vertices from one state, preserving the old value on failure.
+    pub(crate) fn try_set_resolution(
+        &mut self,
+        resolution: [DesignVertexResolution; 3],
+    ) -> Result<(), String> {
+        validate_three_point_resolutions(resolution.map(Some))?;
+        for (input, resolution) in self.inputs.iter_mut().zip(resolution) {
+            input.resolution = Some(resolution);
+        }
+        Ok(())
+    }
+}
+
+fn validate_three_point_resolutions(
+    resolutions: [Option<DesignVertexResolution>; 3],
+) -> Result<(), String> {
+    match resolutions {
+        [None, None, None] => Ok(()),
+        [Some(first), Some(second), Some(third)] => {
+            if first.state_id != second.state_id || first.state_id != third.state_id {
+                return Err("recipe_state_id must match across all three inputs".into());
+            }
+            if first.vertex_slot() == second.vertex_slot()
+                || first.vertex_slot() == third.vertex_slot()
+                || second.vertex_slot() == third.vertex_slot()
+            {
+                return Err("resolved_vertex_slot must be distinct across all three inputs".into());
+            }
+            Ok(())
+        }
+        _ => Err(
+            "inputs resolution must be absent for all three vertices or present for all three"
+                .into(),
+        ),
+    }
 }
 
 /// Wire form of [`DesignWorkPlaneConstruction`].
@@ -5154,16 +5225,14 @@ impl From<DesignWorkPlaneConstruction> for DesignWorkPlaneConstructionWire {
     }
 }
 
-impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
-    fn from(value: DesignWorkPlaneConstructionWire) -> Self {
+impl TryFrom<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
+    type Error = String;
+    fn try_from(value: DesignWorkPlaneConstructionWire) -> Result<Self, Self::Error> {
         let DesignWorkPlaneConstructionWire::ThreePoint {
             placement_record_index,
             inputs,
         } = value;
-        Self {
-            placement_record_index,
-            inputs,
-        }
+        Self::try_new(placement_record_index, inputs)
     }
 }
 

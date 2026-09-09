@@ -3591,13 +3591,11 @@ fn valid_work_plane_construction(
     let Some(frame) = scope.work_plane_frame() else {
         return true;
     };
-    let Some(records::feature::DesignWorkPlaneConstruction {
-        placement_record_index,
-        inputs,
-    }) = &frame.work_plane_construction
-    else {
+    let Some(construction) = &frame.work_plane_construction else {
         return true;
     };
+    let placement_record_index = &construction.placement_record_index;
+    let inputs = construction.inputs();
     let Some([placement, first, second, third, extra_offset]) =
         scope.reference_members().values_array()
     else {
@@ -3634,7 +3632,6 @@ fn valid_work_plane_construction(
         && inputs.iter().all(|input| {
             valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), input)
         })
-        && valid_three_point_recipe_resolution(inputs)
         && ctx.native.design_parameters.iter().any(|parameter| {
             design_stream(&parameter.id) == native_stream
                 && parameter.record_index == owner.parameter_record_index()
@@ -3642,21 +3639,6 @@ fn valid_work_plane_construction(
                 && parameter.source_kind() == "ExtraOffset"
                 && parameter.evaluated_value() == 0.0
         })
-}
-
-fn valid_three_point_recipe_resolution(inputs: &[records::feature::DesignVertexRecipe; 3]) -> bool {
-    let resolved = inputs.each_ref().map(|input| input.resolution);
-    match resolved {
-        [None, None, None] => true,
-        [Some(first), Some(second), Some(third)] => {
-            first.state_id == second.state_id
-                && first.state_id == third.state_id
-                && first.vertex_slot() != second.vertex_slot()
-                && first.vertex_slot() != third.vertex_slot()
-                && second.vertex_slot() != third.vertex_slot()
-        }
-        _ => false,
-    }
 }
 
 fn valid_vertex_recipe(

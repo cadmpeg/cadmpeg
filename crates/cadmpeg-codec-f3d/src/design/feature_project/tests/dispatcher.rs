@@ -186,10 +186,13 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     );
     plane.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     if let Some(frame) = plane.work_plane_frame_mut() {
-        frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
-            placement_record_index: 21,
-            inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
-        });
+        frame.work_plane_construction = Some(
+            DesignWorkPlaneConstruction::try_new(
+                21,
+                Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
+            )
+            .unwrap(),
+        );
     }
 
     let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
