@@ -671,7 +671,7 @@ mod tests {
             display_name: String::new(),
             state_groups: Vec::new(),
             state,
-            document_id: document_id.into(),
+            document_id: Some(document_id.into()),
             database_id: "0".repeat(32),
             reference_id,
             occurrence_count: 1,
