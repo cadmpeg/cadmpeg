@@ -50,7 +50,7 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
             .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
-            .flatten()
+            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -59,7 +59,7 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_curves {
         procedural
             .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
-            .flatten()
+            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
