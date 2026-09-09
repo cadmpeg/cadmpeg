@@ -1709,9 +1709,9 @@ pub(crate) fn project(
 }
 
 /// Serializes one decoded dimension without source-record identity.
-pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0).ok()?;
-    serde_json::to_string(&serde_json::json!({
+pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_core::CodecError> {
+    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0)?;
+    Ok(serde_json::json!({
         "kind": "dimension",
         "runtime_type": annotation.runtime_type,
         "value": annotation.value,
@@ -1719,8 +1719,8 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
         "position": annotation.position,
         "references": annotation.references,
         "parameters": annotation.parameters,
-    }))
-    .ok()
+    })
+    .to_string())
 }
 
 #[cfg(test)]
