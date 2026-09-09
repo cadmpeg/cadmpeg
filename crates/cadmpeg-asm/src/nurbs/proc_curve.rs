@@ -2335,6 +2335,23 @@ impl ProjectionRoleSlot {
     pub fn range(&self) -> std::ops::Range<usize> {
         self.0..self.0 + 5
     }
+
+    /// Write a projection role into its five-byte payload.
+    pub fn write(
+        &self,
+        bytes: &mut [u8],
+        role: cadmpeg_ir::geometry::ProjectionRole,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let payload: &[u8; 5] = match role {
+            cadmpeg_ir::geometry::ProjectionRole::Surf1 => b"surf1",
+            cadmpeg_ir::geometry::ProjectionRole::Surf2 => b"surf2",
+        };
+        let target = bytes.get_mut(self.range()).ok_or_else(|| {
+            cadmpeg_core::CodecError::Malformed("projection role payload is truncated".into())
+        })?;
+        target.copy_from_slice(payload);
+        Ok(())
+    }
 }
 
 /// Writable tail shape of a `proj_int_cur` subtype.
@@ -3348,6 +3365,19 @@ mod cache_form_tests {
 
     fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
         PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
+    }
+
+    #[test]
+    fn projection_role_slot_rejects_a_truncated_payload() {
+        let original = b"\x07\x05surf1";
+        let slot = ProjectionRoleSlot::parse(original, 0).unwrap();
+        let mut bytes = original[..6].to_vec();
+        let before = bytes.clone();
+        let error = slot
+            .write(&mut bytes, cadmpeg_ir::geometry::ProjectionRole::Surf2)
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert_eq!(bytes, before);
     }
 
     #[test]
