@@ -1711,7 +1711,7 @@ fn geometry_signal_excludes_opaque_carriers() {
                         extension: 0,
                     },
                 )
-                .unwrap(),
+                .expect("finite ordered exact-spline fixture ranges"),
             ),
             None,
         )
