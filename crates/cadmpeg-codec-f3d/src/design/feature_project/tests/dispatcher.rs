@@ -588,9 +588,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     remove_body
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![200]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -611,9 +609,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -744,9 +740,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     thread
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -944,9 +938,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1031,9 +1023,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

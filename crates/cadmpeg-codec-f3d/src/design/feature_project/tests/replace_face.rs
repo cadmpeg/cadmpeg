@@ -77,9 +77,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -216,9 +214,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

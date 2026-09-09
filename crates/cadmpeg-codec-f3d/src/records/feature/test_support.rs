@@ -6,14 +6,12 @@ use crate::records::{Located, ReferenceRun};
 impl DesignParameterScopeDraft {
     pub(crate) fn with_fixture_layout(mut self) -> Self {
         self.paired_byte_offset = self.byte_offset + self.frame_length;
-        self.locate_fixture_references();
-        self.kind_offset =
-            self.reference_count_offset + 12 + 11 * self.reference_members.len() as u64;
+        self.layout_fixture_references();
         self.layout_fixture_tail();
         self
     }
 
-    pub(crate) fn locate_fixture_references(&mut self) {
+    pub(crate) fn layout_fixture_references(&mut self) {
         self.reference_members = ReferenceRun::located(
             self.reference_members
                 .values()
@@ -25,6 +23,8 @@ impl DesignParameterScopeDraft {
                 })
                 .collect(),
         );
+        self.kind_offset =
+            self.reference_count_offset + 12 + 11 * self.reference_members.len() as u64;
     }
 
     pub(crate) fn layout_fixture_tail(&mut self) {

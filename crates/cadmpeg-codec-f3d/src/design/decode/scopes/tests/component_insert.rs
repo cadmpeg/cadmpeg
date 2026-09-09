@@ -408,9 +408,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
             draft.byte_offset = scope_at as u64;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -428,9 +426,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -543,9 +539,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
             draft.byte_offset = scope_at as u64;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -563,9 +557,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -687,9 +679,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
             draft.byte_offset = scope_at as u64;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -707,9 +697,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -837,9 +825,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             draft.byte_offset = scope_at as u64;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -857,9 +843,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -913,9 +897,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1025,9 +1007,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 draft.byte_offset = scope_at as u64;
                 draft.reference_count_offset = draft.byte_offset + 9;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
                 draft.layout_fixture_tail();
@@ -1046,9 +1026,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
                     *draft.reference_members.offsets().next().unwrap() - 5;
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
