@@ -46,13 +46,6 @@ pub struct SourceLocation {
     pub offset: u64,
 }
 
-/// Allocation-free context attached to a failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ErrorContext {
-    /// The operation that failed, as a static label.
-    pub operation: &'static str,
-}
-
 /// A resource refusal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimit {
@@ -66,6 +59,6 @@ pub struct ResourceLimit {
     pub used: u64,
     /// The saturating size of the request that failed.
     pub additional: u64,
-    /// Static context for the failure.
-    pub context: ErrorContext,
+    /// The operation that failed, as a static label.
+    pub operation: &'static str,
 }

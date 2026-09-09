@@ -5,7 +5,7 @@ use std::cell::Cell;
 
 use crate::CodecError;
 
-use super::error::{ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
     MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
@@ -131,7 +131,7 @@ impl DecodeBudget {
             limit,
             used,
             additional,
-            context: ErrorContext { operation },
+            operation,
         };
         self.fuse.set(Some(resource));
         CodecError::ResourceLimit(resource)
@@ -461,7 +461,7 @@ fn local_limit_error(
         limit,
         used: requested.min(limit),
         additional: requested.saturating_sub(limit),
-        context: ErrorContext { operation },
+        operation,
     })
 }
 

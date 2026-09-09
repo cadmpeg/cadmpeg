@@ -209,7 +209,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
             matches!(
                 error,
                 cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
-                    if limit.dimension == expected && limit.context.operation == operation
+                    if limit.dimension == expected && limit.operation == operation
             ),
             "{error:#?}"
         );
@@ -247,7 +247,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.context.operation == "iges_native_entities"
+                && limit.operation == "iges_native_entities"
     ));
     assert_refusal(
         |limits| limits.max_collection_items = 0,
@@ -273,7 +273,7 @@ fn inspect_enforces_iges_parser_resource_limits() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.context.operation == "iges_cards"
+                && limit.operation == "iges_cards"
     ));
 }
 
