@@ -36,16 +36,28 @@ fn loss_policy_assigns_each_refusal_phase() {
 }
 
 #[test]
-fn destination_policy_paths() {
-    let file = DestinationPolicy::File(FileDestination {
-        path: PathBuf::from("part.step"),
-        overwrite: true,
-    });
-    assert_eq!(file.path(), Some(Path::new("part.step")));
-    let stdout = DestinationPolicy::Stdout {
-        allow_binary: false,
+fn convert_file_destination_discards_binary_stdout_at_clap_admission() {
+    use clap::Parser;
+    let command = crate::Cli::try_parse_from([
+        "cadmpeg",
+        "convert",
+        "input.step",
+        "-o",
+        "out.step",
+        "--binary-stdout",
+    ])
+    .unwrap()
+    .command;
+    let crate::Command::Convert { destinations, .. } = command else {
+        panic!("expected convert command");
     };
-    assert_eq!(stdout.path(), None);
+    assert_eq!(
+        destinations.destination,
+        DestinationPolicy::File(FileDestination {
+            path: PathBuf::from("out.step"),
+            overwrite: false,
+        })
+    );
 }
 
 fn prepared(

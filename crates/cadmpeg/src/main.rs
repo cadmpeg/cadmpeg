@@ -23,7 +23,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
 use crate::application::artifact_store::{OptionalFileDestination, OutputDestinations};
-use crate::application::transcoder::{DestinationPolicy, LossPolicy};
+use crate::application::transcoder::{ConversionDestinations, DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -130,16 +130,13 @@ enum Command {
         file: inspect::FileArg,
         #[command(flatten)]
         _reject_json: crate::reject_json::RejectJson,
-        /// Stream a binary output format to standard output anyway.
-        #[arg(long, hide = true)]
-        binary_stdout: bool,
         /// Output format and dialect: `FORMAT`, `FORMAT:DIALECT`, or a bare
         /// dialect of the format the output path implies. Inferred from the
         /// output extension when omitted.
         #[arg(short, long, visible_alias = "to", value_name = "FORMAT[:DIALECT]")]
         format: Option<String>,
         #[command(flatten)]
-        destinations: OutputDestinations,
+        destinations: ConversionDestinations,
         /// Write output even if the check finds errors. The check runs and prints findings. Skip the refusal.
         #[arg(long)]
         allow_errors: bool,
@@ -387,7 +384,6 @@ fn main() -> ExitCode {
         Command::Convert {
             file,
             _reject_json: _,
-            binary_stdout,
             format,
             destinations,
             allow_errors,
@@ -400,12 +396,7 @@ fn main() -> ExitCode {
                 losses: reject_lossy,
                 allow_errors,
                 allow_empty,
-                destination: match destinations.output.0 {
-                    Some(file) => DestinationPolicy::File(file),
-                    None => DestinationPolicy::Stdout {
-                        allow_binary: binary_stdout,
-                    },
-                },
+                destination: destinations.destination,
                 report: destinations.report,
                 forced_input: input_args.input_format,
             };
