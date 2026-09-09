@@ -790,11 +790,9 @@ impl Serialize for DialectMatchOutput<'_> {
 fn admission_value(matched: &DialectMatch) -> Value {
     match matched.admission() {
         Admission::Admitted => serde_json::json!("admitted"),
-        Admission::Unverified { .. } => serde_json::json!({
+        Admission::Unverified { using } => serde_json::json!({
             "unverified": {
-                "using": matched
-                    .using()
-                    .expect("unverified admission always names its grammar")
+                "using": matched.grammar_id(using)
             }
         }),
         Admission::Residual => serde_json::json!("residual"),
