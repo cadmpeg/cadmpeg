@@ -147,6 +147,9 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
             (None, Some(_)) => {
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
+            (Some(row), _) if row.is_empty() => {
+                return Err("owner-chart alias_row must not be empty".to_owned());
+            }
             (Some(row), canonical_tag) => Some(CatiaOwnerChartAliasBinding { row, canonical_tag }),
         };
         let mut reference = Self::new(wire.value, wire.encoding);
@@ -578,6 +581,18 @@ mod tests {
                 serde_json::to_value(reference).expect("serialize alias"),
                 wire
             );
+        }
+    }
+
+    #[test]
+    fn reference_wire_rejects_empty_alias_rows() {
+        for canonical_tag in [None, Some(23)] {
+            let mut wire = json!({ "value": 17, "encoding": "width_coded", "alias_row": "" });
+            if let Some(tag) = canonical_tag {
+                wire["canonical_surface_tag"] = json!(tag);
+            }
+            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).unwrap_err();
+            assert!(error.to_string().contains("alias_row must not be empty"));
         }
     }
 
