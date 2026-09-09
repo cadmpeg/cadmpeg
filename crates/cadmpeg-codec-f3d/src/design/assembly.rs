@@ -340,12 +340,20 @@ pub(crate) fn project_assembly_joints(
         let [first_operand, second_operand] = operands;
         let [first_frame, second_frame] =
             std::array::from_fn(|index| neutral_transform(frames[index].transform));
+        let angle = cadmpeg_ir::features::FiniteReal::new(alignment.angle)
+            .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
+        let [x, y, z] = alignment.offset.map(|value| {
+            cadmpeg_ir::features::FiniteReal::new(value * 10.0).ok_or_else(|| {
+                CodecError::Malformed("joint translation_offset must be finite".into())
+            })
+        });
+        let translation_offset = [x?, y?, z?];
         joints.entry(id.as_str().to_owned()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
-                    angle: Some(alignment.angle),
-                    translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
+                    angle: Some(angle),
+                    translation_offset: Some(translation_offset),
                     angular_limits,
                     linear_limits,
                 },

@@ -265,6 +265,10 @@ pub(crate) fn transfer_neutral(
                         angular_limits,
                         linear_limits,
                     );
+                    let kind = match kind {
+                        Ok(kind) => kind,
+                        Err(error) => return Some(Err(error)),
+                    };
                     AssemblyJoint::paired(
                         id,
                         kind,
@@ -301,8 +305,15 @@ fn joint_kind(
     distance2: Option<f64>,
     angular_limits: Option<JointLimits>,
     linear_limits: Option<JointLimits>,
-) -> PairedJointKind {
-    match kind.as_str().to_ascii_lowercase().as_str() {
+) -> Result<PairedJointKind, CodecError> {
+    let finite = |value: f64| {
+        cadmpeg_ir::features::FiniteReal::new(value)
+            .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
+    };
+    let angle = angle.map(finite).transpose()?;
+    let distance = distance.map(finite).transpose()?;
+    let distance2 = distance2.map(finite).transpose()?;
+    Ok(match kind.as_str().to_ascii_lowercase().as_str() {
         "fixed" => PairedJointKind::Fixed {
             angle,
             translation_offset: None,
@@ -351,7 +362,7 @@ fn joint_kind(
             angular_limits,
             linear_limits,
         },
-    }
+    })
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -651,7 +662,8 @@ pub(crate) mod tests {
                         None,
                         None,
                         None
-                    ),
+                    )
+                    .unwrap(),
                     PairedJointKind::Native { .. }
                 ),
                 "{family} must not fall through to a native joint family"

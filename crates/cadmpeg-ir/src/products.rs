@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
+use crate::features::FiniteReal;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
@@ -1215,9 +1216,9 @@ pub enum PairedJointKind {
     /// Rigid connection with no relative degrees of freedom.
     Fixed {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1226,25 +1227,25 @@ pub enum PairedJointKind {
     /// Rotation about one axis.
     Revolute {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
     },
     /// Translation along one axis.
     Slider {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled linear interval in document length units.
         linear_limits: Option<JointLimits>,
     },
     /// Coupled rotation and translation on one axis.
     Cylindrical {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1255,7 +1256,7 @@ pub enum PairedJointKind {
     /// Maintains a scalar separation.
     Distance {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
     },
     /// Maintains parallel connector directions.
     Parallel,
@@ -1264,46 +1265,46 @@ pub enum PairedJointKind {
     /// Maintains an angular separation.
     Angle {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
     },
     /// Couples rack translation to pinion rotation.
     RackPinion {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Couples translation and rotation by screw pitch.
     Screw {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
     },
     /// Couples two gear rotations.
     Gears {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Couples two pulley rotations through a belt.
     Belt {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Future application-defined family retained without relabeling.
     Native {
         /// Application-defined family name.
         name: String,
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1331,6 +1332,26 @@ impl PairedJointKind {
             angular_limits,
             linear_limits,
         } = scalars;
+        let angle = angle
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "angle must be finite")?;
+        let distance = distance
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "distance must be finite")?;
+        let distance2 = distance2
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "distance2 must be finite")?;
+        let translation_offset = translation_offset
+            .map(|values| {
+                let [x, y, z] = values.map(FiniteReal::try_from);
+                Ok::<_, &'static str>([x?, y?, z?])
+            })
+            .transpose()
+            .map_err(|_| "translation_offset must be finite")?;
+
         match kind {
             JointKind::Fixed if distance.is_none() && distance2.is_none() => Ok(Self::Fixed {
                 angle,
@@ -1478,8 +1499,8 @@ impl PairedJointKind {
                 angular_limits,
                 linear_limits,
             } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
+                angle: angle.map(FiniteReal::get),
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
                 distance: None,
                 distance2: None,
                 angular_limits: angular_limits.clone(),
@@ -1489,7 +1510,7 @@ impl PairedJointKind {
                 angle,
                 angular_limits,
             } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
                 distance: None,
                 distance2: None,
@@ -1502,8 +1523,8 @@ impl PairedJointKind {
                 linear_limits,
             } => JointScalars {
                 angle: None,
-                translation_offset: *translation_offset,
-                distance: *distance,
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: linear_limits.clone(),
@@ -1514,9 +1535,9 @@ impl PairedJointKind {
                 angular_limits,
                 linear_limits,
             } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: angular_limits.clone(),
                 linear_limits: linear_limits.clone(),
@@ -1532,13 +1553,13 @@ impl PairedJointKind {
             Self::Distance { distance } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: None,
             },
             Self::Angle { angle } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
                 distance: None,
                 distance2: None,
@@ -1559,15 +1580,15 @@ impl PairedJointKind {
             } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
-                distance2: *distance2,
+                distance: distance.map(FiniteReal::get),
+                distance2: distance2.map(FiniteReal::get),
                 angular_limits: None,
                 linear_limits: None,
             },
             Self::Screw { distance } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: None,
@@ -1581,10 +1602,10 @@ impl PairedJointKind {
                 linear_limits,
                 ..
             } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
-                distance: *distance,
-                distance2: *distance2,
+                angle: angle.map(FiniteReal::get),
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
+                distance: distance.map(FiniteReal::get),
+                distance2: distance2.map(FiniteReal::get),
                 angular_limits: angular_limits.clone(),
                 linear_limits: linear_limits.clone(),
             },

@@ -93,3 +93,47 @@ fn joint_wire_rejects_fields_outside_its_kinematic_family() {
         }
     }
 }
+
+#[test]
+fn joint_scalar_admission_rejects_each_nonfinite_field() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for field in ["angle", "distance", "distance2", "translation_offset"] {
+            let mut scalars = JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            };
+            match field {
+                "angle" => scalars.angle = Some(value),
+                "distance" => scalars.distance = Some(value),
+                "distance2" => scalars.distance2 = Some(value),
+                _ => scalars.translation_offset = Some([0.0, value, 0.0]),
+            }
+            let error = PairedJointKind::from_wire(JointKind::Native("custom".into()), scalars)
+                .unwrap_err();
+            assert!(error.contains(field), "{field}: {error}");
+        }
+    }
+    for value in [-1.0, 0.0, 1.0] {
+        let kind = PairedJointKind::from_wire(
+            JointKind::Native("custom".into()),
+            JointScalars {
+                angle: Some(value),
+                translation_offset: Some([value; 3]),
+                distance: Some(value),
+                distance2: Some(value),
+                angular_limits: None,
+                linear_limits: None,
+            },
+        )
+        .unwrap();
+        let scalars = kind.scalars();
+        assert_eq!(scalars.angle, Some(value));
+        assert_eq!(scalars.translation_offset, Some([value; 3]));
+        assert_eq!(scalars.distance, Some(value));
+        assert_eq!(scalars.distance2, Some(value));
+    }
+}
