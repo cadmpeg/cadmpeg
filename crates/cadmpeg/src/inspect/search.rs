@@ -2,19 +2,8 @@
 //! Byte-pattern search and printable-string extraction.
 use std::num::NonZeroUsize;
 
-/// One byte of a search pattern: a fixed value or a `??` wildcard.
-type PatternByte = Option<u8>;
-
-/// A nonempty byte pattern with optional wildcard positions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pattern(Vec<PatternByte>);
-
-impl Pattern {
-    /// Number of byte positions in the pattern.
-    pub(super) fn len(&self) -> usize {
-        self.0.len()
-    }
-}
+mod pattern;
+use pattern::{Pattern, PatternByte};
 
 /// Parses a hexadecimal search pattern.
 ///
@@ -28,11 +17,6 @@ impl Pattern {
 /// or ends on a half byte.
 pub fn parse_pattern(text: &str) -> Result<Pattern, String> {
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if chars.is_empty() {
-        return Err(
-            "empty pattern; expected hexadecimal byte pairs such as `4d5a??00`".to_string(),
-        );
-    }
     if !chars.len().is_multiple_of(2) {
         return Err(format!(
             "pattern `{text}` has {} hexadecimal digits; byte patterns need an even count",
@@ -57,7 +41,7 @@ pub fn parse_pattern(text: &str) -> Result<Pattern, String> {
             }
         }
     }
-    Ok(Pattern(pattern))
+    Pattern::new(pattern)
 }
 
 fn hex_digit(c: char, text: &str) -> Result<u8, String> {
@@ -72,15 +56,12 @@ fn hex_digit(c: char, text: &str) -> Result<u8, String> {
 ///
 /// Returns a message when the term is empty or holds a non-ASCII character.
 pub fn ascii_pattern(text: &str) -> Result<Pattern, String> {
-    if text.is_empty() {
-        return Err("empty ASCII search term".to_string());
-    }
     if !text.is_ascii() {
         return Err(format!(
             "`{text}` is not ASCII; use --encoding utf16le or --encoding hex for other encodings"
         ));
     }
-    Ok(Pattern(text.bytes().map(Some).collect()))
+    Pattern::new(text.bytes().map(Some).collect()).map_err(|_| "empty ASCII search term".into())
 }
 
 /// Encodes a search term as UTF-16LE code units.
@@ -89,15 +70,13 @@ pub fn ascii_pattern(text: &str) -> Result<Pattern, String> {
 ///
 /// Returns a message when the term is empty.
 pub fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
-    if text.is_empty() {
-        return Err("empty UTF-16LE search term".to_string());
-    }
-    Ok(Pattern(
+    Pattern::new(
         text.encode_utf16()
             .flat_map(u16::to_le_bytes)
             .map(Some)
             .collect(),
-    ))
+    )
+    .map_err(|_| "empty UTF-16LE search term".into())
 }
 
 /// Returns every offset in `haystack` where `pattern` matches, in order.
@@ -112,7 +91,7 @@ pub fn find_all(haystack: &[u8], pattern: &Pattern, limit: Option<NonZeroUsize>)
     // Anchoring on a fixed byte lets `memchr` skip most of the file when the
     // pattern does not start with a wildcard.
     let anchor = pattern
-        .0
+        .bytes()
         .iter()
         .enumerate()
         .find_map(|(index, byte)| byte.map(|byte| (index, byte)));
@@ -129,7 +108,7 @@ pub fn find_all(haystack: &[u8], pattern: &Pattern, limit: Option<NonZeroUsize>)
         if candidate > last_start {
             break;
         }
-        if matches_at(haystack, candidate, &pattern.0) {
+        if matches_at(haystack, candidate, pattern.bytes()) {
             hits.push(candidate as u64);
             if limit.is_some_and(|max| hits.len() >= max.get()) {
                 break;
@@ -310,18 +289,18 @@ mod tests {
     fn parses_patterns_with_and_without_wildcards() {
         assert_eq!(
             parse_pattern("4d5a"),
-            Ok(Pattern(vec![Some(0x4d), Some(0x5a)]))
+            Pattern::new(vec![Some(0x4d), Some(0x5a)])
         );
         assert_eq!(
             parse_pattern("4d 5a"),
-            Ok(Pattern(vec![Some(0x4d), Some(0x5a)]))
+            Pattern::new(vec![Some(0x4d), Some(0x5a)])
         );
         assert_eq!(
             parse_pattern("4d??00"),
-            Ok(Pattern(vec![Some(0x4d), None, Some(0x00)]))
+            Pattern::new(vec![Some(0x4d), None, Some(0x00)])
         );
-        assert_eq!(parse_pattern("AB"), Ok(Pattern(vec![Some(0xab)])));
-        assert_eq!(parse_pattern("????"), Ok(Pattern(vec![None, None])));
+        assert_eq!(parse_pattern("AB"), Pattern::new(vec![Some(0xab)]));
+        assert_eq!(parse_pattern("????"), Pattern::new(vec![None, None]));
     }
 
     #[test]
@@ -335,11 +314,11 @@ mod tests {
     fn encodes_text_search_terms() {
         assert_eq!(
             ascii_pattern("Hi"),
-            Ok(Pattern(vec![Some(b'H'), Some(b'i')]))
+            Pattern::new(vec![Some(b'H'), Some(b'i')])
         );
         assert_eq!(
             utf16le_pattern("Hi"),
-            Ok(Pattern(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)]))
+            Pattern::new(vec![Some(b'H'), Some(0), Some(b'i'), Some(0)])
         );
         assert!(ascii_pattern("").is_err());
         assert!(ascii_pattern("é").is_err());
