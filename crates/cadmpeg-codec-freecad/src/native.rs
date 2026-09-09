@@ -2195,6 +2195,28 @@ pub struct PropertyRecord {
     pub xml: RetainedXml,
 }
 
+/// More than one property matches a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DuplicateProperty;
+
+/// Returns the sole property selected by a predicate.
+pub(crate) fn unique_property<P>(
+    properties: impl IntoIterator<Item = P>,
+    predicate: impl Fn(&PropertyRecord) -> bool,
+) -> Result<Option<P>, DuplicateProperty>
+where
+    P: std::ops::Deref<Target = PropertyRecord>,
+{
+    let mut matches = properties
+        .into_iter()
+        .filter(|property| predicate(property));
+    let property = matches.next();
+    if matches.next().is_some() {
+        return Err(DuplicateProperty);
+    }
+    Ok(property)
+}
+
 impl PropertyRecord {
     /// Whether this is a status-only transient property declaration.
     pub fn is_transient(&self) -> bool {
