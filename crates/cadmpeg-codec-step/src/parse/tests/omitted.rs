@@ -23,7 +23,7 @@ fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
-        if limit.context.operation == "step_omitted_name_recovery_storage" {
+        if limit.operation == "step_omitted_name_recovery_storage" {
             recovery_limit = Some(limit);
             break;
         }

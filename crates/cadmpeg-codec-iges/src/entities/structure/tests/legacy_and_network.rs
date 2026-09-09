@@ -646,7 +646,7 @@ fn decode_applies_the_session_recursion_limit_to_product_occurrences() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.context.operation == "iges_product_occurrence"
+                && limit.operation == "iges_product_occurrence"
     ));
 }
 

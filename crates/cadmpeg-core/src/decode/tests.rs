@@ -279,7 +279,7 @@ fn local_limit_refusal_uses_codec_dimension() {
         refuse_local_limit("records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("records")
-                && limit.context.operation == "records"
+                && limit.operation == "records"
     ));
 }
 

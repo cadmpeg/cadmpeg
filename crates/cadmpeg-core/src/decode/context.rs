@@ -8,9 +8,7 @@ use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
 use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
-use super::error::{
-    ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
-};
+use super::error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
@@ -526,9 +524,7 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
         limit,
         used,
         additional: used.saturating_sub(limit),
-        context: ErrorContext {
-            operation: "read_root",
-        },
+        operation: "read_root",
     })
 }
 
