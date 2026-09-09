@@ -1671,7 +1671,7 @@ fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, Codec
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
 pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::CarrierCensusRecord> {
-    payloads
+    let mut census = payloads
         .iter()
         .filter_map(|payload| {
             let facts = payload.payload.shape_set()?;
@@ -1726,7 +1726,9 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
             }
             Some(record)
         })
-        .collect()
+        .collect::<Vec<_>>();
+    census.sort_by(|left, right| left.id.cmp(&right.id));
+    census
 }
 
 fn increment(counts: &mut BTreeMap<String, u64>, family: &str) {
