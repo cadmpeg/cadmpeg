@@ -159,7 +159,7 @@ pub(crate) struct SegmentRecords {
 pub(crate) struct StructureRecords {
     pub(crate) prototypes: Vec<FastLoadComponentPrototype>,
     pub(crate) uuids: Vec<FastLoadComponentUuid>,
-    pub(crate) occurrences: Vec<FastLoadComponentOccurrence>,
+    pub(crate) occurrences: super::structure::occurrences::FastLoadOccurrences,
     pub(crate) object_groups: Vec<FastLoadComponentObjectGroup>,
 }
 
@@ -1101,7 +1101,7 @@ impl NativeModel {
         ) = fast_load_component_roster(container);
         let fast_load_component_object_groups = fast_load_component_object_groups(
             &fast_load_component_uuids,
-            &fast_load_component_occurrences,
+            fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
         );
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);

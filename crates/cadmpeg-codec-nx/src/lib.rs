@@ -128,7 +128,10 @@ impl CodecBackend for NxCodec {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Vec::new();
         };
-        match namespace.admit::<native::display_jt::admission::DisplayJtGraph>() {
+        let admitted = namespace
+            .admit::<native::display_jt::admission::DisplayJtGraph>()
+            .and_then(|_| namespace.admit::<native::structure::occurrences::FastLoadOccurrences>());
+        match admitted {
             Ok(_) => Vec::new(),
             Err(error) => vec![cadmpeg_ir::Finding {
                 check: cadmpeg_ir::Check::NativeLinks,
