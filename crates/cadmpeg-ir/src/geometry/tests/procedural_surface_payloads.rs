@@ -63,33 +63,40 @@ fn surface_law_admission_preserves_the_depth_boundary() {
             operands: vec![expression],
         };
     }
-    let law = |expression| ProceduralSurfaceDefinition::Law {
-        construction: Box::new(LawSurfaceConstruction {
-            parameter_ranges: None,
-            primary: LawFormula::Named {
-                name: LawFormulaName::new("test").unwrap(),
-                variables: vec![expression],
-            },
-            additional: Vec::new(),
-            tail: LawSurfaceTail::Historical,
-            discontinuities: std::array::from_fn(|_| Vec::new()),
-        }),
+    let construction = |expression| LawSurfaceConstruction {
+        parameter_ranges: None,
+        primary: LawFormula::Named {
+            name: LawFormulaName::new("test").unwrap(),
+            variables: vec![expression],
+        },
+        additional: Vec::new(),
+        tail: LawSurfaceTail::Historical,
+        discontinuities: std::array::from_fn(|_| Vec::new()),
     };
-    assert!(ProceduralSurface::new(id(), law(expression.clone()), None).is_ok());
+    let law = |expression| {
+        crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(construction(
+            expression,
+        )))
+        .map(ProceduralSurfaceDefinition::Law)
+    };
+    assert!(ProceduralSurface::new(id(), law(expression.clone()).unwrap(), None).is_ok());
     expression = LawExpression::Algebraic {
         operator: "+".into(),
         operands: vec![expression],
     };
-    assert!(ProceduralSurface::new(id(), law(expression), None).is_err());
-    let invalid = law(LawExpression::Text {
+    assert!(law(expression).is_err());
+    let invalid = LawExpression::Text {
         value: String::new(),
-    });
-    assert!(ProceduralSurface::new(id(), invalid.clone(), None).is_err());
-    let wire = serde_json::to_value(invalid).unwrap();
+    };
+    assert!(law(invalid.clone()).is_err());
+    let wire = serde_json::json!({"kind": "law", "construction": construction(invalid)});
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
-    assert!(
-        ProceduralSurface::new(id(), law(LawExpression::Text { value: " ".into() }), None).is_ok()
-    );
+    assert!(ProceduralSurface::new(
+        id(),
+        law(LawExpression::Text { value: " ".into() }).unwrap(),
+        None
+    )
+    .is_ok());
 }
 
 #[test]

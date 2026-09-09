@@ -3276,16 +3276,24 @@ fn blend_surface_definition_for_carrier_with_index(
 fn blend_surface_definition_from_procedural(
     procedural: &ProceduralSurface,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let ProceduralSurfaceDefinition::Blend {
-        supports: [Some(first), Some(second)],
-        spine: Some(spine),
-        radius: BlendRadiusLaw::Constant { signed_radius },
-        cross_section: BlendCrossSection::Circular,
-        ..
-    } = procedural.definition()
+    let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
+        return None;
+    };
+    let (
+        [Some(first), Some(second)],
+        Some(spine),
+        BlendRadiusLaw::Constant { signed_radius },
+        BlendCrossSection::Circular,
+    ) = (
+        definition_payload.supports(),
+        definition_payload.spine(),
+        definition_payload.radius(),
+        definition_payload.cross_section(),
+    )
     else {
         return None;
     };
+
     let radius = signed_radius.abs();
     (radius.is_finite() && radius > 0.0).then(|| {
         (

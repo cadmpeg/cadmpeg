@@ -468,11 +468,13 @@ fn decode_binds_blend_ball_centre_spine() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let ProceduralSurfaceDefinition::Blend { spine, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("blend definition");
     };
+    let spine = definition_payload.spine();
+
     assert_eq!(
         spine.as_ref(),
         result
@@ -490,11 +492,13 @@ fn decode_resolves_forward_blend_support_reference() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
-    let ProceduralSurfaceDefinition::Blend { supports, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("blend definition");
     };
+    let supports = definition_payload.supports();
+
     assert_eq!(
         supports[0].as_ref().map(|support| &support.surface),
         result
@@ -1321,20 +1325,23 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     result.ir_mut().model.procedural_surfaces.push(
         ProceduralSurface::new(
             blend_construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: offset_surfaces.map(|surface| {
-                    Some(BlendSupport {
-                        surface,
-                        reversed: false,
-                    })
-                }),
-                spine: Some(spine_curve.clone()),
-                radius: BlendRadiusLaw::Constant {
-                    signed_radius: radius,
-                },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    offset_surfaces.map(|surface| {
+                        Some(BlendSupport {
+                            surface,
+                            reversed: false,
+                        })
+                    }),
+                    Some(spine_curve.clone()),
+                    BlendRadiusLaw::Constant {
+                        signed_radius: radius,
+                    },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

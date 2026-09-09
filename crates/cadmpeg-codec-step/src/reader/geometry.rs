@@ -4887,7 +4887,9 @@ fn directrix_geometry_parameter_scale(
                         )
                     }
                 }
-                ProceduralCurveDefinition::Projection { source, .. } => {
+                ProceduralCurveDefinition::Projection(definition_payload) => {
+                    let source = definition_payload.source();
+
                     directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
                 }
                 ProceduralCurveDefinition::Replica { source, .. } => {

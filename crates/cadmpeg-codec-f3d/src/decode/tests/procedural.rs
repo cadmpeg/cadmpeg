@@ -110,11 +110,13 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             &DecodeOptions::default(),
         )
         .expect("compound-loft decode");
-    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) =
         &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected compound loft")
     };
+    let construction = definition_payload.construction();
+
     let scale = &construction.scales.as_slice()[0];
     assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(scale.members.len(), 1);
@@ -179,11 +181,13 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound-loft round trip");
-    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip compound loft")
     };
+    let construction = definition_payload.construction();
+
     assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(construction.flags, [true, false]);
     assert!(matches!(
@@ -220,11 +224,13 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             &DecodeOptions::default(),
         )
         .expect("compound-loft decode");
-    let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected compound loft")
     };
+    let construction = definition_payload.construction();
+
     let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
     let line_curve = cadmpeg_ir::ids::CurveId::mint("generated:test:compound_loft_tail_line#0")
@@ -276,10 +282,19 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         });
         source_less.model.procedural_surfaces[0]
             .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::CompoundLoft { construction } = definition else {
+                let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition
+                else {
                     unreachable!()
                 };
+                let mut edited_construction = Box::new(definition_payload.construction().clone());
+                let construction = &mut edited_construction;
+
                 construction.tail = expected.clone();
+                *definition_payload =
+                    cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
+                        edited_construction,
+                    )
+                    .unwrap();
             })
             .unwrap();
         let mut encoded = Vec::new();
@@ -295,11 +310,13 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             1,
             "tail {tail_index} did not decode"
         );
-        let ProceduralSurfaceDefinition::CompoundLoft { construction } =
+        let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip compound loft")
         };
+        let construction = definition_payload.construction();
+
         match (&expected, &construction.tail) {
             (
                 CompoundLoftTail::Six { .. },
@@ -356,11 +373,13 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
             &DecodeOptions::default(),
         )
         .expect("scaled compound-loft decode");
-    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected scaled compound loft")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(construction.shape, ScaledCompoundLoftShape::Full));
     assert_eq!(construction.singularity, 11);
     assert_eq!(construction.discontinuities[0], [0.25]);
@@ -406,7 +425,7 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
         .expect("source-less scaled compound-loft round trip");
     assert!(matches!(
         round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+        ProceduralSurfaceDefinition::ScaledCompoundLoft(..)
     ));
 }
 
@@ -424,11 +443,13 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             &DecodeOptions::default(),
         )
         .expect("scaled compound-loft decode");
-    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected scaled compound loft")
     };
+    let construction = definition_payload.construction();
+
     let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
     let cases = [
@@ -468,13 +489,18 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         source_less.model.procedural_surfaces[0]
             .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = definition
+                let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
+                    definition
                 else {
                     unreachable!()
                 };
+let mut edited_construction = Box::new(definition_payload.construction().clone());
+                let construction = &mut edited_construction;
+
                 construction.shape = shape;
                 construction.branch = branch;
-            })
+*definition_payload = cadmpeg_ir::geometry::surface_payloads::ScaledCompoundLoftSurfacePayload::try_new(edited_construction).unwrap();
+})
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -489,11 +515,13 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             1,
             "scaled compound-loft case {case_index} did not decode"
         );
-        let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+        let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip scaled compound loft")
         };
+        let construction = definition_payload.construction();
+
         assert!(matches!(
             (&construction.shape, &construction.branch),
             (
@@ -521,11 +549,13 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
             &DecodeOptions::default(),
         )
         .expect("scaled compound-loft none-shape decode");
-    let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
+    let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected scaled compound loft")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         construction.shape,
         ScaledCompoundLoftShape::None {
@@ -577,7 +607,7 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
         .expect("source-less scaled compound-loft none-shape round trip");
     assert!(matches!(
         round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+        ProceduralSurfaceDefinition::ScaledCompoundLoft(..)
     ));
 }
 
@@ -591,11 +621,13 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
             &DecodeOptions::default(),
         )
         .expect("skin surface decode");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert_eq!(construction.surface_boolean, 1);
     assert_eq!(construction.surface_normal, 2);
     assert_eq!(construction.surface_direction, 3);
@@ -632,11 +664,13 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less skin surface round trip");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         construction.formula.variables(),
         [LawExpression::Spline { native_id: 5, .. }]
@@ -658,11 +692,13 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
                 &DecodeOptions::default(),
             )
             .expect("law surface decode");
-        let ProceduralSurfaceDefinition::Law { construction } =
+        let ProceduralSurfaceDefinition::Law(definition_payload) =
             &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected law surface")
         };
+        let construction = definition_payload.construction();
+
         assert_eq!(
             construction.parameter_ranges,
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
@@ -698,11 +734,13 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
-        let ProceduralSurfaceDefinition::Law { construction } =
+        let ProceduralSurfaceDefinition::Law(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip law surface")
         };
+        let construction = definition_payload.construction();
+
         assert_eq!(
             construction.parameter_ranges,
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
@@ -792,11 +830,13 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let ProceduralSurfaceDefinition::Law { construction } =
+        let ProceduralSurfaceDefinition::Law(definition_payload) =
             &decoded.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected law surface")
         };
+        let construction = definition_payload.construction();
+
         assert!(match (&construction.tail, selector) {
             (
                 LawSurfaceTail::Summary {
@@ -851,11 +891,13 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
-        let ProceduralSurfaceDefinition::Law { construction } =
+        let ProceduralSurfaceDefinition::Law(definition_payload) =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip law surface")
         };
+        let construction = definition_payload.construction();
+
         assert_eq!(construction.tail, expected_tail);
     }
 }
@@ -870,11 +912,13 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             &DecodeOptions::default(),
         )
         .expect("skin structural-law decode");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         construction.formula.variables(),
         [
@@ -920,11 +964,13 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less structural-law round trip");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert_eq!(construction.formula.variables().len(), 3);
     let LawExpression::Edge { curve, .. } = &construction.formula.variables()[2] else {
         panic!("expected round-trip edge law")
@@ -953,11 +999,13 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
             &DecodeOptions::default(),
         )
         .expect("expanded skin decode");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected skin surface")
     };
+    let construction = definition_payload.construction();
+
     let SkinSurfaceLayout::Profiles { profiles, tail, .. } = &construction.layout else {
         panic!("expected expanded skin profiles")
     };
@@ -995,11 +1043,13 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less expanded skin round trip");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         &construction.layout,
         SkinSurfaceLayout::Profiles { profiles, .. }
@@ -1031,11 +1081,13 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
             &DecodeOptions::default(),
         )
         .expect("algebraic skin law decode");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         construction.formula.variables(),
         [
@@ -1066,11 +1118,13 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less algebraic skin round trip");
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip skin surface")
     };
+    let construction = definition_payload.construction();
+
     assert_eq!(construction.formula.variables().len(), 2);
 }
 
@@ -1089,9 +1143,12 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin { construction } = definition else {
+            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
                 panic!()
             };
+            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let construction = &mut edited_construction;
+
             let LawFormula::Named { variables, .. } = &mut construction.formula else {
                 panic!()
             };
@@ -1099,6 +1156,11 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
                 operator: "SIN".into(),
                 operands: Vec::new(),
             };
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+                    edited_construction,
+                )
+                .unwrap();
         })
         .unwrap();
     let error = F3dCodec
@@ -1109,9 +1171,12 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
 
     source_less.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin { construction } = definition else {
+            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
                 panic!()
             };
+            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let construction = &mut edited_construction;
+
             let LawFormula::Named { variables, .. } = &mut construction.formula else {
                 panic!()
             };
@@ -1119,6 +1184,11 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
                 operator: "MIN".into(),
                 operands: vec![LawExpression::Double { value: 1.0 }],
             };
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+                    edited_construction,
+                )
+                .unwrap();
         })
         .unwrap();
     let error = F3dCodec
@@ -1144,9 +1214,12 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin { construction } = definition else {
+            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
                 panic!()
             };
+            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let construction = &mut edited_construction;
+
             let LawFormula::Named { variables, .. } = &mut construction.formula else {
                 panic!()
             };
@@ -1190,6 +1263,11 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
                     ],
                 },
             ];
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+                    edited_construction,
+                )
+                .unwrap();
         })
         .unwrap();
 
@@ -1201,11 +1279,13 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let ProceduralSurfaceDefinition::Skin { construction } =
+    let ProceduralSurfaceDefinition::Skin(definition_payload) =
         &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!()
     };
+    let construction = definition_payload.construction();
+
     assert!(matches!(
         construction.formula.variables(),
         [

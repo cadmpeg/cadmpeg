@@ -149,12 +149,15 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(procedural.cache_fit_tolerance(), Some(0.015));
         assert_eq!(
             procedural.definition(),
-            &ProceduralSurfaceDefinition::Exact {
-                spline: ExactSpline::Legacy {
-                    ranges: [[-2.0, 3.0], [-4.0, 5.0]],
-                    extension: 7,
-                },
-            }
+            &ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    ExactSpline::Legacy {
+                        ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                        extension: 7,
+                    }
+                )
+                .unwrap()
+            )
         );
 
         let (mut source_less, _, _) = result.into_parts();
@@ -170,12 +173,15 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             .expect("source-less exact spline surface round trip");
         assert_eq!(
             round_trip.ir().model.procedural_surfaces[0].definition(),
-            &ProceduralSurfaceDefinition::Exact {
-                spline: ExactSpline::Legacy {
-                    ranges: [[-2.0, 3.0], [-4.0, 5.0]],
-                    extension: 7,
-                },
-            }
+            &ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    ExactSpline::Legacy {
+                        ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                        extension: 7,
+                    }
+                )
+                .unwrap()
+            )
         );
     }
 }
@@ -572,9 +578,11 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         )
         .expect("compound spline surface decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Compound { components } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Compound(definition_payload) = procedural.definition() else {
         panic!("expected compound surface construction")
     };
+    let components = definition_payload.components();
+
     assert_eq!(
         components
             .iter()
@@ -620,10 +628,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Compound { components }
-            if components.iter().map(|item| item.parameter).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2
-    ));
+        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Compound(definition_payload) if matches!((definition_payload.components(),), (components,) if components.iter().map(|item| item.parameter).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2)));
 }
 
 #[test]
@@ -754,18 +759,21 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 &DecodeOptions::default(),
             )
             .expect("loft surface decode");
-        let ProceduralSurfaceDefinition::Loft {
-            sections,
-            revision_form: _,
-            parameters,
-            closures,
-            singularities,
-            mode,
-            bridge,
-        } = &result.ir().model.procedural_surfaces[0].definition()
+        let ProceduralSurfaceDefinition::Loft(definition_payload) =
+            &result.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected loft surface")
         };
+        let (sections, _, parameters, closures, singularities, mode, bridge) = (
+            definition_payload.sections(),
+            definition_payload.revision_form(),
+            definition_payload.parameters(),
+            definition_payload.closures(),
+            definition_payload.singularities(),
+            definition_payload.mode(),
+            definition_payload.bridge(),
+        );
+
         assert_eq!(
             parameters,
             &SplineSurfaceParameters::OrderedRanges {
@@ -831,18 +839,21 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less loft round trip");
-        let ProceduralSurfaceDefinition::Loft {
-            sections,
-            revision_form: _,
-            parameters,
-            closures,
-            singularities,
-            mode,
-            bridge,
-        } = &round_trip.ir().model.procedural_surfaces[0].definition()
+        let ProceduralSurfaceDefinition::Loft(definition_payload) =
+            &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip loft surface")
         };
+        let (sections, _, parameters, closures, singularities, mode, bridge) = (
+            definition_payload.sections(),
+            definition_payload.revision_form(),
+            definition_payload.parameters(),
+            definition_payload.closures(),
+            definition_payload.singularities(),
+            definition_payload.mode(),
+            definition_payload.bridge(),
+        );
+
         assert_eq!(
             parameters,
             &SplineSurfaceParameters::OrderedRanges {
@@ -891,11 +902,13 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
             &DecodeOptions::default(),
         )
         .expect("net surface decode");
-    let ProceduralSurfaceDefinition::Net { construction } =
+    let ProceduralSurfaceDefinition::Net(definition_payload) =
         &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected net surface")
     };
+    let construction = definition_payload.construction();
+
     assert!(construction
         .sections
         .iter()
@@ -922,7 +935,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
         .expect("source-less net surface round trip");
     assert!(matches!(
         round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Net { .. }
+        ProceduralSurfaceDefinition::Net(..)
     ));
 }
 
@@ -936,13 +949,15 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
             &DecodeOptions::default(),
         )
         .expect("profile-first sweep decode");
-    let ProceduralSurfaceDefinition::Sweep {
-        native: Some(native),
-        ..
-    } = &decoded.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Sweep(definition_payload) =
+        &decoded.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected native sweep")
     };
+    let (Some(native),) = (definition_payload.native(),) else {
+        panic!("expected native sweep")
+    };
+
     assert_eq!(native.primary_kind, 3);
     let SweepSurfaceLayout::ProfileFirst {
         secondary_kind,
@@ -975,12 +990,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less profile-first sweep round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Sweep {
-            native: Some(_),
-            ..
-        }
-    ));
+        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Sweep(definition_payload) if matches!((definition_payload.native(),), (Some(_),))));
 }
 
 #[test]

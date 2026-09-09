@@ -1323,7 +1323,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let supports = match source_less.model.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { supports, .. } => {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+            let supports = definition_payload.supports();
+
             supports.each_ref().map(|support| {
                 support
                     .as_ref()
@@ -1335,7 +1337,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         _ => panic!("expected rolling-ball definition"),
     };
     let spine = match source_less.model.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { spine, .. } => {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+            let spine = definition_payload.spine();
+
             spine.clone().expect("rolling-ball spine")
         }
         _ => unreachable!(),
@@ -1401,12 +1405,14 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend {
-        supports, spine, ..
-    } = actual.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
+        actual.definition()
     else {
         unreachable!()
     };
+    let supports = definition_payload.supports();
+    let spine = definition_payload.spine();
+
     for (support, expected) in supports.iter().zip(support_geometries) {
         let support = support.as_ref().expect("round-trip rolling-ball support");
         let actual = round_trip

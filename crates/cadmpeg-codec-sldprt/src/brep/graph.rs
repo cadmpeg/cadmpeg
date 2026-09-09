@@ -289,19 +289,22 @@ impl Brep {
                 .try_into()
                 .expect("qualified identity");
             procedural.edit_definition(|definition| match definition {
-                ProceduralSurfaceDefinition::Blend {
-                    supports, spine, ..
-                } => {
+                ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                    let mut supports = definition_payload.supports().clone();
+                    let mut spine = definition_payload.spine().clone();
+
                     for support in supports.iter_mut().flatten() {
                         support.surface = qualify(support.surface.as_str())
                             .try_into()
                             .expect("qualified identity");
                     }
-                    if let Some(spine) = spine {
+                    if let Some(spine) = &mut spine {
                         *spine = qualify(spine.as_str())
                             .try_into()
                             .expect("qualified identity");
                     }
+                    definition_payload.set_supports(supports);
+                    definition_payload.set_spine(spine);
                 }
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     definition_payload.set_support(
@@ -1871,24 +1874,27 @@ fn decode_graph(
                     .expect("identity grammar");
                     let geometry = match ProceduralSurface::new(
                         procedural_id.clone(),
-                        ProceduralSurfaceDefinition::Blend {
-                            supports: [
-                                Some(BlendSupport {
-                                    surface: first,
-                                    reversed: blend.reversed[0],
-                                }),
-                                Some(BlendSupport {
-                                    surface: second,
-                                    reversed: blend.reversed[1],
-                                }),
-                            ],
-                            spine,
-                            radius: BlendRadiusLaw::Constant {
-                                signed_radius: blend.signed_radius,
-                            },
-                            cross_section: BlendCrossSection::Circular,
-                            native: None,
-                        },
+                        ProceduralSurfaceDefinition::Blend(
+                            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                                [
+                                    Some(BlendSupport {
+                                        surface: first,
+                                        reversed: blend.reversed[0],
+                                    }),
+                                    Some(BlendSupport {
+                                        surface: second,
+                                        reversed: blend.reversed[1],
+                                    }),
+                                ],
+                                spine,
+                                BlendRadiusLaw::Constant {
+                                    signed_radius: blend.signed_radius,
+                                },
+                                BlendCrossSection::Circular,
+                                None,
+                            )
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                         None,
                     ) {
                         Ok(procedural) => {
@@ -2302,7 +2308,9 @@ fn prune_rejected_topology(out: &mut Brep) {
         .filter_map(|edge| edge.curve().clone())
         .collect::<HashSet<_>>();
     kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
-        if let ProceduralSurfaceDefinition::Blend { spine, .. } = surface.definition() {
+        if let ProceduralSurfaceDefinition::Blend(definition_payload) = surface.definition() {
+            let spine = definition_payload.spine();
+
             spine.clone()
         } else {
             None
@@ -6344,13 +6352,16 @@ mod tests {
             }],
             procedural_surfaces: vec![ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:entity#blend").expect("identity grammar"),
-                ProceduralSurfaceDefinition::Blend {
-                    supports: [None, None],
-                    spine: Some(spine.clone()),
-                    radius: BlendRadiusLaw::Constant { signed_radius: 0.5 },
-                    cross_section: BlendCrossSection::Circular,
-                    native: None,
-                },
+                ProceduralSurfaceDefinition::Blend(
+                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                        [None, None],
+                        Some(spine.clone()),
+                        BlendRadiusLaw::Constant { signed_radius: 0.5 },
+                        BlendCrossSection::Circular,
+                        None,
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap()],

@@ -598,12 +598,10 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     };
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction.clone(),
-        definition: ProceduralSurfaceDefinition::Exact {
-            spline: crate::geometry::ExactSpline::Legacy {
+        definition: ProceduralSurfaceDefinition::Exact(crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
                 extension: 0,
-            },
-        },
+            }).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -912,12 +910,15 @@ fn pcurve_surface_mismatch_is_flagged() {
         procedural_report.findings
     );
     procedural.model.procedural_surfaces[0]
-        .replace_definition(ProceduralSurfaceDefinition::Exact {
-            spline: crate::geometry::ExactSpline::Legacy {
-                ranges: [[0.0, 1.0], [0.0, 1.0]],
-                extension: 0,
-            },
-        })
+        .replace_definition(ProceduralSurfaceDefinition::Exact(
+            crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                crate::geometry::ExactSpline::Legacy {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
+                },
+            )
+            .unwrap(),
+        ))
         .unwrap();
     let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(

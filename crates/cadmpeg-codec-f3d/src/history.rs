@@ -8755,11 +8755,13 @@ pub(crate) fn historical_topology(
         })
         .collect::<Vec<_>>();
     for (owner, procedural) in &brep.procedural_surfaces {
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { radius, .. } =
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
             procedural.definition()
         else {
             continue;
         };
+        let radius = definition_payload.radius();
+
         let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
             continue;
         };

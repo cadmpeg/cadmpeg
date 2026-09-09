@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
+use super::spring_layout_wire;
+#[cfg(feature = "schema")]
+use super::SpringLayoutWire;
 use super::{
     curve_offset_range_wire, default_true, vector_offset_roles_wire, CacheFirstCurveForm,
     CurveOffsetRange, DeformableCurveData, DeformableCurveSource, IntcurveSupportContext,
@@ -8,6 +11,7 @@ use super::{
 };
 #[cfg(feature = "schema")]
 use super::{CurveOffsetRangeWire, OffsetSideWire, VectorOffsetRolesWire};
+use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -842,3 +846,232 @@ impl TryFrom<SilhouetteCurveConstructionWire> for SilhouetteCurveConstruction {
         )
     }
 }
+
+/// Admitted spring curve construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SpringCurvePayloadWire"))]
+#[serde(try_from = "SpringCurvePayloadWire")]
+pub struct SpringCurvePayload {
+    #[serde(flatten, with = "spring_layout_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
+    layout: SpringLayout,
+
+    direction: i64,
+}
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpringCurvePayloadWire {
+    #[serde(flatten, with = "spring_layout_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
+    layout: SpringLayout,
+
+    direction: i64,
+}
+impl SpringCurvePayload {
+    /// Admit the construction parameters.
+    pub fn try_new(layout: SpringLayout, direction: i64) -> Result<Self, ProceduralGeometryError> {
+        let context = layout.support_context();
+        let inline_ranges_finite = match &layout {
+            crate::geometry::SpringLayout::ContextFirst {
+                supports,
+                first_pcurve,
+                ..
+            } => {
+                supports.iter().all(|support| match support {
+                    crate::geometry::SpringSupport::Surface(_) => true,
+                    crate::geometry::SpringSupport::Ranges(ranges) => ranges.iter().all(|range| {
+                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                    }),
+                }) && match first_pcurve {
+                    crate::geometry::SpringPcurve::Pcurve(_) => true,
+                    crate::geometry::SpringPcurve::Range(range) => {
+                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                    }
+                }
+            }
+            crate::geometry::SpringLayout::CacheFirst { .. } => true,
+        };
+        if context.is_err() || !inline_ranges_finite {
+            return Err(ProceduralGeometryError::Payload(
+                "spring context or null-support ranges are invalid",
+            ));
+        }
+        Ok(Self { layout, direction })
+    }
+    /// Return the layout.
+    pub fn layout(&self) -> &SpringLayout {
+        &self.layout
+    }
+    /// Return the direction.
+    pub fn direction(&self) -> &i64 {
+        &self.direction
+    }
+}
+impl TryFrom<SpringCurvePayloadWire> for SpringCurvePayload {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: SpringCurvePayloadWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.layout, wire.direction)
+    }
+}
+
+/// Admitted three surface intersection curve construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "ThreeSurfaceIntersectionCurvePayloadWire")
+)]
+#[serde(try_from = "ThreeSurfaceIntersectionCurvePayloadWire")]
+pub struct ThreeSurfaceIntersectionCurvePayload {
+    context: IntcurveSupportContext,
+
+    selector: i64,
+
+    third: IntcurveSupportSide,
+}
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ThreeSurfaceIntersectionCurvePayloadWire {
+    context: IntcurveSupportContext,
+
+    selector: i64,
+
+    third: IntcurveSupportSide,
+}
+impl ThreeSurfaceIntersectionCurvePayload {
+    /// Admit the construction parameters.
+    pub fn try_new(
+        context: IntcurveSupportContext,
+        selector: i64,
+        third: IntcurveSupportSide,
+    ) -> Result<Self, ProceduralGeometryError> {
+        if third
+            .pcurve
+            .as_ref()
+            .is_some_and(|pcurve| pcurve.parameter_range.is_some())
+            && context.parameter_range()[0] == context.parameter_range()[1]
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "three-surface intersection context is not finite and ordered",
+            ));
+        }
+        Ok(Self {
+            context,
+            selector,
+            third,
+        })
+    }
+    /// Return the context.
+    pub fn context(&self) -> &IntcurveSupportContext {
+        &self.context
+    }
+    /// Return the selector.
+    pub fn selector(&self) -> &i64 {
+        &self.selector
+    }
+    /// Return the third.
+    pub fn third(&self) -> &IntcurveSupportSide {
+        &self.third
+    }
+}
+impl TryFrom<ThreeSurfaceIntersectionCurvePayloadWire> for ThreeSurfaceIntersectionCurvePayload {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: ThreeSurfaceIntersectionCurvePayloadWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.context, wire.selector, wire.third)
+    }
+}
+
+/// Admitted projection curve construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ProjectionCurvePayloadWire"))]
+#[serde(try_from = "ProjectionCurvePayloadWire")]
+pub struct ProjectionCurvePayload {
+    context: IntcurveSupportContext,
+
+    discontinuity_flag: bool,
+
+    source: CurveId,
+
+    tail: ProjectionTail,
+}
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ProjectionCurvePayloadWire {
+    context: IntcurveSupportContext,
+
+    discontinuity_flag: bool,
+
+    source: CurveId,
+
+    tail: ProjectionTail,
+}
+impl ProjectionCurvePayload {
+    /// Admit the construction parameters.
+    pub fn try_new(
+        context: IntcurveSupportContext,
+        discontinuity_flag: bool,
+        source: CurveId,
+        tail: ProjectionTail,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let tail_finite = match &tail {
+            crate::geometry::ProjectionTail::EarlyClose { .. } => true,
+            crate::geometry::ProjectionTail::Ranged {
+                parameter_range, ..
+            } => {
+                parameter_range.iter().all(|value| value.is_finite())
+                    && parameter_range[0] <= parameter_range[1]
+            }
+        };
+        if !tail_finite {
+            return Err(ProceduralGeometryError::Payload(
+                "projection fields are not finite and ordered",
+            ));
+        }
+        Ok(Self {
+            context,
+            discontinuity_flag,
+            source,
+            tail,
+        })
+    }
+    /// Return the context.
+    pub fn context(&self) -> &IntcurveSupportContext {
+        &self.context
+    }
+    /// Return the discontinuity flag.
+    pub fn discontinuity_flag(&self) -> &bool {
+        &self.discontinuity_flag
+    }
+    /// Return the source.
+    pub fn source(&self) -> &CurveId {
+        &self.source
+    }
+    /// Return the tail.
+    pub fn tail(&self) -> &ProjectionTail {
+        &self.tail
+    }
+}
+impl TryFrom<ProjectionCurvePayloadWire> for ProjectionCurvePayload {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: ProjectionCurvePayloadWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.context,
+            wire.discontinuity_flag,
+            wire.source,
+            wire.tail,
+        )
+    }
+}
+
+impl SpringCurvePayload {
+    pub(super) fn revision_cache_mut(
+        &mut self,
+    ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
+        self.layout.cache_first_mut().map(|form| &mut form.cache)
+    }
+}
+
+#[cfg(test)]
+mod tests;
