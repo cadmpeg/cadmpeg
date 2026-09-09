@@ -2361,6 +2361,8 @@ fn emit_carrier_curve(
         geometry,
         source_object: None,
     });
+    let surface_start = out.surfaces.len();
+    let curve_start = out.curves.len();
     let admission_cause = |error| match error {
         cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
         cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
@@ -2721,6 +2723,8 @@ fn emit_carrier_curve(
             procedural,
         )),
         Err(cause) => {
+            out.surfaces.truncate(surface_start);
+            out.curves.truncate(curve_start);
             count_kind(&mut out.stats.procedural_curve_kinds, cause);
             return Ok(());
         }
