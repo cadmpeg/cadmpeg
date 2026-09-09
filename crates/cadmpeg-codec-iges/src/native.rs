@@ -16,8 +16,8 @@ use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, TextNodeLayout, Token,
-    TokenValue, TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
+    Token, TokenValue, TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -2078,12 +2078,12 @@ pub(crate) fn store(
             }
             let association_links = trailing
                 .into_iter()
-                .flat_map(|groups| groups.associations())
+                .flat_map(ResolvedGroups::associations)
                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 .collect();
             let property_links = trailing
                 .into_iter()
-                .flat_map(|groups| groups.properties())
+                .flat_map(ResolvedGroups::properties)
                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 .collect();
             NativeEntity {
