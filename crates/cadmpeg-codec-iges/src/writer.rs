@@ -6493,12 +6493,7 @@ fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
 fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecError> {
     let mut payload = Vec::with_capacity(72);
     for field in fields {
-        if field.len() > 8 {
-            return Err(CodecError::malformed(format_args!(
-                "IGES Directory field is wider than eight bytes: {field}"
-            )));
-        }
-        payload.extend_from_slice(format!("{field:>8}").as_bytes());
+        payload.extend_from_slice(&crate::directory::render_field(field.as_bytes())?);
     }
     card(&payload, b'D', sequence)
 }

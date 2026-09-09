@@ -36,6 +36,18 @@ impl DirectoryFieldSlot {
     }
 }
 
+/// Renders one right-justified eight-column Directory Entry field.
+pub(crate) fn render_field(bytes: &[u8]) -> Result<[u8; 8], cadmpeg_core::CodecError> {
+    if bytes.len() > 8 {
+        return Err(cadmpeg_core::CodecError::malformed(
+            "IGES Directory field exceeds eight columns",
+        ));
+    }
+    let mut output = [b' '; 8];
+    output[8 - bytes.len()..].copy_from_slice(bytes);
+    Ok(output)
+}
+
 /// Source status fields. Undefined numeric values remain available to native serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct SourceStatus {
