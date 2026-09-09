@@ -131,7 +131,9 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
 /// not own variants for them.
 #[must_use]
 pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
-    let registry: toml::Value = toml::from_str(include_str!("../../../docs/dialects.toml"))
+    // `docs/dialects.toml` in this crate is a symlink to the workspace file, so
+    // the packaged crate is self-contained (see `cadmpeg-registry`).
+    let registry: toml::Value = toml::from_str(include_str!("../docs/dialects.toml"))
         .expect("docs/dialects.toml parses as TOML");
     let prefix = format!("{prefix}:");
     let ids = registry
