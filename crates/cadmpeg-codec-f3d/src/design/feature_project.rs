@@ -3670,7 +3670,7 @@ pub(crate) fn project_edge_flange(
             let mut matching = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.record_index == edge.group_record_index
+                    && group.record_index == edge.group_record_index.get()
             });
             let edge_group = matching.next()?;
             if matching.next().is_some()
@@ -3780,7 +3780,7 @@ pub(crate) fn project_hem(
     let mut edge_groups = groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
-            && group.record_index == operation.edge_group_record_index
+            && group.record_index == operation.edge_group_record_index.get()
     });
     let edge_group = edge_groups.next()?;
     let edge_has_extra = edge_groups.next().is_some();
@@ -3797,7 +3797,7 @@ pub(crate) fn project_hem(
     let mut aggregate_groups = groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
-            && group.record_index == operation.aggregate_group_record_index
+            && group.record_index == operation.aggregate_group_record_index.get()
     });
     let aggregate_group = aggregate_groups.next()?;
     let aggregate_has_extra = aggregate_groups.next().is_some();

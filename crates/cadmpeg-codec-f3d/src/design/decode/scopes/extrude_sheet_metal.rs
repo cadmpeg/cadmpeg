@@ -2794,7 +2794,7 @@ fn edge_flange_operation_at(
             crate::records::feature::DesignEdgeFlangeShape::from_wire(
                 vec![crate::records::feature::DesignEdgeFlangeEdge {
                     wrapper_record_index: edge_wrapper_record_index,
-                    group_record_index: edge_group_record_index,
+                    group_record_index: edge_group_record_index.try_into().ok()?,
                     aggregate_operand_record_index,
                 }],
                 None,
@@ -2952,7 +2952,7 @@ fn edge_flange_to_object_operation_at(
             crate::records::feature::DesignEdgeFlangeShape::FullEdge {
                 edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                     wrapper_record_index: edge_wrapper_record_index,
-                    group_record_index: edge_group_record_index,
+                    group_record_index: edge_group_record_index.try_into().ok()?,
                     aggregate_operand_record_index,
                 }],
                 height: DesignEdgeFlangeHeightExtent::ToObject {
@@ -3159,8 +3159,8 @@ fn hem_gap_length_operation_at(
 
     Some(DesignHemOperation {
         edge_wrapper_record_index,
-        edge_group_record_index,
-        aggregate_group_record_index,
+        edge_group_record_index: edge_group_record_index.try_into().ok()?,
+        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
         parameter_owners: DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
             length_owner_record_index,
@@ -3227,8 +3227,8 @@ fn hem_radius_angle_operation_at(
 
     Some(DesignHemOperation {
         edge_wrapper_record_index,
-        edge_group_record_index,
-        aggregate_group_record_index,
+        edge_group_record_index: edge_group_record_index.try_into().ok()?,
+        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
         parameter_owners: DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index,
             angle_owner_record_index,
@@ -3291,8 +3291,8 @@ fn hem_gap_length_radius_operation_at(
 
     Some(DesignHemOperation {
         edge_wrapper_record_index,
-        edge_group_record_index,
-        aggregate_group_record_index,
+        edge_group_record_index: edge_group_record_index.try_into().ok()?,
+        aggregate_group_record_index: aggregate_group_record_index.try_into().ok()?,
         parameter_owners: DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index,
             length_owner_record_index,
