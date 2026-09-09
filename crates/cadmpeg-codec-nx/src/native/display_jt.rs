@@ -947,6 +947,10 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
 
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtCompressedElementWire",
+    into = "DisplayJtCompressedElementWire"
+)]
 pub struct DisplayJtCompressedElement {
     /// Globally unique element identity.
     pub id: String,
@@ -963,7 +967,7 @@ pub struct DisplayJtCompressedElement {
     /// Serialized object identifier.
     pub object_id: u32,
     /// Bytes following the common element header.
-    pub body_byte_len: u32,
+    body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
     pub body_sha256: String,
     /// Offset of the element length in the inflated payload.
@@ -972,8 +976,76 @@ pub struct DisplayJtCompressedElement {
     pub source_offset: u64,
 }
 
+impl DisplayJtCompressedElement {
+    /// Bytes following the common element header.
+    pub fn body_byte_len(&self) -> u32 {
+        self.body_byte_len
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtCompressedElementWire {
+    id: String,
+    segment: String,
+    segment_type: u32,
+    ordinal: u32,
+    object_type_id: [u8; 16],
+    object_base_type: u8,
+    object_id: u32,
+    body_byte_len: u32,
+    body_sha256: String,
+    inflated_offset: u32,
+    source_offset: u64,
+}
+
+impl TryFrom<DisplayJtCompressedElementWire> for DisplayJtCompressedElement {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtCompressedElementWire) -> Result<Self, Self::Error> {
+        if wire.body_byte_len.checked_add(21).is_none() {
+            return Err(
+                "DisplayJtCompressedElement.body_byte_len exceeds the element length range",
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            segment: wire.segment,
+            segment_type: wire.segment_type,
+            ordinal: wire.ordinal,
+            object_type_id: wire.object_type_id,
+            object_base_type: wire.object_base_type,
+            object_id: wire.object_id,
+            body_byte_len: wire.body_byte_len,
+            body_sha256: wire.body_sha256,
+            inflated_offset: wire.inflated_offset,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
+impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
+    fn from(value: DisplayJtCompressedElement) -> Self {
+        Self {
+            id: value.id,
+            segment: value.segment,
+            segment_type: value.segment_type,
+            ordinal: value.ordinal,
+            object_type_id: value.object_type_id,
+            object_base_type: value.object_base_type,
+            object_id: value.object_id,
+            body_byte_len: value.body_byte_len,
+            body_sha256: value.body_sha256,
+            inflated_offset: value.inflated_offset,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
 /// Complete element sequence and post-marker tail of one compressed JT segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtCompressedElementSequenceWire",
+    into = "DisplayJtCompressedElementSequenceWire"
+)]
 pub struct DisplayJtCompressedElementSequence {
     /// Globally unique sequence identity.
     pub id: String,
@@ -982,15 +1054,83 @@ pub struct DisplayJtCompressedElementSequence {
     /// Owning segment type.
     pub segment_type: u32,
     /// Ordered decoded element identities.
-    pub elements: Vec<String>,
+    elements: Vec<String>,
     /// Inflated byte length through the end-object marker.
-    pub framed_byte_len: u32,
+    framed_byte_len: u32,
     /// Exact bytes following the end-object marker.
     pub tail: Vec<u8>,
-    /// SHA-256 of the exact post-marker tail.
-    pub tail_sha256: String,
     /// Absolute source offset of the owning compressed envelope.
     pub source_offset: u64,
+}
+
+impl DisplayJtCompressedElementSequence {
+    /// Ordered decoded element identities.
+    pub fn elements(&self) -> &[String] {
+        &self.elements
+    }
+
+    /// Inflated byte length through the end-object marker.
+    pub fn framed_byte_len(&self) -> u32 {
+        self.framed_byte_len
+    }
+
+    /// SHA-256 of the exact post-marker tail.
+    pub fn tail_sha256(&self) -> String {
+        sha256_hex(&self.tail)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtCompressedElementSequenceWire {
+    id: String,
+    segment: String,
+    segment_type: u32,
+    elements: Vec<String>,
+    framed_byte_len: u32,
+    tail: Vec<u8>,
+    tail_sha256: String,
+    source_offset: u64,
+}
+
+impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElementSequence {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtCompressedElementSequenceWire) -> Result<Self, Self::Error> {
+        if wire.tail_sha256 != sha256_hex(&wire.tail) {
+            return Err("DisplayJtCompressedElementSequence.tail_sha256 disagrees with tail");
+        }
+        let minimum = u64::try_from(wire.elements.len())
+            .ok()
+            .and_then(|count| count.checked_mul(25))
+            .and_then(|bytes| bytes.checked_add(20));
+        if minimum.is_none_or(|minimum| minimum > u64::from(wire.framed_byte_len)) {
+            return Err("DisplayJtCompressedElementSequence.framed_byte_len cannot contain its elements and end marker");
+        }
+        Ok(Self {
+            id: wire.id,
+            segment: wire.segment,
+            segment_type: wire.segment_type,
+            elements: wire.elements,
+            framed_byte_len: wire.framed_byte_len,
+            tail: wire.tail,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
+impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequenceWire {
+    fn from(value: DisplayJtCompressedElementSequence) -> Self {
+        let tail_sha256 = value.tail_sha256();
+        Self {
+            id: value.id,
+            segment: value.segment,
+            segment_type: value.segment_type,
+            elements: value.elements,
+            framed_byte_len: value.framed_byte_len,
+            tail: value.tail,
+            tail_sha256,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// One UTF-16 string property atom in a type-31 JT segment.
@@ -3086,10 +3226,13 @@ pub fn display_jt_compressed_element_sequences(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> (
-    Vec<DisplayJtCompressedElement>,
-    Vec<DisplayJtCompressedElementSequence>,
-) {
+) -> Result<
+    (
+        Vec<DisplayJtCompressedElement>,
+        Vec<DisplayJtCompressedElementSequence>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut elements = Vec::new();
     let mut sequences = Vec::new();
     for segment in segments
@@ -3099,51 +3242,68 @@ pub fn display_jt_compressed_element_sequences(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return (Vec::new(), Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         };
         let Some(compressed) = bytes.get(33..) else {
-            return (Vec::new(), Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         };
         let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return (Vec::new(), Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         };
         let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
-            return (Vec::new(), Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         };
         let mut element_ids = Vec::new();
         if element_ids.try_reserve_exact(parsed.len()).is_err() {
-            return (Vec::new(), Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
         for (ordinal, element) in parsed.into_iter().enumerate() {
             let id = format!("{}-inflated-element-{ordinal}", segment.id);
             element_ids.push(id.clone());
-            elements.push(DisplayJtCompressedElement {
-                id,
-                segment: segment.id.clone(),
-                segment_type: segment.segment_type,
-                ordinal: ordinal as u32,
-                object_type_id: element.object_type_id,
-                object_id: element.object_id,
-                object_base_type: element.object_base_type,
-                body_byte_len: element.body.len() as u32,
-                body_sha256: sha256_hex(element.body),
-                inflated_offset: element.offset as u32,
-                source_offset: segment.source_offset + 24,
-            });
+            elements.push(
+                DisplayJtCompressedElement::try_from(DisplayJtCompressedElementWire {
+                    id,
+                    segment: segment.id.clone(),
+                    segment_type: segment.segment_type,
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| display_jt_framing_error("ordinal exceeds u32"))?,
+                    object_type_id: element.object_type_id,
+                    object_id: element.object_id,
+                    object_base_type: element.object_base_type,
+                    body_byte_len: u32::try_from(element.body.len())
+                        .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
+                    body_sha256: sha256_hex(element.body),
+                    inflated_offset: u32::try_from(element.offset)
+                        .map_err(|_| display_jt_framing_error("inflated_offset exceeds u32"))?,
+                    source_offset: segment.source_offset + 24,
+                })
+                .map_err(display_jt_framing_error)?,
+            );
         }
         let tail = &inflated[framed_end..];
-        sequences.push(DisplayJtCompressedElementSequence {
-            id: format!("{}-inflated-sequence", segment.id),
-            segment: segment.id.clone(),
-            segment_type: segment.segment_type,
-            elements: element_ids,
-            framed_byte_len: framed_end as u32,
-            tail: tail.to_vec(),
-            tail_sha256: sha256_hex(tail),
-            source_offset: segment.source_offset + 24,
-        });
+        sequences.push(
+            DisplayJtCompressedElementSequence::try_from(DisplayJtCompressedElementSequenceWire {
+                id: format!("{}-inflated-sequence", segment.id),
+                segment: segment.id.clone(),
+                segment_type: segment.segment_type,
+                elements: element_ids,
+                framed_byte_len: u32::try_from(framed_end)
+                    .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
+                tail: tail.to_vec(),
+                tail_sha256: sha256_hex(tail),
+                source_offset: segment.source_offset + 24,
+            })
+            .map_err(display_jt_framing_error)?,
+        );
     }
-    (elements, sequences)
+    Ok((elements, sequences))
+}
+
+fn display_jt_framing_error(message: &str) -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::malformed(format!(
+        "{}: {message}",
+        crate::loss::NxLossCode::DisplayJtGraphRejected.code()
+    ))
 }
 
 /// Decode all string property atoms from complete type-31 segment sequences.
@@ -4727,15 +4887,15 @@ mod tests {
         assert!(super::display_jt_segments(None, &cross_entry, &documents).is_empty());
 
         let (compressed_elements, sequences) =
-            super::display_jt_compressed_element_sequences(None, &container, &segments);
+            super::display_jt_compressed_element_sequences(None, &container, &segments).unwrap();
         assert_eq!(compressed_elements.len(), 1);
         assert_eq!(compressed_elements[0].segment_type, 1);
         assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
         assert_eq!(compressed_elements[0].object_id, 5);
         assert_eq!(compressed_elements[0].object_base_type, 1);
-        assert_eq!(compressed_elements[0].body_byte_len, 3);
+        assert_eq!(compressed_elements[0].body_byte_len(), 3);
         assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].framed_byte_len, 48);
+        assert_eq!(sequences[0].framed_byte_len(), 48);
         assert_eq!(sequences[0].tail, [6, 5]);
 
         let mut malformed_compression = container.clone();
@@ -5075,7 +5235,7 @@ mod tests {
             family_data_sha256: "00".repeat(32),
             source_offset: 120,
         };
-        let compressed = DisplayJtCompressedElement {
+        let compressed: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
             id: "scene-element".into(),
             segment: "scene-segment".into(),
             segment_type: 1,
@@ -5087,7 +5247,9 @@ mod tests {
             body_sha256: "00".repeat(32),
             inflated_offset: 0,
             source_offset: 120,
-        };
+        }
+        .try_into()
+        .unwrap();
         let instance_base = DisplayJtBaseNodeData {
             id: "instance-base".into(),
             element: "instance-element".into(),
@@ -5100,7 +5262,7 @@ mod tests {
             family_data_sha256: "00".repeat(32),
             source_offset: 122,
         };
-        let instance_element = DisplayJtCompressedElement {
+        let instance_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
             id: "instance-element".into(),
             segment: "scene-segment".into(),
             segment_type: 1,
@@ -5112,7 +5274,9 @@ mod tests {
             body_sha256: "00".repeat(32),
             inflated_offset: 0,
             source_offset: 122,
-        };
+        }
+        .try_into()
+        .unwrap();
         let instance = DisplayJtInstanceNode {
             id: "instance-node".into(),
             base_node: "instance-base".into(),
@@ -5151,7 +5315,7 @@ mod tests {
             family_data_sha256: "00".repeat(32),
             source_offset: 124,
         };
-        let group_element = DisplayJtCompressedElement {
+        let group_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
             id: "group-element".into(),
             segment: "scene-segment".into(),
             segment_type: 1,
@@ -5163,7 +5327,9 @@ mod tests {
             body_sha256: "00".repeat(32),
             inflated_offset: 0,
             source_offset: 124,
-        };
+        }
+        .try_into()
+        .unwrap();
         let group = DisplayJtGroupNodeData {
             id: "group-node".into(),
             base_node: "group-base".into(),
@@ -5210,7 +5376,7 @@ mod tests {
             ],
             source_offset: 121,
         };
-        let material_element = DisplayJtCompressedElement {
+        let material_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
             id: "material-element".into(),
             segment: "scene-segment".into(),
             segment_type: 1,
@@ -5222,7 +5388,9 @@ mod tests {
             body_sha256: "00".repeat(32),
             inflated_offset: 0,
             source_offset: 126,
-        };
+        }
+        .try_into()
+        .unwrap();
         let material = DisplayJtMaterialAttribute {
             id: "material".into(),
             element: "material-element".into(),

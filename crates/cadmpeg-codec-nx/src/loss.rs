@@ -52,6 +52,8 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A JT display graph failed native admission.
+    DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
     /// A roll-forward table failed native admission.
     RollForwardTableRejected => ("history.roll-forward-table-rejected", Blocking, DecodeDiagnostic),
     /// An embedded kernel dialect had no declared grammar and was recovered as residual.
