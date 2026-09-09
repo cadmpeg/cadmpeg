@@ -6184,7 +6184,7 @@ macro_rules! design_feature_kinds {
         }
 
         impl DesignScopePayload {
-            fn kind(&self) -> DesignFeatureKind {
+            pub(crate) fn kind(&self) -> DesignFeatureKind {
                 match self {
                     $(Self::$variant(_) => DesignFeatureKind::$variant,)+
                     $(Self::$fixed(_) => DesignFeatureKind::$fixed,)+
