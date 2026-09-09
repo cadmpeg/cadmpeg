@@ -75,19 +75,15 @@ impl GradientKind {
             Self::RadialDisabled => "radial_disabled",
         }
     }
-}
 
-impl TryFrom<i32> for GradientKind {
-    type Error = GeometryError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    fn from_value(value: i32) -> Option<Self> {
         match value {
-            0 => Ok(Self::None),
-            1 => Ok(Self::Linear),
-            2 => Ok(Self::Radial),
-            3 => Ok(Self::LinearDisabled),
-            4 => Ok(Self::RadialDisabled),
-            _ => Err(GeometryError::malformed(0, "invalid gradient type")),
+            0 => Some(Self::None),
+            1 => Some(Self::Linear),
+            2 => Some(Self::Radial),
+            3 => Some(Self::LinearDisabled),
+            4 => Some(Self::RadialDisabled),
+            _ => None,
         }
     }
 }
@@ -390,8 +386,8 @@ fn parse_gradient_userdata(
         });
     }
     let gradient_type_offset = reader.position();
-    let gradient_type = GradientKind::try_from(reader.i32()?)
-        .map_err(|_| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
+    let gradient_type = GradientKind::from_value(reader.i32()?)
+        .ok_or_else(|| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
     let start = gradient_point(&mut reader, scale, "gradient start point")?;
     let end = gradient_point(&mut reader, scale, "gradient end point")?;
     let repeat_offset = reader.position();
@@ -477,8 +473,8 @@ fn gradient_point(
     Ok(values)
 }
 
-pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
-    serde_json::to_string(&serde_json::json!({
+pub(crate) fn gradient_json(gradient: &Gradient) -> String {
+    serde_json::json!({
         "type": gradient.kind.name(),
         "type_value": gradient.kind.value(),
         "start": gradient.start,
@@ -488,8 +484,8 @@ pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
             "color": stop.color,
             "position": stop.position,
         })).collect::<Vec<_>>(),
-    }))
-    .ok()
+    })
+    .to_string()
 }
 
 fn parse_userdata(
@@ -753,8 +749,7 @@ pub(crate) mod tests {
             assert_eq!(gradient.colors[1].color, [0, 0, 255, 0]);
             assert_eq!(gradient.colors[1].position, 1.0);
             let semantic: serde_json::Value =
-                serde_json::from_str(&gradient_json(&gradient).expect("gradient JSON"))
-                    .expect("gradient JSON object");
+                serde_json::from_str(&gradient_json(&gradient)).expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
             assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));

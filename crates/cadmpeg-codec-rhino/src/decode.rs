@@ -38,6 +38,20 @@ pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 
 #[derive(Debug)]
+enum CandidateError {
+    Admission(String),
+    Validation(String),
+}
+
+impl std::fmt::Display for CandidateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Admission(message) | Self::Validation(message) => formatter.write_str(message),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ClassOutcome<'a> {
     decoded: usize,
     retained: usize,
@@ -480,10 +494,7 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(
-        scan: &'a Scan<'a>,
-        expand: crate::mesh::MeshExpand<'a>,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
@@ -493,10 +504,12 @@ impl<'a> DecodeContext<'a> {
                     .push(source_order);
             }
         }
+        let mut report = ReportBuckets::default();
+        let ir = build_ir(scan, &mut report.typed_losses);
         let mut context = Self {
             scan,
             expand,
-            ir: build_ir(scan)?,
+            ir,
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             opaque_records: Vec::new(),
@@ -505,7 +518,7 @@ impl<'a> DecodeContext<'a> {
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
-            report: ReportBuckets::default(),
+            report,
             instance_selection: None,
             instance_display: None,
             object_candidates,
@@ -521,7 +534,7 @@ impl<'a> DecodeContext<'a> {
         };
         context.retain_object_records();
         context.retain_opaque_records();
-        Ok(context)
+        context
     }
 
     #[cfg(test)]
@@ -612,12 +625,13 @@ impl<'a> DecodeContext<'a> {
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> T,
     ) -> Result<T, String> {
         self.validate_candidate_fallible(|ir, annotations| Ok(apply(ir, annotations)))
+            .map_err(|error| error.to_string())
     }
 
     fn validate_candidate_fallible<T>(
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, String>,
-    ) -> Result<T, String> {
+    ) -> Result<T, CandidateError> {
         let before = ArenaLengths::capture(&self.ir);
         let annotation_checkpoint = self.annotations.clone();
         let value = match apply(&mut self.ir, &mut self.annotations) {
@@ -625,7 +639,7 @@ impl<'a> DecodeContext<'a> {
             Err(error) => {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
         };
         self.ir
@@ -646,7 +660,7 @@ impl<'a> DecodeContext<'a> {
                 Err(error) => {
                     before.truncate(&mut self.ir);
                     self.annotations = annotation_checkpoint;
-                    return Err(error.to_string());
+                    return Err(CandidateError::Admission(error.to_string()));
                 }
             };
             let mut link_updates = Vec::with_capacity(unknowns.len());
@@ -658,19 +672,22 @@ impl<'a> DecodeContext<'a> {
                 else {
                     before.truncate(&mut self.ir);
                     self.annotations = annotation_checkpoint;
-                    return Err(format!("candidate introduced unknown {}", reference.id));
+                    return Err(CandidateError::Admission(format!(
+                        "candidate introduced unknown {}",
+                        reference.id
+                    )));
                 };
                 link_updates.push((index, reference.links));
             }
             if let Err(error) = self.expansion_budget.entities(appended.len()) {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
             if let Err(error) = self.charge_session_entities(appended.len()) {
                 before.truncate(&mut self.ir);
                 self.annotations = annotation_checkpoint;
-                return Err(error);
+                return Err(CandidateError::Admission(error));
             }
             for (index, links) in link_updates {
                 *self.unknowns[index].links_mut() = links;
@@ -680,7 +697,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             before.truncate(&mut self.ir);
             self.annotations = annotation_checkpoint;
-            Err(validation_findings(&validation))
+            Err(CandidateError::Validation(validation_findings(&validation)))
         }
     }
 
@@ -1220,11 +1237,7 @@ impl<'a> DecodeContext<'a> {
                 format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
             ),
         ]);
-        if let Some(gradient) = hatch
-            .gradient
-            .as_ref()
-            .and_then(crate::hatch::gradient_json)
-        {
+        if let Some(gradient) = hatch.gradient.as_ref().map(crate::hatch::gradient_json) {
             parameters.insert("gradient".to_string(), gradient);
         }
         for (index, (kind, id)) in loop_ids.iter().enumerate() {
@@ -2320,10 +2333,7 @@ impl<'a> DecodeContext<'a> {
                 if self.commit_extrusion(source_order, extrusion) {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(
-                        source_order,
-                        "extrusion candidate rejected atomically by IR validation",
-                    );
+                    self.scan_warning(source_order, "extrusion candidate rejected atomically");
                     self.commit_unknown_surface(source_order);
                 }
             }
@@ -2772,7 +2782,8 @@ impl<'a> DecodeContext<'a> {
                         vertices,
                     ) {
                         Ok(shell) => shell,
-                        Err(_) => {
+                        Err(error) => {
+                            self.scan_warning(source_order, error);
                             return false;
                         }
                     },
@@ -3036,8 +3047,8 @@ impl<'a> DecodeContext<'a> {
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
                 links.push(surface_id.to_string());
             }
-            if (extrusion.caps[0] || extrusion.caps[1])
-                && !stage_extrusion_caps(
+            if extrusion.caps[0] || extrusion.caps[1] {
+                stage_extrusion_caps(
                     candidate,
                     candidate_annotations,
                     &key,
@@ -3045,9 +3056,7 @@ impl<'a> DecodeContext<'a> {
                     &extrusion,
                     &boundaries,
                     &mut links,
-                )
-            {
-                return Err("extrusion cap staging failed".to_string());
+                )?;
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
                 mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(format!(
@@ -3063,7 +3072,11 @@ impl<'a> DecodeContext<'a> {
         });
         let links = match result {
             Ok(links) => links,
-            Err(findings) => {
+            Err(CandidateError::Admission(error)) => {
+                self.scan_warning(source_order, &error);
+                return false;
+            }
+            Err(CandidateError::Validation(findings)) => {
                 self.scan_warning(
                     source_order,
                     &format!("extrusion candidate rejected by IR validation: {findings}"),
@@ -3560,7 +3573,7 @@ fn stage_extrusion_caps(
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
     links: &mut Vec<String>,
-) -> bool {
+) -> Result<(), String> {
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps")
         .try_into()
         .expect("valid identity");
@@ -3591,7 +3604,7 @@ fn stage_extrusion_caps(
                     extrusion.cap_u_axes[cap],
                 ) {
                     Ok(plane) => plane,
-                    Err(_) => return false,
+                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
                 },
             ),
             source_object: Some(association.clone()),
@@ -3620,7 +3633,9 @@ fn stage_extrusion_caps(
                 boundary.end_nurbs.control_points().first().copied()
             };
             let Some(endpoint) = endpoint else {
-                return false;
+                return Err(format!(
+                    "extrusion cap staging: cap {cap} profile {profile} has no endpoint"
+                ));
             };
             let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}.{suffix}")
                 .try_into()
@@ -3648,30 +3663,36 @@ fn stage_extrusion_caps(
             } else {
                 &boundary.end_pcurve
             };
-            let Ok(degree) = usize::try_from(pcurve.degree) else {
-                return false;
-            };
-            let Some(end_index) = pcurve.knots.len().checked_sub(degree + 1) else {
-                return false;
-            };
-            let Some(parameter_range) = pcurve
+            let degree = usize::try_from(pcurve.degree).map_err(|error| {
+                format!(
+                    "extrusion cap staging: pcurve degree {}: {error}",
+                    pcurve.degree
+                )
+            })?;
+            let end_index = degree.checked_add(1)
+                .and_then(|order| pcurve.knots.len().checked_sub(order))
+                .ok_or_else(|| format!(
+                    "extrusion cap staging: pcurve knot count {} cannot supply degree {degree} support",
+                    pcurve.knots.len()
+                ))?;
+            let parameter_range = pcurve
                 .knots
                 .get(degree)
                 .copied()
                 .zip(pcurve.knots.get(end_index).copied())
                 .map(|(start, end)| [start, end])
-            else {
-                return false;
-            };
-            let Ok(nurbs) = PcurveNurbs::new(
+                .ok_or_else(|| format!(
+                    "extrusion cap staging: pcurve parameter range indexes {degree} and {end_index} exceed knot count {}",
+                    pcurve.knots.len()
+                ))?;
+            let nurbs = PcurveNurbs::new(
                 pcurve.degree,
                 pcurve.knots.clone(),
                 pcurve.control_points.clone(),
                 pcurve.weights.clone(),
                 pcurve.periodic,
-            ) else {
-                return false;
-            };
+            )
+            .map_err(|error| format!("extrusion cap staging: {error}"))?;
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
@@ -3699,7 +3720,7 @@ fn stage_extrusion_caps(
                     None,
                 ) {
                     Ok(metadata) => metadata,
-                    Err(_) => return false,
+                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
                 },
             });
             ir.model.coedges.push(Coedge {
@@ -3766,7 +3787,7 @@ fn stage_extrusion_caps(
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
-        return false;
+        return Err("extrusion cap staging: no enabled caps".to_string());
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -3779,7 +3800,7 @@ fn stage_extrusion_caps(
     });
     annotate_derived(annotations, &body_id.to_string());
     links.push(body_id.to_string());
-    true
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -5065,18 +5086,21 @@ fn region_shell_groups(
         });
     }
     let mut grouped: BTreeMap<(i32, usize), Vec<usize>> = BTreeMap::new();
-    let solid_regions: BTreeSet<i32> = raw
+    let solid_regions: BTreeSet<usize> = raw
         .regions
         .iter()
-        .filter(|region| region.region_type == 1)
-        .map(|region| region.index)
+        .enumerate()
+        .filter(|(_, region)| region.region_type == 1)
+        .map(|(index, _)| index)
         .collect();
     for face in 0..raw.faces.len() {
         let bounded_sides: Vec<_> = raw
             .face_sides
             .iter()
             .filter(|side| side.face == face as i32)
-            .filter(|side| solid_regions.contains(&side.region))
+            .filter(|side| {
+                usize::try_from(side.region).is_ok_and(|region| solid_regions.contains(&region))
+            })
             .collect();
         if bounded_sides.len() != 1 {
             return region_shell_groups_without_records(components);
@@ -5498,11 +5522,8 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance 
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(
-    scan: &Scan<'_>,
-    expand: crate::mesh::MeshExpand<'_>,
-) -> Result<Decoded, CodecError> {
-    let mut context = DecodeContext::new(scan, expand)?;
+pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> Decoded {
+    let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
@@ -5513,9 +5534,16 @@ pub(crate) fn decode(
             scale,
         )
     });
+    let mut history_warnings = Vec::new();
     let untyped = context.validate_candidate(|candidate, _annotations| {
-        crate::history::project(&scan.history, geometry_context, candidate)
+        crate::history::project(
+            &scan.history,
+            geometry_context,
+            candidate,
+            &mut history_warnings,
+        )
     });
+    context.report.phase_warnings.extend(history_warnings);
     match untyped {
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
@@ -5555,7 +5583,7 @@ pub(crate) fn decode(
             &format!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    Ok(context.commit())
+    context.commit()
 }
 
 #[cfg(test)]
@@ -5580,9 +5608,7 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    with_expand(scan, |expand| {
-        seal_for_test(decode(scan, expand).expect("valid tolerances"), false)
-    })
+    with_expand(scan, |expand| seal_for_test(decode(scan, expand), false))
 }
 
 #[cfg(test)]
@@ -5630,21 +5656,37 @@ pub(crate) fn seal_for_test(
     .expect("test decode result satisfies the sealed codec contract")
 }
 
-fn build_ir(scan: &Scan<'_>) -> Result<CadIr, CodecError> {
+/// Admits an archive tolerance with a recorded default repair.
+pub(crate) fn admitted_tolerance(
+    value: f64,
+    default: cadmpeg_ir::units::PositiveScalar,
+    field: &str,
+    losses: &mut Vec<LossNote>,
+) -> cadmpeg_ir::units::PositiveScalar {
+    cadmpeg_ir::units::PositiveScalar::new(value).unwrap_or_else(|| {
+        losses.push(RhinoLossCode::RedundantFieldRepaired.note(format!(
+            "{field} tolerance {value} replaced with default {}",
+            default.get()
+        )));
+        default
+    })
+}
+
+fn build_ir(scan: &Scan<'_>, losses: &mut Vec<LossNote>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
             ir.tolerances.linear =
-                cadmpeg_ir::units::PositiveScalar::new(linear).ok_or_else(|| {
-                    CodecError::malformed("linear tolerance must be positive and finite")
-                })?;
+                admitted_tolerance(linear, ir.tolerances.linear, "linear", losses);
         }
-        ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(
+        ir.tolerances.angular = admitted_tolerance(
             source_units.angular_tolerance,
-        )
-        .ok_or_else(|| CodecError::malformed("angular tolerance must be positive and finite"))?;
+            ir.tolerances.angular,
+            "angular",
+            losses,
+        );
     }
-    Ok(ir)
+    ir
 }
 
 /// Builds the path-specific facts available after full decoding.

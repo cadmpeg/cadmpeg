@@ -1043,8 +1043,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
     };
     object.attributes = AttributeState::Degraded;
     crate::decode::with_expand(&scan, |expand| {
-        let mut context =
-            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
         let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result.report().losses.iter().any(|loss| {
