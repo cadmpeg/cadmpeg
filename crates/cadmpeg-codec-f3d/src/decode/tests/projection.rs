@@ -1398,7 +1398,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 history_state_id: None,
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
-                reference_count_offset: (0) + 9,
+                reference_count_offset: 9,
                 reference_members: crate::records::ReferenceRun::from_columns(
                     vec![1],
                     vec![0],
