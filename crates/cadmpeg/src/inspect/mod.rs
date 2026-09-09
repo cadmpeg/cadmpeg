@@ -62,16 +62,17 @@ pub struct SummaryArgs {
 
 fn native_input_parser(
 ) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
-    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().filter(|name| {
-        matches!(
-            cadmpeg_registry::forced_input(name),
-            Some(cadmpeg_registry::ForcedInput::Codec(_))
-        )
-    }))
-    .try_map(|name| match cadmpeg_registry::forced_input(&name) {
-        Some(cadmpeg_registry::ForcedInput::Codec(native)) => Ok(native),
-        _ => Err(format!("unsupported native input format: {name}")),
-    })
+    let pairs = cadmpeg_registry::input_names()
+        .filter_map(|name| match cadmpeg_registry::forced_input(name) {
+            Some(cadmpeg_registry::ForcedInput::Codec(native)) => Some((name, native)),
+            Some(cadmpeg_registry::ForcedInput::Cadir) | None => None,
+        })
+        .collect::<Vec<_>>();
+    let parser = clap::builder::PossibleValuesParser::new(pairs.iter().map(|(name, _)| *name));
+    let by_name = pairs
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    parser.map(move |name| by_name[name.as_str()])
 }
 
 impl clap::Args for InspectArgs {
