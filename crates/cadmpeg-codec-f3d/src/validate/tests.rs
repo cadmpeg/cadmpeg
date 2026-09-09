@@ -398,17 +398,20 @@ fn validation_accepts_carrier_local_component_references() {
     let occurrence = |record_index: u32,
                       byte_offset: u64,
                       component_record_index: u64,
-                      occurrence_guid: &str| DesignComponentOccurrence {
-        id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index,
-        byte_offset,
-        component_record_index,
-        component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-        component_guid_offset: byte_offset + 48,
-        occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
-        occurrence_guid_offset: byte_offset + 124,
-        placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+                      occurrence_guid: &str| {
+        DesignComponentOccurrence::try_new(
+            crate::records::feature::DesignComponentOccurrenceDraft {
+                id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
+                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                record_index,
+                byte_offset,
+                component_record_index,
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
+                placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+            },
+        )
+        .unwrap()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {

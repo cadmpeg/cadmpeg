@@ -3304,17 +3304,34 @@ pub struct DesignComponentOccurrence {
     /// Indexed carrier record.
     pub record_index: u32,
     /// Byte offset of the indexed header.
+    byte_offset: u64,
+    /// Referenced component-definition record.
+    pub component_record_index: u64,
+    /// Stable component-definition GUID.
+    pub component_guid: DesignRelaxedGuidText,
+    /// Stable placed-occurrence GUID.
+    pub occurrence_guid: DesignRelaxedGuidText,
+    /// Base occurrence or a placed occurrence with its ordinal and matrix.
+    placement: DesignComponentOccurrencePlacement,
+}
+
+/// Local occurrence payload before checked frame admission.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignComponentOccurrenceDraft {
+    /// Stable native record identity.
+    pub id: String,
+    /// Indexed-record class carrying this occurrence.
+    pub class_tag: DesignClassTag,
+    /// Indexed carrier record.
+    pub record_index: u32,
+    /// Byte offset of the indexed header.
     pub byte_offset: u64,
     /// Referenced component-definition record.
     pub component_record_index: u64,
     /// Stable component-definition GUID.
     pub component_guid: DesignRelaxedGuidText,
-    /// Byte offset of the component GUID payload.
-    pub component_guid_offset: u64,
     /// Stable placed-occurrence GUID.
     pub occurrence_guid: DesignRelaxedGuidText,
-    /// Byte offset of the occurrence GUID payload.
-    pub occurrence_guid_offset: u64,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
     pub placement: DesignComponentOccurrencePlacement,
 }
@@ -3327,11 +3344,53 @@ pub enum DesignComponentOccurrencePlacement {
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
         ordinal: NonZeroU32,
-        transform: Located<SketchPlacementMatrix>,
+        transform: SketchPlacementMatrix,
     },
 }
 
 impl DesignComponentOccurrence {
+    /// Admit a local occurrence with representable GUID and placement offsets.
+    pub fn try_new(draft: DesignComponentOccurrenceDraft) -> Result<Self, String> {
+        let last_offset = match draft.placement {
+            DesignComponentOccurrencePlacement::Base => 124,
+            DesignComponentOccurrencePlacement::Explicit { .. } => 209,
+        };
+        draft
+            .byte_offset
+            .checked_add(last_offset)
+            .ok_or("component occurrence offsets overflow byte_offset")?;
+        Ok(Self {
+            id: draft.id,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            byte_offset: draft.byte_offset,
+            component_record_index: draft.component_record_index,
+            component_guid: draft.component_guid,
+            occurrence_guid: draft.occurrence_guid,
+            placement: draft.placement,
+        })
+    }
+
+    /// Indexed header byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Component GUID byte offset.
+    pub fn component_guid_offset(&self) -> u64 {
+        self.byte_offset + 48
+    }
+
+    /// Occurrence GUID byte offset.
+    pub fn occurrence_guid_offset(&self) -> u64 {
+        self.byte_offset + 124
+    }
+
+    /// Base or explicit local placement.
+    pub fn placement(&self) -> &DesignComponentOccurrencePlacement {
+        &self.placement
+    }
+
     #[must_use]
     pub fn occurrence_ordinal(&self) -> u32 {
         match self.placement {
@@ -3344,7 +3403,10 @@ impl DesignComponentOccurrence {
     pub fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => None,
-            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
+            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
+                value: transform,
+                offset: self.byte_offset + 209,
+            }),
         }
     }
 }
@@ -3382,6 +3444,8 @@ struct DesignComponentOccurrenceWire {
 impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
     fn from(value: DesignComponentOccurrence) -> Self {
         let occurrence_ordinal = value.occurrence_ordinal();
+        let component_guid_offset = value.component_guid_offset();
+        let occurrence_guid_offset = value.occurrence_guid_offset();
         let transform = value.transform();
         Self {
             id: value.id,
@@ -3390,9 +3454,9 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
             component_guid: value.component_guid,
-            component_guid_offset: value.component_guid_offset,
+            component_guid_offset,
             occurrence_guid: value.occurrence_guid,
-            occurrence_guid_offset: value.occurrence_guid_offset,
+            occurrence_guid_offset,
             occurrence_ordinal,
             transform: transform.map(|frame| frame.value),
             transform_offset: transform.map(|frame| frame.offset),
@@ -3408,22 +3472,30 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             (1, None) => DesignComponentOccurrencePlacement::Base,
             (ordinal, Some(transform)) => DesignComponentOccurrencePlacement::Explicit {
                 ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
-                transform,
+                transform: transform.value,
             },
             (_, None) => return Err("occurrence_ordinal must be 1 when transform is absent".into()),
         };
-        Ok(Self {
+        let record = Self::try_new(DesignComponentOccurrenceDraft {
             id: value.id,
             class_tag: value.class_tag.try_into()?,
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
             component_guid: value.component_guid,
-            component_guid_offset: value.component_guid_offset,
             occurrence_guid: value.occurrence_guid,
-            occurrence_guid_offset: value.occurrence_guid_offset,
             placement,
-        })
+        })?;
+        if value.component_guid_offset != record.component_guid_offset() {
+            return Err("component_guid_offset disagrees with byte_offset".into());
+        }
+        if value.occurrence_guid_offset != record.occurrence_guid_offset() {
+            return Err("occurrence_guid_offset disagrees with byte_offset".into());
+        }
+        if value.transform_offset != record.transform().map(|transform| transform.offset) {
+            return Err("transform_offset disagrees with byte_offset".into());
+        }
+        Ok(record)
     }
 }
 

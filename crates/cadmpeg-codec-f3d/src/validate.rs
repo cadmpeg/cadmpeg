@@ -3745,17 +3745,11 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
             stream,
             occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
         )) && record_indices.insert((stream, occurrence.record_index))
-            && occurrence.component_guid_offset == occurrence.byte_offset + 48
-            && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
-            && match occurrence.placement {
+            && match occurrence.placement() {
                 records::feature::DesignComponentOccurrencePlacement::Base => true,
                 records::feature::DesignComponentOccurrencePlacement::Explicit {
-                    ordinal,
-                    transform,
-                } => {
-                    (occurrence.class_tag.as_str() == "327" || ordinal.get() > 1)
-                        && transform.offset == occurrence.byte_offset + 209
-                }
+                    ordinal, ..
+                } => occurrence.class_tag.as_str() == "327" || ordinal.get() > 1,
             };
         // The duplicated references must agree within one carrier, which
         // the decoder checks. The component GUID is the reusable-definition
@@ -3799,7 +3793,7 @@ fn valid_component_pattern_occurrences(
                     .as_str()
                     .eq_ignore_ascii_case(seed.occurrence_guid.as_str())
                 && matches!(
-                    occurrence.placement,
+                    occurrence.placement(),
                     crate::records::feature::DesignComponentOccurrencePlacement::Base
                 )
         })
